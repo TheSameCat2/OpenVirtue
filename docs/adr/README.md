@@ -32,3 +32,4 @@ Trade-offs, follow-ups, risks.
 | [0003](0003-license-gplv3.md) | License: **GPL-3.0-or-later** | accepted |
 | [0004](0004-project-name-openvirtue.md) | Project name: **OpenVirtue** | accepted |
 | [0005](0005-clean-room-reference-only-policy.md) | **Clean-room, reference-only** use of prior art | accepted |
+| [0006](0006-engine-object-model-hybrid.md) | Engine object model: **hybrid** typed entities + dynamic skills | accepted |
