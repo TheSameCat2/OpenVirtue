@@ -206,6 +206,9 @@ internal static class Cli
                     $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
                     $"{level.Things.Count} things, {level.Actors.Count} actors");
                 Console.WriteLine($"  {level.Skills.Count} global skills, {level.Textures.Count} textures");
+                int wallVerts = OpenVirtue.Engine.Rendering.MeshBuilder.BuildWalls(level).VertexCount;
+                int fullVerts = OpenVirtue.Engine.Rendering.MeshBuilder.Build(level).VertexCount;
+                Console.WriteLine($"  mesh: {wallVerts} wall verts, {fullVerts - wallVerts} floor/ceiling verts");
                 if (level.PlayerStart is { } ps)
                 {
                     Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
