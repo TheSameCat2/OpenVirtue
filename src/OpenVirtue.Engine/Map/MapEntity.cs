@@ -16,6 +16,9 @@ public abstract class MapEntity : AcknexObject
     public double Z { get; set; }
     public double Angle { get; set; }
 
+    /// <summary>The sprite's height in world units (its on-screen size; width follows the texture aspect).</summary>
+    public double Height { get; set; } = 1;
+
     /// <summary>Index of the region the entity is in.</summary>
     public int Region { get; set; }
 

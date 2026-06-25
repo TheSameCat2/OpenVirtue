@@ -20,6 +20,7 @@ public sealed class WdlDeclarations
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
     private readonly Dictionary<string, RegionTextures> _regions = new(Ci);
     private readonly Dictionary<string, string?> _walls = new(Ci);
+    private readonly Dictionary<string, EntityDef> _entities = new(Ci);
     private readonly Dictionary<string, WdlBlock> _actions = new(Ci);
 
     /// <summary>The names of all defined textures.</summary>
@@ -50,6 +51,10 @@ public sealed class WdlDeclarations
                 case "WALL" when item.HasBody:
                     declarations.IndexWall(item);
                     break;
+                case "THING" when item.HasBody:
+                case "ACTOR" when item.HasBody:
+                    declarations.IndexEntity(item);
+                    break;
                 case "ACTION" when item.HasBody && item.Header.Count > 0:
                     declarations._actions[item.Header[0].Text] = item.Body!;
                     break;
@@ -66,6 +71,10 @@ public sealed class WdlDeclarations
     /// <summary>The texture name for a wall type, if defined.</summary>
     public string? GetWallTexture(string name) =>
         _walls.TryGetValue(name, out string? value) ? value : null;
+
+    /// <summary>The sprite texture and height for a THING/ACTOR type, if defined.</summary>
+    public EntityDef? GetEntity(string name) =>
+        _entities.TryGetValue(name, out EntityDef value) ? value : null;
 
     /// <summary>Resolves a texture name to its source PCX file, sub-rectangle, and scale.</summary>
     public LevelTexture? ResolveTexture(string? textureName)
@@ -166,6 +175,32 @@ public sealed class WdlDeclarations
         _walls[item.Header[0].Text] = null;
     }
 
+    private void IndexEntity(WdlItem item)
+    {
+        if (item.Header.Count == 0)
+        {
+            return;
+        }
+
+        string? texture = null;
+        double height = 1;
+        foreach (WdlItem property in item.Body!.Items)
+        {
+            if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
+            {
+                texture = property.Header[0].Text;
+            }
+            else if (property.Keyword.Equals("HEIGHT", StringComparison.OrdinalIgnoreCase) &&
+                     property.Header.Count > 0 &&
+                     double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+            {
+                height = parsed;
+            }
+        }
+
+        _entities[item.Header[0].Text] = new EntityDef(texture, height);
+    }
+
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
     {
         foreach (WdlToken token in tokens)
@@ -200,4 +235,7 @@ public sealed class WdlDeclarations
 
     /// <summary>The floor and ceiling texture names declared for a region type.</summary>
     public readonly record struct RegionTextures(string? Floor, string? Ceiling);
+
+    /// <summary>The sprite texture name and height declared for a THING/ACTOR type.</summary>
+    public readonly record struct EntityDef(string? Texture, double Height);
 }

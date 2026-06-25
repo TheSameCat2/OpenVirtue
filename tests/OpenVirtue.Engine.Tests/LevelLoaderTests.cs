@@ -67,6 +67,29 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DressesThingsFromTheirTypeDefinitions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "THING Plant1 5 6 90 0;#1\nPLAYER_START 0 0 0 0;#2",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP plant_bmp, <plant.pcx>, 0, 0, 32, 64;
+            TEXTURE plantTex { BMAPS plant_bmp; }
+            THING Plant1 { TEXTURE plantTex; HEIGHT 3; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Thing plant = Assert.Single(level.Things);
+        Assert.Equal("plantTex", plant.Texture);
+        Assert.Equal(3, plant.Height);
+    }
+
+    [Fact]
     public void LoadCore_NoMapFile_Throws()
     {
         Assert.Throws<InvalidDataException>(
