@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenVirtue.Formats/OpenVirtue.Formats.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenVirtue.Formats.Tests/OpenVirtue.Formats.Tests.csproj" />
+  </Folder>
+</Solution>
