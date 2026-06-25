@@ -65,5 +65,10 @@ public class WdlExpressionTests
         public void SetSkill(string name, double value) => _skills[name] = value;
 
         public AcknexObject? GetObject(string name) => Objects.GetValueOrDefault(name);
+
+        public void CallAction(string name)
+        {
+            // Not exercised by expression tests.
+        }
     }
 }

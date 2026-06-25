@@ -137,10 +137,18 @@ internal sealed class LevelWindow : Form
     {
         if (_level.PlayerStart is { } start)
         {
-            float floor = start.Region >= 0 && start.Region < _level.Regions.Count
-                ? (float)_level.Regions[start.Region].FloorHeight
-                : 0f;
-            _camera.Position = new Vector3(start.X, floor + 25f, start.Y);
+            float floor = 0f;
+            float ceiling = 100f;
+            if (start.Region >= 0 && start.Region < _level.Regions.Count)
+            {
+                var region = _level.Regions[start.Region];
+                floor = (float)region.FloorHeight;
+                ceiling = (float)region.CeilHeight;
+            }
+
+            // Spawn at eye level: midway between floor and ceiling of the start region.
+            float eye = ceiling > floor ? (floor + ceiling) * 0.5f : floor + 20f;
+            _camera.Position = new Vector3(start.X, eye, start.Y);
             _camera.Yaw = -start.Angle * (MathF.PI / 180f);
         }
         else
@@ -276,7 +284,7 @@ internal sealed class LevelWindow : Form
 
     private void BuildGeometry()
     {
-        LevelMesh mesh = MeshBuilder.BuildWalls(_level);
+        LevelMesh mesh = MeshBuilder.Build(_level);
         var vertices = new List<RenderVertex>();
         foreach (MeshBatch batch in mesh.Batches)
         {
@@ -297,7 +305,17 @@ internal sealed class LevelWindow : Form
 
     private void UpdateCamera()
     {
-        float speed = _keysDown.Contains(Keys.ShiftKey) ? 120f : 40f;
+        // Per-tick move distance (~60 ticks/sec): Ctrl = precise, Shift = fast, default = moderate.
+        float speed = 10f;
+        if (_keysDown.Contains(Keys.ShiftKey))
+        {
+            speed = 40f;
+        }
+        else if (_keysDown.Contains(Keys.ControlKey))
+        {
+            speed = 3f;
+        }
+
         if (_keysDown.Contains(Keys.W)) _camera.MoveForward(speed);
         if (_keysDown.Contains(Keys.S)) _camera.MoveForward(-speed);
         if (_keysDown.Contains(Keys.A)) _camera.MoveRight(-speed);

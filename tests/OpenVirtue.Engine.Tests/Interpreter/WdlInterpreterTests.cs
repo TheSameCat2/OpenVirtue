@@ -79,5 +79,10 @@ public class WdlInterpreterTests
         public void SetSkill(string name, double value) => _skills[name] = value;
 
         public AcknexObject? GetObject(string name) => Objects.GetValueOrDefault(name);
+
+        public void CallAction(string name)
+        {
+            // No action registry in this stub.
+        }
     }
 }
