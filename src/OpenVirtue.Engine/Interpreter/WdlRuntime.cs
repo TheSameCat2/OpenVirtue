@@ -13,10 +13,13 @@ namespace OpenVirtue.Engine.Interpreter;
 /// </summary>
 public sealed class WdlRuntime : IWdlContext
 {
+    private const int MaxCallDepth = 64;
+
     private readonly Dictionary<string, double> _skills;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
+    private int _callDepth;
 
     public WdlRuntime(Level level)
     {
@@ -46,14 +49,29 @@ public sealed class WdlRuntime : IWdlContext
 
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
-    public bool RunAction(string name)
+    public bool RunAction(string name) => Run(name);
+
+    /// <inheritdoc/>
+    public void CallAction(string name) => Run(name);
+
+    private bool Run(string name)
     {
-        if (_actions.TryGetValue(name, out WdlBlock? block))
+        // Guard against runaway mutual recursion between actions.
+        if (_callDepth >= MaxCallDepth || !_actions.TryGetValue(name, out WdlBlock? block))
         {
-            _interpreter.Execute(block);
-            return true;
+            return false;
         }
 
-        return false;
+        _callDepth++;
+        try
+        {
+            _interpreter.Execute(block);
+        }
+        finally
+        {
+            _callDepth--;
+        }
+
+        return true;
     }
 }

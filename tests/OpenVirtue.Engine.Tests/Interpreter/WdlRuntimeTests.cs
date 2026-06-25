@@ -39,6 +39,30 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ActionCallsAnotherActionByName()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL x { VAL 0; } ACTION outer { inner; } ACTION inner { SET x, 7; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("outer"); // 'outer' body is just the statement `inner;`
+
+        Assert.Equal(7, runtime.GetSkill("x"));
+    }
+
+    [Fact]
+    public void Runtime_MutualRecursion_DoesNotStackOverflow()
+    {
+        // a -> b -> a -> ... is bounded by the call-depth guard.
+        Level level = Load("MAPFILE <m.wmp>; ACTION a { b; } ACTION b { a; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("a"); // must return rather than overflow
+
+        Assert.True(runtime.HasAction("a"));
+    }
+
+    [Fact]
     public void Runtime_UnknownAction_ReturnsFalse()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));

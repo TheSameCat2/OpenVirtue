@@ -49,7 +49,11 @@ public sealed class WdlInterpreter(IWdlContext context)
                     ExecuteIf(item);
                     break;
 
-                // Other statements are not modelled yet; ignore them for now.
+                default:
+                    // A bare keyword may name another action to run; the context invokes it
+                    // if it exists and ignores it otherwise (unmodelled instructions are no-ops).
+                    context.CallAction(item.Keyword);
+                    break;
             }
         }
     }

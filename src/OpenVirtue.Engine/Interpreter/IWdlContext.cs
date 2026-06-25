@@ -18,4 +18,10 @@ public interface IWdlContext
 
     /// <summary>Resolves an object reference (<c>my</c>, <c>you</c>, or a named object), or null.</summary>
     AcknexObject? GetObject(string name);
+
+    /// <summary>
+    /// Invokes a named action if one exists; otherwise does nothing. Lets a statement whose
+    /// keyword is an action name (or an as-yet-unmodelled instruction) chain into another script.
+    /// </summary>
+    void CallAction(string name);
 }
