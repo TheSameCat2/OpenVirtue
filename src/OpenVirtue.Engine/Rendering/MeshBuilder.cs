@@ -1,26 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Numerics;
 using OpenVirtue.Engine.Map;
 
 namespace OpenVirtue.Engine.Rendering;
 
 /// <summary>
-/// Builds renderer-ready geometry from a loaded <see cref="Level"/>. The first pass emits
-/// the walls as vertical textured quads (two triangles each), grouped by texture — enough
-/// for a recognizable first render. Floor/ceiling polygons (which require triangulating each
-/// region's wall loop) come later.
+/// Builds renderer-ready geometry from a loaded <see cref="Level"/>: wall quads, plus
+/// floor and ceiling surfaces for regions whose boundary forms a clean polygon loop
+/// (traced from their walls and triangulated by <see cref="EarClipping"/>). Output is
+/// GPU-agnostic and grouped by texture.
 /// </summary>
 public static class MeshBuilder
 {
-    /// <summary>Builds wall geometry: a vertical quad per wall, spanning its region's floor to ceiling.</summary>
+    private const float DefaultScale = 16f;
+
+    /// <summary>Builds walls and floor/ceiling surfaces.</summary>
+    public static LevelMesh Build(Level level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        var accumulator = new Accumulator();
+        AddWalls(level, accumulator);
+        AddSurfaces(level, accumulator);
+        return accumulator.ToMesh();
+    }
+
+    /// <summary>Builds wall geometry only (a vertical textured quad per wall).</summary>
     public static LevelMesh BuildWalls(Level level)
     {
         ArgumentNullException.ThrowIfNull(level);
+        var accumulator = new Accumulator();
+        AddWalls(level, accumulator);
+        return accumulator.ToMesh();
+    }
 
-        var byTexture = new Dictionary<string, List<RenderVertex>>(StringComparer.OrdinalIgnoreCase);
-        var untextured = new List<RenderVertex>();
-
+    private static void AddWalls(Level level, Accumulator accumulator)
+    {
         foreach (Wall wall in level.Walls)
         {
             if (!TryVertex(level, wall.Vertex1, out Vertex v1) ||
@@ -35,20 +51,15 @@ public static class MeshBuilder
             float dz = v2.Y - v1.Y;
             float length = MathF.Sqrt((dx * dx) + (dz * dz));
             float height = ceiling - floor;
-
-            // Texture coordinates in tile units: world distance / texture scale (so the
-            // texture repeats with a wrap sampler). Default scale when the texture is unknown.
             (float scaleX, float scaleY) = TextureScale(level, wall.Texture);
             float u = length / scaleX;
             float v = height / scaleY;
 
-            // Quad corners in world space (x, y-up, z); WMP (x, y) -> world (x, z).
+            List<RenderVertex> target = accumulator.Bucket(wall.Texture);
             var bottomLeft = new RenderVertex(v1.X, floor, v1.Y, 0, 0);
             var bottomRight = new RenderVertex(v2.X, floor, v2.Y, u, 0);
             var topRight = new RenderVertex(v2.X, ceiling, v2.Y, u, v);
             var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, 0, v);
-
-            List<RenderVertex> target = wall.Texture is { } texture ? Bucket(byTexture, texture) : untextured;
             target.Add(bottomLeft);
             target.Add(bottomRight);
             target.Add(topRight);
@@ -56,19 +67,134 @@ public static class MeshBuilder
             target.Add(topRight);
             target.Add(topLeft);
         }
+    }
 
-        var batches = new List<MeshBatch>(byTexture.Count + 1);
-        foreach ((string texture, List<RenderVertex> vertices) in byTexture)
+    private static void AddSurfaces(Level level, Accumulator accumulator)
+    {
+        for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            batches.Add(new MeshBatch(texture, vertices));
+            List<int>? loop = TraceRegionLoop(level, regionIndex);
+            if (loop is null)
+            {
+                continue;
+            }
+
+            var footprint = new Vector2[loop.Count];
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Vertex vertex = level.Vertices[loop[i]];
+                footprint[i] = new Vector2(vertex.X, vertex.Y);
+            }
+
+            IReadOnlyList<int> triangles = EarClipping.Triangulate(footprint);
+            if (triangles.Count == 0)
+            {
+                continue;
+            }
+
+            Region region = level.Regions[regionIndex];
+            EmitSurface(level, accumulator, loop, triangles, (float)region.FloorHeight, region.FloorTexture, flip: false);
+            EmitSurface(level, accumulator, loop, triangles, (float)region.CeilHeight, region.CeilTexture, flip: true);
+        }
+    }
+
+    private static void EmitSurface(
+        Level level, Accumulator accumulator, List<int> loop, IReadOnlyList<int> triangles, float height, string? texture, bool flip)
+    {
+        (float scaleX, float scaleY) = TextureScale(level, texture);
+        List<RenderVertex> target = accumulator.Bucket(texture);
+
+        for (int i = 0; i < triangles.Count; i += 3)
+        {
+            int a = loop[triangles[i]];
+            int b = loop[triangles[flip ? i + 2 : i + 1]];
+            int c = loop[triangles[flip ? i + 1 : i + 2]];
+            target.Add(SurfaceVertex(level, a, height, scaleX, scaleY));
+            target.Add(SurfaceVertex(level, b, height, scaleX, scaleY));
+            target.Add(SurfaceVertex(level, c, height, scaleX, scaleY));
+        }
+    }
+
+    private static RenderVertex SurfaceVertex(Level level, int vertexIndex, float height, float scaleX, float scaleY)
+    {
+        Vertex vertex = level.Vertices[vertexIndex];
+        return new RenderVertex(vertex.X, height, vertex.Y, vertex.X / scaleX, vertex.Y / scaleY);
+    }
+
+    /// <summary>
+    /// Traces the boundary of a region into a single ordered vertex loop, or returns null
+    /// when the region's walls don't form one clean simple polygon (it is then skipped).
+    /// </summary>
+    private static List<int>? TraceRegionLoop(Level level, int regionIndex)
+    {
+        var adjacency = new Dictionary<int, List<int>>();
+        var edges = new HashSet<(int, int)>();
+
+        foreach (Wall wall in level.Walls)
+        {
+            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2)
+            {
+                continue;
+            }
+
+            (int, int) key = wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1);
+            if (!edges.Add(key))
+            {
+                continue;
+            }
+
+            Connect(adjacency, wall.Vertex1, wall.Vertex2);
+            Connect(adjacency, wall.Vertex2, wall.Vertex1);
         }
 
-        if (untextured.Count > 0)
+        if (edges.Count < 3)
         {
-            batches.Add(new MeshBatch(null, untextured));
+            return null;
         }
 
-        return new LevelMesh(batches);
+        foreach (List<int> neighbours in adjacency.Values)
+        {
+            if (neighbours.Count != 2)
+            {
+                return null; // a junction or dangling edge — not a simple loop
+            }
+        }
+
+        int start = edges.First().Item1;
+        var loop = new List<int> { start };
+        int previous = -1;
+        int current = start;
+        while (true)
+        {
+            List<int> neighbours = adjacency[current];
+            int next = neighbours[0] != previous ? neighbours[0] : neighbours[1];
+            if (next == start)
+            {
+                break;
+            }
+
+            loop.Add(next);
+            if (loop.Count > edges.Count)
+            {
+                return null;
+            }
+
+            previous = current;
+            current = next;
+        }
+
+        return loop.Count == edges.Count ? loop : null; // must be one loop covering every edge
+    }
+
+    private static void Connect(Dictionary<int, List<int>> adjacency, int from, int to)
+    {
+        if (!adjacency.TryGetValue(from, out List<int>? list))
+        {
+            list = [];
+            adjacency[from] = list;
+        }
+
+        list.Add(to);
     }
 
     private static bool TryVertex(Level level, int index, out Vertex vertex)
@@ -85,7 +211,6 @@ public static class MeshBuilder
 
     private static bool TryHeights(Level level, Wall wall, out float floor, out float ceiling)
     {
-        // Span whichever adjacent region is valid (a solid wall has a real region on one side only).
         Region? region = RegionAt(level, wall.LeftRegion) ?? RegionAt(level, wall.RightRegion);
         if (region is null)
         {
@@ -103,7 +228,6 @@ public static class MeshBuilder
 
     private static (float ScaleX, float ScaleY) TextureScale(Level level, string? texture)
     {
-        const float defaultScale = 16f;
         if (texture is not null &&
             level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
             resolved.ScaleX > 0 && resolved.ScaleY > 0)
@@ -111,17 +235,44 @@ public static class MeshBuilder
             return ((float)resolved.ScaleX, (float)resolved.ScaleY);
         }
 
-        return (defaultScale, defaultScale);
+        return (DefaultScale, DefaultScale);
     }
 
-    private static List<RenderVertex> Bucket(Dictionary<string, List<RenderVertex>> map, string key)
+    private sealed class Accumulator
     {
-        if (!map.TryGetValue(key, out List<RenderVertex>? list))
+        private readonly Dictionary<string, List<RenderVertex>> _byTexture = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<RenderVertex> _untextured = [];
+
+        public List<RenderVertex> Bucket(string? texture)
         {
-            list = [];
-            map[key] = list;
+            if (texture is null)
+            {
+                return _untextured;
+            }
+
+            if (!_byTexture.TryGetValue(texture, out List<RenderVertex>? list))
+            {
+                list = [];
+                _byTexture[texture] = list;
+            }
+
+            return list;
         }
 
-        return list;
+        public LevelMesh ToMesh()
+        {
+            var batches = new List<MeshBatch>(_byTexture.Count + 1);
+            foreach ((string texture, List<RenderVertex> vertices) in _byTexture)
+            {
+                batches.Add(new MeshBatch(texture, vertices));
+            }
+
+            if (_untextured.Count > 0)
+            {
+                batches.Add(new MeshBatch(null, _untextured));
+            }
+
+            return new LevelMesh(batches);
+        }
     }
 }

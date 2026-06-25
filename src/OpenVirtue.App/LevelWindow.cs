@@ -276,7 +276,7 @@ internal sealed class LevelWindow : Form
 
     private void BuildGeometry()
     {
-        LevelMesh mesh = MeshBuilder.BuildWalls(_level);
+        LevelMesh mesh = MeshBuilder.Build(_level);
         var vertices = new List<RenderVertex>();
         foreach (MeshBatch batch in mesh.Batches)
         {
