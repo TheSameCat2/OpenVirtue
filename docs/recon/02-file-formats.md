@@ -66,11 +66,13 @@ syntax from the game's own scripts (clean-room).
 - `:` = **label** (jump target, e.g. `doHideStuff:`).
 - `[ ] @ ? ' \` occur **only inside strings/comments** — not bare syntax.
 
-**Status:** ✅ **lexer done** (`OpenVirtue.Formats.Wdl.WdlLexer`), validated — every
-`.wdl` across all six archives tokenizes cleanly. **Next:** parser → AST, then the
-**WDL interpreter** (we interpret, not transpile — [ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)).
-The interpreter's runtime architecture is a **major design decision** (object/skill
-model, action scheduler, fixed-tick loop).
+**Status:** ✅ **lexer + parser done** (`OpenVirtue.Formats.Wdl.WdlLexer` /
+`WdlParser`), validated — every `.wdl` across all six archives tokenizes and parses
+to a balanced generic syntax tree (`WdlItem`/`WdlBlock`: `keyword header (block|;)`).
+**Next:** assemble WDL declarations + WMP geometry into an in-memory level (headless
+level load); then the **WDL interpreter** runtime (we interpret, not transpile —
+[ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)) — its object/skill model,
+action scheduler, and fixed-tick loop are a **major design decision**.
 
 ## `WMP` — compiled/level map (geometry)
 

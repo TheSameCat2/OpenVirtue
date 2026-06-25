@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Text;
 using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wav;
+using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
 using OpenVirtue.Formats.Wrs;
 
@@ -25,6 +27,7 @@ internal static class Cli
                 "pcx" => Pcx(args[1..]),
                 "wmp" => Wmp(args[1..]),
                 "wav" => Wav(args[1..]),
+                "wdl" => Wdl(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -143,6 +146,39 @@ internal static class Cli
         }
     }
 
+    private static int Wdl(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("wdl requires a subcommand and a file path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string path = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                // WDL is DOS text; Latin1 maps every byte 1:1.
+                WdlDocument doc = WdlParser.Parse(Encoding.Latin1.GetString(File.ReadAllBytes(path)));
+                Console.WriteLine($"{Path.GetFileName(path)} — {doc.Items.Count} top-level items, grouped by keyword:");
+                var byKeyword = doc.Items
+                    .Where(i => !i.IsLabel)
+                    .GroupBy(i => i.Keyword.ToUpperInvariant())
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key);
+                foreach (var group in byKeyword)
+                {
+                    Console.WriteLine($"  {group.Key,-18} {group.Count()}");
+                }
+
+                return 0;
+
+            default:
+                return Usage($"Unknown wdl subcommand '{verb}'.");
+        }
+    }
+
     private static void ListEntries(WrsArchive archive, string archivePath)
     {
         Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
@@ -206,6 +242,7 @@ internal static class Cli
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>
+              ovtool wdl info <script.wdl>
 
             Notes:
               These tools operate on game data you supply; no game data ships with
