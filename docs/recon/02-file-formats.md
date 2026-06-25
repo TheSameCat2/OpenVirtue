@@ -69,20 +69,41 @@ together.**
 **Action:** reverse the WMP record layout (region/wall/thing tables) against real
 Saints maps; cross-check field meanings against `BaseObject`'s property list.
 
-## `MDL` — model format
+## Asset inventory (measured from real archives)
 
-Saints (A3) primarily uses sprite billboards, but MDL models may appear. The
-relevant generation is **MDL3** (A4 uses MDL3; A5 uses MDL4/5). Conitec
-**publicly documents MDL5/HMP5** and the older formats
-(`manual.conitec.net/prog_mdlhmp.htm`). MDL is Quake-`.mdl`-derived (vertex frame
-animation). Implement only if real Saints content uses it (confirm during asset
-extraction).
+Using our `OpenVirtue.Tools wrs list`, the actual contents are now known:
 
-## `PCX` — textures & sprites
+| Archive | Entries | PCX | WAV | WDL | WMP | MDL/FLC |
+|---------|--------:|----:|----:|----:|----:|--------:|
+| `START.WRS`  | 4   | 2   | 0   | 1   | 1 | 0 |
+| `apathy.wrs` | 818 | 685 | 109 | 23  | 1 | **0** |
 
-Standard ZSoft **PCX** (8-bit, RLE, paletted). Well-documented public format;
-trivial to implement ourselves. Watch for a **shared global palette** vs.
-per-file palettes, and for sprite-sheet / billboard-frame conventions.
+**Key finding: Saints of Virtue is sprite-only.** The biggest gameplay level
+contains **no MDL models and no FLC animations** — only PCX images, WAV sounds,
+WDL scripts, and a single WMP map. Implications:
+
+- The renderer needs **textured walls/floors/sky + billboard sprites only** —
+  **no 3D model pipeline** is required for parity. (Big simplification.)
+- Format priority is now: **PCX** (the dominant asset) → WDL → WMP → WAV.
+- Each level is one `WMP` map plus its scripts and assets, all in one `WRS`.
+
+(To confirm globally, inventory the remaining levels too; none are expected to
+introduce models.)
+
+## `MDL` / `FLC` — models & FLIC animation
+
+**Not used by Saints (confirmed absent from `apathy.wrs`).** Deprioritized; only
+revisit if a later level inventory turns one up. If ever needed, the relevant
+model generation is MDL3-era and Conitec publicly documents the MDL5/HMP5 formats
+(`manual.conitec.net/prog_mdlhmp.htm`).
+
+## `PCX` — textures & sprites *(next reader — M2)*
+
+Standard ZSoft **PCX** (8-bit, RLE, paletted) — 685 of 818 entries in apathy.
+Well-documented public format; implement clean-room. Watch for the **256-color
+palette block** appended at end-of-file (after a `0x0C` marker), per-file vs.
+shared palettes (note the recurring `palblack.pcx`/`palred.pcx` — likely shared
+palettes), and sprite/billboard-frame conventions.
 
 ## `WAV` — sounds
 

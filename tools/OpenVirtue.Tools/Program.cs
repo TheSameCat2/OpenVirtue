@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The OpenVirtue Authors
+
+using OpenVirtue.Formats.Wrs;
+
+return Cli.Run(args);
+
+internal static class Cli
+{
+    public static int Run(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            return Usage();
+        }
+
+        try
+        {
+            return args[0].ToLowerInvariant() switch
+            {
+                "wrs" => Wrs(args[1..]),
+                "-h" or "--help" or "help" => Usage(),
+                _ => Usage($"Unknown command '{args[0]}'."),
+            };
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException)
+        {
+            Console.Error.WriteLine($"error: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static int Wrs(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("wrs requires a subcommand and an archive path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string archivePath = args[1];
+        WrsArchive archive = WrsArchive.ReadFile(archivePath);
+
+        switch (verb)
+        {
+            case "list":
+                ListEntries(archive, archivePath);
+                return 0;
+
+            case "extract":
+                string outDir = args.Length >= 3 ? args[2] : Path.GetFileNameWithoutExtension(archivePath);
+                ExtractEntries(archive, outDir);
+                return 0;
+
+            default:
+                return Usage($"Unknown wrs subcommand '{verb}'.");
+        }
+    }
+
+    private static void ListEntries(WrsArchive archive, string archivePath)
+    {
+        Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
+        Console.WriteLine($"{"name",-16} {"compressed",12} {"size",12}");
+        Console.WriteLine(new string('-', 42));
+
+        long totalCompressed = 0;
+        long totalSize = 0;
+        var byExtension = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WrsEntry entry in archive.Entries)
+        {
+            Console.WriteLine($"{entry.Name,-16} {entry.CompressedSize,12:n0} {entry.UncompressedSize,12:n0}");
+            totalCompressed += entry.CompressedSize;
+            totalSize += entry.UncompressedSize;
+
+            string ext = Path.GetExtension(entry.Name);
+            ext = string.IsNullOrEmpty(ext) ? "(none)" : ext.ToLowerInvariant();
+            byExtension[ext] = byExtension.GetValueOrDefault(ext) + 1;
+        }
+
+        Console.WriteLine(new string('-', 42));
+        Console.WriteLine($"{"total",-16} {totalCompressed,12:n0} {totalSize,12:n0}");
+        Console.WriteLine();
+        Console.WriteLine("by type: " + string.Join(", ", byExtension.Select(kv => $"{kv.Key}={kv.Value}")));
+    }
+
+    private static void ExtractEntries(WrsArchive archive, string outDir)
+    {
+        Directory.CreateDirectory(outDir);
+        foreach (WrsEntry entry in archive.Entries)
+        {
+            // Guard against path traversal from archive-controlled names.
+            string safeName = Path.GetFileName(entry.Name);
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                continue;
+            }
+
+            string destination = Path.Combine(outDir, safeName);
+            File.WriteAllBytes(destination, entry.GetData());
+        }
+
+        Console.WriteLine($"Extracted {archive.Entries.Count} entries to {outDir}");
+    }
+
+    private static int Usage(string? error = null)
+    {
+        if (error is not null)
+        {
+            Console.Error.WriteLine($"error: {error}");
+        }
+
+        Console.WriteLine(
+            """
+            OpenVirtue.Tools — inspection utilities for Acknex-3 game data
+
+            Usage:
+              ovtool wrs list <archive.wrs>
+              ovtool wrs extract <archive.wrs> [output-dir]
+
+            Notes:
+              These tools operate on game data you supply; no game data ships with
+              OpenVirtue. Extracted files are the user's own copy.
+            """);
+
+        return error is null ? 0 : 2;
+    }
+}
