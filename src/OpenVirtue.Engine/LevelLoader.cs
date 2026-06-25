@@ -85,7 +85,8 @@ public static class LevelLoader
             : null;
 
         return new Level(
-            name, vertices, regions, walls, things, actors, start, GatherSkills(program), BuildTextures(declarations));
+            name, vertices, regions, walls, things, actors, start,
+            GatherSkills(program), BuildTextures(declarations), declarations.Actions);
     }
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
