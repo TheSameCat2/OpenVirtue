@@ -11,6 +11,7 @@ dotnet run --project tools/OpenVirtue.Tools -- wrs extract <archive.wrs> [output
 dotnet run --project tools/OpenVirtue.Tools -- pcx info     <image.pcx>
 dotnet run --project tools/OpenVirtue.Tools -- wmp info     <map.wmp>
 dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
+dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -19,5 +20,5 @@ dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
 - `pcx info` — print a PCX image's dimensions and a palette sample.
 - `wmp info` — print a map's vertex/region/wall/thing/actor counts and player start.
 - `wav info` — print a sound's channels/rate/bit-depth and duration.
-
-Planned subcommands as readers land: `wdl`.
+- `wdl info` — parse a script and summarize its top-level items by keyword.
+- `level info` — load a whole level (WDL + WMP) and report its geometry, placements, and skills.

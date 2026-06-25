@@ -35,6 +35,23 @@ and validate against real game data used only locally (never committed).
   retail archives decodes to a `Width*Height` index buffer + 256-color palette via
   the guarded integration test.
 
+## WDL parser (`Wdl/WdlParser.cs`, `Wdl/WdlItem.cs`)
+
+- **Approach:** a generic syntax tree — each item is `keyword header… ( { block } | ; )`
+  or a `name:` label. It captures structure only (declarations, ACTION bodies, nested
+  IF blocks, statements all look the same), deferring statement/expression semantics to
+  later layers. Derived from the observed language, not from firoball's CC-BY-NC grammar.
+- **Confirmed against real data:** every `.wdl` across all six archives parses to a
+  balanced tree (guarded integration test).
+
+## WDL preprocessor (`Wdl/WdlPreprocessor.cs`)
+
+- **Behaviour:** flattens a level's main script by resolving `INCLUDE`s (recursively,
+  include-once) and evaluating nested `IFDEF`/`IFELSE`/`ENDIF` + `DEFINE`. Derived from
+  the game's own resolution blocks (e.g. APATHY.WDL defaults to defining `HIRES`).
+- **Confirmed against real data:** flattening real levels resolves their `INCLUDE`s
+  (apathy's 21 → 400+ skills) with the expected default symbols.
+
 ## WDL lexer (`Wdl/WdlLexer.cs`, `Wdl/WdlToken.cs`)
 
 - **Source of truth:** the language's surface syntax, observed from the game's own

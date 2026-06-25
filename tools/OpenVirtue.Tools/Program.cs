@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Text;
+using OpenVirtue.Engine;
 using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wav;
+using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
 using OpenVirtue.Formats.Wrs;
 
@@ -25,6 +28,8 @@ internal static class Cli
                 "pcx" => Pcx(args[1..]),
                 "wmp" => Wmp(args[1..]),
                 "wav" => Wav(args[1..]),
+                "wdl" => Wdl(args[1..]),
+                "level" => Level(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -143,6 +148,76 @@ internal static class Cli
         }
     }
 
+    private static int Wdl(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("wdl requires a subcommand and a file path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string path = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                // WDL is DOS text; Latin1 maps every byte 1:1.
+                WdlDocument doc = WdlParser.Parse(Encoding.Latin1.GetString(File.ReadAllBytes(path)));
+                Console.WriteLine($"{Path.GetFileName(path)} — {doc.Items.Count} top-level items, grouped by keyword:");
+                var byKeyword = doc.Items
+                    .Where(i => !i.IsLabel)
+                    .GroupBy(i => i.Keyword.ToUpperInvariant())
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key);
+                foreach (var group in byKeyword)
+                {
+                    Console.WriteLine($"  {group.Key,-18} {group.Count()}");
+                }
+
+                return 0;
+
+            default:
+                return Usage($"Unknown wdl subcommand '{verb}'.");
+        }
+    }
+
+    private static int Level(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("level requires a subcommand and an archive path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string archivePath = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                WrsArchive archive = WrsArchive.ReadFile(archivePath);
+                // Convention: a level's main script is named after its archive (apathy.wrs -> APATHY.WDL).
+                string mainWdl = args.Length >= 3
+                    ? args[2]
+                    : Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
+
+                OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
+                Console.WriteLine($"{Path.GetFileName(archivePath)} -> {level.Name}");
+                Console.WriteLine(
+                    $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
+                    $"{level.Things.Count} things, {level.Actors.Count} actors");
+                Console.WriteLine($"  {level.Skills.Count} global skills");
+                if (level.PlayerStart is { } ps)
+                {
+                    Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
+                }
+
+                return 0;
+
+            default:
+                return Usage($"Unknown level subcommand '{verb}'.");
+        }
+    }
+
     private static void ListEntries(WrsArchive archive, string archivePath)
     {
         Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
@@ -206,6 +281,8 @@ internal static class Cli
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>
+              ovtool wdl info <script.wdl>
+              ovtool level info <archive.wrs> [main.wdl]
 
             Notes:
               These tools operate on game data you supply; no game data ships with

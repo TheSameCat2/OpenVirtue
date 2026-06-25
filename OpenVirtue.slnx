@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/OpenVirtue.Engine/OpenVirtue.Engine.csproj" />
     <Project Path="src/OpenVirtue.Formats/OpenVirtue.Formats.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/OpenVirtue.Engine.Tests/OpenVirtue.Engine.Tests.csproj" />
     <Project Path="tests/OpenVirtue.Formats.Tests/OpenVirtue.Formats.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
