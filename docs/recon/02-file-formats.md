@@ -74,15 +74,28 @@ model, action scheduler, fixed-tick loop).
 
 ## `WMP` — compiled/level map (geometry)
 
-Binary map: REGIONs, WALLs, THINGs, ways, and references to textures/WDL objects.
-firoball's **`WMPio`** reads "any version" into A3 map-object classes and writes
-the latest — again a **reference** (CC BY-NC) for the binary layout, not code to
-copy. Note `WMPio`'s own caveat: a WMP is meaningless without the WDL object
-definitions it references, so the **WMP and WDL readers must be developed
-together.**
+**Surprise: the WMP is a TEXT format**, not binary — emitted by **WED** (the 3D
+GameStudio World EDitor, v3.29). Records are whitespace/tab-delimited and
+`;`-terminated, with `#` line comments (the `;#n` suffix is just the record index).
+Across all six maps the record set is exactly:
 
-**Action:** reverse the WMP record layout (region/wall/thing tables) against real
-Saints maps; cross-check field meanings against `BaseObject`'s property list.
+```
+VERTEX        x y z
+REGION        name floor_hgt ceil_hgt
+WALL          name vertex1 vertex2 region1 region2 offsx offsy
+THING / ACTOR name x y angle region
+PLAYER_START  x y angle region
+```
+
+Indices reference the vertex/region tables in declaration order. A WALL has a
+region on each side (a **portal** when both are real regions). THING/ACTOR `name`
+fields tie placements to **WDL-defined object types** — so rendering/behaviour
+still needs the WDL definitions, but the **geometry parses standalone**.
+
+**Status:** ✅ **Done** (`OpenVirtue.Formats.Wmp.WmpMap`) — all six maps parse;
+apathy = 5192 vertices / 1073 regions / 5894 walls / 492 things / 138 actors, and
+every wall references valid vertices. (firoball's `WMPio` is CC-BY-NC and was not
+consulted — we derived the format from the game's own maps.)
 
 ## Asset inventory (measured from real archives)
 

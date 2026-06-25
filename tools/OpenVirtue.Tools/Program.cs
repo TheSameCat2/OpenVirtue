@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Wmp;
 using OpenVirtue.Formats.Wrs;
 
 return Cli.Run(args);
@@ -21,6 +22,7 @@ internal static class Cli
             {
                 "wrs" => Wrs(args[1..]),
                 "pcx" => Pcx(args[1..]),
+                "wmp" => Wmp(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -81,6 +83,35 @@ internal static class Cli
 
             default:
                 return Usage($"Unknown pcx subcommand '{verb}'.");
+        }
+    }
+
+    private static int Wmp(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("wmp requires a subcommand and a file path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string path = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                WmpMap map = WmpMap.ReadFile(path);
+                Console.WriteLine(
+                    $"{Path.GetFileName(path)} — {map.Vertices.Count} vertices, {map.Regions.Count} regions, " +
+                    $"{map.Walls.Count} walls, {map.Things.Count} things, {map.Actors.Count} actors");
+                if (map.PlayerStart is { } ps)
+                {
+                    Console.WriteLine($"player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
+                }
+
+                return 0;
+
+            default:
+                return Usage($"Unknown wmp subcommand '{verb}'.");
         }
     }
 
@@ -145,6 +176,7 @@ internal static class Cli
               ovtool wrs list <archive.wrs>
               ovtool wrs extract <archive.wrs> [output-dir]
               ovtool pcx info <image.pcx>
+              ovtool wmp info <map.wmp>
 
             Notes:
               These tools operate on game data you supply; no game data ships with

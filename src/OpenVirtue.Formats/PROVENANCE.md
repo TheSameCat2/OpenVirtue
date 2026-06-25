@@ -48,6 +48,19 @@ and validate against real game data used only locally (never committed).
 - **Confirmed against real data:** every `.wdl` across all six archives tokenizes
   to end-of-file via the guarded integration test (real files local-only).
 
+## WMP map (`Wmp/WmpMap.cs`, `Wmp/WmpTypes.cs`)
+
+- **Source of truth:** the game's own `.WMP` files, which are **text** emitted by
+  WED (a self-describing format with column-header comments). We derived the record
+  grammar by reading the maps directly — not from firoball's `WMPio` (CC-BY-NC, not
+  consulted).
+- **Records** (whitespace-delimited, `;`-terminated, `#` comments): `VERTEX x y z`;
+  `REGION name floor ceil`; `WALL name v1 v2 r1 r2 offsx offsy`; `THING`/`ACTOR
+  name x y angle region`; `PLAYER_START x y angle region`. Confirmed to be the full
+  set across all six maps.
+- **Confirmed against real data:** all six maps parse; apathy's record counts are
+  pinned and every wall references valid vertices (guarded integration test).
+
 ## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
 
 - **Source of truth:** the WRS record structure — fixed records of `name[13]` +
