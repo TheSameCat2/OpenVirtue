@@ -36,11 +36,17 @@ public static class MeshBuilder
             float length = MathF.Sqrt((dx * dx) + (dz * dz));
             float height = ceiling - floor;
 
+            // Texture coordinates in tile units: world distance / texture scale (so the
+            // texture repeats with a wrap sampler). Default scale when the texture is unknown.
+            (float scaleX, float scaleY) = TextureScale(level, wall.Texture);
+            float u = length / scaleX;
+            float v = height / scaleY;
+
             // Quad corners in world space (x, y-up, z); WMP (x, y) -> world (x, z).
             var bottomLeft = new RenderVertex(v1.X, floor, v1.Y, 0, 0);
-            var bottomRight = new RenderVertex(v2.X, floor, v2.Y, length, 0);
-            var topRight = new RenderVertex(v2.X, ceiling, v2.Y, length, height);
-            var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, 0, height);
+            var bottomRight = new RenderVertex(v2.X, floor, v2.Y, u, 0);
+            var topRight = new RenderVertex(v2.X, ceiling, v2.Y, u, v);
+            var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, 0, v);
 
             List<RenderVertex> target = wall.Texture is { } texture ? Bucket(byTexture, texture) : untextured;
             target.Add(bottomLeft);
@@ -94,6 +100,19 @@ public static class MeshBuilder
 
     private static Region? RegionAt(Level level, int index) =>
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
+
+    private static (float ScaleX, float ScaleY) TextureScale(Level level, string? texture)
+    {
+        const float defaultScale = 16f;
+        if (texture is not null &&
+            level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
+            resolved.ScaleX > 0 && resolved.ScaleY > 0)
+        {
+            return ((float)resolved.ScaleX, (float)resolved.ScaleY);
+        }
+
+        return (defaultScale, defaultScale);
+    }
 
     private static List<RenderVertex> Bucket(Dictionary<string, List<RenderVertex>> map, string key)
     {
