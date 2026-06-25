@@ -7,31 +7,34 @@ document the layout here as we learn it.
 
 ## `WRS` — Acknex-3 compressed resource archive
 
-The container that ships the game's content. From the SaintsX QuickBMS script
-(`_research/SaintsX113/extract-wrs.bms`) the structure is fully known:
+The container that ships the game's content. Structure derived from the SaintsX
+QuickBMS script (`_research/SaintsX113/extract-wrs.bms`) and **confirmed against
+the real retail archives** — implemented and validated in `OpenVirtue.Formats`:
 
 ```
 big-endian
-asize        = total archive size (u32)
-repeat until offset >= asize:
-    name     = 13-byte fixed string (filename)
+repeat while offset < fileSize:          // no file header; records start at offset 0
+    name     = 13-byte fixed string (NUL-padded filename)
     zsize    = u32  (compressed size)
     size     = u32  (uncompressed size)
     data     = zsize bytes, LZSS-compressed   (comtype = lzss)
-    advance to next record
+    advance offset by zsize
 ```
 
-- **Compression: LZSS.** We must implement an LZSS decompressor matching
-  Acknex's window/flag conventions. (QuickBMS's `comtype lzss` is the reference
-  behavior to match; rickomax/morkt's `GameRes.Compression` is a code reference
-  but check its license before borrowing.)
+- **There is no leading size field.** The QuickBMS recipe's `get asize asize`
+  reads the *file-size pseudo-value* (consuming zero bytes); it only bounds the
+  loop. (Original recon mis-read this as a 4-byte header — corrected after dumping
+  real bytes: the first record begins at offset 0 with `palblack.pcx`, 145 → 961.)
+- **Compression: LZSS.** Implemented clean-room from the public-domain algorithm;
+  the canonical variant (4096 window, LSB-first flags, etc.) byte-matches the
+  game. Every entry in all six retail `.WRS` files decompresses to its exact
+  stated size. See `src/OpenVirtue.Formats/PROVENANCE.md`.
 - Output members are `WDL`, `WMP`, `PCX`, `WAV`, etc.
-- Saints' `WRS` files were noted as "encrypted/packaged"; in practice the
-  QuickBMS script decompresses them with plain LZSS, so likely just compressed,
-  not encrypted. Verify on real bytes.
+- Saints' `WRS` files were noted as "encrypted/packaged"; in practice they are
+  plain LZSS — **not encrypted** (confirmed: no circumvention, clear of DMCA §1201).
 
-**Action:** implement `WrsArchive` reader (enumerate + decompress) as the very
-first milestone — everything else depends on getting bytes out.
+**Status:** ✅ **Done** — `WrsArchive`/`WrsEntry` enumerate + decompress, validated
+against real data. This was the first milestone; everything else builds on it.
 
 ## `WDL` — Wad Definition Language (scripts)
 
@@ -46,44 +49,100 @@ gallery, mall, lonely, despair, <WORLD>.wdl   (+ per-world *snd.wdl)
 ```
 
 Grammar reference: firoball's **`WDL2CS`** contains a complete WDL grammar
-(AtoCC/Lex-Yacc) — invaluable as a **specification reference** for writing our
-own parser, but it is **CC BY-NC**, so read-to-understand only; write our own
-grammar. WDL syntax visible in the patch diffs uses `RULE`, `IF_EQUAL`, `SET`,
-`IF (...) { }`, skill arithmetic, etc.
+(AtoCC/Lex-Yacc). It is **CC BY-NC and was NOT consulted or copied** — we derive
+syntax from the game's own scripts (clean-room).
 
-**Action:** write our own WDL lexer/parser → AST → interpreter. (We interpret,
-we don't transpile — see strategy doc for why.)
+**Syntax facts learned by tokenizing all of the game's real scripts:**
+
+- Comments: `//` and `#` line comments; `/* */` block comments.
+- Top-level declarations with `{ }` property blocks: `REGION`, `WALL`, `TEXTURE`,
+  `BMAP`, `PALETTE`, `ACTION`, plus directives (`VIDEO`, `MAPFILE`, `BIND`,
+  `PATH`, `STRING`, `SYNONYM`, `DEFINE`, `IFDEF`/`IFELSE`, …).
+- `"strings"` may **span multiple physical lines** (multi-line sign/scroll text);
+  backslashes are literal (no escape processing at lex time — `\n` is two chars).
+- `<file.pcx>` file references; `<`/`>` double as comparison operators
+  (disambiguated by look-ahead).
+- `.` = **member access** (`object.skill`, e.g. `worldlyHead.INVISIBLE`).
+- `:` = **label** (jump target, e.g. `doHideStuff:`).
+- `[ ] @ ? ' \` occur **only inside strings/comments** — not bare syntax.
+
+**Status:** ✅ **lexer done** (`OpenVirtue.Formats.Wdl.WdlLexer`), validated — every
+`.wdl` across all six archives tokenizes cleanly. **Next:** parser → AST, then the
+**WDL interpreter** (we interpret, not transpile — [ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)).
+The interpreter's runtime architecture is a **major design decision** (object/skill
+model, action scheduler, fixed-tick loop).
 
 ## `WMP` — compiled/level map (geometry)
 
-Binary map: REGIONs, WALLs, THINGs, ways, and references to textures/WDL objects.
-firoball's **`WMPio`** reads "any version" into A3 map-object classes and writes
-the latest — again a **reference** (CC BY-NC) for the binary layout, not code to
-copy. Note `WMPio`'s own caveat: a WMP is meaningless without the WDL object
-definitions it references, so the **WMP and WDL readers must be developed
-together.**
+**Surprise: the WMP is a TEXT format**, not binary — emitted by **WED** (the 3D
+GameStudio World EDitor, v3.29). Records are whitespace/tab-delimited and
+`;`-terminated, with `#` line comments (the `;#n` suffix is just the record index).
+Across all six maps the record set is exactly:
 
-**Action:** reverse the WMP record layout (region/wall/thing tables) against real
-Saints maps; cross-check field meanings against `BaseObject`'s property list.
+```
+VERTEX        x y z
+REGION        name floor_hgt ceil_hgt
+WALL          name vertex1 vertex2 region1 region2 offsx offsy
+THING / ACTOR name x y angle region
+PLAYER_START  x y angle region
+```
 
-## `MDL` — model format
+Indices reference the vertex/region tables in declaration order. A WALL has a
+region on each side (a **portal** when both are real regions). THING/ACTOR `name`
+fields tie placements to **WDL-defined object types** — so rendering/behaviour
+still needs the WDL definitions, but the **geometry parses standalone**.
 
-Saints (A3) primarily uses sprite billboards, but MDL models may appear. The
-relevant generation is **MDL3** (A4 uses MDL3; A5 uses MDL4/5). Conitec
-**publicly documents MDL5/HMP5** and the older formats
-(`manual.conitec.net/prog_mdlhmp.htm`). MDL is Quake-`.mdl`-derived (vertex frame
-animation). Implement only if real Saints content uses it (confirm during asset
-extraction).
+**Status:** ✅ **Done** (`OpenVirtue.Formats.Wmp.WmpMap`) — all six maps parse;
+apathy = 5192 vertices / 1073 regions / 5894 walls / 492 things / 138 actors, and
+every wall references valid vertices. (firoball's `WMPio` is CC-BY-NC and was not
+consulted — we derived the format from the game's own maps.)
 
-## `PCX` — textures & sprites
+## Asset inventory (measured from real archives)
 
-Standard ZSoft **PCX** (8-bit, RLE, paletted). Well-documented public format;
-trivial to implement ourselves. Watch for a **shared global palette** vs.
-per-file palettes, and for sprite-sheet / billboard-frame conventions.
+Using our `OpenVirtue.Tools wrs list`, the actual contents are now known:
+
+| Archive | Entries | PCX | WAV | WDL | WMP | MDL/FLC |
+|---------|--------:|----:|----:|----:|----:|--------:|
+| `START.WRS`  | 4   | 2   | 0   | 1   | 1 | 0 |
+| `apathy.wrs` | 818 | 685 | 109 | 23  | 1 | **0** |
+
+**Key finding: Saints of Virtue is sprite-only.** The biggest gameplay level
+contains **no MDL models and no FLC animations** — only PCX images, WAV sounds,
+WDL scripts, and a single WMP map. Implications:
+
+- The renderer needs **textured walls/floors/sky + billboard sprites only** —
+  **no 3D model pipeline** is required for parity. (Big simplification.)
+- Format priority is now: **PCX** (the dominant asset) → WDL → WMP → WAV.
+- Each level is one `WMP` map plus its scripts and assets, all in one `WRS`.
+
+(To confirm globally, inventory the remaining levels too; none are expected to
+introduce models.)
+
+## `MDL` / `FLC` — models & FLIC animation
+
+**Not used by Saints (confirmed absent from `apathy.wrs`).** Deprioritized; only
+revisit if a later level inventory turns one up. If ever needed, the relevant
+model generation is MDL3-era and Conitec publicly documents the MDL5/HMP5 formats
+(`manual.conitec.net/prog_mdlhmp.htm`).
+
+## `PCX` — textures & sprites *(next reader — M2)*
+
+Standard ZSoft **PCX** (8-bit, RLE, paletted) — 685 of 818 entries in apathy.
+Well-documented public format; implement clean-room. Watch for the **256-color
+palette block** appended at end-of-file (after a `0x0C` marker), per-file vs.
+shared palettes (note the recurring `palblack.pcx`/`palred.pcx` — likely shared
+palettes), and sprite/billboard-frame conventions.
+
+**Status:** ✅ **Done** (`OpenVirtue.Formats.Pcx.PcxImage`) — validated against
+every PCX in the archives. Observed: **palette index 0 is bright green `(0,255,0)`**,
+the likely **sprite color-key** for transparency — the renderer should treat
+index 0 as transparent for billboard sprites (confirm per-sprite during rendering).
 
 ## `WAV` — sounds
 
-Standard PCM WAV. Trivial.
+Standard RIFF/WAVE PCM. **Status:** ✅ **Done** (`OpenVirtue.Formats.Wav.WavSound`) —
+all sounds are uncompressed PCM (format 1; mostly 8-bit mono 11025 Hz); every
+`.wav` in the archives decodes.
 
 ## `WDF` / `MDF` (e.g. `WWRUN.WDF`, `WWRUN.MDF`)
 

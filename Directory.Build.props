@@ -1,0 +1,25 @@
+<Project>
+
+  <!-- Common settings for every project in OpenVirtue. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Don't require an XML doc comment on every public member (yet). -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!-- Package/assembly metadata (project name & license per ADR-0003/0004). -->
+  <PropertyGroup>
+    <Product>OpenVirtue</Product>
+    <Company>OpenVirtue</Company>
+    <Authors>The OpenVirtue Authors</Authors>
+    <Copyright>Copyright (C) 2026 The OpenVirtue Authors</Copyright>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>
