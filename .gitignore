@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Research material & copyrighted game assets — NEVER commit these.
+# This folder holds the original game, the SaintsX fan patch, and third-party
+# reference code, included on this machine for study only. Keeping it out of
+# version control is both a legal requirement (we do not redistribute game
+# files) and a clean-room hygiene measure (the distributed engine must not
+# embed reference-derived code or assets).
+# ─────────────────────────────────────────────────────────────────────────────
+/_research/
+
+# Stray copies of original game data, anywhere in the tree
+*.wrs
+*.WRS
+*.wdl
+*.WDL
+*.wmp
+*.WMP
+*.wdf
+*.WDF
+*.mdf
+*.MDF
+*.mdl
+*.MDL
+*.wad
+*.WAD
+*.pcx
+*.PCX
+*.smk
+*.SMK
+VRUN.EXE
+WVRUN.EXE
+vrun.exe
+wvrun.exe
+
+# ───────────────────────────── .NET / build ─────────────────────────────────
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.user
+*.suo
+.vs/
+artifacts/
+*.nupkg
+
+# ───────────────────────────── Tooling / OS ─────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+Thumbs.db
+desktop.ini
+.DS_Store
