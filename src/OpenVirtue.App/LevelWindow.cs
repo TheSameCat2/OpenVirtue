@@ -16,15 +16,17 @@ using static Vortice.DXGI.DXGI;
 namespace OpenVirtue.App;
 
 /// <summary>
-/// A WinForms window hosting a Direct3D 11 view of a loaded level. The first cut draws the
-/// wall geometry flat-shaded (banded by wall length) with a depth buffer and a fly camera —
-/// enough to navigate the level's structure. Textures are a follow-up.
+/// A WinForms window hosting a Direct3D 11 view of a loaded level: the wall geometry,
+/// textured from the level's PCX bitmaps, with a depth buffer and a fly camera.
 /// </summary>
 internal sealed class LevelWindow : Form
 {
     private const string ShaderSource =
         """
         cbuffer Frame : register(b0) { float4x4 ViewProjection; };
+        Texture2D Diffuse : register(t0);
+        SamplerState Sampler : register(s0);
+
         struct VSInput  { float3 pos : POSITION; float2 uv : TEXCOORD0; };
         struct VSOutput { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
 
@@ -38,18 +40,18 @@ internal sealed class LevelWindow : Form
 
         float4 PSMain(VSOutput input) : SV_Target
         {
-            // Banded shading along the wall so geometry is legible without textures.
-            float band = 0.45 + 0.40 * frac(input.uv.x * 0.02);
-            float vshade = 0.7 + 0.3 * saturate(input.uv.y * 0.05);
-            float s = band * vshade;
-            return float4(s, s * 0.95, s * 0.85, 1.0);
+            float3 color = Diffuse.Sample(Sampler, input.uv).rgb;
+            return float4(color, 1.0);
         }
         """;
 
     private readonly Level _level;
+    private readonly IReadOnlyDictionary<string, TextureImage> _textureImages;
     private readonly Camera _camera = new();
     private readonly HashSet<Keys> _keysDown = [];
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
+    private readonly List<(int Start, int Count, string? Texture)> _batches = [];
+    private readonly Dictionary<string, ID3D11ShaderResourceView> _textureViews = new(StringComparer.OrdinalIgnoreCase);
 
     private ID3D11Device _device = null!;
     private ID3D11DeviceContext _context = null!;
@@ -64,18 +66,20 @@ internal sealed class LevelWindow : Form
     private ID3D11Buffer _constantBuffer = null!;
     private ID3D11RasterizerState _rasterizer = null!;
     private ID3D11DepthStencilState _depthState = null!;
+    private ID3D11SamplerState _sampler = null!;
+    private ID3D11ShaderResourceView _defaultView = null!;
     private int _vertexCount;
 
     private Point _lastMouse;
     private bool _dragging;
 
-    public LevelWindow(Level level)
+    public LevelWindow(Level level, IReadOnlyDictionary<string, TextureImage> textures)
     {
         _level = level;
+        _textureImages = textures;
         Text = $"OpenVirtue — {level.Name}";
         ClientSize = new System.Drawing.Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
-        DoubleBuffered = false;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.Opaque, true);
         PlaceCameraAtStart();
     }
@@ -90,6 +94,7 @@ internal sealed class LevelWindow : Form
     {
         base.OnHandleCreated(e);
         InitializeDirect3D();
+        LoadTextures();
         BuildGeometry();
         _timer.Tick += (_, _) => RenderFrame();
         _timer.Start();
@@ -176,6 +181,14 @@ internal sealed class LevelWindow : Form
             DepthClipEnable = true,
         });
         _depthState = _device.CreateDepthStencilState(DepthStencilDescription.Default);
+        _sampler = _device.CreateSamplerState(new SamplerDescription
+        {
+            Filter = Filter.MinMagMipLinear,
+            AddressU = TextureAddressMode.Wrap,
+            AddressV = TextureAddressMode.Wrap,
+            AddressW = TextureAddressMode.Wrap,
+            MaxLOD = float.MaxValue,
+        });
 
         ReadOnlyMemory<byte> vsBytecode = Compiler.Compile(ShaderSource, "VSMain", "level.hlsl", "vs_5_0");
         ReadOnlyMemory<byte> psBytecode = Compiler.Compile(ShaderSource, "PSMain", "level.hlsl", "ps_5_0");
@@ -220,24 +233,71 @@ internal sealed class LevelWindow : Form
         CreateSizedResources();
     }
 
+    private void LoadTextures()
+    {
+        _defaultView = UploadTexture(new TextureImage(1, 1, [255, 255, 255, 255]));
+        foreach ((string name, TextureImage image) in _textureImages)
+        {
+            try
+            {
+                _textureViews[name] = UploadTexture(image);
+            }
+            catch
+            {
+                // Skip a texture that fails to upload rather than failing the whole view.
+            }
+        }
+    }
+
+    private ID3D11ShaderResourceView UploadTexture(TextureImage image)
+    {
+        var description = new Texture2DDescription
+        {
+            Width = (uint)image.Width,
+            Height = (uint)image.Height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.R8G8B8A8_UNorm,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Immutable,
+            BindFlags = BindFlags.ShaderResource,
+        };
+
+        unsafe
+        {
+            fixed (byte* pixels = image.Rgba)
+            {
+                var data = new SubresourceData((nint)pixels, (uint)(image.Width * 4));
+                using ID3D11Texture2D texture = _device.CreateTexture2D(description, [data]);
+                return _device.CreateShaderResourceView(texture);
+            }
+        }
+    }
+
     private void BuildGeometry()
     {
         LevelMesh mesh = MeshBuilder.BuildWalls(_level);
-        RenderVertex[] vertices = mesh.Batches.SelectMany(b => b.Vertices).ToArray();
-        _vertexCount = vertices.Length;
+        var vertices = new List<RenderVertex>();
+        foreach (MeshBatch batch in mesh.Batches)
+        {
+            _batches.Add((vertices.Count, batch.Vertices.Count, batch.Texture));
+            vertices.AddRange(batch.Vertices);
+        }
+
+        _vertexCount = vertices.Count;
         if (_vertexCount == 0)
         {
             return;
         }
 
         _vertexBuffer = _device.CreateBuffer(
-            vertices.AsSpan(),
-            new BufferDescription((uint)(vertices.Length * Marshal.SizeOf<RenderVertex>()), BindFlags.VertexBuffer, ResourceUsage.Immutable));
+            vertices.ToArray().AsSpan(),
+            new BufferDescription((uint)(_vertexCount * Marshal.SizeOf<RenderVertex>()), BindFlags.VertexBuffer, ResourceUsage.Immutable));
     }
 
     private void UpdateCamera()
     {
-        float speed = (_keysDown.Contains(Keys.ShiftKey) ? 120f : 40f);
+        float speed = _keysDown.Contains(Keys.ShiftKey) ? 120f : 40f;
         if (_keysDown.Contains(Keys.W)) _camera.MoveForward(speed);
         if (_keysDown.Contains(Keys.S)) _camera.MoveForward(-speed);
         if (_keysDown.Contains(Keys.A)) _camera.MoveRight(-speed);
@@ -272,8 +332,17 @@ internal sealed class LevelWindow : Form
         _context.VSSetShader(_vertexShader);
         _context.VSSetConstantBuffer(0, _constantBuffer);
         _context.PSSetShader(_pixelShader);
+        _context.PSSetSampler(0, _sampler);
 
-        _context.Draw((uint)_vertexCount, 0);
+        foreach ((int start, int count, string? texture) in _batches)
+        {
+            ID3D11ShaderResourceView view = texture is not null && _textureViews.TryGetValue(texture, out ID3D11ShaderResourceView? found)
+                ? found
+                : _defaultView;
+            _context.PSSetShaderResource(0, view);
+            _context.Draw((uint)count, (uint)start);
+        }
+
         _swapChain.Present(1, PresentFlags.None);
     }
 
@@ -282,6 +351,13 @@ internal sealed class LevelWindow : Form
         if (disposing)
         {
             _timer.Dispose();
+            foreach (ID3D11ShaderResourceView view in _textureViews.Values)
+            {
+                view.Dispose();
+            }
+
+            _defaultView?.Dispose();
+            _sampler?.Dispose();
             _vertexBuffer?.Dispose();
             _constantBuffer?.Dispose();
             _inputLayout?.Dispose();

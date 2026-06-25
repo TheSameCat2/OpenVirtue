@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using OpenVirtue.Engine.Map;
+using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine;
 
@@ -21,7 +22,8 @@ public sealed class Level
         IReadOnlyList<Actor> actors,
         PlayerStart? playerStart,
         IReadOnlyDictionary<string, double> skills,
-        IReadOnlyDictionary<string, LevelTexture> textures)
+        IReadOnlyDictionary<string, LevelTexture> textures,
+        IReadOnlyDictionary<string, WdlBlock> actions)
     {
         Name = name;
         Vertices = vertices;
@@ -32,6 +34,7 @@ public sealed class Level
         PlayerStart = playerStart;
         Skills = skills;
         Textures = textures;
+        Actions = actions;
     }
 
     /// <summary>The level's name (its main WDL file name).</summary>
@@ -51,4 +54,7 @@ public sealed class Level
 
     /// <summary>Resolved textures (name → source PCX file + rectangle + scale) referenced by the geometry.</summary>
     public IReadOnlyDictionary<string, LevelTexture> Textures { get; }
+
+    /// <summary>The level's <c>ACTION</c> bodies, by name — the scripts the interpreter runs.</summary>
+    public IReadOnlyDictionary<string, WdlBlock> Actions { get; }
 }

@@ -20,9 +20,13 @@ public sealed class WdlDeclarations
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
     private readonly Dictionary<string, RegionTextures> _regions = new(Ci);
     private readonly Dictionary<string, string?> _walls = new(Ci);
+    private readonly Dictionary<string, WdlBlock> _actions = new(Ci);
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
+
+    /// <summary>The body of each <c>ACTION</c> declaration, by name.</summary>
+    public IReadOnlyDictionary<string, WdlBlock> Actions => _actions;
 
     /// <summary>Builds the index from a flattened program.</summary>
     public static WdlDeclarations Index(WdlProgram program)
@@ -45,6 +49,9 @@ public sealed class WdlDeclarations
                     break;
                 case "WALL" when item.HasBody:
                     declarations.IndexWall(item);
+                    break;
+                case "ACTION" when item.HasBody && item.Header.Count > 0:
+                    declarations._actions[item.Header[0].Text] = item.Body!;
                     break;
             }
         }
