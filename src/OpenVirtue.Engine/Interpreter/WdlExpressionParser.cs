@@ -27,9 +27,12 @@ public static class WdlExpressionParser
 
     private sealed class Cursor(IReadOnlyList<WdlToken> tokens)
     {
+        private static readonly WdlToken EndOfInput = new(WdlTokenKind.EndOfFile, string.Empty, 0, 0);
+
         private int _pos;
 
-        private WdlToken Current => tokens[_pos];
+        // Bounds-safe: callers may pass a header slice with no trailing EndOfFile token.
+        private WdlToken Current => _pos < tokens.Count ? tokens[_pos] : EndOfInput;
 
         private void Advance() => _pos++;
 
