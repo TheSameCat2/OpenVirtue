@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wmp;
 using OpenVirtue.Formats.Wrs;
 
@@ -23,6 +24,7 @@ internal static class Cli
                 "wrs" => Wrs(args[1..]),
                 "pcx" => Pcx(args[1..]),
                 "wmp" => Wmp(args[1..]),
+                "wav" => Wav(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -115,6 +117,32 @@ internal static class Cli
         }
     }
 
+    private static int Wav(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("wav requires a subcommand and a file path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string path = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                WavSound sound = WavSound.ReadFile(path);
+                int bytesPerSecond = sound.SampleRate * sound.Channels * sound.BitsPerSample / 8;
+                double seconds = bytesPerSecond > 0 ? sound.Data.Length / (double)bytesPerSecond : 0;
+                Console.WriteLine(
+                    $"{Path.GetFileName(path)} — {sound.Channels}ch {sound.SampleRate}Hz " +
+                    $"{sound.BitsPerSample}-bit (format {sound.AudioFormat}), {sound.Data.Length} bytes (~{seconds:0.00}s)");
+                return 0;
+
+            default:
+                return Usage($"Unknown wav subcommand '{verb}'.");
+        }
+    }
+
     private static void ListEntries(WrsArchive archive, string archivePath)
     {
         Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
@@ -177,6 +205,7 @@ internal static class Cli
               ovtool wrs extract <archive.wrs> [output-dir]
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
+              ovtool wav info <sound.wav>
 
             Notes:
               These tools operate on game data you supply; no game data ships with

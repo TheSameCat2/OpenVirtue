@@ -140,7 +140,9 @@ index 0 as transparent for billboard sprites (confirm per-sprite during renderin
 
 ## `WAV` — sounds
 
-Standard PCM WAV. Trivial.
+Standard RIFF/WAVE PCM. **Status:** ✅ **Done** (`OpenVirtue.Formats.Wav.WavSound`) —
+all sounds are uncompressed PCM (format 1; mostly 8-bit mono 11025 Hz); every
+`.wav` in the archives decodes.
 
 ## `WDF` / `MDF` (e.g. `WWRUN.WDF`, `WWRUN.MDF`)
 

@@ -61,6 +61,15 @@ and validate against real game data used only locally (never committed).
 - **Confirmed against real data:** all six maps parse; apathy's record counts are
   pinned and every wall references valid vertices (guarded integration test).
 
+## WAV (`Wav/WavSound.cs`)
+
+- **Source of truth:** the public Microsoft **RIFF/WAVE** container spec — a
+  `RIFF`…`WAVE` wrapper with a `fmt ` chunk and a `data` chunk; chunks are padded to
+  even byte boundaries.
+- **Confirmed against real data:** all of the game's sounds are uncompressed PCM
+  (format 1; mostly 8-bit mono 11025 Hz). Every `.wav` in the archives decodes via
+  the guarded integration test.
+
 ## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
 
 - **Source of truth:** the WRS record structure — fixed records of `name[13]` +
