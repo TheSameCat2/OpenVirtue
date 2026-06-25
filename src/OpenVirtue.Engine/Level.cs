@@ -23,7 +23,8 @@ public sealed class Level
         PlayerStart? playerStart,
         IReadOnlyDictionary<string, double> skills,
         IReadOnlyDictionary<string, LevelTexture> textures,
-        IReadOnlyDictionary<string, WdlBlock> actions)
+        IReadOnlyDictionary<string, WdlBlock> actions,
+        string? startupAction)
     {
         Name = name;
         Vertices = vertices;
@@ -35,6 +36,7 @@ public sealed class Level
         Skills = skills;
         Textures = textures;
         Actions = actions;
+        StartupAction = startupAction;
     }
 
     /// <summary>The level's name (its main WDL file name).</summary>
@@ -57,4 +59,7 @@ public sealed class Level
 
     /// <summary>The level's <c>ACTION</c> bodies, by name — the scripts the interpreter runs.</summary>
     public IReadOnlyDictionary<string, WdlBlock> Actions { get; }
+
+    /// <summary>The action named by <c>IF_START</c> — the level's startup script, if any.</summary>
+    public string? StartupAction { get; }
 }

@@ -86,7 +86,8 @@ public static class LevelLoader
 
         return new Level(
             name, vertices, regions, walls, things, actors, start,
-            GatherSkills(program), BuildTextures(declarations), declarations.Actions);
+            GatherSkills(program), BuildTextures(declarations), declarations.Actions,
+            FindActionName(program, "IF_START"));
     }
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
@@ -133,6 +134,21 @@ public static class LevelLoader
         entity.Angle = placement.Angle;
         entity.Region = placement.Region;
         return entity;
+    }
+
+    private static string? FindActionName(WdlProgram program, string keyword)
+    {
+        foreach (WdlItem item in program.Items)
+        {
+            if (item.Keyword.Equals(keyword, StringComparison.OrdinalIgnoreCase) &&
+                item.Header.Count > 0 &&
+                item.Header[0].Kind == WdlTokenKind.Identifier)
+            {
+                return item.Header[0].Text;
+            }
+        }
+
+        return null;
     }
 
     private static string? FindFileRef(WdlProgram program, string keyword)

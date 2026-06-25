@@ -63,6 +63,25 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_RunStartup_RunsTheIfStartAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL booted { VAL 0; } ACTION boot { SET booted, 1; } IF_START boot;");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunStartup());
+        Assert.Equal(1, runtime.GetSkill("booted"));
+    }
+
+    [Fact]
+    public void Runtime_RunStartup_NoIfStart_ReturnsFalse()
+    {
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+
+        Assert.False(runtime.RunStartup());
+    }
+
+    [Fact]
     public void Runtime_UnknownAction_ReturnsFalse()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));

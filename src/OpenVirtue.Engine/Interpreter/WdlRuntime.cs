@@ -19,6 +19,7 @@ public sealed class WdlRuntime : IWdlContext
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
+    private readonly string? _startupAction;
     private int _callDepth;
 
     public WdlRuntime(Level level)
@@ -26,6 +27,7 @@ public sealed class WdlRuntime : IWdlContext
         ArgumentNullException.ThrowIfNull(level);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
         _actions = level.Actions;
+        _startupAction = level.StartupAction;
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -46,6 +48,10 @@ public sealed class WdlRuntime : IWdlContext
 
     /// <summary>Whether an action with this name exists.</summary>
     public bool HasAction(string name) => _actions.ContainsKey(name);
+
+    /// <summary>Runs the level's <c>IF_START</c> startup action, if one is defined.</summary>
+    /// <returns><c>true</c> if a startup action existed and ran.</returns>
+    public bool RunStartup() => _startupAction is not null && Run(_startupAction);
 
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
