@@ -44,6 +44,14 @@ and validate against real game data used only locally (never committed).
 - **Confirmed against real data:** every `.wdl` across all six archives parses to a
   balanced tree (guarded integration test).
 
+## WDL preprocessor (`Wdl/WdlPreprocessor.cs`)
+
+- **Behaviour:** flattens a level's main script by resolving `INCLUDE`s (recursively,
+  include-once) and evaluating nested `IFDEF`/`IFELSE`/`ENDIF` + `DEFINE`. Derived from
+  the game's own resolution blocks (e.g. APATHY.WDL defaults to defining `HIRES`).
+- **Confirmed against real data:** flattening real levels resolves their `INCLUDE`s
+  (apathy's 21 → 400+ skills) with the expected default symbols.
+
 ## WDL lexer (`Wdl/WdlLexer.cs`, `Wdl/WdlToken.cs`)
 
 - **Source of truth:** the language's surface syntax, observed from the game's own

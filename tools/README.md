@@ -21,3 +21,4 @@ dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 - `wmp info` — print a map's vertex/region/wall/thing/actor counts and player start.
 - `wav info` — print a sound's channels/rate/bit-depth and duration.
 - `wdl info` — parse a script and summarize its top-level items by keyword.
+- `level info` — load a whole level (WDL + WMP) and report its geometry, placements, and skills.

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenVirtue.Formats\OpenVirtue.Formats.csproj" />
+    <ProjectReference Include="..\..\src\OpenVirtue.Engine\OpenVirtue.Engine.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

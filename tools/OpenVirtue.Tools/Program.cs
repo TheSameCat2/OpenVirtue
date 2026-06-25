@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using System.Text;
+using OpenVirtue.Engine;
 using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wdl;
@@ -28,6 +29,7 @@ internal static class Cli
                 "wmp" => Wmp(args[1..]),
                 "wav" => Wav(args[1..]),
                 "wdl" => Wdl(args[1..]),
+                "level" => Level(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -179,6 +181,43 @@ internal static class Cli
         }
     }
 
+    private static int Level(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("level requires a subcommand and an archive path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string archivePath = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                WrsArchive archive = WrsArchive.ReadFile(archivePath);
+                // Convention: a level's main script is named after its archive (apathy.wrs -> APATHY.WDL).
+                string mainWdl = args.Length >= 3
+                    ? args[2]
+                    : Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
+
+                OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
+                Console.WriteLine($"{Path.GetFileName(archivePath)} -> {level.Name}");
+                Console.WriteLine(
+                    $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
+                    $"{level.Things.Count} things, {level.Actors.Count} actors");
+                Console.WriteLine($"  {level.Skills.Count} global skills");
+                if (level.PlayerStart is { } ps)
+                {
+                    Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
+                }
+
+                return 0;
+
+            default:
+                return Usage($"Unknown level subcommand '{verb}'.");
+        }
+    }
+
     private static void ListEntries(WrsArchive archive, string archivePath)
     {
         Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
@@ -243,6 +282,7 @@ internal static class Cli
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>
               ovtool wdl info <script.wdl>
+              ovtool level info <archive.wrs> [main.wdl]
 
             Notes:
               These tools operate on game data you supply; no game data ships with

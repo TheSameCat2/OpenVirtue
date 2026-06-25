@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The OpenVirtue Authors
+
+using OpenVirtue.Engine.Tests.TestSupport;
+using OpenVirtue.Formats.Wrs;
+
+namespace OpenVirtue.Engine.Tests;
+
+public class LevelLoaderTests
+{
+    [Fact]
+    public void LoadCore_CombinesWdlDeclarationsAndWmpGeometry()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] =
+                "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\n" +
+                "WALL w 0 1 0 -1 0.0 0.0;#0\nTHING torch 5 6 90 0;#1\n" +
+                "ACTOR guard 7 8 180 0;#2\nPLAYER_START 1 2 45 0;#3",
+            ["mod.wdl"] = "SKILL energy { VAL 100; }",
+        };
+        const string main = "MAPFILE <test.wmp>; INCLUDE <mod.wdl>; SKILL health { VAL 50; }";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(2, level.Vertices.Count);
+        Assert.Equal("room", Assert.Single(level.Regions).Name);
+        Assert.Single(level.Walls);
+        Assert.Equal("torch", Assert.Single(level.Things).Name);
+        Assert.Equal("guard", Assert.Single(level.Actors).Name);
+        Assert.NotNull(level.PlayerStart);
+        Assert.Equal(45, level.PlayerStart!.Value.Angle);
+
+        // Skills come from both the main script and the INCLUDEd module.
+        Assert.Equal(100, level.Skills["energy"]);
+        Assert.Equal(50, level.Skills["health"]);
+    }
+
+    [Fact]
+    public void LoadCore_NoMapFile_Throws()
+    {
+        Assert.Throws<InvalidDataException>(
+            () => LevelLoader.LoadCore("x", "SKILL a { VAL 1; }", _ => null));
+    }
+
+    /// <summary>
+    /// Loads the real apathy level end-to-end (when present): WMP geometry materialized as
+    /// engine objects + skills from the flattened WDL. Pinned to apathy's known counts. No-op otherwise.
+    /// </summary>
+    [Fact]
+    public void Load_RealApathyLevel_MaterializesGeometryAndSkills()
+    {
+        string? apathy = ResearchData.WrsFiles()
+            .FirstOrDefault(p => Path.GetFileName(p).Equals("apathy.wrs", StringComparison.OrdinalIgnoreCase));
+        if (apathy is null)
+        {
+            return; // no local game data — skip
+        }
+
+        WrsArchive archive = WrsArchive.ReadFile(apathy);
+        Level level = LevelLoader.Load(archive, "APATHY.WDL");
+
+        Assert.Equal(5192, level.Vertices.Count);
+        Assert.Equal(1073, level.Regions.Count);
+        Assert.Equal(5894, level.Walls.Count);
+        Assert.Equal(492, level.Things.Count);
+        Assert.Equal(138, level.Actors.Count);
+        Assert.NotNull(level.PlayerStart);
+        Assert.True(level.Skills.Count > 200, $"expected >200 global skills, got {level.Skills.Count}");
+    }
+}

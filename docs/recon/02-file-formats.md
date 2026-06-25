@@ -66,13 +66,14 @@ syntax from the game's own scripts (clean-room).
 - `:` = **label** (jump target, e.g. `doHideStuff:`).
 - `[ ] @ ? ' \` occur **only inside strings/comments** — not bare syntax.
 
-**Status:** ✅ **lexer + parser done** (`OpenVirtue.Formats.Wdl.WdlLexer` /
-`WdlParser`), validated — every `.wdl` across all six archives tokenizes and parses
-to a balanced generic syntax tree (`WdlItem`/`WdlBlock`: `keyword header (block|;)`).
-**Next:** assemble WDL declarations + WMP geometry into an in-memory level (headless
-level load); then the **WDL interpreter** runtime (we interpret, not transpile —
-[ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)) — its object/skill model,
-action scheduler, and fixed-tick loop are a **major design decision**.
+**Status:** ✅ **lexer + parser + preprocessor done**, and ✅ **headless level load done**.
+`WdlLexer`/`WdlParser` produce a generic syntax tree; `WdlPreprocessor` flattens a level
+(resolves `INCLUDE`, evaluates `IFDEF`/`IFELSE`/`ENDIF`/`DEFINE`); `OpenVirtue.Engine.LevelLoader`
+combines the flattened WDL with the `MAPFILE`'d WMP and materializes the typed engine
+object model (`Region`/`Wall`/`Thing`/`Actor` + global skills). All five playable levels
+load end-to-end (`ovtool level info`). **Next:** the **WDL interpreter** runtime (we
+interpret, not transpile — [ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)) —
+its action execution, skill semantics, and fixed-tick scheduler — then the D3D11 renderer.
 
 ## `WMP` — compiled/level map (geometry)
 
