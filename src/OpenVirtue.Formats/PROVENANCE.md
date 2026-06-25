@@ -35,6 +35,19 @@ and validate against real game data used only locally (never committed).
   retail archives decodes to a `Width*Height` index buffer + 256-color palette via
   the guarded integration test.
 
+## WDL lexer (`Wdl/WdlLexer.cs`, `Wdl/WdlToken.cs`)
+
+- **Source of truth:** the language's surface syntax, observed from the game's own
+  scripts and the SaintsX patch diffs (a *description of syntax*, not third-party
+  code). firoball's WDL2CS grammar is **CC BY-NC and was not consulted or copied**.
+- **Syntax facts** (discovered while validating against real scripts): `//` `#`
+  line comments and `/* */` block comments; multi-line string literals with no
+  escape processing; `.` member access; `:` labels; `<file>` references vs. `<`/`>`
+  comparison operators (disambiguated by look-ahead); `[ ] @ ? ' \` appear only in
+  strings/comments.
+- **Confirmed against real data:** every `.wdl` across all six archives tokenizes
+  to end-of-file via the guarded integration test (real files local-only).
+
 ## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
 
 - **Source of truth:** the WRS record structure — fixed records of `name[13]` +

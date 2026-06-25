@@ -49,13 +49,28 @@ gallery, mall, lonely, despair, <WORLD>.wdl   (+ per-world *snd.wdl)
 ```
 
 Grammar reference: firoball's **`WDL2CS`** contains a complete WDL grammar
-(AtoCC/Lex-Yacc) — invaluable as a **specification reference** for writing our
-own parser, but it is **CC BY-NC**, so read-to-understand only; write our own
-grammar. WDL syntax visible in the patch diffs uses `RULE`, `IF_EQUAL`, `SET`,
-`IF (...) { }`, skill arithmetic, etc.
+(AtoCC/Lex-Yacc). It is **CC BY-NC and was NOT consulted or copied** — we derive
+syntax from the game's own scripts (clean-room).
 
-**Action:** write our own WDL lexer/parser → AST → interpreter. (We interpret,
-we don't transpile — see strategy doc for why.)
+**Syntax facts learned by tokenizing all of the game's real scripts:**
+
+- Comments: `//` and `#` line comments; `/* */` block comments.
+- Top-level declarations with `{ }` property blocks: `REGION`, `WALL`, `TEXTURE`,
+  `BMAP`, `PALETTE`, `ACTION`, plus directives (`VIDEO`, `MAPFILE`, `BIND`,
+  `PATH`, `STRING`, `SYNONYM`, `DEFINE`, `IFDEF`/`IFELSE`, …).
+- `"strings"` may **span multiple physical lines** (multi-line sign/scroll text);
+  backslashes are literal (no escape processing at lex time — `\n` is two chars).
+- `<file.pcx>` file references; `<`/`>` double as comparison operators
+  (disambiguated by look-ahead).
+- `.` = **member access** (`object.skill`, e.g. `worldlyHead.INVISIBLE`).
+- `:` = **label** (jump target, e.g. `doHideStuff:`).
+- `[ ] @ ? ' \` occur **only inside strings/comments** — not bare syntax.
+
+**Status:** ✅ **lexer done** (`OpenVirtue.Formats.Wdl.WdlLexer`), validated — every
+`.wdl` across all six archives tokenizes cleanly. **Next:** parser → AST, then the
+**WDL interpreter** (we interpret, not transpile — [ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)).
+The interpreter's runtime architecture is a **major design decision** (object/skill
+model, action scheduler, fixed-tick loop).
 
 ## `WMP` — compiled/level map (geometry)
 
