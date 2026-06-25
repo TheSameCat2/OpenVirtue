@@ -36,6 +36,3 @@ Concretely:
 - Clean, defensible IP provenance for a public GPLv3 release.
 - More implementation work (we rebuild parsers/readers ourselves) — accepted as
   the cost of a legally clean engine.
-- The project owner being TheSameCat2 means the bundled AcknexCSApi fork is *our*
-  prior work, but we still treat it as reference-only to keep the GPLv3 codebase
-  free of differently/ambiguously-licensed lineage.
