@@ -8,10 +8,12 @@ no game data; they operate on the user's own files.
 ```
 dotnet run --project tools/OpenVirtue.Tools -- wrs list    <archive.wrs>
 dotnet run --project tools/OpenVirtue.Tools -- wrs extract <archive.wrs> [output-dir]
+dotnet run --project tools/OpenVirtue.Tools -- pcx info     <image.pcx>
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
   summary by file type.
 - `wrs extract` — decompress every entry to a folder.
+- `pcx info` — print a PCX image's dimensions and a palette sample.
 
-Planned subcommands as readers land: `pcx`, `wdl`, `wmp`.
+Planned subcommands as readers land: `wdl`, `wmp`.

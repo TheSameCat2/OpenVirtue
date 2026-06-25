@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wrs;
 
 return Cli.Run(args);
@@ -19,6 +20,7 @@ internal static class Cli
             return args[0].ToLowerInvariant() switch
             {
                 "wrs" => Wrs(args[1..]),
+                "pcx" => Pcx(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -54,6 +56,31 @@ internal static class Cli
 
             default:
                 return Usage($"Unknown wrs subcommand '{verb}'.");
+        }
+    }
+
+    private static int Pcx(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            return Usage("pcx requires a subcommand and a file path.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        string path = args[1];
+
+        switch (verb)
+        {
+            case "info":
+                PcxImage image = PcxImage.Read(File.ReadAllBytes(path));
+                Console.WriteLine($"{Path.GetFileName(path)} — {image.Width}x{image.Height}, 256-color palette");
+                string sample = string.Join(" ", Enumerable.Range(0, 4)
+                    .Select(i => $"({image.Palette[i].R},{image.Palette[i].G},{image.Palette[i].B})"));
+                Console.WriteLine($"palette[0..3]: {sample}");
+                return 0;
+
+            default:
+                return Usage($"Unknown pcx subcommand '{verb}'.");
         }
     }
 
@@ -117,6 +144,7 @@ internal static class Cli
             Usage:
               ovtool wrs list <archive.wrs>
               ovtool wrs extract <archive.wrs> [output-dir]
+              ovtool pcx info <image.pcx>
 
             Notes:
               These tools operate on game data you supply; no game data ships with

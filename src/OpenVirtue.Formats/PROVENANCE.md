@@ -24,6 +24,17 @@ and validate against real game data used only locally (never committed).
   (see the guarded integration test); those files are user-supplied and live only
   under the git-ignored `_research/`.
 
+## PCX (`Pcx/PcxImage.cs`, `Pcx/Rgb24.cs`)
+
+- **Source of truth:** the public **ZSoft PCX** format specification — a 128-byte
+  header, per-scanline RLE (bytes with the top two bits set are run-count/value
+  pairs), and a 256-color palette appended at end-of-file behind a `0x0C` marker.
+- **Confirmed against real data:** the game's images are ZSoft v5, 8-bit,
+  single-plane, RLE, with the appended palette (e.g. `black.pcx` is 256×256). We
+  support exactly that variant and reject others. Every `.pcx` entry across the
+  retail archives decodes to a `Width*Height` index buffer + 256-color palette via
+  the guarded integration test.
+
 ## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
 
 - **Source of truth:** the WRS record structure — fixed records of `name[13]` +

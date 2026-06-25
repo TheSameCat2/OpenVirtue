@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using OpenVirtue.Formats.Tests.TestSupport;
 using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Formats.Tests.Wrs;
@@ -77,19 +78,10 @@ public class WrsArchiveTests
     [Fact]
     public void Read_RealArchives_AllEntriesDecompressToStatedSize()
     {
-        string? researchDir = FindResearchDir();
-        if (researchDir is null)
+        IReadOnlyList<string> wrsFiles = ResearchData.WrsFiles();
+        if (wrsFiles.Count == 0)
         {
             return; // no local game data available — skip
-        }
-
-        string[] wrsFiles = Directory.EnumerateFiles(researchDir, "*.wrs", SearchOption.AllDirectories)
-            .Where(static p => p.EndsWith(".wrs", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (wrsFiles.Length == 0)
-        {
-            return; // no WRS files extracted/available — skip
         }
 
         foreach (string path in wrsFiles)
@@ -132,19 +124,5 @@ public class WrsArchiveTests
     {
         field.Clear();
         Encoding.ASCII.GetBytes(name).CopyTo(field);
-    }
-
-    private static string? FindResearchDir()
-    {
-        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "OpenVirtue.slnx")))
-            {
-                string research = Path.Combine(dir.FullName, "_research");
-                return Directory.Exists(research) ? research : null;
-            }
-        }
-
-        return null;
     }
 }

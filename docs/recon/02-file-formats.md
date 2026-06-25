@@ -105,6 +105,11 @@ palette block** appended at end-of-file (after a `0x0C` marker), per-file vs.
 shared palettes (note the recurring `palblack.pcx`/`palred.pcx` — likely shared
 palettes), and sprite/billboard-frame conventions.
 
+**Status:** ✅ **Done** (`OpenVirtue.Formats.Pcx.PcxImage`) — validated against
+every PCX in the archives. Observed: **palette index 0 is bright green `(0,255,0)`**,
+the likely **sprite color-key** for transparency — the renderer should treat
+index 0 as transparent for billboard sprites (confirm per-sprite during rendering).
+
 ## `WAV` — sounds
 
 Standard PCM WAV. Trivial.
