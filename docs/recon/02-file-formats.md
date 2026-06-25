@@ -7,31 +7,34 @@ document the layout here as we learn it.
 
 ## `WRS` — Acknex-3 compressed resource archive
 
-The container that ships the game's content. From the SaintsX QuickBMS script
-(`_research/SaintsX113/extract-wrs.bms`) the structure is fully known:
+The container that ships the game's content. Structure derived from the SaintsX
+QuickBMS script (`_research/SaintsX113/extract-wrs.bms`) and **confirmed against
+the real retail archives** — implemented and validated in `OpenVirtue.Formats`:
 
 ```
 big-endian
-asize        = total archive size (u32)
-repeat until offset >= asize:
-    name     = 13-byte fixed string (filename)
+repeat while offset < fileSize:          // no file header; records start at offset 0
+    name     = 13-byte fixed string (NUL-padded filename)
     zsize    = u32  (compressed size)
     size     = u32  (uncompressed size)
     data     = zsize bytes, LZSS-compressed   (comtype = lzss)
-    advance to next record
+    advance offset by zsize
 ```
 
-- **Compression: LZSS.** We must implement an LZSS decompressor matching
-  Acknex's window/flag conventions. (QuickBMS's `comtype lzss` is the reference
-  behavior to match; rickomax/morkt's `GameRes.Compression` is a code reference
-  but check its license before borrowing.)
+- **There is no leading size field.** The QuickBMS recipe's `get asize asize`
+  reads the *file-size pseudo-value* (consuming zero bytes); it only bounds the
+  loop. (Original recon mis-read this as a 4-byte header — corrected after dumping
+  real bytes: the first record begins at offset 0 with `palblack.pcx`, 145 → 961.)
+- **Compression: LZSS.** Implemented clean-room from the public-domain algorithm;
+  the canonical variant (4096 window, LSB-first flags, etc.) byte-matches the
+  game. Every entry in all six retail `.WRS` files decompresses to its exact
+  stated size. See `src/OpenVirtue.Formats/PROVENANCE.md`.
 - Output members are `WDL`, `WMP`, `PCX`, `WAV`, etc.
-- Saints' `WRS` files were noted as "encrypted/packaged"; in practice the
-  QuickBMS script decompresses them with plain LZSS, so likely just compressed,
-  not encrypted. Verify on real bytes.
+- Saints' `WRS` files were noted as "encrypted/packaged"; in practice they are
+  plain LZSS — **not encrypted** (confirmed: no circumvention, clear of DMCA §1201).
 
-**Action:** implement `WrsArchive` reader (enumerate + decompress) as the very
-first milestone — everything else depends on getting bytes out.
+**Status:** ✅ **Done** — `WrsArchive`/`WrsEntry` enumerate + decompress, validated
+against real data. This was the first milestone; everything else builds on it.
 
 ## `WDL` — Wad Definition Language (scripts)
 

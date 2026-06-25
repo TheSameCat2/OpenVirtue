@@ -59,12 +59,11 @@ public class WrsArchiveTests
     [Fact]
     public void Read_EntryOverrunsArchive_Throws()
     {
-        // A single entry that claims a compressed size far larger than the buffer.
-        byte[] header = new byte[4 + 13 + 4 + 4];
-        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(0), (uint)header.Length); // archiveSize
-        WriteName(header.AsSpan(4), "BAD.WDL");
-        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4 + 13), 0xFFFF);          // compressedSize (overrun)
-        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4 + 17), 0x10);            // uncompressedSize
+        // A single entry header (no payload) that claims a compressed size far larger than the buffer.
+        byte[] header = new byte[WrsArchive.NameFieldLength + sizeof(uint) + sizeof(uint)];
+        WriteName(header.AsSpan(0), "BAD.WDL");
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(WrsArchive.NameFieldLength), 0xFFFF);                 // compressedSize (overrun)
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(WrsArchive.NameFieldLength + sizeof(uint)), 0x10);    // uncompressedSize
 
         Assert.Throws<InvalidDataException>(() => WrsArchive.Read(header));
     }
@@ -109,13 +108,11 @@ public class WrsArchiveTests
     private static byte[] BuildArchive(params (string Name, byte[] Payload, int UncompressedSize)[] entries)
     {
         const int headerSize = WrsArchive.NameFieldLength + sizeof(uint) + sizeof(uint);
-        int total = sizeof(uint) + entries.Sum(e => headerSize + e.Payload.Length);
+        int total = entries.Sum(e => headerSize + e.Payload.Length);
 
         byte[] buffer = new byte[total];
         Span<byte> span = buffer;
-
-        BinaryPrimitives.WriteUInt32BigEndian(span, (uint)total);
-        int offset = sizeof(uint);
+        int offset = 0; // no file header — records start at offset 0
 
         foreach ((string name, byte[] payload, int uncompressedSize) in entries)
         {

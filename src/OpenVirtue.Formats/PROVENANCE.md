@@ -26,11 +26,14 @@ and validate against real game data used only locally (never committed).
 
 ## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
 
-- **Source of truth:** the documented WRS record structure — a big-endian
-  `archiveSize` header followed by records of `name[13]` + `u32 compressedSize` +
-  `u32 uncompressedSize` + LZSS payload. This structure is described in our recon
-  notes ([docs/recon/02-file-formats.md](../../docs/recon/02-file-formats.md)),
-  derived from the public QuickBMS extraction recipe for the format (a
-  *description of bytes*, not third-party code).
-- **Validation:** parsing + decompression of every entry to its stated size is
-  checked against real archives via the guarded integration test (local only).
+- **Source of truth:** the WRS record structure — fixed records of `name[13]` +
+  `u32 compressedSize` + `u32 uncompressedSize` + LZSS payload, running from offset
+  0 to end of file (**no file header**). Derived from the public QuickBMS
+  extraction recipe (a *description of bytes*, not third-party code) and confirmed
+  by dumping real archives. See
+  [docs/recon/02-file-formats.md](../../docs/recon/02-file-formats.md).
+- **Confirmed against real data:** every entry of all six retail `.WRS` files
+  (apathy, heart, legalism, newage, start, title) parses and decompresses to its
+  exact stated uncompressed size — which also validates the LZSS dialect above.
+  Verified via the guarded integration test (real files are local-only under the
+  git-ignored `_research/`; never committed).

@@ -12,10 +12,11 @@ namespace OpenVirtue.Formats.Wrs;
 /// </summary>
 /// <remarks>
 /// <para>Archive layout (all multi-byte integers are big-endian), reconstructed
-/// from the documented structure of the format (see <c>PROVENANCE.md</c>):</para>
+/// from the documented recipe and confirmed against real archives (see
+/// <c>PROVENANCE.md</c>). There is <b>no file header</b>: fixed-size records run
+/// from offset 0 to the end of the file.</para>
 /// <code>
-/// u32           archiveSize          // total archive length; bounds the entry loop
-/// repeat while offset &lt; archiveSize:
+/// repeat while offset &lt; fileSize:
 ///     char[13]  name                 // NUL-padded file name
 ///     u32       compressedSize        // LZSS payload length
 ///     u32       uncompressedSize      // size after decompression
@@ -41,19 +42,14 @@ public sealed class WrsArchive
     public static WrsArchive Read(ReadOnlyMemory<byte> data)
     {
         ReadOnlySpan<byte> span = data.Span;
-        if (span.Length < sizeof(uint))
-        {
-            throw new InvalidDataException("WRS data is too short to contain an archive-size header.");
-        }
 
-        long archiveSize = BinaryPrimitives.ReadUInt32BigEndian(span);
-        // Defensively clamp the loop bound to the bytes we actually have.
-        long bound = Math.Min(archiveSize, span.Length);
-
+        // The format has no file header: records run from offset 0 to end of file.
+        // (In the QuickBMS recipe, `get asize asize` reads the file-size pseudo-value
+        // and consumes no bytes — it only bounds the loop.)
         var entries = new List<WrsEntry>();
-        int offset = sizeof(uint); // first entry header follows the archive-size field
+        int offset = 0;
 
-        while (offset < bound)
+        while (offset < span.Length)
         {
             if (offset + EntryHeaderSize > span.Length)
             {
