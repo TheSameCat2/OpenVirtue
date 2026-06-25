@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Tests.TestSupport;
 using OpenVirtue.Formats.Wrs;
 
@@ -37,6 +38,35 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_LinksTexturesThroughTheDeclarationChain()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP floor_map, <floor.pcx>, 0, 0, 64, 64;
+            TEXTURE floorTex { SCALE_XY 16, 16; BMAPS floor_map; }
+            WALL w { TEXTURE floorTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; FLOOR_TEX floorTex; CEIL_TEX floorTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Region room = Assert.Single(level.Regions);
+        Assert.Equal("floorTex", room.FloorTexture);
+        Assert.Equal("floorTex", Assert.Single(level.Walls).Texture);
+
+        LevelTexture texture = level.Textures["floorTex"];
+        Assert.Equal("floor.pcx", texture.File);
+        Assert.Equal(64, texture.Width);
+        Assert.Equal(16, texture.ScaleX);
+    }
+
+    [Fact]
     public void LoadCore_NoMapFile_Throws()
     {
         Assert.Throws<InvalidDataException>(
@@ -67,5 +97,10 @@ public class LevelLoaderTests
         Assert.Equal(138, level.Actors.Count);
         Assert.NotNull(level.PlayerStart);
         Assert.True(level.Skills.Count > 200, $"expected >200 global skills, got {level.Skills.Count}");
+
+        // Textures were linked from the WDL declarations.
+        Assert.NotEmpty(level.Textures);
+        Assert.Contains(level.Regions, r => r.FloorTexture is not null);
+        Assert.All(level.Textures.Values, t => Assert.EndsWith(".pcx", t.File, StringComparison.OrdinalIgnoreCase));
     }
 }

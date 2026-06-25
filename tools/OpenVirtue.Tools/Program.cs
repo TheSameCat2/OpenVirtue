@@ -205,7 +205,7 @@ internal static class Cli
                 Console.WriteLine(
                     $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
                     $"{level.Things.Count} things, {level.Actors.Count} actors");
-                Console.WriteLine($"  {level.Skills.Count} global skills");
+                Console.WriteLine($"  {level.Skills.Count} global skills, {level.Textures.Count} textures");
                 if (level.PlayerStart is { } ps)
                 {
                     Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");

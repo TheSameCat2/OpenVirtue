@@ -20,7 +20,8 @@ public sealed class Level
         IReadOnlyList<Thing> things,
         IReadOnlyList<Actor> actors,
         PlayerStart? playerStart,
-        IReadOnlyDictionary<string, double> skills)
+        IReadOnlyDictionary<string, double> skills,
+        IReadOnlyDictionary<string, LevelTexture> textures)
     {
         Name = name;
         Vertices = vertices;
@@ -30,6 +31,7 @@ public sealed class Level
         Actors = actors;
         PlayerStart = playerStart;
         Skills = skills;
+        Textures = textures;
     }
 
     /// <summary>The level's name (its main WDL file name).</summary>
@@ -46,4 +48,7 @@ public sealed class Level
 
     /// <summary>Global skills declared in the level's WDL, with their initial values.</summary>
     public IReadOnlyDictionary<string, double> Skills { get; }
+
+    /// <summary>Resolved textures (name → source PCX file + rectangle + scale) referenced by the geometry.</summary>
+    public IReadOnlyDictionary<string, LevelTexture> Textures { get; }
 }

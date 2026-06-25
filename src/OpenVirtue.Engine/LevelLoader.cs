@@ -73,21 +73,34 @@ public static class LevelLoader
             ?? throw new InvalidDataException($"Map '{mapName}' could not be resolved.");
         WmpMap map = WmpMap.Read(mapText);
 
+        WdlDeclarations declarations = WdlDeclarations.Index(program);
+
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
-        var regions = map.Regions
-            .Select(r => new Region(r.Name) { FloorHeight = r.FloorHeight, CeilHeight = r.CeilHeight })
-            .ToList();
-        var walls = map.Walls.Select(BuildWall).ToList();
+        var regions = map.Regions.Select(r => BuildRegion(r, declarations)).ToList();
+        var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
         var things = map.Things.Select(p => Place(new Thing(p.Name), p)).ToList();
         var actors = map.Actors.Select(p => Place(new Actor(p.Name), p)).ToList();
         PlayerStart? start = map.PlayerStart is { } ps
             ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
             : null;
 
-        return new Level(name, vertices, regions, walls, things, actors, start, GatherSkills(program));
+        return new Level(
+            name, vertices, regions, walls, things, actors, start, GatherSkills(program), BuildTextures(declarations));
     }
 
-    private static Wall BuildWall(WmpWall w) => new(w.Name)
+    private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
+    {
+        var region = new Region(r.Name) { FloorHeight = r.FloorHeight, CeilHeight = r.CeilHeight };
+        if (declarations.GetRegionTextures(r.Name) is { } textures)
+        {
+            region.FloorTexture = textures.Floor;
+            region.CeilTexture = textures.Ceiling;
+        }
+
+        return region;
+    }
+
+    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations) => new(w.Name)
     {
         Vertex1 = w.Vertex1,
         Vertex2 = w.Vertex2,
@@ -95,7 +108,22 @@ public static class LevelLoader
         RightRegion = w.Region2,
         OffsetX = w.OffsetX,
         OffsetY = w.OffsetY,
+        Texture = declarations.GetWallTexture(w.Name),
     };
+
+    private static IReadOnlyDictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
+    {
+        var catalog = new Dictionary<string, LevelTexture>(StringComparer.OrdinalIgnoreCase);
+        foreach (string textureName in declarations.TextureNames)
+        {
+            if (declarations.ResolveTexture(textureName) is { } texture)
+            {
+                catalog[textureName] = texture;
+            }
+        }
+
+        return catalog;
+    }
 
     private static T Place<T>(T entity, WmpPlacement placement) where T : MapEntity
     {

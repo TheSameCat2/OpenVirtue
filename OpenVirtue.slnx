@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/OpenVirtue.App/OpenVirtue.App.csproj" />
     <Project Path="src/OpenVirtue.Engine/OpenVirtue.Engine.csproj" />
     <Project Path="src/OpenVirtue.Formats/OpenVirtue.Formats.csproj" />
   </Folder>
