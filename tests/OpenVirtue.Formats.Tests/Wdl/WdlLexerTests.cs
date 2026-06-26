@@ -46,7 +46,7 @@ public class WdlLexerTests
     {
         IReadOnlyList<WdlToken> tokens = WdlLexer.Tokenize("PATH \"texture\";");
 
-        Assert.Equal(WdlTokenKind.String, tokens[1].Kind);
+        Assert.Equal(WdlTokenKind.StringLiteral, tokens[1].Kind);
         Assert.Equal("texture", tokens[1].Text);
     }
 
@@ -89,7 +89,7 @@ public class WdlLexerTests
         // WDL sign/scroll text spans physical lines (see APATHY.WDL).
         IReadOnlyList<WdlToken> tokens = WdlLexer.Tokenize("STRING s, \"line one\nline two\";");
 
-        WdlToken str = tokens.Single(t => t.Kind == WdlTokenKind.String);
+        WdlToken str = tokens.Single(t => t.Kind == WdlTokenKind.StringLiteral);
         Assert.Equal("line one\nline two", str.Text);
     }
 

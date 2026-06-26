@@ -13,7 +13,7 @@ public enum WdlTokenKind
     Number,
 
     /// <summary>A double-quoted string literal (content only; quotes stripped, no escape processing).</summary>
-    String,
+    StringLiteral,
 
     /// <summary>An angle-bracket file reference such as <c>&lt;start.wmp&gt;</c> (content only).</summary>
     FileRef,

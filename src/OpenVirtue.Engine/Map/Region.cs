@@ -13,9 +13,9 @@ public sealed class Region : AcknexObject
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
 
-    protected override bool TryGetTyped(string property, out double value)
+    protected override bool TryGetTyped(string name, out double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "floor_hgt": value = FloorHeight; return true;
             case "ceil_hgt": value = CeilHeight; return true;
@@ -23,9 +23,9 @@ public sealed class Region : AcknexObject
         }
     }
 
-    protected override bool TrySetTyped(string property, double value)
+    protected override bool TrySetTyped(string name, double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "floor_hgt": FloorHeight = value; return true;
             case "ceil_hgt": CeilHeight = value; return true;

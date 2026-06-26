@@ -25,9 +25,9 @@ public abstract class MapEntity : AcknexObject
     /// <summary>The entity's current texture/sprite name.</summary>
     public string? Texture { get; set; }
 
-    protected override bool TryGetTyped(string property, out double value)
+    protected override bool TryGetTyped(string name, out double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "x": value = X; return true;
             case "y": value = Y; return true;
@@ -37,9 +37,9 @@ public abstract class MapEntity : AcknexObject
         }
     }
 
-    protected override bool TrySetTyped(string property, double value)
+    protected override bool TrySetTyped(string name, double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "x": X = value; return true;
             case "y": Y = value; return true;

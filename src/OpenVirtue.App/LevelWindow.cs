@@ -424,7 +424,7 @@ internal sealed class LevelWindow : Form
         UpdateCamera();
 
         float aspect = (float)ClientSize.Width / Math.Max(1, ClientSize.Height);
-        var constants = new FrameConstants { ViewProjection = _camera.View * _camera.Projection(aspect) };
+        var constants = new FrameConstants { ViewProjection = _camera.View * Camera.Projection(aspect) };
         _context.UpdateSubresource(constants, _constantBuffer);
 
         _context.RSSetViewport(new Viewport(0, 0, ClientSize.Width, ClientSize.Height, 0, 1));

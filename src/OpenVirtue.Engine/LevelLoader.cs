@@ -113,7 +113,7 @@ public static class LevelLoader
         Texture = declarations.GetWallTexture(w.Name),
     };
 
-    private static IReadOnlyDictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
+    private static Dictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
     {
         var catalog = new Dictionary<string, LevelTexture>(StringComparer.OrdinalIgnoreCase);
         foreach (string textureName in declarations.TextureNames)
@@ -181,7 +181,7 @@ public static class LevelLoader
         return null;
     }
 
-    private static IReadOnlyDictionary<string, double> GatherSkills(WdlProgram program)
+    private static Dictionary<string, double> GatherSkills(WdlProgram program)
     {
         var skills = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 

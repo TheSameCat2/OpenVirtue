@@ -38,7 +38,7 @@ jobs:
         run: dotnet restore OpenVirtue.slnx
 
       - name: Build
-        run: dotnet build OpenVirtue.slnx --configuration Release --no-restore
+        run: dotnet build OpenVirtue.slnx --configuration Release --no-restore -warnaserror
 
       # Unit tests use hand-built byte vectors and run anywhere. The guarded
       # integration tests against real game data are a no-op here (no _research/).

@@ -19,9 +19,9 @@ public sealed class Wall : AcknexObject
     public double OffsetY { get; set; }
     public string? Texture { get; set; }
 
-    protected override bool TryGetTyped(string property, out double value)
+    protected override bool TryGetTyped(string name, out double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "offsx": value = OffsetX; return true;
             case "offsy": value = OffsetY; return true;
@@ -29,9 +29,9 @@ public sealed class Wall : AcknexObject
         }
     }
 
-    protected override bool TrySetTyped(string property, double value)
+    protected override bool TrySetTyped(string name, double value)
     {
-        switch (property.ToLowerInvariant())
+        switch (name.ToLowerInvariant())
         {
             case "offsx": OffsetX = value; return true;
             case "offsy": OffsetY = value; return true;
