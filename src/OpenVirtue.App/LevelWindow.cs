@@ -309,31 +309,33 @@ internal sealed class LevelWindow : Form
             new BufferDescription((uint)(_vertexCount * Marshal.SizeOf<RenderVertex>()), BindFlags.VertexBuffer, ResourceUsage.Immutable));
     }
 
+    // World units per sprite-bitmap pixel. WDL HEIGHT turned out to be a placement value
+    // (almost always 1), not a visual size, so sprites are sized from their bitmap. Calibrated
+    // so the ~174px-tall enemy reads ~7 units; an easy single knob to tune.
+    private const float SpriteWorldPerPixel = 0.04f;
+
     private void BuildSprites()
     {
         foreach (var thing in _level.Things)
         {
-            AddSprite(thing.X, thing.Y, thing.Height, thing.Region, thing.Texture);
+            AddSprite(thing.X, thing.Y, thing.Region, thing.Texture);
         }
 
         foreach (var actor in _level.Actors)
         {
-            AddSprite(actor.X, actor.Y, actor.Height, actor.Region, actor.Texture);
+            AddSprite(actor.X, actor.Y, actor.Region, actor.Texture);
         }
     }
 
-    private void AddSprite(double x, double y, double height, int region, string? texture)
+    private void AddSprite(double x, double y, int region, string? texture)
     {
-        if (texture is null || !_level.Textures.TryGetValue(texture, out LevelTexture levelTexture))
+        if (texture is null || !_level.Textures.TryGetValue(texture, out LevelTexture levelTexture) || levelTexture.Height <= 0)
         {
             return;
         }
 
-        // World height comes from the WDL HEIGHT (designer-intended, room-scaled);
-        // width follows the texture's pixel aspect ratio.
-        float worldHeight = height > 0 ? (float)height : 1f;
-        float aspect = levelTexture.Height > 0 ? levelTexture.Width / (float)levelTexture.Height : 1f;
-        float worldWidth = worldHeight * aspect;
+        float worldWidth = levelTexture.Width * SpriteWorldPerPixel;
+        float worldHeight = levelTexture.Height * SpriteWorldPerPixel;
         float floor = region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : 0f;
 
         if (!_spriteGroups.TryGetValue(texture, out List<Billboard>? group))
