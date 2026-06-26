@@ -214,6 +214,25 @@ internal static class Cli
                     Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
                 }
 
+                var sprites = new Dictionary<string, (int W, int H, double Height, int Count)>(StringComparer.OrdinalIgnoreCase);
+                void Tally(string? tex, double h)
+                {
+                    if (tex is null || !level.Textures.TryGetValue(tex, out var lt))
+                    {
+                        return;
+                    }
+
+                    sprites[tex] = sprites.TryGetValue(tex, out var e) ? (e.W, e.H, e.Height, e.Count + 1) : (lt.Width, lt.Height, h, 1);
+                }
+
+                foreach (var t in level.Things) Tally(t.Texture, t.Height);
+                foreach (var a in level.Actors) Tally(a.Texture, a.Height);
+                Console.WriteLine("  sprites (texture, WxH px, HEIGHT, count):");
+                foreach (var kv in sprites.OrderByDescending(k => k.Value.Count).Take(12))
+                {
+                    Console.WriteLine($"    {kv.Key,-20} {kv.Value.W}x{kv.Value.H}  HEIGHT={kv.Value.Height}  x{kv.Value.Count}");
+                }
+
                 return 0;
 
             default:

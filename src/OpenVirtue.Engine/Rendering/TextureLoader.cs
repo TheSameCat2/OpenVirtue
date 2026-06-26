@@ -25,12 +25,30 @@ public static class TextureLoader
         var pcxByFile = new Dictionary<string, PcxImage?>(StringComparer.OrdinalIgnoreCase);
         var images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
 
+        // Textures used by things/actors are sprites: palette index 0 is their transparent color key.
+        var spriteTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var thing in level.Things)
+        {
+            if (thing.Texture is { } t)
+            {
+                spriteTextures.Add(t);
+            }
+        }
+
+        foreach (var actor in level.Actors)
+        {
+            if (actor.Texture is { } t)
+            {
+                spriteTextures.Add(t);
+            }
+        }
+
         foreach ((string name, LevelTexture texture) in level.Textures)
         {
             PcxImage? pcx = GetPcx(archive, texture.File, pcxByFile);
             if (pcx is not null)
             {
-                images[name] = Crop(pcx, texture);
+                images[name] = Crop(pcx, texture, colorKey: spriteTextures.Contains(name));
             }
         }
 
@@ -67,7 +85,7 @@ public static class TextureLoader
         return pcx;
     }
 
-    private static TextureImage Crop(PcxImage pcx, LevelTexture texture)
+    private static TextureImage Crop(PcxImage pcx, LevelTexture texture, bool colorKey)
     {
         // Clamp the BMAP rectangle to the image; a non-positive size means "the whole image".
         int x = Math.Clamp(texture.X, 0, pcx.Width);
@@ -89,7 +107,7 @@ public static class TextureLoader
                 rgba[dst++] = color.R;
                 rgba[dst++] = color.G;
                 rgba[dst++] = color.B;
-                rgba[dst++] = 0xFF; // opaque (wall textures); sprite color-key comes later
+                rgba[dst++] = colorKey && index == 0 ? (byte)0 : (byte)0xFF; // sprite color-key on palette index 0
             }
         }
 

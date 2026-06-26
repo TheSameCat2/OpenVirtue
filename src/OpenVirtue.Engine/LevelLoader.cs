@@ -78,8 +78,8 @@ public static class LevelLoader
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations)).ToList();
         var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
-        var things = map.Things.Select(p => Place(new Thing(p.Name), p)).ToList();
-        var actors = map.Actors.Select(p => Place(new Actor(p.Name), p)).ToList();
+        var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
+        var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
         PlayerStart? start = map.PlayerStart is { } ps
             ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
             : null;
@@ -127,12 +127,21 @@ public static class LevelLoader
         return catalog;
     }
 
-    private static T Place<T>(T entity, WmpPlacement placement) where T : MapEntity
+    private static T BuildEntity<T>(T entity, WmpPlacement placement, WdlDeclarations declarations)
+        where T : MapEntity
     {
         entity.X = placement.X;
         entity.Y = placement.Y;
         entity.Angle = placement.Angle;
         entity.Region = placement.Region;
+
+        // Dress the placement from its WDL type definition (sprite texture + height).
+        if (declarations.GetEntity(placement.Name) is { } definition)
+        {
+            entity.Texture = definition.Texture;
+            entity.Height = definition.Height;
+        }
+
         return entity;
     }
 
