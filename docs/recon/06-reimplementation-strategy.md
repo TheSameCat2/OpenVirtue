@@ -4,6 +4,15 @@ This is a research-phase recommendation, not a committed plan. Before we write
 engine code we should run a proper **design/brainstorming pass** and capture
 choices as ADRs in `docs/adr/`.
 
+> **Status update (2026-06-26):** implementation has begun and the architecture
+> below is the early sketch — the realized layout differs. The WDL interpreter lives
+> in `OpenVirtue.Engine` (not a separate `OpenVirtue.Wdl`); there is no separate
+> `Rendering`/`Platform` project (GPU-agnostic geometry is in `Engine/Rendering` and
+> Direct3D lives in `OpenVirtue.App`). The milestone table below is annotated with
+> current progress. For authoritative current status see the
+> [root README](../../README.md#current-status); for current structure, the code and
+> [`CLAUDE.md`](../../CLAUDE.md).
+
 ## Guiding principles
 
 1. **Parity before polish.** Reproduce Acknex-3 behavior exactly — including its
@@ -55,20 +64,22 @@ out of `Formats`/`Wdl`/`Engine` so they stay testable headless.
 
 ## Milestone roadmap (each milestone is demoable)
 
-| # | Milestone | Proves |
-|---|-----------|--------|
-| **M0** | Repo, CI, ADRs, format inspector skeleton | Process works. |
-| **M1** | **WRS reader (LZSS)** + `wrsdump` | We can extract the user's data ourselves. |
-| **M2** | **PCX + palette** viewer | We can see original textures/sprites. |
-| **M3** | **WDL lexer/parser → AST** + `wdldump` | We understand the scripts structurally. |
-| **M4** | **WMP loader** → in-memory world; render a level's geometry **flat/wireframe** in a Direct3D window | Geometry pipeline + renderer bring-up. |
-| **M5** | **Textured 2.5D renderer** (regions, walls, sky, palette shading) | Visual parity of a static level. |
-| **M6** | **WDL interpreter core**: skills, actions, scheduler tick, player movement matching original math (use `move-wdl` as reference) | The world comes alive; movement parity. |
-| **M7** | **THINGs/ACTORs**: sprites, animation, basic AI hooks (`if_near`/`if_hit`) | Enemies/objects behave. |
-| **M8** | **HUD/menus/inventory/scrolls/2-D map** (UI widget system) | Full UI parity. |
-| **M9** | **Audio** (WAV/XAudio2), **save/load**, weapons, traps, doors | Playable level start→finish. |
-| **M10** | **All five worlds** boot and complete; oracle-diff green | **Parity achieved.** |
-| **M11+** | Enhancements behind toggles: hi-res, filtering, true-3D lighting, widescreen | Your "improve graphics" goal. |
+Status legend: ✅ done · 🚧 in progress · ⬜ not started.
+
+| # | Milestone | Proves | Status |
+|---|-----------|--------|--------|
+| **M0** | Repo, CI, ADRs, format inspector skeleton | Process works. | ✅ (CI not yet set up) |
+| **M1** | **WRS reader (LZSS)** + `wrsdump` | We can extract the user's data ourselves. | ✅ (`ovtool wrs`) |
+| **M2** | **PCX + palette** viewer | We can see original textures/sprites. | ✅ (`ovtool pcx`) |
+| **M3** | **WDL lexer/parser → AST** + `wdldump` | We understand the scripts structurally. | ✅ (+ preprocessor, `ovtool wdl`) |
+| **M4** | **WMP loader** → in-memory world; render a level's geometry **flat/wireframe** in a Direct3D window | Geometry pipeline + renderer bring-up. | ✅ |
+| **M5** | **Textured 2.5D renderer** (regions, walls, sky, palette shading) | Visual parity of a static level. | 🚧 walls + floors/ceilings textured; **no sky or palette shading** |
+| **M6** | **WDL interpreter core**: skills, actions, scheduler tick, player movement matching original math (use `move-wdl` as reference) | The world comes alive; movement parity. | 🚧 expressions + `SET`/`RULE`/`IF` + action calls + `IF_START` boot; **no scheduler tick or movement parity; not wired into the app** |
+| **M7** | **THINGs/ACTORs**: sprites, animation, basic AI hooks (`if_near`/`if_hit`) | Enemies/objects behave. | 🚧 static billboard sprites render; **no animation or AI** |
+| **M8** | **HUD/menus/inventory/scrolls/2-D map** (UI widget system) | Full UI parity. | ⬜ |
+| **M9** | **Audio** (WAV/XAudio2), **save/load**, weapons, traps, doors | Playable level start→finish. | ⬜ (WAV *reader* exists; no playback) |
+| **M10** | **All five worlds** boot and complete; oracle-diff green | **Parity achieved.** | ⬜ |
+| **M11+** | Enhancements behind toggles: hi-res, filtering, true-3D lighting, widescreen | Your "improve graphics" goal. | ⬜ |
 
 ## Biggest technical risks (watch early)
 

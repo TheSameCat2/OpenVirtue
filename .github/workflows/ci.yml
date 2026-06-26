@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test
+    # Windows is required: OpenVirtue.App targets net10.0-windows with WinForms,
+    # which cannot be built on Linux/macOS runners.
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore OpenVirtue.slnx
+
+      - name: Build
+        run: dotnet build OpenVirtue.slnx --configuration Release --no-restore
+
+      # Unit tests use hand-built byte vectors and run anywhere. The guarded
+      # integration tests against real game data are a no-op here (no _research/).
+      - name: Test
+        run: dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal

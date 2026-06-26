@@ -1,5 +1,7 @@
 # OpenVirtue
 
+[![CI](https://github.com/TheSameCat2/OpenVirtue/actions/workflows/ci.yml/badge.svg)](https://github.com/TheSameCat2/OpenVirtue/actions/workflows/ci.yml)
+
 A clean-room, open-source reimplementation of the **Acknex-3 (3D GameStudio A3)**
 engine runtime, with the goal of running the 1999 Christian FPS **Saints of
 Virtue** natively on modern Windows — and, once parity is reached, improving its
@@ -10,8 +12,11 @@ code. The end user supplies their own legally obtained copy of the original game
 whose data files our engine reads at runtime. **No original game assets, scripts,
 or executables are distributed with this project.**
 
-> Status: **Reconnaissance & research.** No engine code has been written yet.
-> See [`docs/recon/`](docs/recon/) for the full research findings.
+> Status: **early implementation.** The asset pipeline (WRS/PCX/WDL/WMP/WAV) works
+> and a textured level renders in a Direct3D 11 window with billboard sprites; the
+> WDL interpreter and the actual game simulation are still being built. See
+> [Current status](#current-status) for the milestone breakdown, and
+> [`docs/recon/`](docs/recon/) for the original research.
 
 ## The original game
 
@@ -33,6 +38,33 @@ or executables are distributed with this project.**
 4. **Preservation & appreciation.** Credit the original authors prominently; this
    is a fan-preservation effort, not a commercial product.
 
+## Current status
+
+Early implementation (the asset layer is solid; the simulation is not built yet).
+What works today:
+
+- **Asset pipeline** — clean-room readers for `WRS` (LZSS archives), `PCX` (8-bit
+  paletted images), `WDL` (lexer + parser + `INCLUDE`/`IFDEF` preprocessor), `WMP`
+  (text maps) and `WAV`, each validated against all six retail archives via guarded,
+  local-only integration tests. Inspectable with the `ovtool` CLI.
+- **Headless level load** — `LevelLoader` combines a level's flattened WDL with its
+  WMP map into a typed object model (regions, walls, things, actors, skills, actions,
+  textures).
+- **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
+  floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
+  things and actors (palette-index-0 color-key transparency), explored with a
+  free-fly debug camera.
+- **WDL interpreter — foundation only** — expression evaluation and `SET`/`RULE`/`IF`
+  statements with action-to-action calls run against a live skill table
+  (`WdlRuntime`), and a level's `IF_START` script can boot. Currently exercised by
+  tests; not yet driving the running app.
+
+Not yet started: the fixed-tick scheduler (`each_cycle`) and player-movement parity,
+actor animation/AI, collision, audio playback, HUD/menus/inventory, save/load, and
+the DOSBox-X oracle-diff harness. **The app is a level viewer, not yet a playable
+game.** See the [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for
+the full plan and where each piece sits.
+
 ## What you need to play (planned end-user flow)
 
 1. Legally obtain Saints of Virtue (retail CD or archive).
@@ -45,7 +77,7 @@ or executables are distributed with this project.**
 |------|---------|
 | `docs/recon/` | Research findings (engine, formats, prior art, legal, tooling). |
 | `docs/adr/` | Architecture Decision Records (created as we make design choices). |
-| `src/` | Engine source (empty — implementation has not started). |
+| `src/` | Engine source: `OpenVirtue.Formats` (asset readers), `OpenVirtue.Engine` (world model, WDL interpreter, geometry), `OpenVirtue.App` (Direct3D 11 viewer). |
 | `tools/` | Local asset-inspection / extraction helpers (not redistributed game data). |
 | `tests/` | Automated tests. |
 | `_research/` | **Git-ignored.** Local-only copies of the game, the SaintsX fan patch, and third-party reference code — for study only, never committed or shipped. |
