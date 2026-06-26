@@ -144,10 +144,65 @@ internal sealed class LevelWindow : Form
     {
         // The player owns position (floor-following physics); the camera is its eye.
         _player = new Player(_level);
+        SpawnInLargestRoom(); // start in a big open room — easier to get oriented and test movement
         _camera.Position = _player.Position;
         if (_level.PlayerStart is { } start)
         {
             _camera.Yaw = -start.Angle * (MathF.PI / 180f);
+        }
+    }
+
+    private void SpawnInLargestRoom()
+    {
+        var bounds = new Dictionary<int, (float MinX, float MinZ, float MaxX, float MaxZ)>();
+        void Accumulate(int region, float vx, float vz)
+        {
+            if (region < 0 || region >= _level.Regions.Count)
+            {
+                return;
+            }
+
+            bounds[region] = bounds.TryGetValue(region, out var b)
+                ? (MathF.Min(b.MinX, vx), MathF.Min(b.MinZ, vz), MathF.Max(b.MaxX, vx), MathF.Max(b.MaxZ, vz))
+                : (vx, vz, vx, vz);
+        }
+
+        foreach (var wall in _level.Walls)
+        {
+            foreach (int vi in new[] { wall.Vertex1, wall.Vertex2 })
+            {
+                if (vi >= 0 && vi < _level.Vertices.Count)
+                {
+                    var v = _level.Vertices[vi];
+                    Accumulate(wall.LeftRegion, v.X, v.Y);
+                    Accumulate(wall.RightRegion, v.X, v.Y);
+                }
+            }
+        }
+
+        int best = -1;
+        float bestArea = 0, cx = 0, cz = 0;
+        foreach ((int region, var b) in bounds)
+        {
+            var r = _level.Regions[region];
+            if (r.CeilHeight - r.FloorHeight < 5)
+            {
+                continue; // skip solid/thin regions
+            }
+
+            float area = (b.MaxX - b.MinX) * (b.MaxZ - b.MinZ);
+            if (area > bestArea)
+            {
+                bestArea = area;
+                best = region;
+                cx = (b.MinX + b.MaxX) * 0.5f;
+                cz = (b.MinZ + b.MaxZ) * 0.5f;
+            }
+        }
+
+        if (best >= 0)
+        {
+            _player.MoveTo(best, cx, cz);
         }
     }
 

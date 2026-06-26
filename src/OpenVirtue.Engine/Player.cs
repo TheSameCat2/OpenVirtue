@@ -109,6 +109,15 @@ public sealed class Player
         }
     }
 
+    /// <summary>Places the player in a region at the given horizontal position, at eye level.</summary>
+    public void MoveTo(int region, float x, float z)
+    {
+        Region = region;
+        Position = new Vector3(x, FloorOf(region) + EyeOffset(region), z);
+        VelocityY = 0;
+        Grounded = true;
+    }
+
     /// <summary>Jumps if standing on the ground.</summary>
     public void Jump()
     {
