@@ -9,8 +9,8 @@ namespace OpenVirtue.Engine.Interpreter;
 /// <summary>
 /// Parses WDL expressions (the token runs that appear in statement headers, e.g.
 /// <c>gravity + float_str*forceJump</c> or <c>tempVal &lt; 0.8</c>) into an evaluable
-/// <see cref="WdlExpression"/> tree, using standard precedence:
-/// comparison &lt; additive &lt; multiplicative &lt; unary &lt; primary.
+/// <see cref="WdlExpression"/> tree, using standard precedence: logical-or &lt;
+/// logical-and &lt; comparison &lt; additive &lt; multiplicative &lt; unary &lt; primary.
 /// </summary>
 public static class WdlExpressionParser
 {
@@ -36,7 +36,31 @@ public static class WdlExpressionParser
 
         private void Advance() => _pos++;
 
-        public WdlExpression ParseExpression() => ParseComparison();
+        public WdlExpression ParseExpression() => ParseLogicalOr();
+
+        private WdlExpression ParseLogicalOr()
+        {
+            WdlExpression left = ParseLogicalAnd();
+            while (IsOperator(out string op) && op == "||")
+            {
+                Advance();
+                left = new BinaryExpression(op, left, ParseLogicalAnd());
+            }
+
+            return left;
+        }
+
+        private WdlExpression ParseLogicalAnd()
+        {
+            WdlExpression left = ParseComparison();
+            while (IsOperator(out string op) && op == "&&")
+            {
+                Advance();
+                left = new BinaryExpression(op, left, ParseComparison());
+            }
+
+            return left;
+        }
 
         private WdlExpression ParseComparison()
         {
@@ -65,7 +89,7 @@ public static class WdlExpressionParser
         private WdlExpression ParseMultiplicative()
         {
             WdlExpression left = ParseUnary();
-            while (IsOperator(out string op) && op is "*" or "/")
+            while (IsOperator(out string op) && op is "*" or "/" or "%")
             {
                 Advance();
                 left = new BinaryExpression(op, left, ParseUnary());

@@ -54,7 +54,7 @@ public sealed class UnaryExpression(string op, WdlExpression operand) : WdlExpre
     }
 }
 
-/// <summary>A binary operation: arithmetic (<c>+ - * /</c>) or comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>).</summary>
+/// <summary>A binary operation: arithmetic (<c>+ - * / %</c>), comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>), or logical (<c>&amp;&amp; ||</c>).</summary>
 public sealed class BinaryExpression(string op, WdlExpression left, WdlExpression right) : WdlExpression
 {
     public string Operator => op;
@@ -77,6 +77,9 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             ">=" => l >= r ? 1 : 0,
             "==" => l == r ? 1 : 0,
             "!=" => l != r ? 1 : 0,
+            "&&" => l != 0 && r != 0 ? 1 : 0,
+            "||" => l != 0 || r != 0 ? 1 : 0,
+            "%" => r != 0 ? l % r : 0, // Acknex-safe: modulo-by-zero yields 0
             _ => 0,
         };
     }
