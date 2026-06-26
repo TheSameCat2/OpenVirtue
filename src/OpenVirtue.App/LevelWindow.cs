@@ -51,6 +51,7 @@ internal sealed class LevelWindow : Form
     private readonly Level _level;
     private readonly IReadOnlyDictionary<string, TextureImage> _textureImages;
     private readonly Camera _camera = new();
+    private Player _player = null!;
     private readonly HashSet<Keys> _keysDown = [];
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
     private readonly List<(int Start, int Count, string? Texture)> _batches = [];
@@ -184,25 +185,12 @@ internal sealed class LevelWindow : Form
 
     private void PlaceCameraAtStart()
     {
+        // The player owns position (floor-following physics); the camera is its eye.
+        _player = new Player(_level);
+        _camera.Position = _player.Position;
         if (_level.PlayerStart is { } start)
         {
-            float floor = 0f;
-            float ceiling = 100f;
-            if (start.Region >= 0 && start.Region < _level.Regions.Count)
-            {
-                var region = _level.Regions[start.Region];
-                floor = (float)region.FloorHeight;
-                ceiling = (float)region.CeilHeight;
-            }
-
-            // Spawn at eye level: midway between floor and ceiling of the start region.
-            float eye = ceiling > floor ? (floor + ceiling) * 0.5f : floor + 20f;
-            _camera.Position = new Vector3(start.X, eye, start.Y);
             _camera.Yaw = -start.Angle * (MathF.PI / 180f);
-        }
-        else
-        {
-            _camera.Position = new Vector3(0, 50, 0);
         }
     }
 
@@ -438,23 +426,33 @@ internal sealed class LevelWindow : Form
 
     private void UpdateCamera()
     {
-        // Per-tick move distance (~60 ticks/sec): Ctrl = precise, Shift = fast, default = moderate.
-        float speed = 10f;
-        if (_keysDown.Contains(Keys.ShiftKey))
+        // Walk on the floor: WASD move horizontally (collision + region tracking via the player),
+        // Space jumps, the mouse looks. Shift runs, Ctrl creeps.
+        float speed = _keysDown.Contains(Keys.ShiftKey) ? 22f : _keysDown.Contains(Keys.ControlKey) ? 3f : 8f;
+
+        float yaw = _camera.Yaw;
+        var forward = new Vector3(MathF.Sin(yaw), 0, MathF.Cos(yaw)); // horizontal facing
+        Vector3 right = _camera.Right;                                // horizontal (cross with world up)
+
+        var move = Vector3.Zero;
+        if (_keysDown.Contains(Keys.W)) move += forward;
+        if (_keysDown.Contains(Keys.S)) move -= forward;
+        if (_keysDown.Contains(Keys.D)) move += right;
+        if (_keysDown.Contains(Keys.A)) move -= right;
+
+        if (move != Vector3.Zero)
         {
-            speed = 40f;
-        }
-        else if (_keysDown.Contains(Keys.ControlKey))
-        {
-            speed = 3f;
+            move = Vector3.Normalize(move) * speed;
+            _player.MoveHorizontal(move.X, move.Z);
         }
 
-        if (_keysDown.Contains(Keys.W)) _camera.MoveForward(speed);
-        if (_keysDown.Contains(Keys.S)) _camera.MoveForward(-speed);
-        if (_keysDown.Contains(Keys.A)) _camera.MoveRight(-speed);
-        if (_keysDown.Contains(Keys.D)) _camera.MoveRight(speed);
-        if (_keysDown.Contains(Keys.E)) _camera.MoveUp(speed);
-        if (_keysDown.Contains(Keys.Q)) _camera.MoveUp(-speed);
+        if (_keysDown.Contains(Keys.Space))
+        {
+            _player.Jump();
+        }
+
+        _player.Tick();
+        _camera.Position = _player.Position;
     }
 
     private void RenderFrame()
