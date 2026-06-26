@@ -311,31 +311,30 @@ internal sealed class LevelWindow : Form
 
     private void BuildSprites()
     {
-        // Pixels -> world units. Sprite art is tiny relative to the level's coordinates;
-        // this is a first-pass guess and an easy knob to tune once seen.
-        const float spriteScale = 0.1f;
-
         foreach (var thing in _level.Things)
         {
-            AddSprite(thing.X, thing.Y, thing.Region, thing.Texture, spriteScale);
+            AddSprite(thing.X, thing.Y, thing.Height, thing.Region, thing.Texture);
         }
 
         foreach (var actor in _level.Actors)
         {
-            AddSprite(actor.X, actor.Y, actor.Region, actor.Texture, spriteScale);
+            AddSprite(actor.X, actor.Y, actor.Height, actor.Region, actor.Texture);
         }
     }
 
-    private void AddSprite(double x, double y, int region, string? texture, float scale)
+    private void AddSprite(double x, double y, double height, int region, string? texture)
     {
-        if (texture is null || !_level.Textures.TryGetValue(texture, out LevelTexture levelTexture) || levelTexture.Height <= 0)
+        if (texture is null || !_level.Textures.TryGetValue(texture, out LevelTexture levelTexture))
         {
             return;
         }
 
+        // World height comes from the WDL HEIGHT (designer-intended, room-scaled);
+        // width follows the texture's pixel aspect ratio.
+        float worldHeight = height > 0 ? (float)height : 1f;
+        float aspect = levelTexture.Height > 0 ? levelTexture.Width / (float)levelTexture.Height : 1f;
+        float worldWidth = worldHeight * aspect;
         float floor = region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : 0f;
-        float halfWidth = levelTexture.Width * scale * 0.5f;
-        float halfHeight = levelTexture.Height * scale * 0.5f;
 
         if (!_spriteGroups.TryGetValue(texture, out List<Billboard>? group))
         {
@@ -343,7 +342,7 @@ internal sealed class LevelWindow : Form
             _spriteGroups[texture] = group;
         }
 
-        group.Add(new Billboard(new Vector3((float)x, floor, (float)y), halfWidth, halfHeight));
+        group.Add(new Billboard(new Vector3((float)x, floor, (float)y), worldWidth * 0.5f, worldHeight * 0.5f));
     }
 
     private void RenderSprites()
