@@ -16,6 +16,7 @@ public sealed class WdlRuntime : IWdlContext
     private const int MaxCallDepth = 64;
 
     private readonly Dictionary<string, double> _skills;
+    private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
@@ -26,6 +27,7 @@ public sealed class WdlRuntime : IWdlContext
     {
         ArgumentNullException.ThrowIfNull(level);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
+        _bounds = level.SkillBounds;
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         _interpreter = new WdlInterpreter(this);
@@ -38,7 +40,8 @@ public sealed class WdlRuntime : IWdlContext
     public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
     /// <inheritdoc/>
-    public void SetSkill(string name, double value) => _skills[name] = value;
+    public void SetSkill(string name, double value) =>
+        _skills[name] = _bounds.TryGetValue(name, out SkillRange range) ? range.Clamp(value) : value;
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);

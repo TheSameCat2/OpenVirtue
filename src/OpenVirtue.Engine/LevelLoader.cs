@@ -84,9 +84,10 @@ public static class LevelLoader
             ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
             : null;
 
+        (Dictionary<string, double> skillValues, Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
         return new Level(
             name, vertices, regions, walls, things, actors, start,
-            GatherSkills(program), BuildTextures(declarations), declarations.Actions,
+            skillValues, skillBounds, BuildTextures(declarations), declarations.Actions,
             FindActionName(program, "IF_START"));
     }
 
@@ -181,9 +182,10 @@ public static class LevelLoader
         return null;
     }
 
-    private static Dictionary<string, double> GatherSkills(WdlProgram program)
+    private static (Dictionary<string, double> Values, Dictionary<string, SkillRange> Bounds) GatherSkills(WdlProgram program)
     {
-        var skills = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var bounds = new Dictionary<string, SkillRange>(StringComparer.OrdinalIgnoreCase);
 
         foreach (WdlItem item in program.Items)
         {
@@ -193,22 +195,41 @@ public static class LevelLoader
             }
 
             double value = 0;
+            double? min = null;
+            double? max = null;
             if (item.Body is { } body)
             {
                 foreach (WdlItem property in body.Items)
                 {
-                    if (property.Keyword.Equals("VAL", StringComparison.OrdinalIgnoreCase) &&
-                        property.Header.Count > 0 &&
-                        double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+                    if (property.Keyword.Equals("VAL", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedVal)
                     {
-                        value = parsed;
+                        value = parsedVal;
+                    }
+                    else if (property.Keyword.Equals("MIN", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedMin)
+                    {
+                        min = parsedMin;
+                    }
+                    else if (property.Keyword.Equals("MAX", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedMax)
+                    {
+                        max = parsedMax;
                     }
                 }
             }
 
-            skills[item.Header[0].Text] = value;
+            string name = item.Header[0].Text;
+            values[name] = value;
+            if (min is not null || max is not null)
+            {
+                bounds[name] = new SkillRange(min ?? double.NegativeInfinity, max ?? double.PositiveInfinity);
+            }
         }
 
-        return skills;
+        return (values, bounds);
     }
+
+    private static double? ParseNumber(WdlItem property) =>
+        property.Header.Count > 0 &&
+        double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? value
+            : null;
 }

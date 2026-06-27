@@ -90,6 +90,24 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesSkillMinMaxBounds()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main = "MAPFILE <m.wmp>; SKILL myHealth { VAL 100; MAX 100; MIN 0; } SKILL freeVal { VAL 5; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(100, level.Skills["myHealth"]);
+        SkillRange health = level.SkillBounds["myHealth"];
+        Assert.Equal(0, health.Min);
+        Assert.Equal(100, health.Max);
+        Assert.False(level.SkillBounds.ContainsKey("freeVal")); // no MIN/MAX => no bounds entry
+    }
+
+    [Fact]
     public void LoadCore_NoMapFile_Throws()
     {
         Assert.Throws<InvalidDataException>(

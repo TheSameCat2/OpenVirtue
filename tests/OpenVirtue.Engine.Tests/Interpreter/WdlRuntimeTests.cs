@@ -133,6 +133,31 @@ public class WdlRuntimeTests
         Assert.Equal(48, runtime.GetSkill("pos"), 9); // 32 + 16
     }
 
+    [Fact]
+    public void SetSkill_ClampsAssignmentsToDeclaredBounds()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL myHealth { VAL 100; MAX 100; MIN 0; } " +
+            "ACTION overheal { RULE myHealth += 50; } ACTION drain { RULE myHealth -= 1000; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("overheal");
+        Assert.Equal(100, runtime.GetSkill("myHealth")); // pinned at MAX, not 150
+
+        runtime.RunAction("drain");
+        Assert.Equal(0, runtime.GetSkill("myHealth"));   // pinned at MIN, not -900
+    }
+
+    [Fact]
+    public void SetSkill_WithoutDeclaredBounds_DoesNotClamp()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SKILL freeVal { VAL 0; } ACTION big { SET freeVal, 99999; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("big");
+        Assert.Equal(99999, runtime.GetSkill("freeVal"));
+    }
+
     private static Level Load(string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
