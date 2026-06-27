@@ -61,6 +61,17 @@ public class WdlInterpreterTests
         Assert.Equal(9, thing.X);
     }
 
+    [Fact]
+    public void Execute_SkipsUnparseableStatement_AndContinues()
+    {
+        // A string-valued assignment isn't modelled by the numeric evaluator; it must be skipped
+        // without aborting the rest of the block.
+        TestContext context = Run("SET a, 1; SET msg, \"text\"; SET b, 2;");
+
+        Assert.Equal(1, context.GetSkill("a"));
+        Assert.Equal(2, context.GetSkill("b")); // reached despite the unparseable middle statement
+    }
+
     private static TestContext Run(string statements)
     {
         var context = new TestContext();

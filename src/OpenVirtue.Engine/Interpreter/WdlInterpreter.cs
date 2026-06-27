@@ -37,23 +37,32 @@ public sealed class WdlInterpreter(IWdlContext context)
                 continue;
             }
 
-            switch (item.Keyword.ToUpperInvariant())
+            try
             {
-                case "SET":
-                    ExecuteSet(item);
-                    break;
-                case "RULE":
-                    ExecuteRule(item);
-                    break;
-                case "IF":
-                    ExecuteIf(item);
-                    break;
+                switch (item.Keyword.ToUpperInvariant())
+                {
+                    case "SET":
+                        ExecuteSet(item);
+                        break;
+                    case "RULE":
+                        ExecuteRule(item);
+                        break;
+                    case "IF":
+                        ExecuteIf(item);
+                        break;
 
-                default:
-                    // A bare keyword may name another action to run; the context invokes it
-                    // if it exists and ignores it otherwise (unmodelled instructions are no-ops).
-                    context.CallAction(item.Keyword);
-                    break;
+                    default:
+                        // A bare keyword may name another action to run; the context invokes it
+                        // if it exists and ignores it otherwise (unmodelled instructions are no-ops).
+                        context.CallAction(item.Keyword);
+                        break;
+                }
+            }
+            catch (InvalidDataException)
+            {
+                // The statement uses an expression form the evaluator doesn't model yet (e.g. a
+                // string literal or an unsupported token). Skip it and continue the block rather
+                // than aborting the whole action — fidelity grows as the evaluator does.
             }
         }
     }
