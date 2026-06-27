@@ -57,6 +57,19 @@ public sealed class WdlRuntime : IWdlContext
     /// <returns><c>true</c> if the action was found and executed.</returns>
     public bool RunAction(string name) => Run(name);
 
+    /// <summary>
+    /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
+    /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
+    /// Per-object cycle hooks will be dispatched here as the scheduler grows.
+    /// </summary>
+    /// <returns>The frame's time-correction factor.</returns>
+    public double Tick(double deltaSeconds)
+    {
+        double timeCorrection = Timing.TimeCorrection(deltaSeconds);
+        _skills[Timing.TimeCorrectionSkill] = timeCorrection;
+        return timeCorrection;
+    }
+
     /// <inheritdoc/>
     public void CallAction(string name) => Run(name);
 

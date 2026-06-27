@@ -104,6 +104,35 @@ public class WdlRuntimeTests
         Assert.NotEmpty(level.Actions);
     }
 
+    [Fact]
+    public void Tick_SetsTimeCorrectionSkill()
+    {
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+
+        double tc = runtime.Tick(1.0 / 16); // a 16 fps frame
+
+        Assert.Equal(1.0, tc, 9);
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+    }
+
+    [Fact]
+    public void Tick_TimeCorrection_ScalesScriptMovement()
+    {
+        // pos += speed * TIME_CORR — the canonical frame-rate-independent step.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL pos { VAL 0; } SKILL speed { VAL 32; } " +
+            "ACTION move { RULE pos += speed * TIME_CORR; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 16); // TIME_CORR = 1   -> full step
+        runtime.RunAction("move");
+        Assert.Equal(32, runtime.GetSkill("pos"), 9);
+
+        runtime.Tick(1.0 / 32); // TIME_CORR = 0.5 -> half step
+        runtime.RunAction("move");
+        Assert.Equal(48, runtime.GetSkill("pos"), 9); // 32 + 16
+    }
+
     private static Level Load(string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
