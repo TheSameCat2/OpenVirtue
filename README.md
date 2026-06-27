@@ -58,8 +58,8 @@ What works today:
   comparison, logical `&&`/`||`, modulo, member access) and `SET`/`RULE`/`IF`
   statements with action-to-action calls run against a live skill table
   (`WdlRuntime`); a level's `IF_START` script can boot, and a per-frame `Tick`
-  maintains the fixed-tick `TIME_CORR` factor. Currently exercised by tests; not yet
-  driving the running app.
+  maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect declared
+  `MIN`/`MAX` bounds. Currently exercised by tests; not yet driving the running app.
 
 Not yet started: the `each_cycle` scheduler dispatch and player-movement parity,
 actor animation/AI, collision, audio playback, HUD/menus/inventory, save/load, and
