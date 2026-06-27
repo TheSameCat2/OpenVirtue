@@ -54,12 +54,14 @@ What works today:
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency), explored with a
   free-fly debug camera.
-- **WDL interpreter — foundation only** — expression evaluation and `SET`/`RULE`/`IF`
+- **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
+  comparison, logical `&&`/`||`, modulo, member access) and `SET`/`RULE`/`IF`
   statements with action-to-action calls run against a live skill table
-  (`WdlRuntime`), and a level's `IF_START` script can boot. Currently exercised by
-  tests; not yet driving the running app.
+  (`WdlRuntime`); a level's `IF_START` script can boot, and a per-frame `Tick`
+  maintains the fixed-tick `TIME_CORR` factor. Currently exercised by tests; not yet
+  driving the running app.
 
-Not yet started: the fixed-tick scheduler (`each_cycle`) and player-movement parity,
+Not yet started: the `each_cycle` scheduler dispatch and player-movement parity,
 actor animation/AI, collision, audio playback, HUD/menus/inventory, save/load, and
 the DOSBox-X oracle-diff harness. **The app is a level viewer, not yet a playable
 game.** See the [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for
