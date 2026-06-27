@@ -158,6 +158,28 @@ public class WdlRuntimeTests
         Assert.Equal(99999, runtime.GetSkill("freeVal"));
     }
 
+    [Fact]
+    public void Runtime_RealApathy_BootsAndTicksWithoutThrowing()
+    {
+        string? apathy = ResearchData.WrsFiles()
+            .FirstOrDefault(p => Path.GetFileName(p).Equals("apathy.wrs", StringComparison.OrdinalIgnoreCase));
+        if (apathy is null)
+        {
+            return; // no local game data — skip
+        }
+
+        Level level = LevelLoader.Load(WrsArchive.ReadFile(apathy), "APATHY.WDL");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunStartup(); // run the level's real IF_START path — must not throw
+        for (int i = 0; i < 3; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+    }
+
     private static Level Load(string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
