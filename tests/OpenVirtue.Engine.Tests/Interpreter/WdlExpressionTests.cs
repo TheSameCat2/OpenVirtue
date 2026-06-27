@@ -23,6 +23,23 @@ public class WdlExpressionTests
         Assert.Equal(expected, Eval(expression, new TestContext()));
     }
 
+    [Theory]
+    [InlineData("1 && 1", 1)]
+    [InlineData("1 && 0", 0)]
+    [InlineData("0 || 0", 0)]
+    [InlineData("1 || 0", 1)]
+    [InlineData("10 % 3", 1)]
+    [InlineData("10 % 0", 0)]            // Acknex-safe modulo-by-zero
+    [InlineData("!0", 1)]
+    [InlineData("!5", 0)]
+    [InlineData("1 < 2 && 3 < 4", 1)]    // comparison binds tighter than &&
+    [InlineData("5 > 3 || 2 > 8", 1)]
+    [InlineData("1 || 0 && 0", 1)]       // && binds tighter than ||
+    public void Evaluates_LogicalAndModulo(string expression, double expected)
+    {
+        Assert.Equal(expected, Eval(expression, new TestContext()));
+    }
+
     [Fact]
     public void Evaluates_SkillNames_WithPrecedence()
     {

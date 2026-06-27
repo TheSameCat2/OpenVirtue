@@ -22,6 +22,7 @@ public sealed class Level
         IReadOnlyList<Actor> actors,
         PlayerStart? playerStart,
         IReadOnlyDictionary<string, double> skills,
+        IReadOnlyDictionary<string, SkillRange> skillBounds,
         IReadOnlyDictionary<string, LevelTexture> textures,
         IReadOnlyDictionary<string, WdlBlock> actions,
         string? startupAction)
@@ -34,6 +35,7 @@ public sealed class Level
         Actors = actors;
         PlayerStart = playerStart;
         Skills = skills;
+        SkillBounds = skillBounds;
         Textures = textures;
         Actions = actions;
         StartupAction = startupAction;
@@ -53,6 +55,9 @@ public sealed class Level
 
     /// <summary>Global skills declared in the level's WDL, with their initial values.</summary>
     public IReadOnlyDictionary<string, double> Skills { get; }
+
+    /// <summary>Declared MIN/MAX bounds for the skills that specify them; the runtime clamps assignments to these.</summary>
+    public IReadOnlyDictionary<string, SkillRange> SkillBounds { get; }
 
     /// <summary>Resolved textures (name → source PCX file + rectangle + scale) referenced by the geometry.</summary>
     public IReadOnlyDictionary<string, LevelTexture> Textures { get; }

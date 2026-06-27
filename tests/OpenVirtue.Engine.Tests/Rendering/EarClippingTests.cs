@@ -40,7 +40,7 @@ public class EarClippingTests
         Assert.Empty(EarClipping.Triangulate([new(0, 0), new(1, 1)]));
     }
 
-    private static float TriangulatedArea(IReadOnlyList<Vector2> polygon, IReadOnlyList<int> indices)
+    private static float TriangulatedArea(Vector2[] polygon, IReadOnlyList<int> indices)
     {
         float area = 0;
         for (int i = 0; i < indices.Count; i += 3)

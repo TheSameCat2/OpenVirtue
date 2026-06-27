@@ -16,6 +16,7 @@ public sealed class WdlRuntime : IWdlContext
     private const int MaxCallDepth = 64;
 
     private readonly Dictionary<string, double> _skills;
+    private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
@@ -26,6 +27,7 @@ public sealed class WdlRuntime : IWdlContext
     {
         ArgumentNullException.ThrowIfNull(level);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
+        _bounds = level.SkillBounds;
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         _interpreter = new WdlInterpreter(this);
@@ -38,7 +40,8 @@ public sealed class WdlRuntime : IWdlContext
     public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
     /// <inheritdoc/>
-    public void SetSkill(string name, double value) => _skills[name] = value;
+    public void SetSkill(string name, double value) =>
+        _skills[name] = _bounds.TryGetValue(name, out SkillRange range) ? range.Clamp(value) : value;
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
@@ -56,6 +59,19 @@ public sealed class WdlRuntime : IWdlContext
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
     public bool RunAction(string name) => Run(name);
+
+    /// <summary>
+    /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
+    /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
+    /// Per-object cycle hooks will be dispatched here as the scheduler grows.
+    /// </summary>
+    /// <returns>The frame's time-correction factor.</returns>
+    public double Tick(double deltaSeconds)
+    {
+        double timeCorrection = Timing.TimeCorrection(deltaSeconds);
+        _skills[Timing.TimeCorrectionSkill] = timeCorrection;
+        return timeCorrection;
+    }
 
     /// <inheritdoc/>
     public void CallAction(string name) => Run(name);

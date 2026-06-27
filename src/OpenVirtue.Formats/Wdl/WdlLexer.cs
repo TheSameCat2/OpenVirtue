@@ -176,7 +176,7 @@ public sealed class WdlLexer
         }
 
         Advance(); // closing quote
-        return new WdlToken(WdlTokenKind.String, sb.ToString(), line, column);
+        return new WdlToken(WdlTokenKind.StringLiteral, sb.ToString(), line, column);
     }
 
     private WdlToken? TryReadFileRef(int line, int column)

@@ -29,16 +29,16 @@ public abstract class AcknexObject
     /// Acknex skills do). Writes update the typed field when one matches, otherwise the
     /// dynamic table.
     /// </summary>
-    public double this[string property]
+    public double this[string name]
     {
-        get => TryGetTyped(property, out double value)
+        get => TryGetTyped(name, out double value)
             ? value
-            : _skills.TryGetValue(property, out double skill) ? skill : 0;
+            : _skills.TryGetValue(name, out double skill) ? skill : 0;
         set
         {
-            if (!TrySetTyped(property, value))
+            if (!TrySetTyped(name, value))
             {
-                _skills[property] = value;
+                _skills[name] = value;
             }
         }
     }
@@ -47,14 +47,14 @@ public abstract class AcknexObject
     public bool HasSkill(string name) => _skills.ContainsKey(name);
 
     /// <summary>Maps a well-known property name to a typed field. Override in derived types.</summary>
-    protected virtual bool TryGetTyped(string property, out double value)
+    protected virtual bool TryGetTyped(string name, out double value)
     {
         value = 0;
         return false;
     }
 
     /// <summary>Writes a well-known property name to a typed field. Override in derived types.</summary>
-    protected virtual bool TrySetTyped(string property, double value) => false;
+    protected virtual bool TrySetTyped(string name, double value) => false;
 
     /// <inheritdoc/>
     public override string ToString() => $"{GetType().Name} '{Name}'";

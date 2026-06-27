@@ -104,6 +104,82 @@ public class WdlRuntimeTests
         Assert.NotEmpty(level.Actions);
     }
 
+    [Fact]
+    public void Tick_SetsTimeCorrectionSkill()
+    {
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+
+        double tc = runtime.Tick(1.0 / 16); // a 16 fps frame
+
+        Assert.Equal(1.0, tc, 9);
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+    }
+
+    [Fact]
+    public void Tick_TimeCorrection_ScalesScriptMovement()
+    {
+        // pos += speed * TIME_CORR — the canonical frame-rate-independent step.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL pos { VAL 0; } SKILL speed { VAL 32; } " +
+            "ACTION move { RULE pos += speed * TIME_CORR; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 16); // TIME_CORR = 1   -> full step
+        runtime.RunAction("move");
+        Assert.Equal(32, runtime.GetSkill("pos"), 9);
+
+        runtime.Tick(1.0 / 32); // TIME_CORR = 0.5 -> half step
+        runtime.RunAction("move");
+        Assert.Equal(48, runtime.GetSkill("pos"), 9); // 32 + 16
+    }
+
+    [Fact]
+    public void SetSkill_ClampsAssignmentsToDeclaredBounds()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL myHealth { VAL 100; MAX 100; MIN 0; } " +
+            "ACTION overheal { RULE myHealth += 50; } ACTION drain { RULE myHealth -= 1000; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("overheal");
+        Assert.Equal(100, runtime.GetSkill("myHealth")); // pinned at MAX, not 150
+
+        runtime.RunAction("drain");
+        Assert.Equal(0, runtime.GetSkill("myHealth"));   // pinned at MIN, not -900
+    }
+
+    [Fact]
+    public void SetSkill_WithoutDeclaredBounds_DoesNotClamp()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SKILL freeVal { VAL 0; } ACTION big { SET freeVal, 99999; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("big");
+        Assert.Equal(99999, runtime.GetSkill("freeVal"));
+    }
+
+    [Fact]
+    public void Runtime_RealApathy_BootsAndTicksWithoutThrowing()
+    {
+        string? apathy = ResearchData.WrsFiles()
+            .FirstOrDefault(p => Path.GetFileName(p).Equals("apathy.wrs", StringComparison.OrdinalIgnoreCase));
+        if (apathy is null)
+        {
+            return; // no local game data — skip
+        }
+
+        Level level = LevelLoader.Load(WrsArchive.ReadFile(apathy), "APATHY.WDL");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunStartup(); // run the level's real IF_START path — must not throw
+        for (int i = 0; i < 3; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+    }
+
     private static Level Load(string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
