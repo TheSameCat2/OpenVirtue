@@ -23,4 +23,14 @@ public class TimingTests
     {
         Assert.Equal(16.0, Timing.TicksPerSecond);
     }
+
+    [Fact]
+    public void TimeCorrection_CapsPathologicalFrames()
+    {
+        // A multi-second gap (level load, lag spike, debugger pause) is capped at MaxFrameSeconds
+        // so the simulation can't take a giant step.
+        double expected = Timing.MaxFrameSeconds * Timing.TicksPerSecond;
+        Assert.Equal(expected, Timing.TimeCorrection(10.0), 9);
+        Assert.Equal(expected, Timing.TimeCorrection(Timing.MaxFrameSeconds), 9);
+    }
 }
