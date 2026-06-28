@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using OpenVirtue.Engine;
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Rendering;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -54,6 +56,8 @@ internal sealed class LevelWindow : Form
     private readonly List<(int Start, int Count, string? Texture)> _batches = [];
     private readonly Dictionary<string, ID3D11ShaderResourceView> _textureViews = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Billboard>> _spriteGroups = new(StringComparer.OrdinalIgnoreCase);
+    private readonly WdlRuntime _runtime;
+    private readonly Stopwatch _frameClock = Stopwatch.StartNew();
 
     private ID3D11Device _device = null!;
     private ID3D11DeviceContext _context = null!;
@@ -74,11 +78,14 @@ internal sealed class LevelWindow : Form
 
     private Point _lastMouse;
     private bool _dragging;
+    private string _baseTitle = "";
+    private double _titleAccum;
 
     public LevelWindow(Level level, IReadOnlyDictionary<string, TextureImage> textures)
     {
         _level = level;
         _textureImages = textures;
+        _runtime = new WdlRuntime(level);
         Text = $"OpenVirtue — {level.Name}";
         ClientSize = new System.Drawing.Size(1280, 720);
         StartPosition = FormStartPosition.CenterScreen;
@@ -102,8 +109,44 @@ internal sealed class LevelWindow : Form
         LoadTextures();
         BuildGeometry();
         BuildSprites();
+        BootRuntime();
         _timer.Tick += (_, _) => RenderFrame();
         _timer.Start();
+    }
+
+    /// <summary>Boots the level's WDL runtime: runs its IF_START script and shows status in the title.</summary>
+    private void BootRuntime()
+    {
+        bool started = false;
+        try
+        {
+            started = _runtime.RunStartup(); // run the level's IF_START script, if any
+        }
+        catch
+        {
+            // A startup-script fault must not take down the viewer.
+        }
+
+        _baseTitle = $"OpenVirtue — {_level.Name}  ·  runtime: {_level.Skills.Count} skills, IF_START {(started ? "ran" : "none")}";
+        Text = _baseTitle;
+        _frameClock.Restart(); // discard level-load time before the first real frame delta
+    }
+
+    /// <summary>Advances the runtime one frame and surfaces the live tick in the window title.</summary>
+    private void TickRuntime()
+    {
+        double dt = _frameClock.Elapsed.TotalSeconds;
+        _frameClock.Restart();
+        double timeCorrection = _runtime.Tick(dt);
+
+        // Refresh the title a few times a second so the live runtime tick is visible.
+        _titleAccum += dt;
+        if (_titleAccum >= 0.25)
+        {
+            _titleAccum = 0;
+            double fps = dt > 0 ? 1.0 / dt : 0;
+            Text = $"{_baseTitle}  ·  {fps:F0} fps, TIME_CORR {timeCorrection:F3}";
+        }
     }
 
     protected override void OnClientSizeChanged(EventArgs e)
@@ -422,6 +465,7 @@ internal sealed class LevelWindow : Form
         }
 
         UpdateCamera();
+        TickRuntime();
 
         float aspect = (float)ClientSize.Width / Math.Max(1, ClientSize.Height);
         var constants = new FrameConstants { ViewProjection = _camera.View * Camera.Projection(aspect) };
