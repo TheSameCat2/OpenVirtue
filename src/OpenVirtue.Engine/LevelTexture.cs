@@ -16,4 +16,5 @@ public readonly record struct LevelTexture(
     int Width,
     int Height,
     double ScaleX,
-    double ScaleY);
+    double ScaleY,
+    bool IsSky);

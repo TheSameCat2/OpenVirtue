@@ -54,7 +54,8 @@ What works today:
   loading, inspection mesh generation, texture decode, and runtime boot/tick.
 - **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
-  things and actors (palette-index-0 color-key transparency). The camera is now
+  things and actors (palette-index-0 color-key transparency). It recognizes WDL
+  `FLAGS SKY` textures for a first-pass sky-colored background. The camera is now
   driven by a first-person debug player with floor following, point-based portal
   crossing/blocking, gravity, and jump.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
@@ -67,9 +68,10 @@ What works today:
   the debug player as a script-visible object in the viewer. A provisional scheduler
   API dispatches registered per-frame object actions with `my` and `TIME_CORR` bound.
 
-Not yet complete: Acknex-parity `each_cycle` discovery/dispatch order,
-Acknex-accurate player-movement parity, body-radius/sliding collision, actor
-animation/AI, audio playback, HUD/menus/inventory, save/load, and the DOSBox-X oracle-diff harness.
+Not yet complete: textured skybox/sky scrolling, palette shading,
+Acknex-parity `each_cycle` discovery/dispatch order, Acknex-accurate
+player-movement parity, body-radius/sliding collision, actor animation/AI, audio
+playback, HUD/menus/inventory, save/load, and the DOSBox-X oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in

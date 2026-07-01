@@ -19,7 +19,8 @@ engine invariants.
      load, mesh generation, texture decode, and runtime boot/tick; interactive app
      smoke remains manual.
 2. Finish low-risk renderer/runtime foundation.
-   - Sky/background handling.
+   - Sky/background handling (WDL `FLAGS SKY` textures are recognized and drive
+     a first-pass viewer background color; textured sky rendering remains).
    - First-pass palette/lighting approximation.
    - Sprite visibility/sorting fixes as needed for static scenes.
    - Runtime object registration for globals, placed things/actors, and player.

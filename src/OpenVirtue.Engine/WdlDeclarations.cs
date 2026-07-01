@@ -88,7 +88,7 @@ public sealed class WdlDeclarations
         }
 
         return new LevelTexture(
-            textureName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height, texture.ScaleX, texture.ScaleY);
+            textureName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height, texture.ScaleX, texture.ScaleY, texture.IsSky);
     }
 
     private void IndexBitmap(WdlItem item)
@@ -118,6 +118,7 @@ public sealed class WdlDeclarations
 
         string? bitmap = null;
         double scaleX = 1, scaleY = 1;
+        bool isSky = false;
         foreach (WdlItem property in body.Items)
         {
             if (property.Keyword.Equals("BMAPS", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
@@ -133,9 +134,14 @@ public sealed class WdlDeclarations
                     scaleY = scale[1];
                 }
             }
+            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase) &&
+                     property.Header.Any(static t => t.Text.Equals("SKY", StringComparison.OrdinalIgnoreCase)))
+            {
+                isSky = true;
+            }
         }
 
-        _textures[item.Header[0].Text] = new TextureDef(bitmap, scaleX, scaleY);
+        _textures[item.Header[0].Text] = new TextureDef(bitmap, scaleX, scaleY, isSky);
     }
 
     private void IndexRegion(WdlItem item)
@@ -231,7 +237,7 @@ public sealed class WdlDeclarations
 
     private readonly record struct BitmapDef(string File, int X, int Y, int Width, int Height);
 
-    private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY);
+    private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, bool IsSky);
 
     /// <summary>The floor and ceiling texture names declared for a region type.</summary>
     public readonly record struct RegionTextures(string? Floor, string? Ceiling);

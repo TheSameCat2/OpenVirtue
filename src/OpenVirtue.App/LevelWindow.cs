@@ -23,6 +23,8 @@ namespace OpenVirtue.App;
 /// </summary>
 internal sealed class LevelWindow : Form
 {
+    private static readonly Color4 DefaultClearColor = new(0.08f, 0.10f, 0.14f, 1f);
+
     private const string ShaderSource =
         """
         cbuffer Frame : register(b0) { float4x4 ViewProjection; };
@@ -50,6 +52,7 @@ internal sealed class LevelWindow : Form
 
     private readonly Level _level;
     private readonly IReadOnlyDictionary<string, TextureImage> _textureImages;
+    private readonly Color4 _clearColor;
     private readonly Panel _renderSurface = new()
     {
         BackColor = System.Drawing.Color.Black,
@@ -101,6 +104,7 @@ internal sealed class LevelWindow : Form
     {
         _level = level;
         _textureImages = textures;
+        _clearColor = ChooseBackgroundColor();
         _runtime = new WdlRuntime(level);
         Text = $"OpenVirtue — {level.Name}";
         ClientSize = new System.Drawing.Size(1280, 720);
@@ -551,7 +555,7 @@ internal sealed class LevelWindow : Form
         _context.RSSetState(_rasterizer);
         _context.OMSetRenderTargets(_renderTarget, _depthView);
         _context.OMSetDepthStencilState(_depthState);
-        _context.ClearRenderTargetView(_renderTarget, new Color4(0.08f, 0.10f, 0.14f, 1f));
+        _context.ClearRenderTargetView(_renderTarget, _clearColor);
         _context.ClearDepthStencilView(_depthView, DepthStencilClearFlags.Depth, 1f, 0);
 
         _context.IASetInputLayout(_inputLayout);
@@ -578,6 +582,48 @@ internal sealed class LevelWindow : Form
 
     private System.Drawing.Size RenderSize() =>
         new(Math.Max(1, _renderSurface.ClientSize.Width), Math.Max(1, _renderSurface.ClientSize.Height));
+
+    private Color4 ChooseBackgroundColor()
+    {
+        foreach (LevelTexture texture in _level.Textures.Values)
+        {
+            if (texture.IsSky && _textureImages.TryGetValue(texture.Name, out TextureImage image))
+            {
+                return AverageOpaqueColor(image);
+            }
+        }
+
+        return DefaultClearColor;
+    }
+
+    private static Color4 AverageOpaqueColor(TextureImage image)
+    {
+        long r = 0;
+        long g = 0;
+        long b = 0;
+        long count = 0;
+        ReadOnlySpan<byte> rgba = image.Rgba;
+        for (int i = 0; i + 3 < rgba.Length; i += 4)
+        {
+            if (rgba[i + 3] == 0)
+            {
+                continue;
+            }
+
+            r += rgba[i];
+            g += rgba[i + 1];
+            b += rgba[i + 2];
+            count++;
+        }
+
+        if (count == 0)
+        {
+            return DefaultClearColor;
+        }
+
+        float scale = 1.0f / (255.0f * count);
+        return new Color4(r * scale, g * scale, b * scale, 1f);
+    }
 
     private void UpdateStatus()
     {

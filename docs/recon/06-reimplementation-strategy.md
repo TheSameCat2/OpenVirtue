@@ -76,7 +76,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ not started.
 | **M2** | **PCX + palette** viewer | We can see original textures/sprites. | ✅ (`ovtool pcx`) |
 | **M3** | **WDL lexer/parser → AST** + `wdldump` | We understand the scripts structurally. | ✅ (+ preprocessor, `ovtool wdl`) |
 | **M4** | **WMP loader** → in-memory world; render a level's geometry **flat/wireframe** in a Direct3D window | Geometry pipeline + renderer bring-up. | ✅ |
-| **M5** | **Textured 2.5D renderer** (regions, walls, sky, palette shading) | Visual parity of a static level. | 🚧 walls + floors/ceilings textured; **no sky or palette shading** |
+| **M5** | **Textured 2.5D renderer** (regions, walls, sky, palette shading) | Visual parity of a static level. | 🚧 walls + floors/ceilings textured, WDL `FLAGS SKY` parsed for a first-pass background color; **no textured skybox or palette shading** |
 | **M6** | **WDL interpreter core**: skills, actions, scheduler tick, player movement matching original math (use `move-wdl` as reference) | The world comes alive; movement parity. | 🚧 full expression evaluator (incl. `&&` `\|\|` `%`), `SET`/`RULE`/`IF`, action calls, `IF_START` boot in the app, per-frame `TIME_CORR`, skill `MIN`/`MAX` clamping, runtime object registration, provisional registered `each_cycle` dispatch, and first-cut point-based player walking/jump; **no automatic scheduler parity or movement parity yet** |
 | **M7** | **THINGs/ACTORs**: sprites, animation, basic AI hooks (`if_near`/`if_hit`) | Enemies/objects behave. | 🚧 static billboard sprites render; **no animation or AI** |
 | **M8** | **HUD/menus/inventory/scrolls/2-D map** (UI widget system) | Full UI parity. | ⬜ |

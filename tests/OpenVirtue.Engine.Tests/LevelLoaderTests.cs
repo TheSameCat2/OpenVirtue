@@ -67,6 +67,27 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesSkyTextureFlag()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP sky_map, <sky.pcx>, 0, 0, 128, 128;
+            TEXTURE skyTex { BMAPS sky_map; FLAGS SKY; }
+            REGION room { CEIL_TEX skyTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.True(level.Textures["skyTex"].IsSky);
+    }
+
+    [Fact]
     public void LoadCore_DressesThingsFromTheirTypeDefinitions()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
