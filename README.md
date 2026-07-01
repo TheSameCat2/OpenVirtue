@@ -55,7 +55,8 @@ What works today:
 - **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). It recognizes WDL
-  `FLAGS SKY` textures for a first-pass sky-colored background. The camera is now
+  `FLAGS SKY` textures for a first-pass sky-colored background and applies
+  `TEXTURE AMBIENT` as a first-pass brightness tint. The camera is now
   driven by a first-person debug player with floor following, point-based portal
   crossing/blocking, gravity, and jump.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,

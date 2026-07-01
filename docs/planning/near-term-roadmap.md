@@ -21,7 +21,8 @@ engine invariants.
 2. Finish low-risk renderer/runtime foundation.
    - Sky/background handling (WDL `FLAGS SKY` textures are recognized and drive
      a first-pass viewer background color; textured sky rendering remains).
-   - First-pass palette/lighting approximation.
+   - First-pass palette/lighting approximation (`TEXTURE AMBIENT` drives a
+     brightness tint; true palette shading remains).
    - Sprite visibility/sorting fixes as needed for static scenes.
    - Runtime object registration for globals, placed things/actors, and player.
    - `each_cycle` scheduler skeleton with tests before exact parity tuning

@@ -88,7 +88,8 @@ public sealed class WdlDeclarations
         }
 
         return new LevelTexture(
-            textureName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height, texture.ScaleX, texture.ScaleY, texture.IsSky);
+            textureName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height,
+            texture.ScaleX, texture.ScaleY, texture.Ambient, texture.IsSky);
     }
 
     private void IndexBitmap(WdlItem item)
@@ -118,6 +119,7 @@ public sealed class WdlDeclarations
 
         string? bitmap = null;
         double scaleX = 1, scaleY = 1;
+        double ambient = 1;
         bool isSky = false;
         foreach (WdlItem property in body.Items)
         {
@@ -134,6 +136,12 @@ public sealed class WdlDeclarations
                     scaleY = scale[1];
                 }
             }
+            else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
+                     property.Header.Count > 0 &&
+                     double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedAmbient))
+            {
+                ambient = parsedAmbient;
+            }
             else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase) &&
                      property.Header.Any(static t => t.Text.Equals("SKY", StringComparison.OrdinalIgnoreCase)))
             {
@@ -141,7 +149,7 @@ public sealed class WdlDeclarations
             }
         }
 
-        _textures[item.Header[0].Text] = new TextureDef(bitmap, scaleX, scaleY, isSky);
+        _textures[item.Header[0].Text] = new TextureDef(bitmap, scaleX, scaleY, ambient, isSky);
     }
 
     private void IndexRegion(WdlItem item)
@@ -237,7 +245,7 @@ public sealed class WdlDeclarations
 
     private readonly record struct BitmapDef(string File, int X, int Y, int Width, int Height);
 
-    private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, bool IsSky);
+    private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, double Ambient, bool IsSky);
 
     /// <summary>The floor and ceiling texture names declared for a region type.</summary>
     public readonly record struct RegionTextures(string? Floor, string? Ceiling);

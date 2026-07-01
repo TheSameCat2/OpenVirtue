@@ -64,6 +64,7 @@ public class LevelLoaderTests
         Assert.Equal("floor.pcx", texture.File);
         Assert.Equal(64, texture.Width);
         Assert.Equal(16, texture.ScaleX);
+        Assert.Equal(1, texture.Ambient);
     }
 
     [Fact]
@@ -78,13 +79,14 @@ public class LevelLoaderTests
             """
             MAPFILE <m.wmp>;
             BMAP sky_map, <sky.pcx>, 0, 0, 128, 128;
-            TEXTURE skyTex { BMAPS sky_map; FLAGS SKY; }
+            TEXTURE skyTex { BMAPS sky_map; AMBIENT 0.7; FLAGS SKY; }
             REGION room { CEIL_TEX skyTex; }
             """;
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Assert.True(level.Textures["skyTex"].IsSky);
+        Assert.Equal(0.7, level.Textures["skyTex"].Ambient);
     }
 
     [Fact]

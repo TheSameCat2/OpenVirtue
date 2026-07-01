@@ -27,7 +27,7 @@ internal sealed class LevelWindow : Form
 
     private const string ShaderSource =
         """
-        cbuffer Frame : register(b0) { float4x4 ViewProjection; };
+        cbuffer Frame : register(b0) { float4x4 ViewProjection; float4 Tint; };
         Texture2D Diffuse : register(t0);
         SamplerState Sampler : register(s0);
 
@@ -46,7 +46,7 @@ internal sealed class LevelWindow : Form
         {
             float4 color = Diffuse.Sample(Sampler, input.uv);
             clip(color.a - 0.5);          // alpha-test cutout for color-keyed sprites
-            return float4(color.rgb, 1.0);
+            return float4(saturate(color.rgb * Tint.rgb), 1.0);
         }
         """;
 
@@ -69,7 +69,7 @@ internal sealed class LevelWindow : Form
     private Player _player = null!;
     private readonly HashSet<Keys> _keysDown = [];
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
-    private readonly List<(int Start, int Count, string? Texture)> _batches = [];
+    private readonly List<(int Start, int Count, string? Texture, float Ambient)> _batches = [];
     private readonly Dictionary<string, ID3D11ShaderResourceView> _textureViews = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Billboard>> _spriteGroups = new(StringComparer.OrdinalIgnoreCase);
     private readonly WdlRuntime _runtime;
@@ -124,6 +124,7 @@ internal sealed class LevelWindow : Form
     private struct FrameConstants
     {
         public Matrix4x4 ViewProjection;
+        public Vector4 Tint;
     }
 
     /// <summary>A camera-facing sprite: its base point (on the floor) and half-extents in world units.</summary>
@@ -406,7 +407,7 @@ internal sealed class LevelWindow : Form
         var vertices = new List<RenderVertex>();
         foreach (MeshBatch batch in mesh.Batches)
         {
-            _batches.Add((vertices.Count, batch.Vertices.Count, batch.Texture));
+            _batches.Add((vertices.Count, batch.Vertices.Count, batch.Texture, TextureAmbient(batch.Texture)));
             vertices.AddRange(batch.Vertices);
         }
 
@@ -459,7 +460,7 @@ internal sealed class LevelWindow : Form
         group.Add(new Billboard(new Vector3((float)x, floor, (float)y), worldWidth * 0.5f, worldHeight * 0.5f));
     }
 
-    private void RenderSprites()
+    private void RenderSprites(Matrix4x4 viewProjection)
     {
         if (_spriteGroups.Count == 0)
         {
@@ -472,6 +473,7 @@ internal sealed class LevelWindow : Form
 
         foreach ((string texture, List<Billboard> billboards) in _spriteGroups)
         {
+            ApplyFrameConstants(viewProjection, TextureAmbient(texture));
             var vertices = new List<RenderVertex>(billboards.Count * 6);
             foreach (Billboard billboard in billboards)
             {
@@ -548,8 +550,7 @@ internal sealed class LevelWindow : Form
 
         System.Drawing.Size renderSize = RenderSize();
         float aspect = (float)renderSize.Width / Math.Max(1, renderSize.Height);
-        var constants = new FrameConstants { ViewProjection = _camera.View * Camera.Projection(aspect) };
-        _context.UpdateSubresource(constants, _constantBuffer);
+        Matrix4x4 viewProjection = _camera.View * Camera.Projection(aspect);
 
         _context.RSSetViewport(new Viewport(0, 0, renderSize.Width, renderSize.Height, 0, 1));
         _context.RSSetState(_rasterizer);
@@ -566,8 +567,9 @@ internal sealed class LevelWindow : Form
         _context.PSSetShader(_pixelShader);
         _context.PSSetSampler(0, _sampler);
 
-        foreach ((int start, int count, string? texture) in _batches)
+        foreach ((int start, int count, string? texture, float ambient) in _batches)
         {
+            ApplyFrameConstants(viewProjection, ambient);
             ID3D11ShaderResourceView view = texture is not null && _textureViews.TryGetValue(texture, out ID3D11ShaderResourceView? found)
                 ? found
                 : _defaultView;
@@ -575,13 +577,33 @@ internal sealed class LevelWindow : Form
             _context.Draw((uint)count, (uint)start);
         }
 
-        RenderSprites();
+        RenderSprites(viewProjection);
 
         _swapChain.Present(1, PresentFlags.None);
     }
 
     private System.Drawing.Size RenderSize() =>
         new(Math.Max(1, _renderSurface.ClientSize.Width), Math.Max(1, _renderSurface.ClientSize.Height));
+
+    private float TextureAmbient(string? texture)
+    {
+        if (texture is not null && _level.Textures.TryGetValue(texture, out LevelTexture levelTexture))
+        {
+            return (float)Math.Clamp(levelTexture.Ambient, 0, 2);
+        }
+
+        return 1f;
+    }
+
+    private void ApplyFrameConstants(Matrix4x4 viewProjection, float ambient)
+    {
+        var constants = new FrameConstants
+        {
+            ViewProjection = viewProjection,
+            Tint = new Vector4(ambient, ambient, ambient, 1f),
+        };
+        _context.UpdateSubresource(constants, _constantBuffer);
+    }
 
     private Color4 ChooseBackgroundColor()
     {
