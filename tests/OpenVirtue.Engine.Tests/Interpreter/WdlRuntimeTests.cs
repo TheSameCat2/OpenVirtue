@@ -223,6 +223,33 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_DispatchesRegisteredEachCycleAction_WithMyAndTimeCorrection()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL speed { VAL 4; } SKILL cycles { VAL 0; } " +
+            "ACTION cycle { RULE my.x += speed * TIME_CORR; RULE cycles += 1; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+        var originalMy = new Thing("originalMy");
+
+        runtime.RegisterObject("my", originalMy);
+        runtime.RegisterEachCycle(runner, "cycle");
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(9, runner.X);
+        Assert.Equal(1, runtime.GetSkill("cycles"));
+
+        runtime.Tick(1.0 / 32);
+        Assert.Equal(11, runner.X);
+        Assert.Equal(2, runtime.GetSkill("cycles"));
+        Assert.Same(originalMy, runtime.GetObject("my"));
+    }
+
+    [Fact]
     public void SetSkill_ClampsAssignmentsToDeclaredBounds()
     {
         Level level = Load(

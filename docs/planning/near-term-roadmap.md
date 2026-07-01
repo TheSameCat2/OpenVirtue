@@ -23,7 +23,8 @@ engine invariants.
    - First-pass palette/lighting approximation.
    - Sprite visibility/sorting fixes as needed for static scenes.
    - Runtime object registration for globals, placed things/actors, and player.
-   - `each_cycle` scheduler skeleton with tests before exact parity tuning.
+   - `each_cycle` scheduler skeleton with tests before exact parity tuning
+     (registration/dispatch API exists; automatic discovery/order remains parity work).
 3. Convert assumptions into tests.
    - Prefer synthetic WDL/WMP fixtures.
    - Keep real-data tests guarded and local-only.

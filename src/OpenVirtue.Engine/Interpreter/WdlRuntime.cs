@@ -20,6 +20,7 @@ public sealed class WdlRuntime : IWdlContext
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AcknexObject> _levelObjects = [];
+    private readonly List<CycleAction> _cycleActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
     private readonly string? _startupAction;
@@ -63,6 +64,17 @@ public sealed class WdlRuntime : IWdlContext
         _objects[name] = value;
     }
 
+    /// <summary>
+    /// Registers an object/action pair for the provisional per-frame scheduler.
+    /// Exact Acknex discovery and dispatch ordering are still clean-room parity work.
+    /// </summary>
+    public void RegisterEachCycle(AcknexObject target, string actionName)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrEmpty(actionName);
+        _cycleActions.Add(new CycleAction(target, actionName));
+    }
+
     /// <summary>Whether an action with this name exists.</summary>
     public bool HasAction(string name) => _actions.ContainsKey(name);
 
@@ -84,6 +96,11 @@ public sealed class WdlRuntime : IWdlContext
     {
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
+        foreach (CycleAction cycle in _cycleActions)
+        {
+            RunForObject(cycle.Target, cycle.ActionName);
+        }
+
         return timeCorrection;
     }
 
@@ -121,6 +138,27 @@ public sealed class WdlRuntime : IWdlContext
         _objects[value.Name] = value;
     }
 
+    private bool RunForObject(AcknexObject target, string actionName)
+    {
+        bool hadMy = _objects.TryGetValue("my", out AcknexObject? previousMy);
+        _objects["my"] = target;
+        try
+        {
+            return Run(actionName);
+        }
+        finally
+        {
+            if (hadMy)
+            {
+                _objects["my"] = previousMy!;
+            }
+            else
+            {
+                _objects.Remove("my");
+            }
+        }
+    }
+
     private bool Run(string name)
     {
         // Guard against runaway mutual recursion between actions.
@@ -141,4 +179,6 @@ public sealed class WdlRuntime : IWdlContext
 
         return true;
     }
+
+    private readonly record struct CycleAction(AcknexObject Target, string ActionName);
 }
