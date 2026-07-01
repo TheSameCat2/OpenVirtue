@@ -50,7 +50,8 @@ What works today:
   local-only integration tests. Inspectable with the `ovtool` CLI.
 - **Headless level load** — `LevelLoader` combines a level's flattened WDL with its
   WMP map into a typed object model (regions, walls, things, actors, skills, actions,
-  textures).
+  textures). Guarded local-only tests cover all six retail archives through level
+  loading, inspection mesh generation, texture decode, and runtime boot/tick.
 - **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). The camera is now

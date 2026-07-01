@@ -15,7 +15,9 @@ engine invariants.
      startup action status, and loaded world.
    - Keep current movement labeled as debug walking until parity work begins.
    - Make all six retail archives load through `ovtool level info` and the app
-     where possible.
+     where possible. Guarded local tests now cover all six archives through level
+     load, mesh generation, texture decode, and runtime boot/tick; interactive app
+     smoke remains manual.
 2. Finish low-risk renderer/runtime foundation.
    - Sky/background handling.
    - First-pass palette/lighting approximation.

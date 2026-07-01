@@ -70,7 +70,7 @@ syntax from the game's own scripts (clean-room).
 `WdlLexer`/`WdlParser` produce a generic syntax tree; `WdlPreprocessor` flattens a level
 (resolves `INCLUDE`, evaluates `IFDEF`/`IFELSE`/`ENDIF`/`DEFINE`); `OpenVirtue.Engine.LevelLoader`
 combines the flattened WDL with the `MAPFILE`'d WMP and materializes the typed engine
-object model (`Region`/`Wall`/`Thing`/`Actor` + global skills). All five playable levels
+object model (`Region`/`Wall`/`Thing`/`Actor` + global skills). All six retail archives
 load end-to-end (`ovtool level info`). **Next:** the **WDL interpreter** runtime (we
 interpret, not transpile — [ADR-0002](../adr/0002-wdl-interpreter-not-transpiler.md)) —
 its action execution, skill semantics, and fixed-tick scheduler — then the D3D11 renderer.

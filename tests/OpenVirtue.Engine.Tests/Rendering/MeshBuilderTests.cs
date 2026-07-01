@@ -60,6 +60,32 @@ public class MeshBuilderTests
         Assert.Equal(wallsOnly.VertexCount + 12, full.VertexCount);
     }
 
+    /// <summary>
+    /// Mirrors the `ovtool level info` mesh path for every local retail archive when
+    /// user-supplied game data is present. No-op otherwise.
+    /// </summary>
+    [Fact]
+    public void Build_LocalRetailArchives_ProducesInspectionMeshes()
+    {
+        IReadOnlyList<string> archives = ResearchData.WrsFiles();
+        if (archives.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string path in archives)
+        {
+            Level level = LevelLoader.Load(WrsArchive.ReadFile(path), ResearchData.MainWdlName(path));
+
+            LevelMesh wallsOnly = MeshBuilder.BuildWalls(level);
+            LevelMesh full = MeshBuilder.Build(level);
+
+            Assert.True(wallsOnly.VertexCount > 0, $"{Path.GetFileName(path)}: expected wall geometry");
+            Assert.True(full.VertexCount >= wallsOnly.VertexCount, $"{Path.GetFileName(path)}: full mesh should include walls");
+            Assert.True(full.VertexCount % 3 == 0, $"{Path.GetFileName(path)}: vertices must form whole triangles");
+        }
+    }
+
     [Fact]
     public void Build_RealApathy_AddsSurfacesBeyondWalls()
     {
@@ -96,4 +122,5 @@ public class MeshBuilderTests
         Assert.True(mesh.VertexCount > 0);
         Assert.True(mesh.VertexCount % 3 == 0, "vertices must form whole triangles");
     }
+
 }

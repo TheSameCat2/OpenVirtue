@@ -37,4 +37,7 @@ internal static class ResearchData
                 .Where(static p => p.EndsWith(".wrs", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
     }
+
+    public static string MainWdlName(string archivePath) =>
+        Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
 }

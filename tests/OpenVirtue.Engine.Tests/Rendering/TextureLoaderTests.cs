@@ -10,6 +10,35 @@ namespace OpenVirtue.Engine.Tests.Rendering;
 public class TextureLoaderTests
 {
     /// <summary>
+    /// Decodes referenced textures for every local retail archive when user-supplied game
+    /// data is present. No-op otherwise.
+    /// </summary>
+    [Fact]
+    public void Load_LocalRetailArchiveTextures_DecodeToRgba()
+    {
+        IReadOnlyList<string> archives = ResearchData.WrsFiles();
+        if (archives.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string path in archives)
+        {
+            WrsArchive archive = WrsArchive.ReadFile(path);
+            Level level = LevelLoader.Load(archive, ResearchData.MainWdlName(path));
+
+            IReadOnlyDictionary<string, TextureImage> images = TextureLoader.Load(archive, level);
+
+            Assert.NotEmpty(images);
+            foreach ((_, TextureImage image) in images)
+            {
+                Assert.True(image.Width > 0 && image.Height > 0, $"{Path.GetFileName(path)}: image should have pixels");
+                Assert.Equal(image.Width * image.Height * 4, image.Rgba.Length);
+            }
+        }
+    }
+
+    /// <summary>
     /// Loads the real apathy level's textures (when present): decodes each referenced PCX and
     /// crops to its BMAP rectangle. No-op when game data is absent.
     /// </summary>
@@ -35,4 +64,5 @@ public class TextureLoaderTests
             Assert.Equal(image.Width * image.Height * 4, image.Rgba.Length);
         }
     }
+
 }

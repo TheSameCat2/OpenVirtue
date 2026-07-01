@@ -115,6 +115,32 @@ public class LevelLoaderTests
     }
 
     /// <summary>
+    /// Loads every local retail archive end-to-end when user-supplied game data is present.
+    /// No-op otherwise, so CI does not need proprietary data.
+    /// </summary>
+    [Fact]
+    public void Load_LocalRetailArchives_MaterializesLevelInfo()
+    {
+        IReadOnlyList<string> archives = ResearchData.WrsFiles();
+        if (archives.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string path in archives)
+        {
+            WrsArchive archive = WrsArchive.ReadFile(path);
+            Level level = LevelLoader.Load(archive, ResearchData.MainWdlName(path));
+
+            Assert.NotEmpty(level.Vertices);
+            Assert.NotEmpty(level.Regions);
+            Assert.NotEmpty(level.Walls);
+            Assert.NotNull(level.PlayerStart);
+            Assert.NotEmpty(level.Textures);
+        }
+    }
+
+    /// <summary>
     /// Loads the real apathy level end-to-end (when present): WMP geometry materialized as
     /// engine objects + skills from the flattened WDL. Pinned to apathy's known counts. No-op otherwise.
     /// </summary>
@@ -144,4 +170,5 @@ public class LevelLoaderTests
         Assert.Contains(level.Regions, r => r.FloorTexture is not null);
         Assert.All(level.Textures.Values, t => Assert.EndsWith(".pcx", t.File, StringComparison.OrdinalIgnoreCase));
     }
+
 }

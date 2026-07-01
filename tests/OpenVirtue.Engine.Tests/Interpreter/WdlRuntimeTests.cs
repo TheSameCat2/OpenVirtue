@@ -89,6 +89,34 @@ public class WdlRuntimeTests
         Assert.False(runtime.RunAction("nope"));
     }
 
+    /// <summary>
+    /// Boots and ticks every local retail level when user-supplied game data is present.
+    /// This guards the current runtime skeleton without asserting hidden scheduler parity.
+    /// </summary>
+    [Fact]
+    public void Runtime_LocalRetailArchives_BootAndTickWithoutThrowing()
+    {
+        IReadOnlyList<string> archives = ResearchData.WrsFiles();
+        if (archives.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string path in archives)
+        {
+            Level level = LevelLoader.Load(WrsArchive.ReadFile(path), ResearchData.MainWdlName(path));
+            var runtime = new WdlRuntime(level);
+
+            runtime.RunStartup();
+            for (int i = 0; i < 3; i++)
+            {
+                runtime.Tick(1.0 / 16);
+            }
+
+            Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+        }
+    }
+
     [Fact]
     public void Runtime_RealApathy_HasManyActions()
     {
@@ -185,4 +213,5 @@ public class WdlRuntimeTests
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
         return LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
     }
+
 }
