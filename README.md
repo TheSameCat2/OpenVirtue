@@ -68,7 +68,8 @@ player-movement parity, body-radius/sliding collision, actor animation/AI, audio
 playback, HUD/menus/inventory, save/load, and the DOSBox-X oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
-and where each piece sits.
+and where each piece sits. The immediate work plan is tracked in
+[`docs/planning/near-term-roadmap.md`](docs/planning/near-term-roadmap.md).
 
 ## What you need to play (planned end-user flow)
 
@@ -82,6 +83,8 @@ and where each piece sits.
 |------|---------|
 | `docs/recon/` | Research findings (engine, formats, prior art, legal, tooling). |
 | `docs/adr/` | Architecture Decision Records (created as we make design choices). |
+| `docs/clean-room/` | Oracle/invariant discovery protocol and sanitized observation notes. |
+| `docs/planning/` | Current near-term work plan. |
 | `src/` | Engine source: `OpenVirtue.Formats` (asset readers), `OpenVirtue.Engine` (world model, WDL interpreter, geometry), `OpenVirtue.App` (Direct3D 11 viewer). |
 | `tools/` | Local asset-inspection / extraction helpers (not redistributed game data). |
 | `tests/` | Automated tests. |
@@ -111,6 +114,9 @@ Vortice.Windows are both MIT).
 > SaintsX patch, and third-party Acknex-3 projects as **reference only** — never
 > copying their code — to keep this GPLv3 codebase clean of incompatibly-licensed
 > lineage. See [ADR-0005](docs/adr/0005-clean-room-reference-only-policy.md).
+> Hidden runtime behavior is discovered through sanitized oracle observation
+> records; see [ADR-0007](docs/adr/0007-oracle-based-invariant-discovery.md) and
+> [`docs/clean-room/`](docs/clean-room/).
 
 New source files carry:
 

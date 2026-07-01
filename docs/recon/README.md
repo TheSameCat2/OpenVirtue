@@ -15,3 +15,8 @@ Research conducted 2026-06-25 (research phase — no engine code written yet).
 All original game data, the SaintsX fan patch, and third-party reference code live
 in the git-ignored `_research/` folder for local study only — never committed,
 never redistributed.
+
+For current implementation status, prefer the root README. For hidden runtime
+behavior that must be learned from the original engine, follow
+[`docs/clean-room/oracle-protocol.md`](../clean-room/oracle-protocol.md) and
+record sanitized observations under `docs/clean-room/observations/`.

@@ -27,6 +27,10 @@ original game/patch are proprietary. They all live under the git-ignored `_resea
   learned (published spec, own analysis) and explicitly *not* "ported from <repo>". See
   [src/OpenVirtue.Formats/PROVENANCE.md](src/OpenVirtue.Formats/PROVENANCE.md) — keep it
   updated when you add or change a reader.
+- For hidden runtime behavior, follow
+  [ADR-0007](docs/adr/0007-oracle-based-invariant-discovery.md) and the
+  [oracle protocol](docs/clean-room/oracle-protocol.md): record a sanitized
+  observation note before implementing from old-engine behavior.
 
 ## Commands
 
@@ -136,6 +140,10 @@ commit game data or fixtures.
 
 - **`docs/adr/`** records accepted design decisions and is authoritative; write a new ADR
   when you make a significant architectural choice.
+- **`docs/clean-room/`** records the oracle/invariant discovery workflow. Use it before
+  implementing behavior learned from the original runtime or other high-risk references.
+- **`docs/planning/near-term-roadmap.md`** captures the current "finish the easy part,
+  then measure hidden invariants" plan.
 - **`docs/recon/`** is research-phase background (dated 2026-06-25). Its proposed
   architecture predates the code and **does not match the current layout** (there is no
   separate `OpenVirtue.Wdl`/`Rendering`/`Platform` project; the WDL interpreter lives in

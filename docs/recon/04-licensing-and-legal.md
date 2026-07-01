@@ -96,6 +96,11 @@ To keep provenance clean and defensible:
 6. Keep a `PROVENANCE.md` per nontrivial format reader noting *how* we learned the
    layout (published doc URL, our own byte analysis, behavioral test).
 
+ADR-0007 formalizes the next layer of this process: hidden engine invariants are
+learned through sanitized oracle observation records, not copied expression. See
+[`../adr/0007-oracle-based-invariant-discovery.md`](../adr/0007-oracle-based-invariant-discovery.md)
+and [`../clean-room/oracle-protocol.md`](../clean-room/oracle-protocol.md).
+
 ## 5. Our own license (open decision — recommend GPLv3)
 
 - **GPLv3** — the **OpenMW model**. Keeps the engine and derivatives open;
@@ -134,6 +139,9 @@ No `LICENSE` is committed yet; this is yours to decide.
   is **TheSameCat2** (maintainer of the bundled AcknexCSApi fork); firoball's
   upstream appears **abandoned**, so relicensing-by-request is not pursued. We
   implement everything clean rather than depend on CC-BY-NC code.
+- [x] **Define how to discover hidden runtime behavior** → **oracle-based invariant
+  discovery** ([ADR-0007](../adr/0007-oracle-based-invariant-discovery.md),
+  [`docs/clean-room/`](../clean-room/)).
 - [ ] Read the original game EULA; record any anti-RE/derivative terms.
 - [ ] Confirm WRS has no encryption/DRM (keeps us clear of DMCA §1201) — verify on real bytes.
 - [ ] Clear the **OpenVirtue** name against existing trademarks before public release

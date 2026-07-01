@@ -11,7 +11,10 @@ choices as ADRs in `docs/adr/`.
 > Direct3D lives in `OpenVirtue.App`). The milestone table below is annotated with
 > current progress. For authoritative current status see the
 > [root README](../../README.md#current-status); for current structure, the code and
-> [`AGENTS.md`](../../AGENTS.md).
+> [`AGENTS.md`](../../AGENTS.md). The immediate implementation plan now lives in
+> [`docs/planning/near-term-roadmap.md`](../planning/near-term-roadmap.md), and
+> hidden-engine behavior should be learned through
+> [`docs/clean-room/oracle-protocol.md`](../clean-room/oracle-protocol.md).
 
 ## Guiding principles
 

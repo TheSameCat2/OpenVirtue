@@ -99,4 +99,7 @@ oracle**: for any ambiguous behavior, we can run the same input there and compar
 The SaintsX `patches/*/**.wdl.patch` files are unified diffs of the *decompressed*
 WDL and are directly human-readable — e.g. `move-wdl.patch` shows the exact
 mouselook/jump/tilt RULE changes, which double as documentation of the original
-movement math.
+movement math. Treat those patches as reference material only: use them to form
+questions and corroborate facts, then record sanitized observations through
+[`docs/clean-room/oracle-protocol.md`](../clean-room/oracle-protocol.md) before
+implementing parity behavior.
