@@ -57,4 +57,29 @@ public class LzssTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => Lzss.Decompress([0xFF], decompressedSize: -1));
     }
+
+    [Fact]
+    public void Compress_AllLiterals_RoundTrips()
+    {
+        byte[] original = Encoding.ASCII.GetBytes("Hello, generated WRS.");
+
+        byte[] compressed = Lzss.Compress(original);
+        byte[] decompressed = Lzss.Decompress(compressed, original.Length);
+
+        Assert.Equal(original, decompressed);
+    }
+
+    [Fact]
+    public void Compress_UsesLiteralFlagGroups()
+    {
+        byte[] compressed = Lzss.Compress("ABC"u8);
+
+        Assert.Equal([0x07, (byte)'A', (byte)'B', (byte)'C'], compressed);
+    }
+
+    [Fact]
+    public void Compress_ZeroLength_ReturnsEmpty()
+    {
+        Assert.Empty(Lzss.Compress([]));
+    }
 }

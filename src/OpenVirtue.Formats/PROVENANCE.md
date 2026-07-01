@@ -16,6 +16,9 @@ and validate against real game data used only locally (never committed).
   `low offset byte` + `(high offset nibble << 4 | length nibble)`, ring buffer
   pre-filled with `0x20`. These are the canonical defaults and match the codec
   QuickBMS calls `comtype lzss`.
+- **Encoder:** generated archives use a deterministic literal-only encoder. This
+  produces valid streams without attempting match search, which keeps the writer
+  small and auditable for oracle fixtures.
 - **Known dialect-variation points** (check these first if real-data validation
   ever disagrees): flag-bit order (LSB vs MSB), literal/match bit polarity,
   length bias (`+THRESHOLD` vs `+THRESHOLD+1`), and the initial dictionary fill
@@ -87,7 +90,7 @@ and validate against real game data used only locally (never committed).
   (format 1; mostly 8-bit mono 11025 Hz). Every `.wav` in the archives decodes via
   the guarded integration test.
 
-## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`)
+## WRS archive (`Wrs/WrsArchive.cs`, `Wrs/WrsEntry.cs`, `Wrs/WrsFile.cs`)
 
 - **Source of truth:** the WRS record structure — fixed records of `name[13]` +
   `u32 compressedSize` + `u32 uncompressedSize` + LZSS payload, running from offset
@@ -100,3 +103,6 @@ and validate against real game data used only locally (never committed).
   exact stated uncompressed size — which also validates the LZSS dialect above.
   Verified via the guarded integration test (real files are local-only under the
   git-ignored `_research/`; never committed).
+- **Writer:** emits the same fixed records with big-endian size fields and
+  literal-only LZSS payloads. It is intended for generated synthetic fixtures and
+  local tooling, not for redistributing game data.

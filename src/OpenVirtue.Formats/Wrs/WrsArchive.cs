@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using OpenVirtue.Formats.Compression;
 
 namespace OpenVirtue.Formats.Wrs;
 
@@ -93,6 +94,43 @@ public sealed class WrsArchive
         return Read(File.ReadAllBytes(path));
     }
 
+    /// <summary>
+    /// Builds a WRS archive from uncompressed files.
+    /// </summary>
+    /// <remarks>
+    /// Payloads are encoded with a literal-only LZSS stream. The result is larger
+    /// than a size-optimized archive but remains valid and easy to audit.
+    /// </remarks>
+    public static byte[] Write(IEnumerable<WrsFile> files)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+
+        using var output = new MemoryStream();
+        Span<byte> sizeBuffer = stackalloc byte[sizeof(uint)];
+
+        foreach (WrsFile file in files)
+        {
+            byte[] data = file.Data.ToArray();
+            byte[] compressed = Lzss.Compress(data);
+
+            WriteFixedName(output, file.Name);
+            BinaryPrimitives.WriteUInt32BigEndian(sizeBuffer, checked((uint)compressed.Length));
+            output.Write(sizeBuffer);
+            BinaryPrimitives.WriteUInt32BigEndian(sizeBuffer, checked((uint)data.Length));
+            output.Write(sizeBuffer);
+            output.Write(compressed);
+        }
+
+        return output.ToArray();
+    }
+
+    /// <summary>Writes a WRS archive to disk from uncompressed files.</summary>
+    public static void WriteFile(string path, IEnumerable<WrsFile> files)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        File.WriteAllBytes(path, Write(files));
+    }
+
     private static string ReadFixedName(ReadOnlySpan<byte> field)
     {
         int nul = field.IndexOf((byte)0);
@@ -102,5 +140,33 @@ public sealed class WrsArchive
         }
 
         return Encoding.ASCII.GetString(field).Trim();
+    }
+
+    private static void WriteFixedName(Stream output, string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        if (name.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
+        {
+            throw new ArgumentException($"WRS entry name must not contain a path separator: '{name}'.", nameof(name));
+        }
+
+        if (name.Any(c => c > 0x7F))
+        {
+            throw new ArgumentException($"WRS entry name must be ASCII: '{name}'.", nameof(name));
+        }
+
+        byte[] nameBytes = Encoding.ASCII.GetBytes(name);
+        if (nameBytes.Length > NameFieldLength)
+        {
+            throw new ArgumentException(
+                $"WRS entry name '{name}' is {nameBytes.Length} bytes; maximum is {NameFieldLength}.",
+                nameof(name));
+        }
+
+        Span<byte> field = stackalloc byte[NameFieldLength];
+        field.Clear();
+        nameBytes.CopyTo(field);
+        output.Write(field);
     }
 }

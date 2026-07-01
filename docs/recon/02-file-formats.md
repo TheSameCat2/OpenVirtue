@@ -29,12 +29,16 @@ repeat while offset < fileSize:          // no file header; records start at off
   the canonical variant (4096 window, LSB-first flags, etc.) byte-matches the
   game. Every entry in all six retail `.WRS` files decompresses to its exact
   stated size. See `src/OpenVirtue.Formats/PROVENANCE.md`.
+- Generated fixture archives use the same container with deterministic
+  literal-only LZSS payloads; this is larger than retail compression but valid
+  and auditable for oracle probes.
 - Output members are `WDL`, `WMP`, `PCX`, `WAV`, etc.
 - Saints' `WRS` files were noted as "encrypted/packaged"; in practice they are
   plain LZSS — **not encrypted** (confirmed: no circumvention, clear of DMCA §1201).
 
-**Status:** ✅ **Done** — `WrsArchive`/`WrsEntry` enumerate + decompress, validated
-against real data. This was the first milestone; everything else builds on it.
+**Status:** ✅ **Done** — `WrsArchive`/`WrsEntry` enumerate + decompress and
+`WrsArchive.Write` emits generated archives, validated against real data. This
+was the first milestone; everything else builds on it.
 
 ## `WDL` — Wad Definition Language (scripts)
 

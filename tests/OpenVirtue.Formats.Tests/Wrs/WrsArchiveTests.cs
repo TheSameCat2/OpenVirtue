@@ -52,6 +52,48 @@ public class WrsArchiveTests
     }
 
     [Fact]
+    public void Write_RoundTripsEntryData()
+    {
+        byte[] archive = WrsArchive.Write(
+        [
+            new WrsFile("TITLE.WDL", "MAPFILE <title.WMP>;"u8.ToArray()),
+            new WrsFile("title.WMP", "VERTEX 0 0 0;#0"u8.ToArray()),
+        ]);
+
+        WrsArchive wrs = WrsArchive.Read(archive);
+
+        Assert.Collection(wrs.Entries,
+            e =>
+            {
+                Assert.Equal("TITLE.WDL", e.Name);
+                Assert.Equal("MAPFILE <title.WMP>;", Encoding.ASCII.GetString(e.GetData()));
+            },
+            e =>
+            {
+                Assert.Equal("title.WMP", e.Name);
+                Assert.Equal("VERTEX 0 0 0;#0", Encoding.ASCII.GetString(e.GetData()));
+            });
+    }
+
+    [Fact]
+    public void Write_RejectsNamesThatDoNotFitFixedField()
+    {
+        Assert.Throws<ArgumentException>(() => WrsArchive.Write(
+        [
+            new WrsFile("TOO-LONG-FILE.WDL", Array.Empty<byte>()),
+        ]));
+    }
+
+    [Fact]
+    public void Write_RejectsPathSeparators()
+    {
+        Assert.Throws<ArgumentException>(() => WrsArchive.Write(
+        [
+            new WrsFile("dir/TITLE.WDL", Array.Empty<byte>()),
+        ]));
+    }
+
+    [Fact]
     public void Read_TooShortForHeader_Throws()
     {
         Assert.Throws<InvalidDataException>(() => WrsArchive.Read(new byte[] { 0x00, 0x01 }));

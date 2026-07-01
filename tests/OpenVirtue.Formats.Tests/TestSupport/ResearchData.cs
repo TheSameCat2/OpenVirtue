@@ -11,6 +11,16 @@ namespace OpenVirtue.Formats.Tests.TestSupport;
 /// </summary>
 internal static class ResearchData
 {
+    private static readonly HashSet<string> RetailArchiveNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "APATHY.WRS",
+        "HEART.WRS",
+        "LEGALISM.WRS",
+        "NEWAGE.WRS",
+        "START.WRS",
+        "TITLE.WRS",
+    };
+
     /// <summary>The absolute path to <c>_research/</c>, or <c>null</c> if not found.</summary>
     public static string? Directory
     {
@@ -41,6 +51,13 @@ internal static class ResearchData
         return System.IO.Directory
             .EnumerateFiles(root, "*.wrs", SearchOption.AllDirectories)
             .Where(static p => p.EndsWith(".wrs", StringComparison.OrdinalIgnoreCase))
+            .Where(static p => RetailArchiveNames.Contains(Path.GetFileName(p)))
+            .Where(static p => !IsLocalArtifact(p))
             .ToArray();
     }
+
+    private static bool IsLocalArtifact(string path) =>
+        path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Any(static part => part.Equals("oracle-runs", StringComparison.OrdinalIgnoreCase) ||
+                part.Equals("_scratch", StringComparison.OrdinalIgnoreCase));
 }

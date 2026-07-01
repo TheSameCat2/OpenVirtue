@@ -79,13 +79,16 @@ internal static class OracleProbeGenerator
             copiedAssets = CopyProbeAssets(runtimeDir, workDir);
         }
 
+        int packed = WriteProbeArchive(workDir);
+
         Console.WriteLine($"Prepared {SchedulerProbeId} in {fullOutputDir}");
         Console.WriteLine($"  fixture: {Path.Combine(workDir, "TITLE.WDL")}");
         Console.WriteLine($"  map:     {Path.Combine(workDir, "TITLE.WMP")}");
+        Console.WriteLine($"  archive: {Path.Combine(workDir, "TITLE.WRS")} ({packed} entries)");
         Console.WriteLine($"  launch:  {Path.Combine(fullOutputDir, "run-oracle.bat")}");
         if (runtimeDir is not null)
         {
-            Console.WriteLine($"  copied {copied} runtime/support file(s) into work/; WRS archives were not copied.");
+            Console.WriteLine($"  copied {copied} runtime/support file(s) into work/; retail WRS archives were not copied.");
             Console.WriteLine($"  copied {copiedAssets} local-only display asset(s) into work/.");
         }
         else
@@ -141,6 +144,26 @@ internal static class OracleProbeGenerator
         }
 
         return copied;
+    }
+
+    private static int WriteProbeArchive(string workDir)
+    {
+        string[] names =
+        [
+            "TITLE.WDL",
+            "TITLE.WMP",
+            "font_pnl.pcx",
+            "black.pcx",
+        ];
+
+        WrsFile[] files = names
+            .Select(name => (Name: name, Path: Path.Combine(workDir, name)))
+            .Where(file => File.Exists(file.Path))
+            .Select(file => new WrsFile(file.Name, File.ReadAllBytes(file.Path)))
+            .ToArray();
+
+        WrsArchive.WriteFile(Path.Combine(workDir, "TITLE.WRS"), files);
+        return files.Length;
     }
 
     private static int CopyProbeAssets(string runtimeDir, string workDir)
@@ -347,14 +370,15 @@ internal static class OracleProbeGenerator
         The generator copies only the local runtime shell files it needs
         (`VRUN.EXE`, `WWRUN.WDF`, `WWRUN.MDF`) and the two local-only display
         assets required by the probe (`font_pnl.pcx`, `black.pcx`) when
-        `--runtime-dir` is supplied. It deliberately does not copy retail WRS
-        archives.
+        `--runtime-dir` is supplied. It then packs the generated fixture and any
+        copied display assets into `work/TITLE.WRS`. It deliberately does not copy
+        retail WRS archives.
 
         ## Safety
 
         This generated probe does not run SaintsX setup scripts, `patch.exe`, or
         any other external patching tool. Do not run `setup*.bat` from this
-        oracle folder. If this loose-file harness is insufficient, add a
+        oracle folder. If this synthetic archive harness is insufficient, add a
         noninteractive prep step to `ovtool` first so the clean-room evidence is
         repeatable and auditable.
 
@@ -365,9 +389,8 @@ internal static class OracleProbeGenerator
            `probe_order` is on the left and `probe_ticks` is on the right.
         3. Reduce the result into `docs/clean-room/observations/{{SchedulerProbeId}}.md`.
 
-        If the runtime does not accept loose synthetic files, record that as a
-        harness result and adjust the local-only wrapper before drawing scheduler
-        conclusions.
+        If the runtime does not accept the synthetic archive, record that as a
+        harness result before drawing scheduler conclusions.
         """;
 
     private static int Usage(string? error = null)

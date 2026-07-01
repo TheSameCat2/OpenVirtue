@@ -46,22 +46,37 @@ internal static class Cli
     {
         if (args.Length < 2)
         {
-            return Usage("wrs requires a subcommand and an archive path.");
+            return Usage("wrs requires a subcommand and path arguments.");
         }
 
         string verb = args[0].ToLowerInvariant();
-        string archivePath = args[1];
-        WrsArchive archive = WrsArchive.ReadFile(archivePath);
 
         switch (verb)
         {
             case "list":
+            {
+                string archivePath = args[1];
+                WrsArchive archive = WrsArchive.ReadFile(archivePath);
                 ListEntries(archive, archivePath);
                 return 0;
+            }
 
             case "extract":
+            {
+                string archivePath = args[1];
+                WrsArchive archive = WrsArchive.ReadFile(archivePath);
                 string outDir = args.Length >= 3 ? args[2] : Path.GetFileNameWithoutExtension(archivePath);
                 ExtractEntries(archive, outDir);
+                return 0;
+            }
+
+            case "pack":
+                if (args.Length < 3)
+                {
+                    return Usage("wrs pack requires an input directory and output archive path.");
+                }
+
+                PackEntries(args[1], args[2]);
                 return 0;
 
             default:
@@ -302,6 +317,31 @@ internal static class Cli
         Console.WriteLine($"Extracted {archive.Entries.Count} entries to {outDir}");
     }
 
+    private static void PackEntries(string inputDir, string archivePath)
+    {
+        string fullInputDir = Path.GetFullPath(inputDir);
+        if (!Directory.Exists(fullInputDir))
+        {
+            throw new DirectoryNotFoundException($"Input directory not found: {fullInputDir}");
+        }
+
+        string fullArchivePath = Path.GetFullPath(archivePath);
+        string? archiveDir = Path.GetDirectoryName(fullArchivePath);
+        if (!string.IsNullOrEmpty(archiveDir))
+        {
+            Directory.CreateDirectory(archiveDir);
+        }
+
+        WrsFile[] files = Directory.EnumerateFiles(fullInputDir)
+            .Where(path => !Path.GetFullPath(path).Equals(fullArchivePath, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(path => new WrsFile(Path.GetFileName(path), File.ReadAllBytes(path)))
+            .ToArray();
+
+        WrsArchive.WriteFile(fullArchivePath, files);
+        Console.WriteLine($"Packed {files.Length} entries into {fullArchivePath}");
+    }
+
     private static int Usage(string? error = null)
     {
         if (error is not null)
@@ -316,6 +356,7 @@ internal static class Cli
             Usage:
               ovtool wrs list <archive.wrs>
               ovtool wrs extract <archive.wrs> [output-dir]
+              ovtool wrs pack <input-dir> <archive.wrs>
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>

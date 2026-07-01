@@ -37,6 +37,34 @@ public static class Lzss
     private const byte RingFill = 0x20;  // initial ring-buffer byte (space)
 
     /// <summary>
+    /// Encodes data as a valid LZSS stream using literal tokens only.
+    /// </summary>
+    /// <remarks>
+    /// This is intentionally simple rather than size-optimal. It is useful for
+    /// small generated archives where deterministic, auditable output matters
+    /// more than compression ratio.
+    /// </remarks>
+    public static byte[] Compress(ReadOnlySpan<byte> input)
+    {
+        if (input.IsEmpty)
+        {
+            return [];
+        }
+
+        using var output = new MemoryStream(input.Length + ((input.Length + 7) / 8));
+        int offset = 0;
+        while (offset < input.Length)
+        {
+            int count = Math.Min(8, input.Length - offset);
+            output.WriteByte((byte)((1 << count) - 1));
+            output.Write(input.Slice(offset, count));
+            offset += count;
+        }
+
+        return output.ToArray();
+    }
+
+    /// <summary>
     /// Decompresses an LZSS stream into a buffer of exactly
     /// <paramref name="decompressedSize"/> bytes.
     /// </summary>
