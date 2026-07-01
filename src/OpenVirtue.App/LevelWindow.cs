@@ -19,7 +19,7 @@ namespace OpenVirtue.App;
 
 /// <summary>
 /// A WinForms window hosting a Direct3D 11 view of a loaded level: the wall geometry,
-/// textured from the level's PCX bitmaps, with a depth buffer and a fly camera.
+/// textured from the level's PCX bitmaps, with a depth buffer and debug walking status.
 /// </summary>
 internal sealed class LevelWindow : Form
 {
@@ -50,6 +50,18 @@ internal sealed class LevelWindow : Form
 
     private readonly Level _level;
     private readonly IReadOnlyDictionary<string, TextureImage> _textureImages;
+    private readonly Panel _renderSurface = new()
+    {
+        BackColor = System.Drawing.Color.Black,
+        Dock = DockStyle.Fill,
+        TabStop = true,
+    };
+    private readonly StatusStrip _statusStrip = new() { SizingGrip = false };
+    private readonly ToolStripStatusLabel _statusLabel = new()
+    {
+        Spring = true,
+        TextAlign = ContentAlignment.MiddleLeft,
+    };
     private readonly Camera _camera = new();
     private Player _player = null!;
     private readonly HashSet<Keys> _keysDown = [];
@@ -80,7 +92,10 @@ internal sealed class LevelWindow : Form
     private Point _lastMouse;
     private bool _dragging;
     private string _baseTitle = "";
-    private double _titleAccum;
+    private bool _startupRan;
+    private double _lastFrameSeconds;
+    private double _lastTimeCorrection;
+    private double _statusAccum;
 
     public LevelWindow(Level level, IReadOnlyDictionary<string, TextureImage> textures)
     {
@@ -89,8 +104,15 @@ internal sealed class LevelWindow : Form
         _runtime = new WdlRuntime(level);
         Text = $"OpenVirtue — {level.Name}";
         ClientSize = new System.Drawing.Size(1280, 720);
+        KeyPreview = true;
         StartPosition = FormStartPosition.CenterScreen;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.Opaque, true);
+        _renderSurface.MouseDown += RenderSurface_MouseDown;
+        _renderSurface.MouseUp += RenderSurface_MouseUp;
+        _renderSurface.MouseMove += RenderSurface_MouseMove;
+        _renderSurface.Resize += (_, _) => ResizeBuffers();
+        _statusStrip.Items.Add(_statusLabel);
+        Controls.Add(_renderSurface);
+        Controls.Add(_statusStrip);
         PlaceCameraAtStart();
     }
 
@@ -115,47 +137,36 @@ internal sealed class LevelWindow : Form
         _timer.Start();
     }
 
-    /// <summary>Boots the level's WDL runtime: runs its IF_START script and shows status in the title.</summary>
+    /// <summary>Boots the level's WDL runtime: runs its IF_START script and shows status in the strip.</summary>
     private void BootRuntime()
     {
-        bool started = false;
         try
         {
-            started = _runtime.RunStartup(); // run the level's IF_START script, if any
+            _startupRan = _runtime.RunStartup(); // run the level's IF_START script, if any
         }
         catch
         {
             // A startup-script fault must not take down the viewer.
         }
 
-        _baseTitle = $"OpenVirtue — {_level.Name}  ·  runtime: {_level.Skills.Count} skills, IF_START {(started ? "ran" : "none")}";
+        _baseTitle = $"OpenVirtue — {_level.Name}";
         Text = _baseTitle;
+        UpdateStatus();
         _frameClock.Restart(); // discard level-load time before the first real frame delta
     }
 
-    /// <summary>Advances the runtime one frame and surfaces the live tick in the window title.</summary>
+    /// <summary>Advances the runtime one frame and surfaces the live tick in the status strip.</summary>
     private void TickRuntime()
     {
-        double dt = _frameClock.Elapsed.TotalSeconds;
+        _lastFrameSeconds = _frameClock.Elapsed.TotalSeconds;
         _frameClock.Restart();
-        double timeCorrection = _runtime.Tick(dt);
+        _lastTimeCorrection = _runtime.Tick(_lastFrameSeconds);
 
-        // Refresh the title a few times a second so the live runtime tick is visible.
-        _titleAccum += dt;
-        if (_titleAccum >= 0.25)
+        _statusAccum += _lastFrameSeconds;
+        if (_statusAccum >= 0.25)
         {
-            _titleAccum = 0;
-            double fps = dt > 0 ? 1.0 / dt : 0;
-            Text = $"{_baseTitle}  ·  {fps:F0} fps, TIME_CORR {timeCorrection:F3}";
-        }
-    }
-
-    protected override void OnClientSizeChanged(EventArgs e)
-    {
-        base.OnClientSizeChanged(e);
-        if (_swapChain is not null && ClientSize.Width > 0 && ClientSize.Height > 0)
-        {
-            ResizeBuffers();
+            _statusAccum = 0;
+            UpdateStatus();
         }
     }
 
@@ -163,18 +174,19 @@ internal sealed class LevelWindow : Form
 
     protected override void OnKeyUp(KeyEventArgs e) => _keysDown.Remove(e.KeyCode);
 
-    protected override void OnMouseDown(MouseEventArgs e)
+    private void RenderSurface_MouseDown(object? sender, MouseEventArgs e)
     {
         if (e.Button == MouseButtons.Left)
         {
+            _renderSurface.Focus();
             _dragging = true;
             _lastMouse = e.Location;
         }
     }
 
-    protected override void OnMouseUp(MouseEventArgs e) => _dragging = false;
+    private void RenderSurface_MouseUp(object? sender, MouseEventArgs e) => _dragging = false;
 
-    protected override void OnMouseMove(MouseEventArgs e)
+    private void RenderSurface_MouseMove(object? sender, MouseEventArgs e)
     {
         if (_dragging)
         {
@@ -247,6 +259,8 @@ internal sealed class LevelWindow : Form
         {
             _player.MoveTo(best, cx, cz);
         }
+
+        UpdateStatus();
     }
 
     private void InitializeDirect3D()
@@ -262,8 +276,8 @@ internal sealed class LevelWindow : Form
         using IDXGIFactory2 factory = CreateDXGIFactory1<IDXGIFactory2>();
         var description = new SwapChainDescription1
         {
-            Width = (uint)ClientSize.Width,
-            Height = (uint)ClientSize.Height,
+            Width = (uint)Math.Max(1, _renderSurface.ClientSize.Width),
+            Height = (uint)Math.Max(1, _renderSurface.ClientSize.Height),
             Format = Format.B8G8R8A8_UNorm,
             BufferCount = 2,
             BufferUsage = Usage.RenderTargetOutput,
@@ -272,7 +286,7 @@ internal sealed class LevelWindow : Form
             Scaling = Scaling.Stretch,
             AlphaMode = Vortice.DXGI.AlphaMode.Ignore,
         };
-        _swapChain = factory.CreateSwapChainForHwnd(_device, Handle, description);
+        _swapChain = factory.CreateSwapChainForHwnd(_device, _renderSurface.Handle, description);
 
         CreateSizedResources();
 
@@ -307,13 +321,14 @@ internal sealed class LevelWindow : Form
 
     private void CreateSizedResources()
     {
+        System.Drawing.Size renderSize = RenderSize();
         using ID3D11Texture2D backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
         _renderTarget = _device.CreateRenderTargetView(backBuffer);
 
         _depthTexture = _device.CreateTexture2D(new Texture2DDescription
         {
-            Width = (uint)ClientSize.Width,
-            Height = (uint)ClientSize.Height,
+            Width = (uint)renderSize.Width,
+            Height = (uint)renderSize.Height,
             MipLevels = 1,
             ArraySize = 1,
             Format = Format.D32_Float,
@@ -326,10 +341,16 @@ internal sealed class LevelWindow : Form
 
     private void ResizeBuffers()
     {
+        if (_swapChain is null || _device is null)
+        {
+            return;
+        }
+
+        System.Drawing.Size renderSize = RenderSize();
         _renderTarget.Dispose();
         _depthView.Dispose();
         _depthTexture.Dispose();
-        _swapChain.ResizeBuffers(2, (uint)ClientSize.Width, (uint)ClientSize.Height, Format.B8G8R8A8_UNorm, SwapChainFlags.None);
+        _swapChain.ResizeBuffers(2, (uint)renderSize.Width, (uint)renderSize.Height, Format.B8G8R8A8_UNorm, SwapChainFlags.None);
         CreateSizedResources();
     }
 
@@ -520,11 +541,12 @@ internal sealed class LevelWindow : Form
         UpdateCamera();
         TickRuntime();
 
-        float aspect = (float)ClientSize.Width / Math.Max(1, ClientSize.Height);
+        System.Drawing.Size renderSize = RenderSize();
+        float aspect = (float)renderSize.Width / Math.Max(1, renderSize.Height);
         var constants = new FrameConstants { ViewProjection = _camera.View * Camera.Projection(aspect) };
         _context.UpdateSubresource(constants, _constantBuffer);
 
-        _context.RSSetViewport(new Viewport(0, 0, ClientSize.Width, ClientSize.Height, 0, 1));
+        _context.RSSetViewport(new Viewport(0, 0, renderSize.Width, renderSize.Height, 0, 1));
         _context.RSSetState(_rasterizer);
         _context.OMSetRenderTargets(_renderTarget, _depthView);
         _context.OMSetDepthStencilState(_depthState);
@@ -551,6 +573,41 @@ internal sealed class LevelWindow : Form
         RenderSprites();
 
         _swapChain.Present(1, PresentFlags.None);
+    }
+
+    private System.Drawing.Size RenderSize() =>
+        new(Math.Max(1, _renderSurface.ClientSize.Width), Math.Max(1, _renderSurface.ClientSize.Height));
+
+    private void UpdateStatus()
+    {
+        if (_player is null || _statusLabel is null)
+        {
+            return;
+        }
+
+        Vector3 p = _player.Position;
+        string regionName = RegionName(_player.Region);
+        double fps = _lastFrameSeconds > 0 ? 1.0 / _lastFrameSeconds : 0;
+        (double floor, double ceiling) = RegionHeights(_player.Region);
+        _statusLabel.Text =
+            $"world {_level.Name} | pos {p.X:F1}, {p.Y:F1}, {p.Z:F1} | region {_player.Region} {regionName} | " +
+            $"floor {floor:F1} ceil {ceiling:F1} | FPS {fps:F0} | TIME_CORR {_lastTimeCorrection:F3} | " +
+            $"IF_START {(_level.StartupAction is null ? "none" : _startupRan ? "ran" : "failed")} | " +
+            $"debug walking";
+    }
+
+    private string RegionName(int region) =>
+        region >= 0 && region < _level.Regions.Count ? _level.Regions[region].Name : "(none)";
+
+    private (double Floor, double Ceiling) RegionHeights(int region)
+    {
+        if (region >= 0 && region < _level.Regions.Count)
+        {
+            var r = _level.Regions[region];
+            return (r.FloorHeight, r.CeilHeight);
+        }
+
+        return (double.NaN, double.NaN);
     }
 
     protected override void Dispose(bool disposing)
