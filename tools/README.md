@@ -12,6 +12,8 @@ dotnet run --project tools/OpenVirtue.Tools -- pcx info     <image.pcx>
 dotnet run --project tools/OpenVirtue.Tools -- wmp info     <map.wmp>
 dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
+dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -22,3 +24,7 @@ dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 - `wav info` — print a sound's channels/rate/bit-depth and duration.
 - `wdl info` — parse a script and summarize its top-level items by keyword.
 - `level info` — load a whole level (WDL + WMP) and report its geometry, placements, and skills.
+- `oracle prepare scheduler-if-start-cycle` — create a local-only DOSBox-X probe
+  folder under `_research/oracle-runs/` for measuring `IF_START` versus first
+  `each_cycle` order. Generated WDL/WMP/runtime files are ignored and must not be
+  committed; reduce results into `docs/clean-room/observations/`.

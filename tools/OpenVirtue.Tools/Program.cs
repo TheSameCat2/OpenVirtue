@@ -30,6 +30,7 @@ internal static class Cli
                 "wav" => Wav(args[1..]),
                 "wdl" => Wdl(args[1..]),
                 "level" => Level(args[1..]),
+                "oracle" => Oracle(args[1..]),
                 "-h" or "--help" or "help" => Usage(),
                 _ => Usage($"Unknown command '{args[0]}'."),
             };
@@ -240,6 +241,21 @@ internal static class Cli
         }
     }
 
+    private static int Oracle(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            return Usage("oracle requires a subcommand.");
+        }
+
+        string verb = args[0].ToLowerInvariant();
+        return verb switch
+        {
+            "prepare" => OracleProbeGenerator.Prepare(args[1..]),
+            _ => Usage($"Unknown oracle subcommand '{verb}'."),
+        };
+    }
+
     private static void ListEntries(WrsArchive archive, string archivePath)
     {
         Console.WriteLine($"{Path.GetFileName(archivePath)} — {archive.Entries.Count} entries");
@@ -305,6 +321,7 @@ internal static class Cli
               ovtool wav info <sound.wav>
               ovtool wdl info <script.wdl>
               ovtool level info <archive.wrs> [main.wdl]
+              ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--dosbox-x <exe>]
 
             Notes:
               These tools operate on game data you supply; no game data ships with
