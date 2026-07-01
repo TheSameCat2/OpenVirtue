@@ -14,7 +14,8 @@ or executables are distributed with this project.**
 
 > Status: **early implementation.** The asset pipeline (WRS/PCX/WDL/WMP/WAV) works
 > and a textured level renders in a Direct3D 11 window with billboard sprites; the
-> WDL interpreter and the actual game simulation are still being built. See
+> WDL interpreter boots/ticks in the viewer, and first-person movement has a first
+> playable debug slice. The actual game simulation is still being built. See
 > [Current status](#current-status) for the milestone breakdown, and
 > [`docs/recon/`](docs/recon/) for the original research.
 
@@ -40,7 +41,7 @@ or executables are distributed with this project.**
 
 ## Current status
 
-Early implementation (the asset layer is solid; the simulation is not built yet).
+Early implementation (the asset layer is solid; the simulation is just beginning).
 What works today:
 
 - **Asset pipeline** — clean-room readers for `WRS` (LZSS archives), `PCX` (8-bit
@@ -52,20 +53,22 @@ What works today:
   textures).
 - **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
-  things and actors (palette-index-0 color-key transparency), explored with a
-  free-fly debug camera.
+  things and actors (palette-index-0 color-key transparency). The camera is now
+  driven by a first-person debug player with floor following, point-based portal
+  crossing/blocking, gravity, and jump.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
   comparison, logical `&&`/`||`, modulo, member access) and `SET`/`RULE`/`IF`
   statements with action-to-action calls run against a live skill table
-  (`WdlRuntime`); a level's `IF_START` script can boot, and a per-frame `Tick`
-  maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect declared
-  `MIN`/`MAX` bounds. Currently exercised by tests; not yet driving the running app.
+  (`WdlRuntime`); a level's `IF_START` script boots in the viewer, and a per-frame
+  `Tick` maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect
+  declared `MIN`/`MAX` bounds.
 
-Not yet started: the `each_cycle` scheduler dispatch and player-movement parity,
-actor animation/AI, collision, audio playback, HUD/menus/inventory, save/load, and
-the DOSBox-X oracle-diff harness. **The app is a level viewer, not yet a playable
-game.** See the [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for
-the full plan and where each piece sits.
+Not yet complete: the `each_cycle` scheduler dispatch, Acknex-accurate
+player-movement parity, body-radius/sliding collision, actor animation/AI, audio
+playback, HUD/menus/inventory, save/load, and the DOSBox-X oracle-diff harness.
+**The app is a level viewer with debug walking, not yet a playable game.** See the
+[milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
+and where each piece sits.
 
 ## What you need to play (planned end-user flow)
 

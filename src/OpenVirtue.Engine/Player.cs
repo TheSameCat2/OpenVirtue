@@ -20,10 +20,20 @@ public sealed class Player
 {
     private readonly Level _level;
     private readonly Dictionary<int, List<int>> _regionWalls = [];
+    private Vector3 _position;
+    private int _region;
+    private float _velocityY;
 
-    public Vector3 Position;
-    public int Region;
-    public float VelocityY;
+    public Vector3 Position
+    {
+        get => _position;
+        set => _position = value;
+    }
+
+    public int Region => _region;
+
+    public float VelocityY => _velocityY;
+
     public bool Grounded { get; private set; }
 
     /// <summary>Eye height above the floor (capped to the region's headroom).</summary>
@@ -54,18 +64,18 @@ public sealed class Player
 
         if (level.PlayerStart is { } start)
         {
-            Region = start.Region;
-            Position = new Vector3(start.X, FloorOf(Region) + EyeOffset(Region), start.Y);
+            _region = start.Region;
+            _position = new Vector3(start.X, FloorOf(_region) + EyeOffset(_region), start.Y);
         }
     }
 
     /// <summary>Attempts a horizontal move, crossing portals and blocking on solid walls.</summary>
     public void MoveHorizontal(float dx, float dz)
     {
-        var from = new Vector2(Position.X, Position.Z);
-        var to = new Vector2(Position.X + dx, Position.Z + dz);
+        var from = new Vector2(_position.X, _position.Z);
+        var to = new Vector2(_position.X + dx, _position.Z + dz);
 
-        if (_regionWalls.TryGetValue(Region, out List<int>? walls))
+        if (_regionWalls.TryGetValue(_region, out List<int>? walls))
         {
             foreach (int wallIndex in walls)
             {
@@ -75,32 +85,31 @@ public sealed class Player
                     continue;
                 }
 
-                int other = wall.LeftRegion == Region ? wall.RightRegion : wall.LeftRegion;
+                int other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
                 if (!Enterable(other))
                 {
                     return; // solid wall — block the whole move
                 }
 
-                Region = other; // step through the portal
+                _region = other; // step through the portal
                 break;
             }
         }
 
-        Position.X = to.X;
-        Position.Z = to.Y;
+        _position = new Vector3(to.X, _position.Y, to.Y);
     }
 
     /// <summary>Advances vertical physics one tick: gravity, then land on the current region's floor.</summary>
     public void Tick()
     {
-        float groundY = FloorOf(Region) + EyeOffset(Region);
-        VelocityY -= Gravity;
-        Position.Y += VelocityY;
+        float groundY = FloorOf(_region) + EyeOffset(_region);
+        _velocityY -= Gravity;
+        _position.Y += _velocityY;
 
-        if (Position.Y <= groundY)
+        if (_position.Y <= groundY)
         {
-            Position.Y = groundY;
-            VelocityY = 0;
+            _position.Y = groundY;
+            _velocityY = 0;
             Grounded = true;
         }
         else
@@ -112,9 +121,9 @@ public sealed class Player
     /// <summary>Places the player in a region at the given horizontal position, at eye level.</summary>
     public void MoveTo(int region, float x, float z)
     {
-        Region = region;
-        Position = new Vector3(x, FloorOf(region) + EyeOffset(region), z);
-        VelocityY = 0;
+        _region = region;
+        _position = new Vector3(x, FloorOf(region) + EyeOffset(region), z);
+        _velocityY = 0;
         Grounded = true;
     }
 
@@ -123,7 +132,7 @@ public sealed class Player
     {
         if (Grounded)
         {
-            VelocityY = JumpSpeed;
+            _velocityY = JumpSpeed;
         }
     }
 
@@ -147,12 +156,12 @@ public sealed class Player
 
         var target = _level.Regions[region];
         float headroom = (float)(target.CeilHeight - target.FloorHeight);
-        float step = (float)target.FloorHeight - FloorOf(Region);
+        float step = (float)target.FloorHeight - FloorOf(_region);
         return headroom >= MinHeadroom && step <= StepUp;
     }
 
     private float FloorOf(int region) =>
-        region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : Position.Y - EyeHeight;
+        region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : _position.Y - EyeHeight;
 
     private float EyeOffset(int region)
     {

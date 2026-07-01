@@ -39,7 +39,7 @@ dotnet test --filter "FullyQualifiedName~WrsArchiveTests"   # run one class/test
 
 # Run the game (Windows; point at one of YOUR OWN .WRS files):
 dotnet run --project src/OpenVirtue.App -- path/to/apathy.wrs [MAIN.WDL]
-#   Controls: WASD move, Q/E down/up, hold Shift faster, drag left-mouse to look.
+#   Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, drag left-mouse to look.
 
 # Inspect game files with the `ovtool` CLI:
 dotnet run --project tools/OpenVirtue.Tools -- wrs list    <archive.wrs>
@@ -48,7 +48,7 @@ dotnet run --project tools/OpenVirtue.Tools -- level info  <archive.wrs>   # als
 ```
 
 There is no separate lint step — .NET analyzers (`AnalysisLevel=latest-recommended`) run as
-part of the build. There is no CI configured.
+part of the build. CI runs restore, `dotnet build -warnaserror`, and `dotnet test` on Windows.
 
 ## Architecture
 
@@ -88,7 +88,8 @@ Projects and their **strict layering** (enforced only by discipline — keep it)
 - **`OpenVirtue.App`** (`net10.0-windows`, WinForms `WinExe`, → Engine) — the **only place
   DirectX lives** (Vortice.Direct3D11/DXGI/D3DCompiler/Mathematics). `Program` is the entry
   point; `LevelWindow` is the D3D11 host (swap chain, depth buffer, inline HLSL shader,
-  sprite billboards, alpha-test color-key cutout) with a fly `Camera`.
+  sprite billboards, alpha-test color-key cutout) with a first-person debug player driving
+  the camera.
 
 - **`OpenVirtue.Tools`** (`net10.0`, → Formats + Engine) — the `ovtool` CLI inspector.
 

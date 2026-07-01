@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Numerics;
+
 namespace OpenVirtue.Engine.Tests;
 
 public class PlayerTests
@@ -41,7 +43,9 @@ public class PlayerTests
     {
         var player = new Player(Load());
         float groundY = player.Position.Y; // spawned on the floor (eye height)
-        player.Position.Y = groundY + 1f;  // nudge up
+        Vector3 position = player.Position;
+        position.Y = groundY + 1f;         // nudge up
+        player.Position = position;
 
         player.Tick();
 

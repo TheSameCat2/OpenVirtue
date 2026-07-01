@@ -19,7 +19,7 @@ internal static class Program
             MessageBox.Show(
                 "Usage: OpenVirtue.App <archive.wrs> [main.wdl]\n\n" +
                 "Point it at one of your own Saints of Virtue .WRS files (e.g. apathy.wrs).\n" +
-                "Controls: WASD move, Q/E down/up, hold Shift to go faster, drag left mouse to look.",
+                "Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, drag left mouse to look.",
                 "OpenVirtue",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
