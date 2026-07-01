@@ -11,7 +11,7 @@ choices as ADRs in `docs/adr/`.
 > Direct3D lives in `OpenVirtue.App`). The milestone table below is annotated with
 > current progress. For authoritative current status see the
 > [root README](../../README.md#current-status); for current structure, the code and
-> [`CLAUDE.md`](../../CLAUDE.md).
+> [`AGENTS.md`](../../AGENTS.md).
 
 ## Guiding principles
 

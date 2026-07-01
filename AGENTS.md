@@ -1,6 +1,7 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex and other coding agents working in this repository.
+It is intentionally repo-specific: follow it together with the user's current request.
 
 ## What this is
 
@@ -49,6 +50,13 @@ dotnet run --project tools/OpenVirtue.Tools -- level info  <archive.wrs>   # als
 
 There is no separate lint step — .NET analyzers (`AnalysisLevel=latest-recommended`) run as
 part of the build. CI runs restore, `dotnet build -warnaserror`, and `dotnet test` on Windows.
+
+For PR-readiness checks, prefer the CI-shaped local build:
+
+```bash
+dotnet build OpenVirtue.slnx --configuration Release --no-incremental -warnaserror
+dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal
+```
 
 ## Architecture
 
@@ -111,6 +119,10 @@ placements but references texture/type/skill definitions that only exist in the 
 - C# style (`.editorconfig`): file-scoped namespaces that **match the folder**, Allman braces
   (newline before `{`), braces always, `System.*` usings sorted first, 4-space indent.
 - Tests: xUnit, named `Method_Scenario_Expectation` (CA1707 is disabled for `tests/`).
+- Keep changes tightly scoped. If you touch implementation code, run the focused tests first,
+  then the CI-shaped build/test pair before calling the branch ready.
+- Use `rg`/`rg --files` for repo searches. The clean-room provenance constraints matter more
+  than speed: never copy code from `_research/` or third-party references.
 
 ## Testing against real game data
 
