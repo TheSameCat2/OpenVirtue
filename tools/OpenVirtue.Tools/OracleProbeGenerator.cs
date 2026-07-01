@@ -4,6 +4,7 @@
 using System.Text;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
+using OpenVirtue.Formats.Wrs;
 
 internal static class OracleProbeGenerator
 {
@@ -71,9 +72,11 @@ internal static class OracleProbeGenerator
         File.WriteAllText(Path.Combine(fullOutputDir, "README.md"), Readme(workDir, runtimeDir, dosboxX), Encoding.UTF8);
 
         int copied = 0;
+        int copiedAssets = 0;
         if (runtimeDir is not null)
         {
             copied = CopyRuntimeShell(runtimeDir, workDir);
+            copiedAssets = CopyProbeAssets(runtimeDir, workDir);
         }
 
         Console.WriteLine($"Prepared {SchedulerProbeId} in {fullOutputDir}");
@@ -83,6 +86,7 @@ internal static class OracleProbeGenerator
         if (runtimeDir is not null)
         {
             Console.WriteLine($"  copied {copied} runtime/support file(s) into work/; WRS archives were not copied.");
+            Console.WriteLine($"  copied {copiedAssets} local-only display asset(s) into work/.");
         }
         else
         {
@@ -139,6 +143,38 @@ internal static class OracleProbeGenerator
         return copied;
     }
 
+    private static int CopyProbeAssets(string runtimeDir, string workDir)
+    {
+        string archivePath = Path.Combine(Path.GetFullPath(runtimeDir), "TITLE.WRS");
+        if (!File.Exists(archivePath))
+        {
+            return 0;
+        }
+
+        WrsArchive archive = WrsArchive.ReadFile(archivePath);
+        string[] names =
+        [
+            "font_pnl.pcx",
+            "black.pcx",
+        ];
+
+        int copied = 0;
+        foreach (string name in names)
+        {
+            WrsEntry? entry = archive.Entries.FirstOrDefault(
+                e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (entry is null)
+            {
+                continue;
+            }
+
+            File.WriteAllBytes(Path.Combine(workDir, name), entry.GetData());
+            copied++;
+        }
+
+        return copied;
+    }
+
     private static void ValidateFixture(string wdl, string wmp)
     {
         WdlParser.Parse(wdl);
@@ -150,33 +186,63 @@ internal static class OracleProbeGenerator
         // Synthetic OpenVirtue clean-room oracle probe.
         // Local-only generated file; do not commit generated WDL/WMP artifacts.
 
+        DITHER 0;
+        VIDEO S640x480;
+        NEXUS 8;
         MAPFILE <TITLE.WMP>;
+        BIND <TITLE.WDL>;
 
         SKILL probe_order { VAL 0; }
         SKILL probe_ticks { VAL 0; }
 
-        ACTION probe_start
+        FONT probe_font,<font_pnl.pcx>,8,16;
+        PANEL probe_panel
         {
-            RULE probe_order = probe_order * 10 + 1;
+            POS_X 8;
+            POS_Y 8;
+            DIGITS 0,0,4,probe_font,1,probe_order;
+            DIGITS 80,0,4,probe_font,1,probe_ticks;
+            FLAGS REFRESH;
         }
 
-        ACTION probe_cycle
+        BMAP wall1_map,<black.pcx>,0,0,10,10;
+        TEXTURE wall1_tex { BMAPS wall1_map; }
+        WALL wall1 { TEXTURE wall1_tex; }
+        REGION border
+        {
+            FLOOR_HGT 40;
+            CEIL_HGT 40;
+            FLOOR_TEX wall1_tex;
+            CEIL_TEX wall1_tex;
+            CLIP_DIST 0;
+        }
+        REGION nothing
+        {
+            FLOOR_HGT 0;
+            CEIL_HGT 100;
+            FLOOR_TEX wall1_tex;
+            CEIL_TEX wall1_tex;
+        }
+
+        ACTION probe_start
+        {
+            SET PANELS.1, probe_panel;
+            SET probe_order, 1;
+            SET EACH_TICK.1, probe_tick;
+        }
+
+        ACTION probe_tick
         {
             IF (probe_ticks < 1)
             {
                 RULE probe_order = probe_order * 10 + 2;
             }
 
-            RULE probe_ticks += 1;
+            ADD probe_ticks, 1;
+            SET EACH_TICK.1, NULL;
         }
 
         IF_START probe_start;
-
-        THING probe_actor
-        {
-            HEIGHT 1;
-            each_cycle probe_cycle;
-        }
         """;
 
     private static string SchedulerWmp() =>
@@ -185,13 +251,13 @@ internal static class OracleProbeGenerator
         VERTEX 64 -64 0;#1
         VERTEX 64 64 0;#2
         VERTEX -64 64 0;#3
-        REGION probe_room 0 64;#0
-        WALL probe_wall 0 1 0 -1 0 0;#0
-        WALL probe_wall 1 2 0 -1 0 0;#1
-        WALL probe_wall 2 3 0 -1 0 0;#2
-        WALL probe_wall 3 0 0 -1 0 0;#3
-        THING probe_actor 0 24 0 0;#0
-        PLAYER_START 0 0 0 0;#1
+        REGION nothing 0 10;#0
+        REGION border 40 40;#1
+        WALL wall1 0 1 0 1 0 0;#0
+        WALL wall1 1 2 0 1 0 0;#1
+        WALL wall1 2 3 0 1 0 0;#2
+        WALL wall1 3 0 0 1 0 0;#3
+        PLAYER_START 0 0 90 0;#4
         """;
 
     private static string DosboxConfig(string workDir) =>
@@ -216,7 +282,7 @@ internal static class OracleProbeGenerator
         [autoexec]
         mount c "{{workDir}}"
         C:
-        VRUN.EXE -NJ TITLE -RUN
+        VRUN.EXE -NJ TITLE
         """;
 
     private static string RunBatch(string? dosboxX)
@@ -237,26 +303,26 @@ internal static class OracleProbeGenerator
 
         ## Question
 
-        Does the original runtime execute `IF_START` before the first scheduled
-        `each_cycle` dispatch?
+        Does an action assigned to `EACH_TICK` during `IF_START` run after the
+        startup action, and how soon does the first dispatch happen?
 
         ## Fixture
 
         - `work/TITLE.WDL` defines two global skills:
           - `probe_order` starts at `0`.
           - `probe_ticks` starts at `0`.
-        - `IF_START` appends digit `1` to `probe_order`.
-        - The first `each_cycle` call appends digit `2` to `probe_order` and
-          increments `probe_ticks`.
+        - `IF_START` sets `probe_order` to `1`, shows a `DIGITS` panel, and
+          assigns `probe_tick` into `EACH_TICK.1`.
+        - The first `EACH_TICK.1` call appends digit `2` to `probe_order`,
+          increments `probe_ticks`, and unregisters itself.
 
         Possible observations:
 
         | `probe_order` | Meaning |
         |---------------|---------|
-        | `12` | Startup ran before the first cycle. |
-        | `21` | A cycle ran before startup. |
-        | `1`  | Startup ran, but the cycle did not attach/fire before observation. |
-        | `2`  | Cycle fired, but startup did not run before observation. |
+        | `12` | Startup ran, then the first tick callback ran. |
+        | `1`  | Startup ran, but the tick callback did not fire before observation. |
+        | `0`  | Startup did not run before observation. |
 
         ## Local Runtime Files
 
@@ -279,17 +345,25 @@ internal static class OracleProbeGenerator
         ```
 
         The generator copies only the local runtime shell files it needs
-        (`VRUN.EXE`, `WWRUN.WDF`, `WWRUN.MDF`) when `--runtime-dir` is supplied.
-        It deliberately does not copy retail WRS archives.
+        (`VRUN.EXE`, `WWRUN.WDF`, `WWRUN.MDF`) and the two local-only display
+        assets required by the probe (`font_pnl.pcx`, `black.pcx`) when
+        `--runtime-dir` is supplied. It deliberately does not copy retail WRS
+        archives.
+
+        ## Safety
+
+        This generated probe does not run SaintsX setup scripts, `patch.exe`, or
+        any other external patching tool. Do not run `setup*.bat` from this
+        oracle folder. If this loose-file harness is insufficient, add a
+        noninteractive prep step to `ovtool` first so the clean-room evidence is
+        repeatable and auditable.
 
         ## Manual Observation Steps
 
         1. Launch `run-oracle.bat`.
-        2. If the synthetic fixture boots, enable SaintsX debug mode with
-           `CTRL+ALT+C`.
-        3. Press `V` to show variables.
-        4. Record only the values of `probe_order` and `probe_ticks`.
-        5. Reduce the result into `docs/clean-room/observations/{{SchedulerProbeId}}.md`.
+        2. If the synthetic fixture boots, read the two visible numeric fields:
+           `probe_order` is on the left and `probe_ticks` is on the right.
+        3. Reduce the result into `docs/clean-room/observations/{{SchedulerProbeId}}.md`.
 
         If the runtime does not accept loose synthetic files, record that as a
         harness result and adjust the local-only wrapper before drawing scheduler

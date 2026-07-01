@@ -26,5 +26,7 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start
 - `level info` — load a whole level (WDL + WMP) and report its geometry, placements, and skills.
 - `oracle prepare scheduler-if-start-cycle` — create a local-only DOSBox-X probe
   folder under `_research/oracle-runs/` for measuring `IF_START` versus first
-  `each_cycle` order. Generated WDL/WMP/runtime files are ignored and must not be
-  committed; reduce results into `docs/clean-room/observations/`.
+  `EACH_TICK` dispatch. Generated WDL/WMP/runtime/display-asset files are ignored
+  and must not be committed; reduce results into `docs/clean-room/observations/`.
+  This helper does not run SaintsX setup scripts or external `patch.exe`; oracle
+  prep must stay noninteractive and auditable.
