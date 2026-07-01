@@ -18,6 +18,8 @@ public sealed class WdlRuntime : IWdlContext
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<AcknexObject> _levelObjects = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
     private readonly string? _startupAction;
@@ -30,11 +32,18 @@ public sealed class WdlRuntime : IWdlContext
         _bounds = level.SkillBounds;
         _actions = level.Actions;
         _startupAction = level.StartupAction;
+        RegisterLevelObjects(level);
         _interpreter = new WdlInterpreter(this);
     }
 
     /// <summary>The live global skill values.</summary>
     public IReadOnlyDictionary<string, double> Skills => _skills;
+
+    /// <summary>The named object references available to scripts.</summary>
+    public IReadOnlyDictionary<string, AcknexObject> Objects => _objects;
+
+    /// <summary>All placed level objects registered for runtime iteration.</summary>
+    public IReadOnlyList<AcknexObject> LevelObjects => _levelObjects;
 
     /// <inheritdoc/>
     public double GetSkill(string name) => _skills.GetValueOrDefault(name);
@@ -47,7 +56,12 @@ public sealed class WdlRuntime : IWdlContext
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
 
     /// <summary>Registers a named object reference (e.g. <c>my</c>, <c>you</c>, or a level object).</summary>
-    public void RegisterObject(string name, AcknexObject value) => _objects[name] = value;
+    public void RegisterObject(string name, AcknexObject value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(value);
+        _objects[name] = value;
+    }
 
     /// <summary>Whether an action with this name exists.</summary>
     public bool HasAction(string name) => _actions.ContainsKey(name);
@@ -75,6 +89,37 @@ public sealed class WdlRuntime : IWdlContext
 
     /// <inheritdoc/>
     public void CallAction(string name) => Run(name);
+
+    private void RegisterLevelObjects(Level level)
+    {
+        foreach (AcknexObject obj in level.Things)
+        {
+            RegisterLevelObject(obj);
+        }
+
+        foreach (AcknexObject obj in level.Actors)
+        {
+            RegisterLevelObject(obj);
+        }
+    }
+
+    private void RegisterLevelObject(AcknexObject value)
+    {
+        _levelObjects.Add(value);
+        if (_ambiguousObjectNames.Contains(value.Name))
+        {
+            return;
+        }
+
+        if (_objects.ContainsKey(value.Name))
+        {
+            _objects.Remove(value.Name);
+            _ambiguousObjectNames.Add(value.Name);
+            return;
+        }
+
+        _objects[value.Name] = value;
+    }
 
     private bool Run(string name)
     {

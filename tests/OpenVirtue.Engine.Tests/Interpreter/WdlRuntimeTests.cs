@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using OpenVirtue.Engine.Interpreter;
+using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Tests.TestSupport;
 using OpenVirtue.Formats.Wrs;
 
@@ -87,6 +88,52 @@ public class WdlRuntimeTests
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
 
         Assert.False(runtime.RunAction("nope"));
+    }
+
+    [Fact]
+    public void Runtime_RegistersUniquePlacedObjectsByName()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING plant 5 6 90 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; ACTION movePlant { SET plant.x, 9; RULE plant.y += 1; }");
+        Thing plant = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+
+        Assert.Same(plant, runtime.GetObject("plant"));
+        Assert.Contains(plant, runtime.LevelObjects);
+
+        Assert.True(runtime.RunAction("movePlant"));
+        Assert.Equal(9, plant.X);
+        Assert.Equal(7, plant.Y);
+    }
+
+    [Fact]
+    public void Runtime_DuplicatePlacedObjectNames_AreKeptButNotAmbiguouslyNamed()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING plant 5 6 90 0;#1\nTHING plant 7 8 90 0;#2\nPLAYER_START 0 0 0 0;#3";
+        var runtime = new WdlRuntime(LoadWithMap(map, "MAPFILE <m.wmp>;"));
+
+        Assert.Equal(2, runtime.LevelObjects.Count);
+        Assert.Null(runtime.GetObject("plant"));
+        Assert.False(runtime.Objects.ContainsKey("plant"));
+    }
+
+    [Fact]
+    public void Runtime_RegisterObject_AddsExplicitReference()
+    {
+        Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");
+        var runtime = new WdlRuntime(level);
+        var thing = new Thing("scratch");
+
+        runtime.RegisterObject("my", thing);
+        Assert.True(runtime.RunAction("moveMe"));
+
+        Assert.Equal(11, thing.X);
     }
 
     /// <summary>
@@ -214,4 +261,9 @@ public class WdlRuntimeTests
         return LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
     }
 
+    private static Level LoadWithMap(string map, string main)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+    }
 }

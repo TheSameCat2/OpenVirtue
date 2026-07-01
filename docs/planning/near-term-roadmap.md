@@ -22,7 +22,8 @@ engine invariants.
    - Sky/background handling.
    - First-pass palette/lighting approximation.
    - Sprite visibility/sorting fixes as needed for static scenes.
-   - Runtime object registration for globals, placed things/actors, and player.
+   - Runtime object registration for globals, placed things/actors, and player
+     (placed things/actors are registered; player registration remains).
    - `each_cycle` scheduler skeleton with tests before exact parity tuning.
 3. Convert assumptions into tests.
    - Prefer synthetic WDL/WMP fixtures.
