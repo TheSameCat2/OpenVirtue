@@ -136,6 +136,20 @@ public class WdlRuntimeTests
         Assert.Equal(11, thing.X);
     }
 
+    [Fact]
+    public void Runtime_PlayerReference_CanBeRegisteredForScripts()
+    {
+        Level level = Load("MAPFILE <m.wmp>; ACTION nudgePlayer { SET player.x, 12; RULE player.y += 3; }");
+        var runtime = new WdlRuntime(level);
+        var player = new Player(level);
+
+        runtime.RegisterObject("player", player);
+        Assert.True(runtime.RunAction("nudgePlayer"));
+
+        Assert.Equal(12, player["x"]);
+        Assert.Equal(3, player["y"]);
+    }
+
     /// <summary>
     /// Boots and ticks every local retail level when user-supplied game data is present.
     /// This guards the current runtime skeleton without asserting hidden scheduler parity.

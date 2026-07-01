@@ -63,7 +63,8 @@ What works today:
   (`WdlRuntime`); a level's `IF_START` script boots in the viewer, and a per-frame
   `Tick` maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect
   declared `MIN`/`MAX` bounds. Runtime registration now tracks placed things/actors
-  for iteration and exposes unique placement names for script member access.
+  for iteration, exposes unique placement names for script member access, and registers
+  the debug player as a script-visible object in the viewer.
 
 Not yet complete: the `each_cycle` scheduler dispatch, Acknex-accurate
 player-movement parity, body-radius/sliding collision, actor animation/AI, audio

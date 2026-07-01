@@ -16,7 +16,7 @@ namespace OpenVirtue.Engine;
 /// Movement is point-based (no body radius yet) and blocks rather than slides on a solid wall —
 /// a deliberate first cut. Physics constants are world-unit tunables.
 /// </remarks>
-public sealed class Player
+public sealed class Player : AcknexObject
 {
     private readonly Level _level;
     private readonly Dictionary<int, List<int>> _regionWalls = [];
@@ -51,7 +51,7 @@ public sealed class Player
     /// <summary>Upward velocity applied on a jump.</summary>
     public float JumpSpeed { get; set; } = 25f;
 
-    public Player(Level level)
+    public Player(Level level) : base("player")
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
@@ -66,6 +66,31 @@ public sealed class Player
         {
             _region = start.Region;
             _position = new Vector3(start.X, FloorOf(_region) + EyeOffset(_region), start.Y);
+        }
+    }
+
+    /// <summary>Reflective WDL-style pose fields: <c>x/y</c> are map axes, <c>z</c> is height.</summary>
+    protected override bool TryGetTyped(string name, out double value)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "x": value = _position.X; return true;
+            case "y": value = _position.Z; return true;
+            case "z": value = _position.Y; return true;
+            case "region": value = _region; return true;
+            default: value = 0; return false;
+        }
+    }
+
+    protected override bool TrySetTyped(string name, double value)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "x": _position.X = (float)value; return true;
+            case "y": _position.Z = (float)value; return true;
+            case "z": _position.Y = (float)value; return true;
+            case "region": _region = (int)value; return true;
+            default: return false;
         }
     }
 

@@ -200,6 +200,7 @@ internal sealed class LevelWindow : Form
         // The player owns position (floor-following physics); the camera is its eye.
         _player = new Player(_level);
         SpawnInLargestRoom(); // start in a big open room — easier to get oriented and test movement
+        _runtime.RegisterObject("player", _player);
         _camera.Position = _player.Position;
         if (_level.PlayerStart is { } start)
         {

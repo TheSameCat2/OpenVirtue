@@ -67,6 +67,28 @@ public class PlayerTests
         Assert.True(player.VelocityY > 0 || player.Position.Y > 0);
     }
 
+    [Fact]
+    public void ReflectivePoseFields_UseMapAxisConvention()
+    {
+        var player = new Player(Load());
+        player.MoveTo(0, 2, -3);
+
+        Assert.Equal(2, player["x"]);
+        Assert.Equal(-3, player["y"]);
+        Assert.Equal(player.Position.Y, player["z"]);
+        Assert.Equal(0, player["region"]);
+
+        player["x"] = 4;
+        player["y"] = 5;
+        player["z"] = 6;
+        player["region"] = 1;
+
+        Assert.Equal(4, player.Position.X);
+        Assert.Equal(5, player.Position.Z);
+        Assert.Equal(6, player.Position.Y);
+        Assert.Equal(1, player.Region);
+    }
+
     private static Level Load()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };
