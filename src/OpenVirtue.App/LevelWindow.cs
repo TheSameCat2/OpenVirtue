@@ -71,7 +71,7 @@ internal sealed class LevelWindow : Form
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 16 };
     private readonly List<(int Start, int Count, string? Texture, float Ambient)> _batches = [];
     private readonly Dictionary<string, ID3D11ShaderResourceView> _textureViews = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, List<Billboard>> _spriteGroups = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<SpriteBillboard> _sprites = [];
     private readonly WdlRuntime _runtime;
     private readonly Stopwatch _frameClock = Stopwatch.StartNew();
 
@@ -126,9 +126,6 @@ internal sealed class LevelWindow : Form
         public Matrix4x4 ViewProjection;
         public Vector4 Tint;
     }
-
-    /// <summary>A camera-facing sprite: its base point (on the floor) and half-extents in world units.</summary>
-    private readonly record struct Billboard(Vector3 BasePosition, float HalfWidth, float HalfHeight);
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -422,47 +419,14 @@ internal sealed class LevelWindow : Form
             new BufferDescription((uint)(_vertexCount * Marshal.SizeOf<RenderVertex>()), BindFlags.VertexBuffer, ResourceUsage.Immutable));
     }
 
-    // World units per sprite-bitmap pixel. WDL HEIGHT turned out to be a placement value
-    // (almost always 1), not a visual size, so sprites are sized from their bitmap. Calibrated
-    // so the ~174px-tall enemy reads ~7 units; an easy single knob to tune.
-    private const float SpriteWorldPerPixel = 0.04f;
-
     private void BuildSprites()
     {
-        foreach (var thing in _level.Things)
-        {
-            AddSprite(thing.X, thing.Y, thing.Region, thing.Texture);
-        }
-
-        foreach (var actor in _level.Actors)
-        {
-            AddSprite(actor.X, actor.Y, actor.Region, actor.Texture);
-        }
-    }
-
-    private void AddSprite(double x, double y, int region, string? texture)
-    {
-        if (texture is null || !_level.Textures.TryGetValue(texture, out LevelTexture levelTexture) || levelTexture.Height <= 0)
-        {
-            return;
-        }
-
-        float worldWidth = levelTexture.Width * SpriteWorldPerPixel;
-        float worldHeight = levelTexture.Height * SpriteWorldPerPixel;
-        float floor = region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : 0f;
-
-        if (!_spriteGroups.TryGetValue(texture, out List<Billboard>? group))
-        {
-            group = [];
-            _spriteGroups[texture] = group;
-        }
-
-        group.Add(new Billboard(new Vector3((float)x, floor, (float)y), worldWidth * 0.5f, worldHeight * 0.5f));
+        _sprites.AddRange(SpriteBuilder.Build(_level));
     }
 
     private void RenderSprites(Matrix4x4 viewProjection)
     {
-        if (_spriteGroups.Count == 0)
+        if (_sprites.Count == 0)
         {
             return;
         }
@@ -471,12 +435,21 @@ internal sealed class LevelWindow : Form
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
 
-        foreach ((string texture, List<Billboard> billboards) in _spriteGroups)
+        IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(_sprites, _camera.Position);
+        for (int start = 0; start < sorted.Count;)
         {
-            ApplyFrameConstants(viewProjection, TextureAmbient(texture));
-            var vertices = new List<RenderVertex>(billboards.Count * 6);
-            foreach (Billboard billboard in billboards)
+            string texture = sorted[start].Texture;
+            int end = start + 1;
+            while (end < sorted.Count && sorted[end].Texture.Equals(texture, StringComparison.OrdinalIgnoreCase))
             {
+                end++;
+            }
+
+            ApplyFrameConstants(viewProjection, TextureAmbient(texture));
+            var vertices = new List<RenderVertex>((end - start) * 6);
+            for (int i = start; i < end; i++)
+            {
+                SpriteBillboard billboard = sorted[i];
                 Vector3 r = right * billboard.HalfWidth;
                 Vector3 u = up * billboard.HalfHeight;
                 Vector3 center = billboard.BasePosition + new Vector3(0, billboard.HalfHeight, 0);
@@ -504,6 +477,7 @@ internal sealed class LevelWindow : Form
             _context.IASetVertexBuffer(0, buffer, (uint)Marshal.SizeOf<RenderVertex>());
             _context.PSSetShaderResource(0, view);
             _context.Draw((uint)vertices.Count, 0);
+            start = end;
         }
     }
 

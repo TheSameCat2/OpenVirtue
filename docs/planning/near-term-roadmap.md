@@ -23,7 +23,8 @@ engine invariants.
      a first-pass viewer background color; textured sky rendering remains).
    - First-pass palette/lighting approximation (`TEXTURE AMBIENT` drives a
      brightness tint; true palette shading remains).
-   - Sprite visibility/sorting fixes as needed for static scenes.
+   - Sprite visibility/sorting fixes as needed for static scenes (static billboard
+     layout is engine-side and app rendering orders billboards back-to-front).
    - Runtime object registration for globals, placed things/actors, and player.
    - `each_cycle` scheduler skeleton with tests before exact parity tuning
      (registration/dispatch API exists; automatic discovery/order remains parity work).
