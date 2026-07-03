@@ -25,14 +25,29 @@ public class WdlPreprocessorTests
     }
 
     [Fact]
-    public void Flatten_IncludeOnce_IgnoresRepeatedInclude()
+    public void Flatten_RepeatedInclude_InlinesEachOccurrence()
     {
         const string main = "INCLUDE <mod.wdl>; INCLUDE <mod.wdl>;";
         const string module = "SKILL b { VAL 2; }";
 
         WdlProgram program = WdlPreprocessor.Flatten(main, _ => module);
 
-        Assert.Equal(["b"], SkillNames(program));
+        Assert.Equal(["b", "b"], SkillNames(program));
+    }
+
+    [Fact]
+    public void Flatten_CyclicInclude_SkipsOnlyActiveRecursion()
+    {
+        const string main = "INCLUDE <a.wdl>; INCLUDE <a.wdl>;";
+        var modules = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["a.wdl"] = "SKILL a { VAL 1; } INCLUDE <b.wdl>;",
+            ["b.wdl"] = "SKILL b { VAL 2; } INCLUDE <a.wdl>;",
+        };
+
+        WdlProgram program = WdlPreprocessor.Flatten(main, name => modules.GetValueOrDefault(name));
+
+        Assert.Equal(["a", "b", "a", "b"], SkillNames(program));
     }
 
     [Fact]

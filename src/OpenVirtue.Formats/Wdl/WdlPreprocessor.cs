@@ -23,14 +23,14 @@ public sealed class WdlPreprocessor
     private readonly ModuleResolver _resolve;
     private readonly HashSet<string> _symbols;
     private readonly Dictionary<string, IReadOnlyList<WdlToken>> _aliases = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _included;
+    private readonly HashSet<string> _includeStack;
     private readonly List<WdlItem> _output = [];
 
     private WdlPreprocessor(ModuleResolver resolve, HashSet<string> symbols)
     {
         _resolve = resolve;
         _symbols = symbols;
-        _included = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _includeStack = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -206,16 +206,24 @@ public sealed class WdlPreprocessor
 
     private void Include(string moduleName)
     {
-        // Include-once: also guards against cyclic includes.
-        if (!_included.Add(moduleName))
+        // Guard only active recursion. The manual describes each INCLUDE as reading
+        // the referenced WDL at that point, so later repeated INCLUDEs still run.
+        if (!_includeStack.Add(moduleName))
         {
             return;
         }
 
-        string? source = _resolve(moduleName);
-        if (source is not null)
+        try
         {
-            ProcessSource(source);
+            string? source = _resolve(moduleName);
+            if (source is not null)
+            {
+                ProcessSource(source);
+            }
+        }
+        finally
+        {
+            _includeStack.Remove(moduleName);
         }
     }
 
