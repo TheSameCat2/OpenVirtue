@@ -153,6 +153,11 @@ public static class LevelLoader
         entity.Y = placement.Y;
         entity.PlacementAngleDegrees = placement.Angle;
         entity.Region = placement.Region;
+        entity["THING"] = 1;
+        if (entity is Actor)
+        {
+            entity["ACTOR"] = 1;
+        }
 
         // Dress the placement from its WDL type definition (sprite texture, height, angle offset).
         if (declarations.GetEntity(placement.Name) is { } definition)

@@ -245,6 +245,10 @@ public sealed class WdlDeclarations
             {
                 skills[propertyName] = propertyValue;
             }
+            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+            {
+                AddFlags(property, skills);
+            }
         }
 
         _regions[item.Header[0].Text] = new RegionTextures(
@@ -280,6 +284,10 @@ public sealed class WdlDeclarations
             else if (TryNumericProperty(property, WallNumericProperties, out string propertyName, out double propertyValue))
             {
                 skills[propertyName] = propertyValue;
+            }
+            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+            {
+                AddFlags(property, skills);
             }
         }
 
@@ -320,6 +328,10 @@ public sealed class WdlDeclarations
             else if (TryNumericProperty(property, EntityNumericProperties, out string propertyName, out double propertyValue))
             {
                 skills[propertyName] = propertyValue;
+            }
+            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+            {
+                AddFlags(property, skills);
             }
         }
 
@@ -425,6 +437,17 @@ public sealed class WdlDeclarations
 
         value = parsed;
         return true;
+    }
+
+    private static void AddFlags(WdlItem item, Dictionary<string, double> skills)
+    {
+        foreach (WdlToken token in item.Header)
+        {
+            if (token.Kind == WdlTokenKind.Identifier)
+            {
+                skills[token.Text] = 1;
+            }
+        }
     }
 
     private static bool IsUniversalSkill(string keyword)

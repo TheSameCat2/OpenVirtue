@@ -304,6 +304,49 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DressesObjectsFromDocumentedFlags()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "WALL gate 0 1 0 -1 0 0;#0\nTHING pickup 2 3 90 0;#1\n" +
+                        "ACTOR guard 4 5 180 0;#2\nPLAYER_START 0 0 0 0;#3",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            REGION r { FLAGS SAVE, FLAG1; }
+            WALL gate { FLAGS PASSABLE, FENCE, FLAG2; }
+            THING pickup { FLAGS INVISIBLE, FLAG3; }
+            ACTOR guard { FLAGS FAR, MASTER, FLAG4; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Region region = Assert.Single(level.Regions);
+        Assert.Equal(1, region["save"]);
+        Assert.Equal(1, region["flag1"]);
+
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal(1, wall["passable"]);
+        Assert.Equal(1, wall["fence"]);
+        Assert.Equal(1, wall["flag2"]);
+
+        Thing pickup = Assert.Single(level.Things);
+        Assert.Equal(1, pickup["thing"]);
+        Assert.Equal(0, pickup["actor"]);
+        Assert.Equal(1, pickup["invisible"]);
+        Assert.Equal(1, pickup["flag3"]);
+
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal(1, guard["thing"]);
+        Assert.Equal(1, guard["actor"]);
+        Assert.Equal(1, guard["far"]);
+        Assert.Equal(1, guard["master"]);
+        Assert.Equal(1, guard["flag4"]);
+    }
+
+    [Fact]
     public void LoadCore_CapturesSkillMinMaxBounds()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

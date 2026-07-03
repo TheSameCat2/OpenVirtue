@@ -217,15 +217,15 @@ public class WdlRuntimeTests
         Level level = LoadWithMap(
             map,
             "MAPFILE <m.wmp>; SKILL result { VAL 0; } " +
-            "THING pickup { HEIGHT 2; SKILL1 3; DIST 4; MAP_COLOR 5; } " +
-            "ACTION readPickup { RULE result = my.HEIGHT + my.SKILL1 + my.REGION + my.DIST + my.MAP_COLOR; }");
+            "THING pickup { HEIGHT 2; SKILL1 3; DIST 4; MAP_COLOR 5; FLAGS INVISIBLE; } " +
+            "ACTION readPickup { RULE result = my.HEIGHT + my.SKILL1 + my.REGION + my.DIST + my.MAP_COLOR + my.THING + my.INVISIBLE; }");
         Thing pickup = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
 
         runtime.RegisterObject("my", pickup);
 
         Assert.True(runtime.RunAction("readPickup"));
-        Assert.Equal(14, runtime.GetSkill("result"));
+        Assert.Equal(16, runtime.GetSkill("result"));
     }
 
     [Fact]
