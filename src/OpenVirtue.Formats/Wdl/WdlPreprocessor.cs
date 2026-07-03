@@ -6,12 +6,14 @@ namespace OpenVirtue.Formats.Wdl;
 /// <summary>
 /// Flattens a WDL "program": starting from a level's main script it resolves
 /// <c>INCLUDE</c> directives (recursively, via a caller-supplied module resolver) and
-/// evaluates the <c>IFDEF</c>/<c>IFELSE</c>/<c>ENDIF</c> and <c>DEFINE</c> preprocessor,
-/// producing a single ordered list of active declaration items.
+/// evaluates the <c>IFDEF</c>/<c>IFNDEF</c>/<c>IFELSE</c>/<c>ENDIF</c>,
+/// <c>DEFINE</c>, and <c>UNDEF</c> preprocessor, producing a single ordered list
+/// of active declaration items.
 /// </summary>
 /// <remarks>
-/// Derived from the observed preprocessor behaviour (e.g. APATHY.WDL's nested
-/// resolution block that defaults to defining <c>HIRES</c>). See <c>PROVENANCE.md</c>.
+/// Derived from the public Acknex 3 manual's preprocessor description plus observed
+/// game behaviour (e.g. APATHY.WDL's resolution block defaults to defining
+/// <c>HIRES</c>). See <c>PROVENANCE.md</c>.
 /// </remarks>
 public sealed class WdlPreprocessor
 {
@@ -62,10 +64,11 @@ public sealed class WdlPreprocessor
             switch (item.Keyword.ToUpperInvariant())
             {
                 case "IFDEF":
-                    bool parentActive = Active();
-                    string symbol = item.Header.Count > 0 ? item.Header[0].Text : string.Empty;
-                    bool matched = parentActive && _symbols.Contains(symbol);
-                    frames.Add(new Frame(parentActive, matched, matched));
+                    StartConditional(item, isNegated: false);
+                    break;
+
+                case "IFNDEF":
+                    StartConditional(item, isNegated: true);
                     break;
 
                 case "IFELSE":
@@ -106,6 +109,14 @@ public sealed class WdlPreprocessor
 
                     break;
 
+                case "UNDEF":
+                    if (Active() && item.Header.Count > 0)
+                    {
+                        _symbols.Remove(item.Header[0].Text);
+                    }
+
+                    break;
+
                 default:
                     if (Active())
                     {
@@ -114,6 +125,15 @@ public sealed class WdlPreprocessor
 
                     break;
             }
+        }
+
+        void StartConditional(WdlItem item, bool isNegated)
+        {
+            bool parentActive = Active();
+            string symbol = item.Header.Count > 0 ? item.Header[0].Text : string.Empty;
+            bool isDefined = _symbols.Contains(symbol);
+            bool matched = parentActive && (isNegated ? !isDefined : isDefined);
+            frames.Add(new Frame(parentActive, matched, matched));
         }
     }
 
@@ -147,6 +167,6 @@ public sealed class WdlProgram
     /// <summary>The flattened, in-order active declaration items (INCLUDEs inlined, conditionals applied).</summary>
     public IReadOnlyList<WdlItem> Items { get; }
 
-    /// <summary>Symbols defined during preprocessing (predefined plus any <c>DEFINE</c>d).</summary>
+    /// <summary>Symbols defined after preprocessing (predefined plus <c>DEFINE</c>s, minus active <c>UNDEF</c>s).</summary>
     public IReadOnlySet<string> DefinedSymbols { get; }
 }

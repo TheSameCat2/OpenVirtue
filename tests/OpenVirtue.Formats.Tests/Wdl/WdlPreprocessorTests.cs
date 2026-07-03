@@ -69,6 +69,37 @@ public class WdlPreprocessorTests
         Assert.Equal(["hires"], VideoArgs(program));
     }
 
+    [Fact]
+    public void Flatten_Ifndef_TakesBranchWhenSymbolIsMissing()
+    {
+        const string source = "IFNDEF HIRES; VIDEO fallback; IFELSE; VIDEO hires; ENDIF;";
+
+        WdlProgram program = WdlPreprocessor.Flatten(source, _ => null);
+
+        Assert.Equal(["fallback"], VideoArgs(program));
+    }
+
+    [Fact]
+    public void Flatten_Ifndef_TakesElseWhenSymbolIsDefined()
+    {
+        const string source = "IFNDEF HIRES; VIDEO fallback; IFELSE; VIDEO hires; ENDIF;";
+
+        WdlProgram program = WdlPreprocessor.Flatten(source, _ => null, ["HIRES"]);
+
+        Assert.Equal(["hires"], VideoArgs(program));
+    }
+
+    [Fact]
+    public void Flatten_Undef_RemovesSymbolForFollowingConditionals()
+    {
+        const string source = "DEFINE HIRES; UNDEF HIRES; IFNDEF HIRES; VIDEO fallback; ENDIF;";
+
+        WdlProgram program = WdlPreprocessor.Flatten(source, _ => null);
+
+        Assert.Equal(["fallback"], VideoArgs(program));
+        Assert.DoesNotContain("HIRES", program.DefinedSymbols);
+    }
+
     /// <summary>
     /// Flattens the real apathy level (when present): resolving its 21 INCLUDEs should pull in
     /// globals.wdl's ~233 skills, and the default resolution path should define HIRES. No-op otherwise.

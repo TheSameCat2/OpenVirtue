@@ -50,8 +50,10 @@ and validate against real game data used only locally (never committed).
 ## WDL preprocessor (`Wdl/WdlPreprocessor.cs`)
 
 - **Behaviour:** flattens a level's main script by resolving `INCLUDE`s (recursively,
-  include-once) and evaluating nested `IFDEF`/`IFELSE`/`ENDIF` + `DEFINE`. Derived from
-  the game's own resolution blocks (e.g. APATHY.WDL defaults to defining `HIRES`).
+  include-once) and evaluating nested `IFDEF`/`IFNDEF`/`IFELSE`/`ENDIF` plus
+  `DEFINE`/`UNDEF`. Derived from the published Acknex 3 reference manual's
+  preprocessor description and validated against the game's own resolution blocks
+  (e.g. APATHY.WDL defaults to defining `HIRES`).
 - **Confirmed against real data:** flattening real levels resolves their `INCLUDE`s
   (apathy's 21 → 400+ skills) with the expected default symbols.
 
