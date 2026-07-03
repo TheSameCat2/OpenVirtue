@@ -173,6 +173,7 @@ public sealed class WdlDeclarations
     {
         string? floor = null, ceiling = null;
         double ambient = 0;
+        var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
             if (property.Keyword.Equals("FLOOR_TEX", StringComparison.OrdinalIgnoreCase))
@@ -188,9 +189,13 @@ public sealed class WdlDeclarations
             {
                 ambient = parsedAmbient;
             }
+            else if (TryUniversalSkill(property, out string skillName, out double skillValue))
+            {
+                skills[skillName] = skillValue;
+            }
         }
 
-        _regions[item.Header[0].Text] = new RegionTextures(floor, ceiling, ambient);
+        _regions[item.Header[0].Text] = new RegionTextures(floor, ceiling, ambient, skills);
     }
 
     private void IndexWall(WdlItem item)
@@ -198,6 +203,7 @@ public sealed class WdlDeclarations
         string? texture = null;
         double? offsetX = null;
         double? offsetY = null;
+        var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
             if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
@@ -214,9 +220,13 @@ public sealed class WdlDeclarations
             {
                 offsetY = parsedOffsetY;
             }
+            else if (TryUniversalSkill(property, out string skillName, out double skillValue))
+            {
+                skills[skillName] = skillValue;
+            }
         }
 
-        _walls[item.Header[0].Text] = new WallDef(texture, offsetX, offsetY);
+        _walls[item.Header[0].Text] = new WallDef(texture, offsetX, offsetY, skills);
     }
 
     private void IndexEntity(WdlItem item)
@@ -229,6 +239,7 @@ public sealed class WdlDeclarations
         string? texture = null;
         double height = 1;
         double angle = 0;
+        var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
             if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
@@ -245,9 +256,13 @@ public sealed class WdlDeclarations
             {
                 angle = parsedAngle;
             }
+            else if (TryUniversalSkill(property, out string skillName, out double skillValue))
+            {
+                skills[skillName] = skillValue;
+            }
         }
 
-        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle);
+        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle, skills);
     }
 
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
@@ -324,16 +339,43 @@ public sealed class WdlDeclarations
         return [.. numbers];
     }
 
+    private static bool TryUniversalSkill(WdlItem item, out string name, out double value)
+    {
+        name = item.Keyword;
+        if (!IsUniversalSkill(name) || FirstNumber(item.Header) is not { } parsed)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool IsUniversalSkill(string keyword)
+    {
+        if (!keyword.StartsWith("SKILL", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> suffix = keyword.AsSpan("SKILL".Length);
+        return suffix.Length == 1 && suffix[0] >= '1' && suffix[0] <= '8';
+    }
+
     private readonly record struct BitmapDef(string File, int X, int Y, int Width, int Height);
 
     private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, double Ambient, bool IsSky);
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
-    public readonly record struct WallDef(string? Texture, double? OffsetX, double? OffsetY);
+    public readonly record struct WallDef(
+        string? Texture, double? OffsetX, double? OffsetY, IReadOnlyDictionary<string, double> Skills);
 
     /// <summary>The surface texture names and ambient brightness declared for a region type.</summary>
-    public readonly record struct RegionTextures(string? Floor, string? Ceiling, double Ambient);
+    public readonly record struct RegionTextures(
+        string? Floor, string? Ceiling, double Ambient, IReadOnlyDictionary<string, double> Skills);
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
-    public readonly record struct EntityDef(string? Texture, double Height, double AngleRadians);
+    public readonly record struct EntityDef(
+        string? Texture, double Height, double AngleRadians, IReadOnlyDictionary<string, double> Skills);
 }

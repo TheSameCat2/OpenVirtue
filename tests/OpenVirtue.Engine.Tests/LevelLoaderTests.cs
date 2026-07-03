@@ -197,6 +197,35 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DressesObjectsFromUniversalSkillDefinitions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "WALL gate 0 1 0 -1 0 0;#0\nTHING pickup 2 3 90 0;#1\n" +
+                        "ACTOR guard 4 5 180 0;#2\nPLAYER_START 0 0 0 0;#3",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            REGION r { SKILL1 10; }
+            WALL gate { SKILL2 -20; }
+            THING pickup { SKILL3 3.5; }
+            ACTOR guard { SKILL4 4; SKILL8 -8; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(10, Assert.Single(level.Regions)["skill1"]);
+        Assert.Equal(-20, Assert.Single(level.Walls)["skill2"]);
+        Assert.Equal(3.5, Assert.Single(level.Things)["skill3"]);
+
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal(4, guard["skill4"]);
+        Assert.Equal(-8, guard["skill8"]);
+    }
+
+    [Fact]
     public void LoadCore_CapturesSkillMinMaxBounds()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

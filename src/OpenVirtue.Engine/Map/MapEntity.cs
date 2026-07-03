@@ -41,6 +41,8 @@ public abstract class MapEntity : AcknexObject
             case "y": value = Y; return true;
             case "z": value = Z; return true;
             case "angle": value = Angle; return true;
+            case "height": value = Height; return true;
+            case "region": value = Region; return true;
             default: value = 0; return false;
         }
     }
@@ -53,6 +55,8 @@ public abstract class MapEntity : AcknexObject
             case "y": Y = value; return true;
             case "z": Z = value; return true;
             case "angle": Angle = value; return true;
+            case "height": Height = value; return true;
+            case "region": Region = (int)value; return true;
             default: return false;
         }
     }

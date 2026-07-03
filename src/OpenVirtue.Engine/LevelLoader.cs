@@ -99,6 +99,7 @@ public static class LevelLoader
             region.FloorTexture = textures.Floor;
             region.CeilTexture = textures.Ceiling;
             region.Ambient = textures.Ambient;
+            ApplySkills(region, textures.Skills);
         }
 
         return region;
@@ -121,6 +122,7 @@ public static class LevelLoader
             wall.Texture = definition.Texture;
             wall.OffsetX = definition.OffsetX ?? wall.OffsetX;
             wall.OffsetY = definition.OffsetY ?? wall.OffsetY;
+            ApplySkills(wall, definition.Skills);
         }
 
         return wall;
@@ -154,9 +156,18 @@ public static class LevelLoader
             entity.Texture = definition.Texture;
             entity.Height = definition.Height;
             entity.Angle = definition.AngleRadians;
+            ApplySkills(entity, definition.Skills);
         }
 
         return entity;
+    }
+
+    private static void ApplySkills(AcknexObject obj, IReadOnlyDictionary<string, double> skills)
+    {
+        foreach ((string name, double value) in skills)
+        {
+            obj[name] = value;
+        }
     }
 
     private static string? FindActionName(WdlProgram program, string keyword)

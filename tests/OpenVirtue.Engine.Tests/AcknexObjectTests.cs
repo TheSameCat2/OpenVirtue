@@ -81,11 +81,23 @@ public class AcknexObjectTests
             Y = 603.8,
             PlacementAngleDegrees = 90,
             Angle = Math.PI,
+            Height = 2.5,
+            Region = 7,
         };
 
         Assert.Equal(101.4, actor["x"]);
         Assert.Equal(603.8, actor["y"]);
         Assert.Equal(Math.PI, actor["angle"]);
+        Assert.Equal(2.5, actor["height"]);
+        Assert.Equal(7, actor["region"]);
         Assert.Equal(Math.PI * 1.5, actor.FacingAngleRadians, precision: 12);
+
+        actor["HEIGHT"] = -0.25;
+        actor["REGION"] = 3;
+
+        Assert.Equal(-0.25, actor.Height);
+        Assert.Equal(3, actor.Region);
+        Assert.False(actor.HasSkill("HEIGHT"));
+        Assert.False(actor.HasSkill("REGION"));
     }
 }

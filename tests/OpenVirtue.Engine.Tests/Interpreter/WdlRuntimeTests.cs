@@ -209,6 +209,26 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ObjectActions_ReadDocumentedEntityFieldsAndUniversalSkills()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING pickup 2 3 90 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL result { VAL 0; } " +
+            "THING pickup { HEIGHT 2; SKILL1 3; } " +
+            "ACTION readPickup { RULE result = my.HEIGHT + my.SKILL1 + my.REGION; }");
+        Thing pickup = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+
+        runtime.RegisterObject("my", pickup);
+
+        Assert.True(runtime.RunAction("readPickup"));
+        Assert.Equal(5, runtime.GetSkill("result"));
+    }
+
+    [Fact]
     public void Runtime_PlayerReference_CanBeRegisteredForScripts()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION nudgePlayer { SET player.x, 12; RULE player.y += 3; }");
