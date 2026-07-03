@@ -453,6 +453,33 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesDocumentedEntityEventActions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "THING pickup 2 3 90 0;#1\nACTOR guard 4 5 180 0;#2\nPLAYER_START 0 0 0 0;#3",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            THING pickup { IF_NEAR pickup_near; IF_FAR pickup_far; IF_HIT NULL; }
+            ACTOR guard { IF_ARRIVED guard_arrived; IF_HIT guard_hit; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Thing pickup = Assert.Single(level.Things);
+        Assert.Equal("pickup_near", pickup.ActionHooks["IF_NEAR"]);
+        Assert.Equal("pickup_far", pickup.ActionHooks["IF_FAR"]);
+        Assert.Null(pickup.ActionHooks["IF_HIT"]);
+
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal("guard_arrived", guard.ActionHooks["IF_ARRIVED"]);
+        Assert.Equal("guard_hit", guard.ActionHooks["IF_HIT"]);
+    }
+
+    [Fact]
     public void LoadCore_TopLevelClipDistance_DefaultsRegionsUnlessOverridden()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

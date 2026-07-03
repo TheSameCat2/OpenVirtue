@@ -172,10 +172,19 @@ public static class LevelLoader
             entity.Angle = definition.AngleRadians;
             entity.EachTickAction = definition.EachTickAction;
             entity.EachCycleAction = definition.EachCycleAction;
+            ApplyActionHooks(entity, definition.ActionHooks);
             ApplySkills(entity, definition.Skills);
         }
 
         return entity;
+    }
+
+    private static void ApplyActionHooks(MapEntity entity, IReadOnlyDictionary<string, string?> actionHooks)
+    {
+        foreach ((string name, string? actionName) in actionHooks)
+        {
+            entity.SetActionHook(name, actionName);
+        }
     }
 
     private static void ApplySkills(AcknexObject obj, IReadOnlyDictionary<string, double> skills)

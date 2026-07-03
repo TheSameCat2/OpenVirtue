@@ -9,6 +9,16 @@ namespace OpenVirtue.Engine.Map;
 /// </summary>
 public abstract class MapEntity : AcknexObject
 {
+    private static readonly HashSet<string> EntityActionHookNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_ARRIVED",
+        "IF_HIT",
+    };
+
+    private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
+
     protected MapEntity(string name) : base(name) { }
 
     public double X { get; set; }
@@ -38,6 +48,23 @@ public abstract class MapEntity : AcknexObject
 
     /// <summary>The action declared by object-level <c>EACH_CYCLE</c>, run after animation-cycle completion.</summary>
     public string? EachCycleAction { get; set; }
+
+    /// <summary>Object-level <c>IF_*</c> event action assignments, by hook keyword.</summary>
+    public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
+
+    /// <summary>Assigns or clears a documented object-level event action hook.</summary>
+    public void SetActionHook(string name, string? actionName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (EntityActionHookNames.Contains(name))
+        {
+            _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        }
+    }
+
+    /// <summary>Reads a documented object-level event action hook assignment.</summary>
+    public bool TryGetActionHook(string name, out string? actionName) =>
+        _actionHooks.TryGetValue(name, out actionName);
 
     public override bool TryGetString(string name, out string? value)
     {

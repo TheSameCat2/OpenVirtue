@@ -263,6 +263,21 @@ public sealed class WdlRuntime :
         Run(actionName);
 
     /// <summary>
+    /// Triggers an object-level <c>IF_*</c> hook on a placed thing or actor with <c>my</c> bound to that object.
+    /// Event detectors remain responsible for checking the documented distance, movement, or hit conditions.
+    /// </summary>
+    /// <returns><c>true</c> if the hook was assigned to an action that ran.</returns>
+    public bool TriggerObjectActionHook(AcknexObject target, string name)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        return target is MapEntity entity &&
+               entity.TryGetActionHook(name, out string? actionName) &&
+               actionName is not null &&
+               RunForObject(entity, actionName);
+    }
+
+    /// <summary>
     /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.

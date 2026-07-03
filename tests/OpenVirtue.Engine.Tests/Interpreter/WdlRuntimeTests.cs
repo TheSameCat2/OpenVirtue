@@ -722,6 +722,32 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ObjectActionHooks_TriggerWithMyAndRestorePreviousReference()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING pickup 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL hits { VAL 0; } " +
+            "THING pickup { IF_NEAR near_pickup; IF_FAR NULL; } " +
+            "ACTION near_pickup { RULE my.x += 3; RULE hits += 1; }");
+        Thing pickup = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+        var originalMy = new Thing("originalMy");
+
+        runtime.RegisterObject("my", originalMy);
+
+        Assert.True(runtime.TriggerObjectActionHook(pickup, "IF_NEAR"));
+        Assert.Equal(8, pickup.X);
+        Assert.Equal(1, runtime.GetSkill("hits"));
+        Assert.Same(originalMy, runtime.GetObject("my"));
+
+        Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_FAR"));
+        Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_HIT"));
+    }
+
+    [Fact]
     public void SetSkill_ClampsAssignmentsToDeclaredBounds()
     {
         Level level = Load(

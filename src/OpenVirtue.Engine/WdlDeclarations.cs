@@ -43,6 +43,13 @@ public sealed class WdlDeclarations
         "MAP_COLOR",
         "DIST",
     };
+    private static readonly HashSet<string> EntityActionHookProperties = new(Ci)
+    {
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_ARRIVED",
+        "IF_HIT",
+    };
 
     private readonly Dictionary<string, BitmapDef> _bitmaps = new(Ci);
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
@@ -306,6 +313,7 @@ public sealed class WdlDeclarations
         double angle = 0;
         string? eachTickAction = null;
         string? eachCycleAction = null;
+        var actionHooks = new Dictionary<string, string?>(Ci);
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -331,6 +339,10 @@ public sealed class WdlDeclarations
             {
                 eachCycleAction = FirstIdentifierOrNull(property.Header);
             }
+            else if (EntityActionHookProperties.Contains(property.Keyword))
+            {
+                actionHooks[property.Keyword] = FirstIdentifierOrNull(property.Header);
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
@@ -345,7 +357,8 @@ public sealed class WdlDeclarations
             }
         }
 
-        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle, eachTickAction, eachCycleAction, skills);
+        _entities[item.Header[0].Text] = new EntityDef(
+            texture, height, angle, eachTickAction, eachCycleAction, actionHooks, skills);
     }
 
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
@@ -510,5 +523,6 @@ public sealed class WdlDeclarations
         double AngleRadians,
         string? EachTickAction,
         string? EachCycleAction,
+        IReadOnlyDictionary<string, string?> ActionHooks,
         IReadOnlyDictionary<string, double> Skills);
 }
