@@ -317,6 +317,25 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_StringInstructions_CopyAppendConvertAndParse()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; " +
+            "STRING source,\"abcdef\"; STRING target,\".....\"; STRING cat,\".....\"; STRING number,\"....\"; " +
+            "SKILL value { VAL 12.5; } SKILL parsed { VAL 0; } " +
+            "ACTION editStrings { SET_STRING target,source; SET_STRING cat,\"ab\"; ADD_STRING cat,\"cdef\"; " +
+            "TO_STRING number,value; SET_SKILL parsed,number; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("editStrings"));
+
+        Assert.Equal("abcde", runtime.Strings["target"].Value);
+        Assert.Equal("abcde", runtime.Strings["cat"].Value);
+        Assert.Equal("12.5", runtime.Strings["number"].Value);
+        Assert.Equal(12.5, runtime.GetSkill("parsed"));
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");

@@ -87,7 +87,7 @@ public static class LevelLoader
         (Dictionary<string, double> skillValues, Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
         return new Level(
             name, vertices, regions, walls, things, actors, start,
-            skillValues, skillBounds, BuildTextures(declarations), declarations.Actions,
+            skillValues, skillBounds, GatherStrings(program), BuildTextures(declarations), declarations.Actions,
             FindActionName(program, "IF_START"));
     }
 
@@ -258,6 +258,35 @@ public static class LevelLoader
         }
 
         return (values, bounds);
+    }
+
+    private static Dictionary<string, WdlString> GatherStrings(WdlProgram program)
+    {
+        var strings = new Dictionary<string, WdlString>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("STRING", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Header[0].Kind != WdlTokenKind.Identifier)
+            {
+                continue;
+            }
+
+            string value = string.Empty;
+            foreach (WdlToken token in item.Header.Skip(1))
+            {
+                if (token.Kind == WdlTokenKind.StringLiteral)
+                {
+                    value = token.Text;
+                    break;
+                }
+            }
+
+            strings[item.Header[0].Text] = new WdlString(value);
+        }
+
+        return strings;
     }
 
     private static double? ParseNumber(WdlItem property)

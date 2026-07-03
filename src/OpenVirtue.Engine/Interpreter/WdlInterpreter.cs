@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Globalization;
 using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine.Interpreter;
@@ -11,8 +12,8 @@ namespace OpenVirtue.Engine.Interpreter;
 /// <c>RULE</c> assignments (including <c>+=</c>/<c>-=</c>/<c>*=</c>/<c>/=</c>) and
 /// <c>IF (expr) { … }</c> conditionals, synchronous <c>WHILE</c> loops, explicit
 /// <c>CALL</c>s, <c>GOTO</c>, <c>END</c>, and basic object-reference iteration via
-/// <c>NEXT_MY</c>/<c>NEXT_THERE</c>. More statements (IF_* skips, WAIT) and deeper
-/// scheduler semantics are layered on later.
+/// <c>NEXT_MY</c>/<c>NEXT_THERE</c>, plus documented string utility instructions.
+/// More statements (IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
@@ -88,6 +89,18 @@ public sealed class WdlInterpreter(IWdlContext context)
                         break;
                     case "SET_ALL":
                         ExecuteSetAll(item);
+                        break;
+                    case "SET_STRING":
+                        ExecuteSetString(item, append: false);
+                        break;
+                    case "ADD_STRING":
+                        ExecuteSetString(item, append: true);
+                        break;
+                    case "TO_STRING":
+                        ExecuteToString(item);
+                        break;
+                    case "SET_SKILL":
+                        ExecuteSetSkill(item);
                         break;
                     case "RULE":
                         ExecuteRule(item);
@@ -262,6 +275,49 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
     }
 
+    private void ExecuteSetString(WdlItem item, bool append)
+    {
+        if (context is not IWdlStringContext strings ||
+            !TryStringInstruction(item.Header, out string target, out int comma) ||
+            !TryEvaluateString(item.Header, comma + 1, item.Header.Count, out string value))
+        {
+            return;
+        }
+
+        if (append && strings.TryGetString(target, out string current))
+        {
+            strings.SetString(target, current + value);
+            return;
+        }
+
+        strings.SetString(target, value);
+    }
+
+    private void ExecuteToString(WdlItem item)
+    {
+        if (context is not IWdlStringContext strings ||
+            !TryStringInstruction(item.Header, out string target, out int comma))
+        {
+            return;
+        }
+
+        double value = Evaluate(item.Header, comma + 1, item.Header.Count);
+        strings.SetString(target, value.ToString("G15", CultureInfo.InvariantCulture));
+    }
+
+    private void ExecuteSetSkill(WdlItem item)
+    {
+        if (context is not IWdlStringContext ||
+            !TryStringInstruction(item.Header, out string target, out int comma) ||
+            !TryEvaluateString(item.Header, comma + 1, item.Header.Count, out string value) ||
+            !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+        {
+            return;
+        }
+
+        context.SetSkill(target, parsed);
+    }
+
     private void ExecuteNextObject(string referenceName, WdlObjectIterationMode mode)
     {
         if (context is IWdlObjectReferenceContext references)
@@ -334,6 +390,26 @@ public sealed class WdlInterpreter(IWdlContext context)
         return false;
     }
 
+    private bool TryEvaluateString(IReadOnlyList<WdlToken> header, int start, int end, out string value)
+    {
+        value = string.Empty;
+        if (end - start != 1)
+        {
+            return false;
+        }
+
+        WdlToken token = header[start];
+        if (token.Kind == WdlTokenKind.StringLiteral)
+        {
+            value = token.Text;
+            return true;
+        }
+
+        return token.Kind == WdlTokenKind.Identifier &&
+               context is IWdlStringContext strings &&
+               strings.TryGetString(token.Text, out value);
+    }
+
     private static bool IsEachTickTarget(IReadOnlyList<WdlToken> header, int comma, out int slot)
     {
         slot = 0;
@@ -361,6 +437,22 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         return false;
+    }
+
+    private static bool TryStringInstruction(
+        IReadOnlyList<WdlToken> header,
+        out string target,
+        out int comma)
+    {
+        target = string.Empty;
+        comma = IndexOfKind(header, WdlTokenKind.Comma);
+        if (comma != 1 || header[0].Kind != WdlTokenKind.Identifier || comma + 1 >= header.Count)
+        {
+            return false;
+        }
+
+        target = header[0].Text;
+        return true;
     }
 
     private double Evaluate(IReadOnlyList<WdlToken> tokens, int start, int end) =>

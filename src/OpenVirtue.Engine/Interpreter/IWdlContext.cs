@@ -71,3 +71,13 @@ public interface IWdlObjectReferenceContext
     /// <summary>Moves a named object reference to the next matching loaded object.</summary>
     bool AdvanceObjectReference(string name, WdlObjectIterationMode mode);
 }
+
+/// <summary>Optional runtime storage for WDL <c>STRING</c> values.</summary>
+public interface IWdlStringContext
+{
+    /// <summary>Attempts to resolve the current value of a named WDL string.</summary>
+    bool TryGetString(string name, out string value);
+
+    /// <summary>Assigns a named WDL string, preserving its declared capacity.</summary>
+    bool SetString(string name, string value);
+}

@@ -46,6 +46,23 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesStringDeclarationsWithFixedCapacity()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\nPLAYER_START 1 2 45 0;#1",
+        };
+        const string main = "MAPFILE <test.wmp>; STRING empty; STRING prompt,\"hello\";";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal("", level.Strings["empty"].Value);
+        Assert.Equal(0, level.Strings["empty"].Capacity);
+        Assert.Equal("hello", level.Strings["prompt"].Value);
+        Assert.Equal(5, level.Strings["prompt"].Capacity);
+    }
+
+    [Fact]
     public void LoadCore_LinksTexturesThroughTheDeclarationChain()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

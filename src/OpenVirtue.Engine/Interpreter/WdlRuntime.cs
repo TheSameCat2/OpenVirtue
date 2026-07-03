@@ -12,13 +12,19 @@ namespace OpenVirtue.Engine.Interpreter;
 /// scripts. Implements <see cref="IWdlContext"/> so the <see cref="WdlInterpreter"/> can
 /// read and write state, and exposes <see cref="RunAction"/> to invoke a script by name.
 /// </summary>
-public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGroupContext, IWdlObjectReferenceContext
+public sealed class WdlRuntime :
+    IWdlContext,
+    IWdlSchedulerContext,
+    IWdlObjectGroupContext,
+    IWdlObjectReferenceContext,
+    IWdlStringContext
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
 
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
+    private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -35,6 +41,11 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGr
         ArgumentNullException.ThrowIfNull(level);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
         _bounds = level.SkillBounds;
+        foreach ((string name, WdlString value) in level.Strings)
+        {
+            _strings[name] = value;
+        }
+
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
@@ -47,6 +58,9 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGr
     /// <summary>The named object references available to scripts.</summary>
     public IReadOnlyDictionary<string, AcknexObject> Objects => _objects;
 
+    /// <summary>The live WDL string values.</summary>
+    public IReadOnlyDictionary<string, WdlString> Strings => _strings;
+
     /// <summary>All placed level objects registered for runtime iteration.</summary>
     public IReadOnlyList<AcknexObject> LevelObjects => _levelObjects;
 
@@ -56,6 +70,31 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGr
     /// <inheritdoc/>
     public void SetSkill(string name, double value) =>
         _skills[name] = _bounds.TryGetValue(name, out SkillRange range) ? range.Clamp(value) : value;
+
+    /// <inheritdoc/>
+    public bool TryGetString(string name, out string value)
+    {
+        if (_strings.TryGetValue(name, out WdlString text))
+        {
+            value = text.Value;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public bool SetString(string name, string value)
+    {
+        if (!_strings.TryGetValue(name, out WdlString text))
+        {
+            return false;
+        }
+
+        _strings[name] = text.WithValue(value);
+        return true;
+    }
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
