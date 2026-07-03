@@ -734,6 +734,36 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_DispatchesDocumentedWallAndRegionEachTickActions_WithDocumentedReferences()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nREGION old_room 5 15;#1\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL region_ticks { VAL 0; } SKILL region_my_x { VAL -1; } SKILL wall_ticks { VAL 0; } " +
+            "REGION room { EACH_TICK region_tick; } WALL gate { EACH_TICK wall_tick; } " +
+            "ACTION region_tick { SET region_my_x, my.X; RULE region_ticks += 1; RULE there.FLOOR_HGT += TIME_CORR; } " +
+            "ACTION wall_tick { RULE my.OFFSET_X += TIME_CORR * 2; RULE wall_ticks += 1; }");
+        var runtime = new WdlRuntime(level);
+        var previousMy = new Thing("previousMy") { X = 99 };
+        Region previousThere = level.Regions[1];
+
+        runtime.RegisterObject("my", previousMy);
+        runtime.RegisterObject("there", previousThere);
+
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(1, level.Regions[0].FloorHeight);
+        Assert.Equal(2, level.Walls[0].OffsetX);
+        Assert.Equal(1, runtime.GetSkill("region_ticks"));
+        Assert.Equal(0, runtime.GetSkill("region_my_x"));
+        Assert.Equal(1, runtime.GetSkill("wall_ticks"));
+        Assert.Same(previousMy, runtime.GetObject("my"));
+        Assert.Same(previousThere, runtime.GetObject("there"));
+    }
+
+    [Fact]
     public void Runtime_ObjectActionHooks_TriggerWithMyAndRestorePreviousReference()
     {
         const string map =
@@ -761,6 +791,55 @@ public class WdlRuntimeTests
 
         Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_FAR"));
         Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_HIT"));
+    }
+
+    [Fact]
+    public void Runtime_WallAndRegionActionHooks_TriggerAndCanBeReassigned()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nREGION old_room 5 15;#1\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL region_hits { VAL 0; } SKILL region_my_x { VAL -1; } SKILL wall_hits { VAL 0; } " +
+            "REGION room { IF_ENTER region_enter; IF_LEAVE NULL; } " +
+            "WALL gate { IF_NEAR wall_near; IF_HIT NULL; } " +
+            "ACTION region_enter { SET region_my_x, my.X; RULE region_hits += 1; " +
+            "RULE there.FLOOR_HGT += 2; SET there.IF_ENTER, region_again; } " +
+            "ACTION region_again { RULE region_hits += 10; } " +
+            "ACTION wall_near { RULE my.OFFSET_Y += 3; SET my.IF_HIT, wall_hit; RULE wall_hits += 1; } " +
+            "ACTION wall_hit { RULE my.OFFSET_Y += 4; RULE wall_hits += 10; }");
+        Region room = level.Regions[0];
+        Wall gate = Assert.Single(level.Walls);
+        var runtime = new WdlRuntime(level);
+        var previousMy = new Thing("previousMy") { X = 99 };
+        Region previousThere = level.Regions[1];
+
+        runtime.RegisterObject("my", previousMy);
+        runtime.RegisterObject("there", previousThere);
+
+        Assert.True(runtime.TriggerObjectActionHook(room, "IF_ENTER"));
+        Assert.Equal(2, room.FloorHeight);
+        Assert.Equal(1, runtime.GetSkill("region_hits"));
+        Assert.Equal(0, runtime.GetSkill("region_my_x"));
+        Assert.Equal("region_again", room.ActionHooks["IF_ENTER"]);
+        Assert.Same(previousMy, runtime.GetObject("my"));
+        Assert.Same(previousThere, runtime.GetObject("there"));
+
+        Assert.True(runtime.TriggerObjectActionHook(room, "IF_ENTER"));
+        Assert.False(runtime.TriggerObjectActionHook(room, "IF_LEAVE"));
+        Assert.Equal(11, runtime.GetSkill("region_hits"));
+
+        Assert.True(runtime.TriggerObjectActionHook(gate, "IF_NEAR"));
+        Assert.Equal(3, gate.OffsetY);
+        Assert.Equal("wall_hit", gate.ActionHooks["IF_HIT"]);
+        Assert.Equal(1, runtime.GetSkill("wall_hits"));
+
+        Assert.True(runtime.TriggerObjectActionHook(gate, "IF_HIT"));
+        Assert.Equal(7, gate.OffsetY);
+        Assert.Equal(11, runtime.GetSkill("wall_hits"));
+        Assert.Same(previousMy, runtime.GetObject("my"));
+        Assert.Same(previousThere, runtime.GetObject("there"));
     }
 
     [Fact]

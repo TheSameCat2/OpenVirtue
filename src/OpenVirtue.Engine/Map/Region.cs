@@ -6,6 +6,16 @@ namespace OpenVirtue.Engine.Map;
 /// <summary>A sector with a floor and ceiling height and surface textures.</summary>
 public sealed class Region : AcknexObject
 {
+    private static readonly HashSet<string> RegionActionHookNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IF_ENTER",
+        "IF_LEAVE",
+        "IF_DIVE",
+        "IF_ARISE",
+    };
+
+    private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
+
     public Region(string name) : base(name) { }
 
     public double FloorHeight { get; set; }
@@ -18,14 +28,45 @@ public sealed class Region : AcknexObject
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
 
+    /// <summary>The action declared by region-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
+    public string? EachTickAction { get; set; }
+
+    /// <summary>The action declared by region-level <c>EACH_CYCLE</c>, run after animation-cycle completion.</summary>
+    public string? EachCycleAction { get; set; }
+
+    /// <summary>Region-level <c>IF_*</c> event action assignments, by hook keyword.</summary>
+    public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
+
+    /// <summary>Assigns or clears a documented region-level event action hook.</summary>
+    public void SetActionHook(string name, string? actionName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (IsRegionActionHook(name))
+        {
+            _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        }
+    }
+
+    /// <summary>Reads a documented region-level event action hook assignment.</summary>
+    public bool TryGetActionHook(string name, out string? actionName) =>
+        _actionHooks.TryGetValue(name, out actionName);
+
     public override bool TryGetString(string name, out string? value)
     {
         switch (name.ToLowerInvariant())
         {
             case "floor_tex": value = FloorTexture; return true;
             case "ceil_tex": value = CeilTexture; return true;
-            default: value = null; return false;
         }
+
+        if (IsRegionActionHook(name))
+        {
+            _actionHooks.TryGetValue(name, out value);
+            return true;
+        }
+
+        value = null;
+        return false;
     }
 
     public override bool TrySetString(string name, string? value)
@@ -34,9 +75,18 @@ public sealed class Region : AcknexObject
         {
             case "floor_tex": FloorTexture = value; return true;
             case "ceil_tex": CeilTexture = value; return true;
-            default: return false;
         }
+
+        if (IsRegionActionHook(name))
+        {
+            SetActionHook(name, value);
+            return true;
+        }
+
+        return false;
     }
+
+    private static bool IsRegionActionHook(string name) => RegionActionHookNames.Contains(name);
 
     protected override bool TryGetTyped(string name, out double value)
     {

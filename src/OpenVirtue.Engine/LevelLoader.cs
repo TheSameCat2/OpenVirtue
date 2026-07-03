@@ -108,6 +108,9 @@ public static class LevelLoader
             region.FloorOffsetY = textures.FloorOffsetY;
             region.CeilOffsetX = textures.CeilOffsetX;
             region.CeilOffsetY = textures.CeilOffsetY;
+            region.EachTickAction = textures.EachTickAction;
+            region.EachCycleAction = textures.EachCycleAction;
+            ApplyActionHooks(region, textures.ActionHooks);
             ApplySkills(region, textures.Skills);
         }
 
@@ -131,6 +134,9 @@ public static class LevelLoader
             wall.Texture = definition.Texture;
             wall.OffsetX = definition.OffsetX ?? wall.OffsetX;
             wall.OffsetY = definition.OffsetY ?? wall.OffsetY;
+            wall.EachTickAction = definition.EachTickAction;
+            wall.EachCycleAction = definition.EachCycleAction;
+            ApplyActionHooks(wall, definition.ActionHooks);
             ApplySkills(wall, definition.Skills);
         }
 
@@ -179,11 +185,22 @@ public static class LevelLoader
         return entity;
     }
 
-    private static void ApplyActionHooks(MapEntity entity, IReadOnlyDictionary<string, string?> actionHooks)
+    private static void ApplyActionHooks(AcknexObject obj, IReadOnlyDictionary<string, string?> actionHooks)
     {
         foreach ((string name, string? actionName) in actionHooks)
         {
-            entity.SetActionHook(name, actionName);
+            switch (obj)
+            {
+                case Region region:
+                    region.SetActionHook(name, actionName);
+                    break;
+                case Wall wall:
+                    wall.SetActionHook(name, actionName);
+                    break;
+                case MapEntity entity:
+                    entity.SetActionHook(name, actionName);
+                    break;
+            }
         }
     }
 

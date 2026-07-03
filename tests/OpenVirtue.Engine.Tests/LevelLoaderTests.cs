@@ -453,6 +453,32 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesDocumentedWallAndRegionSchedulerActions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            REGION r { EACH_TICK tick_region; EACH_CYCLE cycle_region; }
+            WALL gate { EACH_TICK tick_wall; EACH_CYCLE cycle_wall; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Region region = Assert.Single(level.Regions);
+        Assert.Equal("tick_region", region.EachTickAction);
+        Assert.Equal("cycle_region", region.EachCycleAction);
+
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal("tick_wall", wall.EachTickAction);
+        Assert.Equal("cycle_wall", wall.EachCycleAction);
+    }
+
+    [Fact]
     public void LoadCore_CapturesDocumentedEntityEventActions()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -477,6 +503,35 @@ public class LevelLoaderTests
         Actor guard = Assert.Single(level.Actors);
         Assert.Equal("guard_arrived", guard.ActionHooks["IF_ARRIVED"]);
         Assert.Equal("guard_hit", guard.ActionHooks["IF_HIT"]);
+    }
+
+    [Fact]
+    public void LoadCore_CapturesDocumentedWallAndRegionEventActions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            REGION r { IF_ENTER enter_region; IF_LEAVE leave_region; IF_DIVE dive_region; IF_ARISE NULL; }
+            WALL gate { IF_NEAR near_wall; IF_FAR far_wall; IF_HIT NULL; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Region region = Assert.Single(level.Regions);
+        Assert.Equal("enter_region", region.ActionHooks["IF_ENTER"]);
+        Assert.Equal("leave_region", region.ActionHooks["IF_LEAVE"]);
+        Assert.Equal("dive_region", region.ActionHooks["IF_DIVE"]);
+        Assert.Null(region.ActionHooks["IF_ARISE"]);
+
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal("near_wall", wall.ActionHooks["IF_NEAR"]);
+        Assert.Equal("far_wall", wall.ActionHooks["IF_FAR"]);
+        Assert.Null(wall.ActionHooks["IF_HIT"]);
     }
 
     [Fact]

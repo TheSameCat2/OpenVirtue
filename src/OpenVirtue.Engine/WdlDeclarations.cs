@@ -22,12 +22,25 @@ public sealed class WdlDeclarations
         "FLOOR_ANGLE",
         "CEIL_ANGLE",
     };
+    private static readonly HashSet<string> RegionActionHookProperties = new(Ci)
+    {
+        "IF_ENTER",
+        "IF_LEAVE",
+        "IF_DIVE",
+        "IF_ARISE",
+    };
     private static readonly HashSet<string> WallNumericProperties = new(Ci)
     {
         "CYCLE",
         "POSITION",
         "MAP_COLOR",
         "DIST",
+    };
+    private static readonly HashSet<string> WallActionHookProperties = new(Ci)
+    {
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_HIT",
     };
     private static readonly HashSet<string> EntityNumericProperties = new(Ci)
     {
@@ -208,6 +221,9 @@ public sealed class WdlDeclarations
         string? floor = null, ceiling = null;
         double ambient = 0;
         double floorOffsetX = 0, floorOffsetY = 0, ceilOffsetX = 0, ceilOffsetY = 0;
+        string? eachTickAction = null;
+        string? eachCycleAction = null;
+        var actionHooks = new Dictionary<string, string?>(Ci);
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -244,6 +260,18 @@ public sealed class WdlDeclarations
             {
                 ceilOffsetY = parsedCeilOffsetY;
             }
+            else if (property.Keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            {
+                eachTickAction = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+            {
+                eachCycleAction = FirstIdentifierOrNull(property.Header);
+            }
+            else if (RegionActionHookProperties.Contains(property.Keyword))
+            {
+                actionHooks[property.Keyword] = FirstIdentifierOrNull(property.Header);
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
@@ -259,7 +287,8 @@ public sealed class WdlDeclarations
         }
 
         _regions[item.Header[0].Text] = new RegionTextures(
-            floor, ceiling, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY, skills);
+            floor, ceiling, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY,
+            eachTickAction, eachCycleAction, actionHooks, skills);
     }
 
     private void IndexWall(WdlItem item)
@@ -267,6 +296,9 @@ public sealed class WdlDeclarations
         string? texture = null;
         double? offsetX = null;
         double? offsetY = null;
+        string? eachTickAction = null;
+        string? eachCycleAction = null;
+        var actionHooks = new Dictionary<string, string?>(Ci);
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -284,6 +316,18 @@ public sealed class WdlDeclarations
             {
                 offsetY = parsedOffsetY;
             }
+            else if (property.Keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            {
+                eachTickAction = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+            {
+                eachCycleAction = FirstIdentifierOrNull(property.Header);
+            }
+            else if (WallActionHookProperties.Contains(property.Keyword))
+            {
+                actionHooks[property.Keyword] = FirstIdentifierOrNull(property.Header);
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
@@ -298,7 +342,8 @@ public sealed class WdlDeclarations
             }
         }
 
-        _walls[item.Header[0].Text] = new WallDef(texture, offsetX, offsetY, skills);
+        _walls[item.Header[0].Text] = new WallDef(
+            texture, offsetX, offsetY, eachTickAction, eachCycleAction, actionHooks, skills);
     }
 
     private void IndexEntity(WdlItem item)
@@ -503,7 +548,13 @@ public sealed class WdlDeclarations
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
     public readonly record struct WallDef(
-        string? Texture, double? OffsetX, double? OffsetY, IReadOnlyDictionary<string, double> Skills);
+        string? Texture,
+        double? OffsetX,
+        double? OffsetY,
+        string? EachTickAction,
+        string? EachCycleAction,
+        IReadOnlyDictionary<string, string?> ActionHooks,
+        IReadOnlyDictionary<string, double> Skills);
 
     /// <summary>The surface texture names and ambient brightness declared for a region type.</summary>
     public readonly record struct RegionTextures(
@@ -514,6 +565,9 @@ public sealed class WdlDeclarations
         double FloorOffsetY,
         double CeilOffsetX,
         double CeilOffsetY,
+        string? EachTickAction,
+        string? EachCycleAction,
+        IReadOnlyDictionary<string, string?> ActionHooks,
         IReadOnlyDictionary<string, double> Skills);
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>

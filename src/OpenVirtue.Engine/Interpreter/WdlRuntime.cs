@@ -265,7 +265,7 @@ public sealed class WdlRuntime :
         Run(actionName);
 
     /// <summary>
-    /// Triggers an object-level <c>IF_*</c> hook on a placed thing or actor with <c>my</c> bound to that object.
+    /// Triggers an object-level <c>IF_*</c> hook on a placed world object.
     /// Event detectors remain responsible for checking the documented distance, movement, or hit conditions.
     /// </summary>
     /// <returns><c>true</c> if the hook was assigned to an action that ran.</returns>
@@ -273,10 +273,9 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentException.ThrowIfNullOrEmpty(name);
-        return target is MapEntity entity &&
-               entity.TryGetActionHook(name, out string? actionName) &&
+        return TryGetObjectActionHook(target, name, out string? actionName) &&
                actionName is not null &&
-               RunForObject(entity, actionName);
+               RunForActionTarget(target, actionName);
     }
 
     /// <summary>
@@ -299,7 +298,7 @@ public sealed class WdlRuntime :
 
         foreach (ObjectTickAction tickAction in _objectTickActions)
         {
-            RunForObject(tickAction.Target, tickAction.ActionName);
+            RunForActionTarget(tickAction.Target, tickAction.ActionName);
         }
 
         return timeCorrection;
@@ -388,12 +387,21 @@ public sealed class WdlRuntime :
         _objects[value.Name] = value;
     }
 
-    private bool RunForObject(AcknexObject target, string actionName)
+    private bool RunForActionTarget(AcknexObject target, string actionName)
     {
         bool hadMy = _objects.TryGetValue("my", out AcknexObject? previousMy);
         bool hadThere = _objects.TryGetValue("there", out AcknexObject? previousThere);
-        Region? targetRegion = RegionForObject(target);
-        _objects["my"] = target;
+        bool bindMy = target is not Region;
+        Region? targetRegion = RegionForActionTarget(target);
+        if (bindMy)
+        {
+            _objects["my"] = target;
+        }
+        else
+        {
+            _objects.Remove("my");
+        }
+
         if (targetRegion is not null)
         {
             _objects["there"] = targetRegion;
@@ -494,12 +502,19 @@ public sealed class WdlRuntime :
 
     private void InitializeObjectEachTickActions(Level level)
     {
+        foreach (Region region in level.Regions)
+        {
+            RegisterEachTickIfPresent(region, region.EachTickAction);
+        }
+
+        foreach (Wall wall in level.Walls)
+        {
+            RegisterEachTickIfPresent(wall, wall.EachTickAction);
+        }
+
         foreach (MapEntity entity in level.Things.Cast<MapEntity>().Concat(level.Actors))
         {
-            if (!string.IsNullOrWhiteSpace(entity.EachTickAction))
-            {
-                RegisterEachTick(entity, entity.EachTickAction);
-            }
+            RegisterEachTickIfPresent(entity, entity.EachTickAction);
         }
     }
 
@@ -515,8 +530,37 @@ public sealed class WdlRuntime :
         name.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
         !name.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
 
-    private Region? RegionForObject(AcknexObject target) =>
-        target is MapEntity entity ? RegionAt(entity.Region) : null;
+    private void RegisterEachTickIfPresent(AcknexObject target, string? actionName)
+    {
+        if (!string.IsNullOrWhiteSpace(actionName))
+        {
+            RegisterEachTick(target, actionName);
+        }
+    }
+
+    private static bool TryGetObjectActionHook(AcknexObject target, string name, out string? actionName)
+    {
+        switch (target)
+        {
+            case Region region:
+                return region.TryGetActionHook(name, out actionName);
+            case Wall wall:
+                return wall.TryGetActionHook(name, out actionName);
+            case MapEntity entity:
+                return entity.TryGetActionHook(name, out actionName);
+            default:
+                actionName = null;
+                return false;
+        }
+    }
+
+    private Region? RegionForActionTarget(AcknexObject target) =>
+        target switch
+        {
+            Region region => region,
+            MapEntity entity => RegionAt(entity.Region),
+            _ => null,
+        };
 
     private Region? RegionAt(int index) =>
         index >= 0 && index < _regions.Count ? _regions[index] : null;

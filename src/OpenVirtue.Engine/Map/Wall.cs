@@ -9,6 +9,15 @@ namespace OpenVirtue.Engine.Map;
 /// </summary>
 public sealed class Wall : AcknexObject
 {
+    private static readonly HashSet<string> WallActionHookNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_HIT",
+    };
+
+    private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
+
     public Wall(string name) : base(name) { }
 
     public int Vertex1 { get; set; }
@@ -19,11 +28,40 @@ public sealed class Wall : AcknexObject
     public double OffsetY { get; set; }
     public string? Texture { get; set; }
 
+    /// <summary>The action declared by wall-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
+    public string? EachTickAction { get; set; }
+
+    /// <summary>The action declared by wall-level <c>EACH_CYCLE</c>, run after animation-cycle completion.</summary>
+    public string? EachCycleAction { get; set; }
+
+    /// <summary>Wall-level <c>IF_*</c> event action assignments, by hook keyword.</summary>
+    public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
+
+    /// <summary>Assigns or clears a documented wall-level event action hook.</summary>
+    public void SetActionHook(string name, string? actionName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (IsWallActionHook(name))
+        {
+            _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        }
+    }
+
+    /// <summary>Reads a documented wall-level event action hook assignment.</summary>
+    public bool TryGetActionHook(string name, out string? actionName) =>
+        _actionHooks.TryGetValue(name, out actionName);
+
     public override bool TryGetString(string name, out string? value)
     {
         if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
         {
             value = Texture;
+            return true;
+        }
+
+        if (IsWallActionHook(name))
+        {
+            _actionHooks.TryGetValue(name, out value);
             return true;
         }
 
@@ -39,8 +77,16 @@ public sealed class Wall : AcknexObject
             return true;
         }
 
+        if (IsWallActionHook(name))
+        {
+            SetActionHook(name, value);
+            return true;
+        }
+
         return false;
     }
+
+    private static bool IsWallActionHook(string name) => WallActionHookNames.Contains(name);
 
     protected override bool TryGetTyped(string name, out double value)
     {
