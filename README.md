@@ -64,7 +64,7 @@ What works today:
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
   comparison, logical `&&`/`||`, bitwise integer operators, modulo, documented
   single-argument math functions, member access, and A3-style arithmetic aborts)
-  and `SET`/`RULE`/`IF`/`CALL`/`GOTO`/`END` statements run against a live skill table
+  and `SET`/`RULE`/`IF`/`WHILE`/`BREAK`/`CONTINUE`/`CALL`/`GOTO`/`END` statements run against a live skill table
   (`WdlRuntime`); a level's `IF_START` script boots in the viewer, and a per-frame
   `Tick` maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect
   declared `MIN`/`MAX` bounds. Runtime registration now tracks placed things/actors

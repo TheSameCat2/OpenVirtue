@@ -9,8 +9,9 @@ namespace OpenVirtue.Engine.Interpreter;
 /// Executes WDL statement blocks (ACTION bodies and nested IF blocks) against an
 /// <see cref="IWdlContext"/>. This is the first slice of the runtime: <c>SET</c> and
 /// <c>RULE</c> assignments (including <c>+=</c>/<c>-=</c>/<c>*=</c>/<c>/=</c>) and
-/// <c>IF (expr) { … }</c> conditionals, explicit <c>CALL</c>s, <c>GOTO</c>, and <c>END</c>.
-/// More statements (loops, IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
+/// <c>IF (expr) { … }</c> conditionals, synchronous <c>WHILE</c> loops, explicit
+/// <c>CALL</c>s, <c>GOTO</c>, and <c>END</c>. More statements (IF_* skips, WAIT)
+/// and deeper scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
@@ -32,6 +33,10 @@ public sealed class WdlInterpreter(IWdlContext context)
         {
             // An unresolved GOTO leaves the current action; valid targets are handled by ExecuteItems.
         }
+        catch (LoopControlException)
+        {
+            // BREAK/CONTINUE outside a WHILE terminate the current action.
+        }
     }
 
     /// <summary>Executes the top-level items of a document as statements.</summary>
@@ -49,6 +54,10 @@ public sealed class WdlInterpreter(IWdlContext context)
         catch (GotoException)
         {
             // An unresolved GOTO leaves the current action/document execution.
+        }
+        catch (LoopControlException)
+        {
+            // BREAK/CONTINUE outside a WHILE terminate the current action/document execution.
         }
     }
 
@@ -93,6 +102,13 @@ public sealed class WdlInterpreter(IWdlContext context)
                         break;
                     case "ELSE":
                         break;
+                    case "WHILE":
+                        ExecuteWhile(item);
+                        break;
+                    case "BREAK":
+                        throw new BreakLoopException();
+                    case "CONTINUE":
+                        throw new ContinueLoopException();
                     case "CALL":
                         ExecuteCall(item);
                         break;
@@ -181,6 +197,36 @@ public sealed class WdlInterpreter(IWdlContext context)
 
     private static bool IsElse(WdlItem item) =>
         !item.IsLabel && item.Keyword.Equals("ELSE", StringComparison.OrdinalIgnoreCase);
+
+    private void ExecuteWhile(WdlItem item)
+    {
+        if (item.Body is not { } body)
+        {
+            return;
+        }
+
+        int iterations = 0;
+        while (WdlExpressionParser.Parse(item.Header).Evaluate(context) != 0)
+        {
+            if (++iterations > MaxStatementSteps)
+            {
+                throw new WdlExpressionException("WDL WHILE loop exceeded the iteration limit.");
+            }
+
+            try
+            {
+                ExecuteItems(body.Items);
+            }
+            catch (ContinueLoopException)
+            {
+                continue;
+            }
+            catch (BreakLoopException)
+            {
+                break;
+            }
+        }
+    }
 
     private void ExecuteCall(WdlItem item)
     {
@@ -333,5 +379,17 @@ public sealed class WdlInterpreter(IWdlContext context)
     private sealed class GotoException(string label) : Exception
     {
         public string Label => label;
+    }
+
+    private abstract class LoopControlException : Exception
+    {
+    }
+
+    private sealed class BreakLoopException : LoopControlException
+    {
+    }
+
+    private sealed class ContinueLoopException : LoopControlException
+    {
     }
 }

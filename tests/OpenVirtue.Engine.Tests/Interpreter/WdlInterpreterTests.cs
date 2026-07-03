@@ -113,6 +113,35 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void While_RepeatsBodyUntilConditionIsFalse()
+    {
+        TestContext context = Run("SET x, 0; WHILE (x < 3) { RULE x += 1; } SET y, x;");
+
+        Assert.Equal(3, context.GetSkill("x"));
+        Assert.Equal(3, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void While_Break_ExitsLoop()
+    {
+        TestContext context = Run("SET x, 0; WHILE (x < 10) { RULE x += 1; IF (x == 3) { BREAK; } } SET y, x;");
+
+        Assert.Equal(3, context.GetSkill("x"));
+        Assert.Equal(3, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void While_Continue_StartsNextIteration()
+    {
+        TestContext context = Run(
+            "SET x, 0; SET y, 0; " +
+            "WHILE (x < 4) { RULE x += 1; IF (x == 2) { CONTINUE; } RULE y += x; }");
+
+        Assert.Equal(4, context.GetSkill("x"));
+        Assert.Equal(8, context.GetSkill("y"));
+    }
+
+    [Fact]
     public void If_ExecutesBodyWhenTrue()
     {
         TestContext context = Run("SET x, 5; IF (x > 3) { SET y, 1; }");

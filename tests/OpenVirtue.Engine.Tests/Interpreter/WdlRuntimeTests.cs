@@ -88,6 +88,18 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_WhileInstruction_RepeatsUntilFalse()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL x { VAL 0; } ACTION loop { WHILE (x < 4) { RULE x += 1; } }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("loop");
+
+        Assert.Equal(4, runtime.GetSkill("x"));
+    }
+
+    [Fact]
     public void Runtime_MutualRecursion_DoesNotStackOverflow()
     {
         // a -> b -> a -> ... is bounded by the call-depth guard.
