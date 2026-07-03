@@ -50,6 +50,22 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void If_ExecutesElseWhenFalse()
+    {
+        TestContext context = Run("SET x, 1; IF (x > 3) { SET y, 1; } ELSE { SET y, 2; }");
+
+        Assert.Equal(2, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void If_SkipsElseWhenTrue()
+    {
+        TestContext context = Run("SET x, 5; IF (x > 3) { SET y, 1; } ELSE { SET y, 2; }");
+
+        Assert.Equal(1, context.GetSkill("y"));
+    }
+
+    [Fact]
     public void Set_WritesObjectMemberTarget()
     {
         var context = new TestContext();

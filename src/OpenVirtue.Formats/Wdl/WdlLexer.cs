@@ -15,10 +15,10 @@ namespace OpenVirtue.Formats.Wdl;
 /// syntax (see <c>PROVENANCE.md</c>): <c>//</c> and <c>#</c> line comments and
 /// <c>/* */</c> block comments; identifiers; numeric literals; <c>"strings"</c>
 /// (no escape processing — the DOS engine treats backslashes literally);
-/// <c>&lt;file&gt;</c> references; braces/parens/commas/semicolons; and arithmetic
-/// and comparison operators. <c>&lt;</c> is disambiguated from a file reference by
-/// look-ahead: it is a file reference only when a run of filename characters is
-/// immediately followed by <c>&gt;</c>.
+/// <c>&lt;file&gt;</c> references; braces/parens/commas/semicolons; and arithmetic,
+/// comparison, logical, and bitwise operators. <c>&lt;</c> is disambiguated from a
+/// file reference by look-ahead: it is a file reference only when a run of filename
+/// characters is immediately followed by <c>&gt;</c>.
 /// </remarks>
 public sealed class WdlLexer
 {
@@ -254,7 +254,7 @@ public sealed class WdlLexer
 
         // '.' is the member-access operator (e.g. `my.x`). A '.' that begins a number
         // (e.g. `.5`) is handled earlier by ReadNumber.
-        if (c is '=' or '+' or '-' or '*' or '/' or '<' or '>' or '!' or '&' or '|' or '%' or '.')
+        if (c is '=' or '+' or '-' or '*' or '/' or '<' or '>' or '!' or '&' or '|' or '^' or '%' or '.')
         {
             Advance();
             return new WdlToken(WdlTokenKind.Operator, c.ToString(), line, column);

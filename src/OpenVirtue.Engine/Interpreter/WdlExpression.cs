@@ -54,7 +54,28 @@ public sealed class UnaryExpression(string op, WdlExpression operand) : WdlExpre
     }
 }
 
-/// <summary>A binary operation: arithmetic (<c>+ - * / %</c>), comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>), or logical (<c>&amp;&amp; ||</c>).</summary>
+/// <summary>A single-argument mathematical function such as <c>SQRT(x)</c> or <c>ABS(x)</c>.</summary>
+public sealed class FunctionExpression(string name, WdlExpression argument) : WdlExpression
+{
+    public string Name => name;
+    public WdlExpression Argument => argument;
+
+    public override double Evaluate(IWdlContext context)
+    {
+        double value = argument.Evaluate(context);
+        return name.ToUpperInvariant() switch
+        {
+            "SQRT" => Math.Sqrt(value),
+            "SIGN" => Math.Sign(value),
+            "ABS" => Math.Abs(value),
+            "INT" => Math.Truncate(value),
+            "EXP" => Math.Exp(value),
+            _ => 0,
+        };
+    }
+}
+
+/// <summary>A binary operation: arithmetic (<c>+ - * / %</c>), comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>), bitwise (<c>&amp; ^ |</c>), or logical (<c>&amp;&amp; ||</c>).</summary>
 public sealed class BinaryExpression(string op, WdlExpression left, WdlExpression right) : WdlExpression
 {
     public string Operator => op;
@@ -80,6 +101,9 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             "&&" => l != 0 && r != 0 ? 1 : 0,
             "||" => l != 0 || r != 0 ? 1 : 0,
             "%" => r != 0 ? l % r : 0, // Acknex-safe: modulo-by-zero yields 0
+            "&" => (long)l & (long)r,
+            "^" => (long)l ^ (long)r,
+            "|" => (long)l | (long)r,
             _ => 0,
         };
     }

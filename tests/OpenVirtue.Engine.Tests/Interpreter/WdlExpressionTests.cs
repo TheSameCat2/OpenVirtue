@@ -30,12 +30,33 @@ public class WdlExpressionTests
     [InlineData("1 || 0", 1)]
     [InlineData("10 % 3", 1)]
     [InlineData("10 % 0", 0)]            // Acknex-safe modulo-by-zero
+    [InlineData("6 & 3", 2)]             // bitwise AND
+    [InlineData("6 ^ 3", 5)]             // bitwise XOR
+    [InlineData("6 | 3", 7)]             // bitwise OR
+    [InlineData("1 | 2 & 3", 3)]         // & binds tighter than |
+    [InlineData("1 || 2 & 0", 1)]        // bitwise binds tighter than logical
     [InlineData("!0", 1)]
     [InlineData("!5", 0)]
     [InlineData("1 < 2 && 3 < 4", 1)]    // comparison binds tighter than &&
     [InlineData("5 > 3 || 2 > 8", 1)]
     [InlineData("1 || 0 && 0", 1)]       // && binds tighter than ||
     public void Evaluates_LogicalAndModulo(string expression, double expected)
+    {
+        Assert.Equal(expected, Eval(expression, new TestContext()));
+    }
+
+    [Theory]
+    [InlineData("SQRT(9)", 3)]
+    [InlineData("sqrt(16)", 4)]
+    [InlineData("SIGN(-4)", -1)]
+    [InlineData("SIGN(0)", 0)]
+    [InlineData("SIGN(4)", 1)]
+    [InlineData("ABS(-2.5)", 2.5)]
+    [InlineData("INT(2.9)", 2)]
+    [InlineData("INT(-2.9)", -2)]
+    [InlineData("EXP(0)", 1)]
+    [InlineData("SQRT(9) + ABS(-2)", 5)]
+    public void Evaluates_DocumentedMathFunctions(string expression, double expected)
     {
         Assert.Equal(expected, Eval(expression, new TestContext()));
     }

@@ -10,7 +10,8 @@ namespace OpenVirtue.Engine.Interpreter;
 /// Parses WDL expressions (the token runs that appear in statement headers, e.g.
 /// <c>gravity + float_str*forceJump</c> or <c>tempVal &lt; 0.8</c>) into an evaluable
 /// <see cref="WdlExpression"/> tree, using standard precedence: logical-or &lt;
-/// logical-and &lt; comparison &lt; additive &lt; multiplicative &lt; unary &lt; primary.
+/// logical-and &lt; bitwise-or &lt; bitwise-xor &lt; bitwise-and &lt; comparison &lt;
+/// additive &lt; multiplicative &lt; unary &lt; primary.
 /// </summary>
 public static class WdlExpressionParser
 {
@@ -52,8 +53,44 @@ public static class WdlExpressionParser
 
         private WdlExpression ParseLogicalAnd()
         {
-            WdlExpression left = ParseComparison();
+            WdlExpression left = ParseBitwiseOr();
             while (IsOperator(out string op) && op == "&&")
+            {
+                Advance();
+                left = new BinaryExpression(op, left, ParseBitwiseOr());
+            }
+
+            return left;
+        }
+
+        private WdlExpression ParseBitwiseOr()
+        {
+            WdlExpression left = ParseBitwiseXor();
+            while (IsOperator(out string op) && op == "|")
+            {
+                Advance();
+                left = new BinaryExpression(op, left, ParseBitwiseXor());
+            }
+
+            return left;
+        }
+
+        private WdlExpression ParseBitwiseXor()
+        {
+            WdlExpression left = ParseBitwiseAnd();
+            while (IsOperator(out string op) && op == "^")
+            {
+                Advance();
+                left = new BinaryExpression(op, left, ParseBitwiseAnd());
+            }
+
+            return left;
+        }
+
+        private WdlExpression ParseBitwiseAnd()
+        {
+            WdlExpression left = ParseComparison();
+            while (IsOperator(out string op) && op == "&")
             {
                 Advance();
                 left = new BinaryExpression(op, left, ParseComparison());
@@ -120,6 +157,19 @@ public static class WdlExpressionParser
 
                 case WdlTokenKind.Identifier:
                     Advance();
+                    if (Current.Kind == WdlTokenKind.LParen)
+                    {
+                        Advance(); // '('
+                        WdlExpression argument = ParseExpression();
+                        if (Current.Kind != WdlTokenKind.RParen)
+                        {
+                            throw Error("Expected ')' after function argument.");
+                        }
+
+                        Advance();
+                        return new FunctionExpression(token.Text, argument);
+                    }
+
                     if (IsOperator(out string dot) && dot == ".")
                     {
                         Advance(); // '.'

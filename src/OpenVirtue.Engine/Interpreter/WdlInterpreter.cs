@@ -30,8 +30,9 @@ public sealed class WdlInterpreter(IWdlContext context)
 
     private void ExecuteItems(IReadOnlyList<WdlItem> items)
     {
-        foreach (WdlItem item in items)
+        for (int i = 0; i < items.Count; i++)
         {
+            WdlItem item = items[i];
             if (item.IsLabel)
             {
                 continue;
@@ -48,7 +49,18 @@ public sealed class WdlInterpreter(IWdlContext context)
                         ExecuteRule(item);
                         break;
                     case "IF":
-                        ExecuteIf(item);
+                        bool condition = ExecuteIf(item);
+                        if (i + 1 < items.Count && IsElse(items[i + 1]))
+                        {
+                            if (!condition && items[i + 1].Body is { } elseBody)
+                            {
+                                Execute(elseBody);
+                            }
+
+                            i++;
+                        }
+                        break;
+                    case "ELSE":
                         break;
 
                     default:
@@ -98,14 +110,20 @@ public sealed class WdlInterpreter(IWdlContext context)
         Assign(item.Header, 0, op, item.Header[op].Text, value);
     }
 
-    private void ExecuteIf(WdlItem item)
+    private bool ExecuteIf(WdlItem item)
     {
         // IF (expr) { body }  — the parenthesised header parses directly as a grouped expression.
-        if (item.Body is { } body && WdlExpressionParser.Parse(item.Header).Evaluate(context) != 0)
+        bool condition = WdlExpressionParser.Parse(item.Header).Evaluate(context) != 0;
+        if (condition && item.Body is { } body)
         {
             Execute(body);
         }
+
+        return condition;
     }
+
+    private static bool IsElse(WdlItem item) =>
+        !item.IsLabel && item.Keyword.Equals("ELSE", StringComparison.OrdinalIgnoreCase);
 
     private bool TryExecuteEachTickSet(IReadOnlyList<WdlToken> header, int comma)
     {
