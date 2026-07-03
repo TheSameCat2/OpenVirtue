@@ -56,7 +56,7 @@ public abstract class MapEntity : AcknexObject
     public void SetActionHook(string name, string? actionName)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
-        if (EntityActionHookNames.Contains(name))
+        if (IsEntityActionHook(name))
         {
             _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
         }
@@ -74,6 +74,12 @@ public abstract class MapEntity : AcknexObject
             return true;
         }
 
+        if (IsEntityActionHook(name))
+        {
+            _actionHooks.TryGetValue(name, out value);
+            return true;
+        }
+
         value = null;
         return false;
     }
@@ -86,8 +92,16 @@ public abstract class MapEntity : AcknexObject
             return true;
         }
 
+        if (IsEntityActionHook(name))
+        {
+            SetActionHook(name, value);
+            return true;
+        }
+
         return false;
     }
+
+    private static bool IsEntityActionHook(string name) => EntityActionHookNames.Contains(name);
 
     protected override bool TryGetTyped(string name, out double value)
     {

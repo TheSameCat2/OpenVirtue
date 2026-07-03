@@ -748,6 +748,59 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ObjectActionHooks_CanBeReassignedWithSetInstructions()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING pickup 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            "THING pickup { IF_NEAR first; IF_HIT NULL; } " +
+            "ACTION first { RULE order = order * 10 + 1; SET my.IF_NEAR, second; SET my.IF_HIT, my.IF_NEAR; } " +
+            "ACTION second { IF (my.IF_HIT == second) { RULE order = order * 10 + 2; } " +
+            "SET my.IF_HIT, NULL; IF (my.IF_HIT == NULL) { RULE order = order * 10 + 3; } }");
+        Thing pickup = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.TriggerObjectActionHook(pickup, "IF_NEAR"));
+        Assert.Equal(1, runtime.GetSkill("order"));
+        Assert.Equal("second", pickup.ActionHooks["IF_NEAR"]);
+        Assert.Equal("second", pickup.ActionHooks["IF_HIT"]);
+
+        Assert.True(runtime.TriggerObjectActionHook(pickup, "IF_HIT"));
+        Assert.Equal(123, runtime.GetSkill("order"));
+        Assert.Null(pickup.ActionHooks["IF_HIT"]);
+    }
+
+    [Fact]
+    public void Runtime_ObjectActionHooks_CanBeReassignedWithSetAll()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING pickup 5 0 0 0;#1\nTHING pickup 6 0 0 0;#2\nPLAYER_START 0 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL hits { VAL 0; } " +
+            "THING pickup { IF_NEAR first; } " +
+            "ACTION rebind { SET_ALL pickup.IF_NEAR, shared; } " +
+            "ACTION first { RULE hits += 10; } " +
+            "ACTION shared { RULE hits += 1; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("rebind"));
+
+        Thing first = level.Things[0];
+        Thing second = level.Things[1];
+        Assert.Equal("shared", first.ActionHooks["IF_NEAR"]);
+        Assert.Equal("shared", second.ActionHooks["IF_NEAR"]);
+
+        Assert.True(runtime.TriggerObjectActionHook(first, "IF_NEAR"));
+        Assert.True(runtime.TriggerObjectActionHook(second, "IF_NEAR"));
+        Assert.Equal(2, runtime.GetSkill("hits"));
+    }
+
+    [Fact]
     public void SetSkill_ClampsAssignmentsToDeclaredBounds()
     {
         Level level = Load(
