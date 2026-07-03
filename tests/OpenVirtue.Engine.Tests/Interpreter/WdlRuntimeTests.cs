@@ -183,16 +183,21 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_DuplicatePlacedObjectNames_AreKeptButNotAmbiguouslyNamed()
+    public void Runtime_DuplicatePlacedObjectNames_ResolveToFirstPlacedObject()
     {
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
             "THING plant 5 6 90 0;#1\nTHING plant 7 8 90 0;#2\nPLAYER_START 0 0 0 0;#3";
-        var runtime = new WdlRuntime(LoadWithMap(map, "MAPFILE <m.wmp>;"));
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; ACTION movePlant { SET plant.X, 11; }");
+        var runtime = new WdlRuntime(level);
 
         Assert.Equal(2, runtime.LevelObjects.Count);
-        Assert.Null(runtime.GetObject("plant"));
+        Assert.Same(level.Things[0], runtime.GetObject("plant"));
         Assert.False(runtime.Objects.ContainsKey("plant"));
+
+        Assert.True(runtime.RunAction("movePlant"));
+        Assert.Equal(11, level.Things[0].X);
+        Assert.Equal(7, level.Things[1].X);
     }
 
     [Fact]
@@ -220,15 +225,20 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_DuplicateWallNames_AreKeptButNotAmbiguouslyNamed()
+    public void Runtime_DuplicateWallNames_ResolveToFirstPlacedWall()
     {
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nVERTEX 2 0 0;#2\nREGION r 0 10;#0\n" +
             "WALL gate 0 1 0 -1 0 0;#0\nWALL gate 1 2 0 -1 0 0;#1\nPLAYER_START 0 0 0 0;#2";
-        var runtime = new WdlRuntime(LoadWithMap(map, "MAPFILE <m.wmp>;"));
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; ACTION moveGate { SET gate.OFFSET_X, 5; }");
+        var runtime = new WdlRuntime(level);
 
-        Assert.Null(runtime.GetObject("gate"));
+        Assert.Same(level.Walls[0], runtime.GetObject("gate"));
         Assert.False(runtime.Objects.ContainsKey("gate"));
+
+        Assert.True(runtime.RunAction("moveGate"));
+        Assert.Equal(5, level.Walls[0].OffsetX);
+        Assert.Equal(0, level.Walls[1].OffsetX);
     }
 
     [Fact]
@@ -254,6 +264,31 @@ public class WdlRuntimeTests
         Assert.Equal(5, level.Things[0].X);
         Assert.Equal(7, level.Things[1].X);
         Assert.All(level.Walls, wall => Assert.Equal(1, wall["flag2"]));
+    }
+
+    [Fact]
+    public void Runtime_Set_AssignsDocumentedTextureKeywords()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nVERTEX 2 0 0;#2\n" +
+            "REGION tank 0 10;#0\nREGION tank 1 11;#1\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nTHING plant 5 6 90 0;#2\nPLAYER_START 0 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "REGION tank { FLOOR_TEX oldFloor; CEIL_TEX oldCeil; } " +
+            "WALL gate { TEXTURE oldWall; } THING plant { TEXTURE oldPlant; } " +
+            "ACTION swapTextures { SET tank.CEIL_TEX, water_tex; SET_ALL tank.FLOOR_TEX, lava_tex; " +
+            "SET gate.TEXTURE, NULL; SET plant.TEXTURE, fern_tex; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("swapTextures"));
+
+        Assert.Equal("water_tex", level.Regions[0].CeilTexture);
+        Assert.Equal("oldCeil", level.Regions[1].CeilTexture);
+        Assert.All(level.Regions, region => Assert.Equal("lava_tex", region.FloorTexture));
+        Assert.Null(level.Walls[0].Texture);
+        Assert.Equal("fern_tex", level.Things[0].Texture);
     }
 
     [Fact]

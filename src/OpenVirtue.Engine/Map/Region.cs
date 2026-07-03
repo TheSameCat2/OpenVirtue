@@ -18,6 +18,26 @@ public sealed class Region : AcknexObject
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
 
+    public override bool TryGetString(string name, out string? value)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "floor_tex": value = FloorTexture; return true;
+            case "ceil_tex": value = CeilTexture; return true;
+            default: value = null; return false;
+        }
+    }
+
+    public override bool TrySetString(string name, string? value)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "floor_tex": FloorTexture = value; return true;
+            case "ceil_tex": CeilTexture = value; return true;
+            default: return false;
+        }
+    }
+
     protected override bool TryGetTyped(string name, out double value)
     {
         switch (name.ToLowerInvariant())

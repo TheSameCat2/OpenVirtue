@@ -118,7 +118,9 @@ public sealed class WdlRuntime :
     public void PrintString(string value) => AppendPrintText(value);
 
     /// <inheritdoc/>
-    public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
+    public AcknexObject? GetObject(string name) =>
+        _objects.GetValueOrDefault(name) ??
+        (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null);
 
     /// <inheritdoc/>
     public IEnumerable<AcknexObject> GetObjectsByName(string name) =>

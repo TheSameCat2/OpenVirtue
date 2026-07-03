@@ -207,6 +207,11 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        if (TryExecuteObjectStringSet(item.Header, 0, comma, comma + 1, item.Header.Count))
+        {
+            return;
+        }
+
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
         Assign(item.Header, 0, comma, "=", value);
     }
@@ -536,11 +541,71 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        List<AcknexObject> matches = groups.GetObjectsByName(objectName).ToList();
+        if (TryEvaluateKeywordValue(item.Header, comma + 1, item.Header.Count, out string? textValue))
+        {
+            bool assignedString = false;
+            foreach (AcknexObject obj in matches)
+            {
+                assignedString |= obj.TrySetString(property, textValue);
+            }
+
+            if (assignedString)
+            {
+                return;
+            }
+        }
+
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
-        foreach (AcknexObject obj in groups.GetObjectsByName(objectName))
+        foreach (AcknexObject obj in matches)
         {
             obj[property] = value;
         }
+    }
+
+    private bool TryExecuteObjectStringSet(
+        IReadOnlyList<WdlToken> header,
+        int targetStart,
+        int targetEnd,
+        int valueStart,
+        int valueEnd)
+    {
+        if (!TryMemberTarget(header, targetStart, targetEnd, out string objectName, out string property) ||
+            context.GetObject(objectName) is not { } obj ||
+            !TryEvaluateKeywordValue(header, valueStart, valueEnd, out string? value))
+        {
+            return false;
+        }
+
+        return obj.TrySetString(property, value);
+    }
+
+    private static bool TryEvaluateKeywordValue(
+        IReadOnlyList<WdlToken> header,
+        int start,
+        int end,
+        out string? value)
+    {
+        value = null;
+        if (end - start != 1)
+        {
+            return false;
+        }
+
+        WdlToken token = header[start];
+        if (token.Kind == WdlTokenKind.Identifier)
+        {
+            value = token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : token.Text;
+            return true;
+        }
+
+        if (token.Kind == WdlTokenKind.StringLiteral)
+        {
+            value = token.Text;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryMemberTarget(

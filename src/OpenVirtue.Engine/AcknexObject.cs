@@ -46,6 +46,16 @@ public abstract class AcknexObject
     /// <summary>Whether a dynamic skill with this name has been set.</summary>
     public bool HasSkill(string name) => _skills.ContainsKey(name);
 
+    /// <summary>Attempts to read a keyword-valued object property, such as a texture reference.</summary>
+    public virtual bool TryGetString(string name, out string? value)
+    {
+        value = null;
+        return false;
+    }
+
+    /// <summary>Attempts to write a keyword-valued object property, such as a texture reference.</summary>
+    public virtual bool TrySetString(string name, string? value) => false;
+
     /// <summary>Maps a well-known property name to a typed field. Override in derived types.</summary>
     protected virtual bool TryGetTyped(string name, out double value)
     {

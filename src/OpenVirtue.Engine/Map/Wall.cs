@@ -19,6 +19,29 @@ public sealed class Wall : AcknexObject
     public double OffsetY { get; set; }
     public string? Texture { get; set; }
 
+    public override bool TryGetString(string name, out string? value)
+    {
+        if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
+        {
+            value = Texture;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    public override bool TrySetString(string name, string? value)
+    {
+        if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
+        {
+            Texture = value;
+            return true;
+        }
+
+        return false;
+    }
+
     protected override bool TryGetTyped(string name, out double value)
     {
         switch (name.ToLowerInvariant())
