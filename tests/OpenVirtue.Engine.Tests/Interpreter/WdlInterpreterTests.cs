@@ -86,6 +86,33 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void Goto_JumpsForwardToLabel()
+    {
+        TestContext context = Run("SET x, 1; GOTO alarm; SET x, 2; alarm: SET y, 3;");
+
+        Assert.Equal(1, context.GetSkill("x"));
+        Assert.Equal(3, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void Goto_FromNestedBlock_JumpsToOuterLabel()
+    {
+        TestContext context = Run("SET x, 1; IF (x == 1) { GOTO alarm; } SET x, 2; alarm: SET y, 3;");
+
+        Assert.Equal(1, context.GetSkill("x"));
+        Assert.Equal(3, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void Goto_BackwardLabel_CanRepeatUntilConditionChanges()
+    {
+        TestContext context = Run("SET x, 0; loop: RULE x += 1; IF (x < 3) { GOTO loop; } SET y, x;");
+
+        Assert.Equal(3, context.GetSkill("x"));
+        Assert.Equal(3, context.GetSkill("y"));
+    }
+
+    [Fact]
     public void If_ExecutesBodyWhenTrue()
     {
         TestContext context = Run("SET x, 5; IF (x > 3) { SET y, 1; }");

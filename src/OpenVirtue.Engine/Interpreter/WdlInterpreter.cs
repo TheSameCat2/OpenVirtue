@@ -9,11 +9,13 @@ namespace OpenVirtue.Engine.Interpreter;
 /// Executes WDL statement blocks (ACTION bodies and nested IF blocks) against an
 /// <see cref="IWdlContext"/>. This is the first slice of the runtime: <c>SET</c> and
 /// <c>RULE</c> assignments (including <c>+=</c>/<c>-=</c>/<c>*=</c>/<c>/=</c>) and
-/// <c>IF (expr) { … }</c> conditionals, explicit <c>CALL</c>s, and <c>END</c>.
+/// <c>IF (expr) { … }</c> conditionals, explicit <c>CALL</c>s, <c>GOTO</c>, and <c>END</c>.
 /// More statements (loops, IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
+    private const int MaxStatementSteps = 100_000;
+
     /// <summary>Executes all statements in a block, in order.</summary>
     public void Execute(WdlBlock block)
     {
@@ -25,6 +27,10 @@ public sealed class WdlInterpreter(IWdlContext context)
         catch (EndActionException)
         {
             // END terminates the current action.
+        }
+        catch (GotoException)
+        {
+            // An unresolved GOTO leaves the current action; valid targets are handled by ExecuteItems.
         }
     }
 
@@ -40,12 +46,23 @@ public sealed class WdlInterpreter(IWdlContext context)
         {
             // END terminates the current action/document execution.
         }
+        catch (GotoException)
+        {
+            // An unresolved GOTO leaves the current action/document execution.
+        }
     }
 
     private void ExecuteItems(IReadOnlyList<WdlItem> items)
     {
+        Dictionary<string, int> labels = BuildLabelIndex(items);
+        int steps = 0;
         for (int i = 0; i < items.Count; i++)
         {
+            if (++steps > MaxStatementSteps)
+            {
+                throw new WdlExpressionException("WDL action exceeded the statement execution limit.");
+            }
+
             WdlItem item = items[i];
             if (item.IsLabel)
             {
@@ -79,6 +96,9 @@ public sealed class WdlInterpreter(IWdlContext context)
                     case "CALL":
                         ExecuteCall(item);
                         break;
+                    case "GOTO":
+                        ExecuteGoto(item);
+                        break;
                     case "END":
                         throw new EndActionException();
 
@@ -95,7 +115,25 @@ public sealed class WdlInterpreter(IWdlContext context)
                 // string literal or an unsupported token). Skip it and continue the block rather
                 // than aborting the whole action — fidelity grows as the evaluator does.
             }
+            catch (GotoException jump) when (labels.TryGetValue(jump.Label, out int target))
+            {
+                i = target;
+            }
         }
+    }
+
+    private static Dictionary<string, int> BuildLabelIndex(IReadOnlyList<WdlItem> items)
+    {
+        var labels = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (items[i].IsLabel)
+            {
+                labels[items[i].Keyword] = i;
+            }
+        }
+
+        return labels;
     }
 
     private void ExecuteSet(WdlItem item)
@@ -149,6 +187,14 @@ public sealed class WdlInterpreter(IWdlContext context)
         if (item.Header.Count > 0 && item.Header[0].Kind == WdlTokenKind.Identifier)
         {
             context.CallAction(item.Header[0].Text);
+        }
+    }
+
+    private static void ExecuteGoto(WdlItem item)
+    {
+        if (item.Header.Count > 0 && item.Header[0].Kind == WdlTokenKind.Identifier)
+        {
+            throw new GotoException(item.Header[0].Text);
         }
     }
 
@@ -282,5 +328,10 @@ public sealed class WdlInterpreter(IWdlContext context)
 
     private sealed class EndActionException : Exception
     {
+    }
+
+    private sealed class GotoException(string label) : Exception
+    {
+        public string Label => label;
     }
 }
