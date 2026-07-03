@@ -38,7 +38,7 @@ public sealed class WdlRuntime :
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
     private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<CycleAction> _cycleActions = [];
+    private readonly List<ObjectTickAction> _objectTickActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
     private readonly string? _startupAction;
@@ -63,6 +63,7 @@ public sealed class WdlRuntime :
         RegisterLevelObjects(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
+        InitializeObjectEachTickActions(level);
         InitializeActionHooks(level);
         _interpreter = new WdlInterpreter(this);
     }
@@ -206,15 +207,19 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Registers an object/action pair for the provisional per-frame scheduler.
-    /// Exact Acknex discovery and dispatch ordering are still clean-room parity work.
+    /// Registers an object/action pair for object-level <c>EACH_TICK</c>, dispatched once per frame.
     /// </summary>
-    public void RegisterEachCycle(AcknexObject target, string actionName)
+    public void RegisterEachTick(AcknexObject target, string actionName)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentException.ThrowIfNullOrEmpty(actionName);
-        _cycleActions.Add(new CycleAction(target, actionName));
+        _objectTickActions.Add(new ObjectTickAction(target, actionName));
     }
+
+    /// <summary>
+    /// Registers an object/action pair with the earlier provisional per-frame scheduler name.
+    /// </summary>
+    public void RegisterEachCycle(AcknexObject target, string actionName) => RegisterEachTick(target, actionName);
 
     /// <inheritdoc/>
     public void SetEachTickAction(int slot, string? actionName)
@@ -260,7 +265,7 @@ public sealed class WdlRuntime :
     /// <summary>
     /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
-    /// Per-object cycle hooks will be dispatched here as the scheduler grows.
+    /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// </summary>
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
@@ -275,9 +280,9 @@ public sealed class WdlRuntime :
             }
         }
 
-        foreach (CycleAction cycle in _cycleActions)
+        foreach (ObjectTickAction tickAction in _objectTickActions)
         {
-            RunForObject(cycle.Target, cycle.ActionName);
+            RunForObject(tickAction.Target, tickAction.ActionName);
         }
 
         return timeCorrection;
@@ -440,6 +445,17 @@ public sealed class WdlRuntime :
         }
     }
 
+    private void InitializeObjectEachTickActions(Level level)
+    {
+        foreach (MapEntity entity in level.Things.Cast<MapEntity>().Concat(level.Actors))
+        {
+            if (!string.IsNullOrWhiteSpace(entity.EachTickAction))
+            {
+                RegisterEachTick(entity, entity.EachTickAction);
+            }
+        }
+    }
+
     private void InitializeActionHooks(Level level)
     {
         foreach ((string name, string? actionName) in level.ActionHooks)
@@ -577,5 +593,5 @@ public sealed class WdlRuntime :
         return builder.Length == 0 ? "PRINT" : builder.ToString();
     }
 
-    private readonly record struct CycleAction(AcknexObject Target, string ActionName);
+    private readonly record struct ObjectTickAction(AcknexObject Target, string ActionName);
 }

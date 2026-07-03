@@ -427,6 +427,32 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesDocumentedEntitySchedulerActions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "THING pickup 2 3 90 0;#1\nACTOR guard 4 5 180 0;#2\nPLAYER_START 0 0 0 0;#3",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            THING pickup { EACH_TICK tick_pickup; EACH_CYCLE cycle_pickup; }
+            ACTOR guard { EACH_TICK tick_guard; EACH_CYCLE cycle_guard; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Thing pickup = Assert.Single(level.Things);
+        Assert.Equal("tick_pickup", pickup.EachTickAction);
+        Assert.Equal("cycle_pickup", pickup.EachCycleAction);
+
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal("tick_guard", guard.EachTickAction);
+        Assert.Equal("cycle_guard", guard.EachCycleAction);
+    }
+
+    [Fact]
     public void LoadCore_TopLevelClipDistance_DefaultsRegionsUnlessOverridden()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

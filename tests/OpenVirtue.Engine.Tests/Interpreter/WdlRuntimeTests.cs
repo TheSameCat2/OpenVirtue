@@ -667,7 +667,7 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Tick_DispatchesRegisteredEachCycleAction_WithMyAndTimeCorrection()
+    public void Tick_DispatchesRegisteredEachTickAction_WithMyAndTimeCorrection()
     {
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
@@ -681,7 +681,7 @@ public class WdlRuntimeTests
         var originalMy = new Thing("originalMy");
 
         runtime.RegisterObject("my", originalMy);
-        runtime.RegisterEachCycle(runner, "cycle");
+        runtime.RegisterEachTick(runner, "cycle");
 
         runtime.Tick(1.0 / 16);
         Assert.Equal(9, runner.X);
@@ -690,6 +690,34 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 32);
         Assert.Equal(11, runner.X);
         Assert.Equal(2, runtime.GetSkill("cycles"));
+        Assert.Same(originalMy, runtime.GetObject("my"));
+    }
+
+    [Fact]
+    public void Tick_DispatchesDocumentedEntityEachTickAction_WithMyAndTimeCorrection()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL speed { VAL 4; } SKILL ticks { VAL 0; } " +
+            "THING runner { EACH_TICK object_tick; EACH_CYCLE object_cycle; } " +
+            "ACTION object_tick { RULE my.x += speed * TIME_CORR; RULE ticks += 1; } " +
+            "ACTION object_cycle { RULE ticks += 100; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+        var originalMy = new Thing("originalMy");
+
+        runtime.RegisterObject("my", originalMy);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(9, runner.X);
+        Assert.Equal(1, runtime.GetSkill("ticks"));
+
+        runtime.Tick(1.0 / 32);
+        Assert.Equal(11, runner.X);
+        Assert.Equal(2, runtime.GetSkill("ticks"));
         Assert.Same(originalMy, runtime.GetObject("my"));
     }
 

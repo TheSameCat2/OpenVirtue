@@ -33,6 +33,12 @@ public abstract class MapEntity : AcknexObject
     /// <summary>The entity's current texture/sprite name.</summary>
     public string? Texture { get; set; }
 
+    /// <summary>The action declared by object-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
+    public string? EachTickAction { get; set; }
+
+    /// <summary>The action declared by object-level <c>EACH_CYCLE</c>, run after animation-cycle completion.</summary>
+    public string? EachCycleAction { get; set; }
+
     public override bool TryGetString(string name, out string? value)
     {
         if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))

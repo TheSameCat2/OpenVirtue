@@ -170,6 +170,8 @@ public static class LevelLoader
             entity.Texture = definition.Texture;
             entity.Height = definition.Height;
             entity.Angle = definition.AngleRadians;
+            entity.EachTickAction = definition.EachTickAction;
+            entity.EachCycleAction = definition.EachCycleAction;
             ApplySkills(entity, definition.Skills);
         }
 

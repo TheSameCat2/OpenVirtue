@@ -304,6 +304,8 @@ public sealed class WdlDeclarations
         string? texture = null;
         double height = 1;
         double angle = 0;
+        string? eachTickAction = null;
+        string? eachCycleAction = null;
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -321,6 +323,14 @@ public sealed class WdlDeclarations
             {
                 angle = parsedAngle;
             }
+            else if (property.Keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            {
+                eachTickAction = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+            {
+                eachCycleAction = FirstIdentifierOrNull(property.Header);
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
@@ -335,7 +345,7 @@ public sealed class WdlDeclarations
             }
         }
 
-        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle, skills);
+        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle, eachTickAction, eachCycleAction, skills);
     }
 
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
@@ -439,6 +449,19 @@ public sealed class WdlDeclarations
         return true;
     }
 
+    private static string? FirstIdentifierOrNull(IReadOnlyList<WdlToken> tokens)
+    {
+        foreach (WdlToken token in tokens)
+        {
+            if (token.Kind == WdlTokenKind.Identifier)
+            {
+                return token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : token.Text;
+            }
+        }
+
+        return null;
+    }
+
     private static void AddFlags(WdlItem item, Dictionary<string, double> skills)
     {
         foreach (WdlToken token in item.Header)
@@ -482,5 +505,10 @@ public sealed class WdlDeclarations
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
     public readonly record struct EntityDef(
-        string? Texture, double Height, double AngleRadians, IReadOnlyDictionary<string, double> Skills);
+        string? Texture,
+        double Height,
+        double AngleRadians,
+        string? EachTickAction,
+        string? EachCycleAction,
+        IReadOnlyDictionary<string, double> Skills);
 }
