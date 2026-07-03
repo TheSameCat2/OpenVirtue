@@ -94,3 +94,16 @@ public interface IWdlPrintContext
     /// <summary>Appends text to the currently selected print file.</summary>
     void PrintString(string value);
 }
+
+/// <summary>Optional runtime storage for keyword-valued WDL synonyms, such as <c>TYPE TEXTURE</c>.</summary>
+public interface IWdlKeywordReferenceContext
+{
+    /// <summary>Whether the keyword is a declared keyword-valued synonym.</summary>
+    bool IsKeywordReference(string name);
+
+    /// <summary>Attempts to resolve the keyword currently assigned to a synonym.</summary>
+    bool TryGetKeywordReference(string name, out string? value);
+
+    /// <summary>Assigns a keyword-valued synonym.</summary>
+    void SetKeywordReference(string name, string? value);
+}

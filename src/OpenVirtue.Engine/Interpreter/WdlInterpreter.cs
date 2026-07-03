@@ -212,6 +212,11 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        if (TryExecuteKeywordReferenceSet(item.Header, comma))
+        {
+            return;
+        }
+
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
         Assign(item.Header, 0, comma, "=", value);
     }
@@ -563,6 +568,21 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
     }
 
+    private bool TryExecuteKeywordReferenceSet(IReadOnlyList<WdlToken> header, int comma)
+    {
+        if (context is not IWdlKeywordReferenceContext keywords ||
+            comma != 1 ||
+            header[0].Kind != WdlTokenKind.Identifier ||
+            !keywords.IsKeywordReference(header[0].Text) ||
+            !TryEvaluateKeywordValue(header, comma + 1, header.Count, out string? value))
+        {
+            return false;
+        }
+
+        keywords.SetKeywordReference(header[0].Text, value);
+        return true;
+    }
+
     private bool TryExecuteObjectStringSet(
         IReadOnlyList<WdlToken> header,
         int targetStart,
@@ -580,13 +600,24 @@ public sealed class WdlInterpreter(IWdlContext context)
         return obj.TrySetString(property, value);
     }
 
-    private static bool TryEvaluateKeywordValue(
+    private bool TryEvaluateKeywordValue(
         IReadOnlyList<WdlToken> header,
         int start,
         int end,
         out string? value)
     {
         value = null;
+        if (end - start == 3 &&
+            header[start].Kind == WdlTokenKind.Identifier &&
+            header[start + 1] is { Kind: WdlTokenKind.Operator, Text: "." } &&
+            header[start + 2].Kind == WdlTokenKind.Identifier &&
+            context.GetObject(header[start].Text) is { } obj &&
+            obj.TryGetString(header[start + 2].Text, out string? memberValue))
+        {
+            value = memberValue;
+            return true;
+        }
+
         if (end - start != 1)
         {
             return false;
@@ -595,7 +626,20 @@ public sealed class WdlInterpreter(IWdlContext context)
         WdlToken token = header[start];
         if (token.Kind == WdlTokenKind.Identifier)
         {
-            value = token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : token.Text;
+            if (token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            {
+                value = null;
+                return true;
+            }
+
+            if (context is IWdlKeywordReferenceContext keywords &&
+                keywords.TryGetKeywordReference(token.Text, out string? referencedKeyword))
+            {
+                value = referencedKeyword;
+                return true;
+            }
+
+            value = token.Text;
             return true;
         }
 

@@ -87,7 +87,7 @@ public static class LevelLoader
         (Dictionary<string, double> skillValues, Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
         return new Level(
             name, vertices, regions, walls, things, actors, start,
-            skillValues, skillBounds, GatherStrings(program), BuildTextures(declarations), declarations.Actions,
+            skillValues, skillBounds, GatherStrings(program), GatherSynonyms(program), BuildTextures(declarations), declarations.Actions,
             FindActionName(program, "IF_START"));
     }
 
@@ -287,6 +287,48 @@ public static class LevelLoader
         }
 
         return strings;
+    }
+
+    private static Dictionary<string, WdlSynonym> GatherSynonyms(WdlProgram program)
+    {
+        var synonyms = new Dictionary<string, WdlSynonym>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("SYNONYM", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Header[0].Kind != WdlTokenKind.Identifier ||
+                item.Body is not { } body)
+            {
+                continue;
+            }
+
+            string? type = null;
+            string? defaultKeyword = null;
+            foreach (WdlItem property in body.Items)
+            {
+                if (property.Header.Count == 0 || property.Header[0].Kind != WdlTokenKind.Identifier)
+                {
+                    continue;
+                }
+
+                if (property.Keyword.Equals("TYPE", StringComparison.OrdinalIgnoreCase))
+                {
+                    type = property.Header[0].Text;
+                }
+                else if (property.Keyword.Equals("DEFAULT", StringComparison.OrdinalIgnoreCase))
+                {
+                    defaultKeyword = property.Header[0].Text;
+                }
+            }
+
+            if (type is not null)
+            {
+                synonyms[item.Header[0].Text] = new WdlSynonym(type, defaultKeyword);
+            }
+        }
+
+        return synonyms;
     }
 
     private static double? ParseNumber(WdlItem property)

@@ -292,6 +292,28 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_TextureSynonym_CanReceiveObjectTextureKeyword()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION lift_1 0 10;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "REGION lift_1 { FLOOR_TEX floor_tex; CEIL_TEX old_ceil; } " +
+            "SYNONYM lift_syn1 { TYPE REGION; } SYNONYM lift_syn2 { TYPE REGION; } " +
+            "SYNONYM lift_floor { TYPE TEXTURE; } " +
+            "ACTION lift1_to_lift2 { SET lift_syn1, lift_1; SET lift_syn2, lift_syn1; " +
+            "SET lift_floor, lift_syn2.FLOOR_TEX; SET lift_1.CEIL_TEX, lift_floor; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("lift1_to_lift2"));
+
+        Assert.Equal("floor_tex", runtime.KeywordReferences["lift_floor"]);
+        Assert.Equal("floor_tex", level.Regions[0].CeilTexture);
+    }
+
+    [Fact]
     public void Runtime_NextThere_CyclesThroughRegionsWithSameName()
     {
         const string map =

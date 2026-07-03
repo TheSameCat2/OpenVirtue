@@ -20,7 +20,8 @@ public sealed class WdlRuntime :
     IWdlObjectGroupContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
-    IWdlPrintContext
+    IWdlPrintContext,
+    IWdlKeywordReferenceContext
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
@@ -28,6 +29,7 @@ public sealed class WdlRuntime :
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +55,14 @@ public sealed class WdlRuntime :
             _strings[name] = value;
         }
 
+        foreach ((string name, WdlSynonym synonym) in level.Synonyms)
+        {
+            if (synonym.Type.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
+            {
+                _keywordReferences[name] = synonym.DefaultKeyword;
+            }
+        }
+
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
@@ -67,6 +77,9 @@ public sealed class WdlRuntime :
 
     /// <summary>The live WDL string values.</summary>
     public IReadOnlyDictionary<string, WdlString> Strings => _strings;
+
+    /// <summary>The live keyword-valued synonym references.</summary>
+    public IReadOnlyDictionary<string, string?> KeywordReferences => _keywordReferences;
 
     /// <summary>All placed level objects registered for runtime iteration.</summary>
     public IReadOnlyList<AcknexObject> LevelObjects => _levelObjects;
@@ -116,6 +129,22 @@ public sealed class WdlRuntime :
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);
+
+    /// <inheritdoc/>
+    public bool IsKeywordReference(string name) => _keywordReferences.ContainsKey(name);
+
+    /// <inheritdoc/>
+    public bool TryGetKeywordReference(string name, out string? value) =>
+        _keywordReferences.TryGetValue(name, out value);
+
+    /// <inheritdoc/>
+    public void SetKeywordReference(string name, string? value)
+    {
+        if (_keywordReferences.ContainsKey(name))
+        {
+            _keywordReferences[name] = value;
+        }
+    }
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) =>
