@@ -72,7 +72,7 @@ syntax from the game's own scripts (clean-room).
 
 **Status:** ✅ **lexer + parser + preprocessor done**, and ✅ **headless level load done**.
 `WdlLexer`/`WdlParser` produce a generic syntax tree; `WdlPreprocessor` flattens a level
-(resolves `INCLUDE`, evaluates `IFDEF`/`IFNDEF`/`IFELSE`/`ENDIF`/`DEFINE`/`UNDEF`); `OpenVirtue.Engine.LevelLoader`
+(resolves `INCLUDE`, expands active `DEFINE` aliases, and evaluates `IFDEF`/`IFNDEF`/`IFELSE`/`ENDIF`/`UNDEF`); `OpenVirtue.Engine.LevelLoader`
 combines the flattened WDL with the `MAPFILE`'d WMP and materializes the typed engine
 object model (`Region`/`Wall`/`Thing`/`Actor` + global skills). All six retail archives
 load end-to-end (`ovtool level info`). **Next:** the **WDL interpreter** runtime (we

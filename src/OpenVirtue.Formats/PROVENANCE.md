@@ -51,7 +51,8 @@ and validate against real game data used only locally (never committed).
 
 - **Behaviour:** flattens a level's main script by resolving `INCLUDE`s (recursively,
   include-once) and evaluating nested `IFDEF`/`IFNDEF`/`IFELSE`/`ENDIF` plus
-  `DEFINE`/`UNDEF`. Derived from the published Acknex 3 reference manual's
+  `DEFINE`/`UNDEF`; active `DEFINE name,replacement` aliases are expanded over
+  following WDL items. Derived from the published Acknex 3 reference manual's
   preprocessor description and validated against the game's own resolution blocks
   (e.g. APATHY.WDL defaults to defining `HIRES`).
 - **Confirmed against real data:** flattening real levels resolves their `INCLUDE`s

@@ -7,8 +7,8 @@ namespace OpenVirtue.Formats.Wdl;
 /// Flattens a WDL "program": starting from a level's main script it resolves
 /// <c>INCLUDE</c> directives (recursively, via a caller-supplied module resolver) and
 /// evaluates the <c>IFDEF</c>/<c>IFNDEF</c>/<c>IFELSE</c>/<c>ENDIF</c>,
-/// <c>DEFINE</c>, and <c>UNDEF</c> preprocessor, producing a single ordered list
-/// of active declaration items.
+/// <c>DEFINE</c>, and <c>UNDEF</c> preprocessor, applies active <c>DEFINE</c>
+/// aliases, and produces a single ordered list of active declaration items.
 /// </summary>
 /// <remarks>
 /// Derived from the public Acknex 3 manual's preprocessor description plus observed
@@ -22,6 +22,7 @@ public sealed class WdlPreprocessor
 
     private readonly ModuleResolver _resolve;
     private readonly HashSet<string> _symbols;
+    private readonly Dictionary<string, IReadOnlyList<WdlToken>> _aliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _included;
     private readonly List<WdlItem> _output = [];
 
@@ -101,7 +102,12 @@ public sealed class WdlPreprocessor
                     {
                         if (item.Header.Count > 0)
                         {
-                            _symbols.Add(item.Header[0].Text);
+                            string symbol = item.Header[0].Text;
+                            _symbols.Add(symbol);
+                            if (DefineReplacement(item.Header) is { } replacement)
+                            {
+                                _aliases[symbol] = replacement;
+                            }
                         }
 
                         _output.Add(item); // keep — a DEFINE may also be a named constant
@@ -112,7 +118,9 @@ public sealed class WdlPreprocessor
                 case "UNDEF":
                     if (Active() && item.Header.Count > 0)
                     {
-                        _symbols.Remove(item.Header[0].Text);
+                        string symbol = item.Header[0].Text;
+                        _symbols.Remove(symbol);
+                        _aliases.Remove(symbol);
                     }
 
                     break;
@@ -120,7 +128,7 @@ public sealed class WdlPreprocessor
                 default:
                     if (Active())
                     {
-                        _output.Add(item);
+                        _output.Add(ApplyDefines(item));
                     }
 
                     break;
@@ -135,6 +143,65 @@ public sealed class WdlPreprocessor
             bool matched = parentActive && (isNegated ? !isDefined : isDefined);
             frames.Add(new Frame(parentActive, matched, matched));
         }
+    }
+
+    private static List<WdlToken>? DefineReplacement(IReadOnlyList<WdlToken> header)
+    {
+        int comma = IndexOfKind(header, WdlTokenKind.Comma);
+        if (comma < 0 || comma == header.Count - 1)
+        {
+            return null;
+        }
+
+        return Slice(header, comma + 1, header.Count);
+    }
+
+    private WdlItem ApplyDefines(WdlItem item)
+    {
+        string keyword = item.Keyword;
+        if (!item.IsLabel &&
+            _aliases.TryGetValue(item.Keyword, out IReadOnlyList<WdlToken>? keywordReplacement) &&
+            keywordReplacement.Count == 1 &&
+            keywordReplacement[0].Kind == WdlTokenKind.Identifier)
+        {
+            keyword = keywordReplacement[0].Text;
+        }
+
+        WdlBlock? body = item.Body is null ? null : new WdlBlock(ApplyDefines(item.Body.Items));
+        return new WdlItem(keyword, ApplyDefines(item.Header), body, item.IsLabel);
+    }
+
+    private List<WdlItem> ApplyDefines(IReadOnlyList<WdlItem> items)
+    {
+        var result = new List<WdlItem>(items.Count);
+        foreach (WdlItem item in items)
+        {
+            result.Add(ApplyDefines(item));
+        }
+
+        return result;
+    }
+
+    private List<WdlToken> ApplyDefines(IReadOnlyList<WdlToken> tokens)
+    {
+        var result = new List<WdlToken>(tokens.Count);
+        foreach (WdlToken token in tokens)
+        {
+            if (token.Kind == WdlTokenKind.Identifier &&
+                _aliases.TryGetValue(token.Text, out IReadOnlyList<WdlToken>? replacement))
+            {
+                foreach (WdlToken replacementToken in replacement)
+                {
+                    result.Add(new WdlToken(replacementToken.Kind, replacementToken.Text, token.Line, token.Column));
+                }
+            }
+            else
+            {
+                result.Add(token);
+            }
+        }
+
+        return result;
     }
 
     private void Include(string moduleName)
@@ -153,6 +220,30 @@ public sealed class WdlPreprocessor
     }
 
     private readonly record struct Frame(bool ParentActive, bool Matched, bool Emitting);
+
+    private static int IndexOfKind(IReadOnlyList<WdlToken> tokens, WdlTokenKind kind)
+    {
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].Kind == kind)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static List<WdlToken> Slice(IReadOnlyList<WdlToken> tokens, int start, int end)
+    {
+        var slice = new List<WdlToken>(end - start);
+        for (int i = start; i < end; i++)
+        {
+            slice.Add(tokens[i]);
+        }
+
+        return slice;
+    }
 }
 
 /// <summary>The result of flattening a WDL program: its active declarations and the defined symbols.</summary>

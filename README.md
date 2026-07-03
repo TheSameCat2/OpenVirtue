@@ -45,7 +45,7 @@ Early implementation (the asset layer is solid; the simulation is just beginning
 What works today:
 
 - **Asset pipeline** — clean-room readers for `WRS` (LZSS archives), `PCX` (8-bit
-  paletted images), `WDL` (lexer + parser + `INCLUDE`/`IFDEF`/`IFNDEF` preprocessor), `WMP`
+  paletted images), `WDL` (lexer + parser + `INCLUDE`/`DEFINE`/`IFDEF`/`IFNDEF` preprocessor), `WMP`
   (text maps) and `WAV`, each validated against all six retail archives via guarded,
   local-only integration tests. Inspectable with the `ovtool` CLI.
 - **Headless level load** — `LevelLoader` combines a level's flattened WDL with its
