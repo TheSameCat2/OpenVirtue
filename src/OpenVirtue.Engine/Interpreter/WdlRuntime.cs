@@ -60,6 +60,7 @@ public sealed class WdlRuntime :
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
         InitializeSynonyms(level);
+        InitializeEachTickActions(level);
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -402,6 +403,15 @@ public sealed class WdlRuntime :
                 _keywordReferences[name] = synonym.DefaultKeyword;
                 _keywordReferenceTypes[name] = synonym.Type;
             }
+        }
+    }
+
+    private void InitializeEachTickActions(Level level)
+    {
+        int count = Math.Min(_eachTickActions.Length, level.EachTickActions.Count);
+        for (int i = 0; i < count; i++)
+        {
+            _eachTickActions[i] = string.IsNullOrWhiteSpace(level.EachTickActions[i]) ? null : level.EachTickActions[i];
         }
     }
 

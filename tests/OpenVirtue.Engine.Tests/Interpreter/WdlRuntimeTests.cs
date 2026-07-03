@@ -155,6 +155,24 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_DispatchesInitialEachTickActionsInOrder()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; " +
+            "SKILL order { VAL 0; } " +
+            "EACH_TICK first, second; " +
+            "ACTION first { RULE order = order * 10 + 1; SET EACH_TICK.1, NULL; } " +
+            "ACTION second { RULE order = order * 10 + 2; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(12, runtime.GetSkill("order"));
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(122, runtime.GetSkill("order"));
+    }
+
+    [Fact]
     public void Runtime_UnknownAction_ReturnsFalse()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));

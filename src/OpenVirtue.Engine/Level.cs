@@ -27,6 +27,7 @@ public sealed class Level
         IReadOnlyDictionary<string, WdlSynonym> synonyms,
         IReadOnlyDictionary<string, LevelTexture> textures,
         IReadOnlyDictionary<string, WdlBlock> actions,
+        IReadOnlyList<string?> eachTickActions,
         string? startupAction)
     {
         Name = name;
@@ -42,6 +43,7 @@ public sealed class Level
         Synonyms = synonyms;
         Textures = textures;
         Actions = actions;
+        EachTickActions = eachTickActions;
         StartupAction = startupAction;
     }
 
@@ -74,6 +76,9 @@ public sealed class Level
 
     /// <summary>The level's <c>ACTION</c> bodies, by name — the scripts the interpreter runs.</summary>
     public IReadOnlyDictionary<string, WdlBlock> Actions { get; }
+
+    /// <summary>Initial global <c>EACH_TICK</c> action slots declared by the level WDL.</summary>
+    public IReadOnlyList<string?> EachTickActions { get; }
 
     /// <summary>The action named by <c>IF_START</c> — the level's startup script, if any.</summary>
     public string? StartupAction { get; }

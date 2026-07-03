@@ -88,7 +88,7 @@ public static class LevelLoader
         return new Level(
             name, vertices, regions, walls, things, actors, start,
             skillValues, skillBounds, GatherStrings(program), GatherSynonyms(program), BuildTextures(declarations), declarations.Actions,
-            FindActionName(program, "IF_START"));
+            GatherEachTickActions(program), FindActionName(program, "IF_START"));
     }
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
@@ -192,6 +192,36 @@ public static class LevelLoader
         }
 
         return null;
+    }
+
+    private static string?[] GatherEachTickActions(WdlProgram program)
+    {
+        string?[] actions = new string?[16];
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            int slot = 0;
+            foreach (WdlToken token in item.Header)
+            {
+                if (token.Kind != WdlTokenKind.Identifier)
+                {
+                    continue;
+                }
+
+                if (slot == actions.Length)
+                {
+                    break;
+                }
+
+                actions[slot++] = token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : token.Text;
+            }
+        }
+
+        return actions;
     }
 
     private static string? FindFileRef(WdlProgram program, string keyword)
