@@ -14,7 +14,7 @@ dotnet run --project tools/OpenVirtue.Tools -- wmp info     <map.wmp>
 dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
-dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -32,5 +32,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start
   `EACH_TICK` dispatch. Generated WDL/WMP/WRS/runtime/display-asset files are
   ignored and must not be committed; reduce results into
   `docs/clean-room/observations/`.
+  Passing `--carrier-dir` also creates a local prepared-title carrier harness
+  with active `APPEND_MODE` lines removed from copied WDL files and marker-file
+  logging injected into the title script. Marker files use the A3 documented
+  five-character base plus number form; patched V3.963 has been observed writing
+  one-digit suffixes such as `OVSTA0.TXT`, `OVSCH0.TXT`, and `OVTIK0.TXT`.
   This helper does not run SaintsX setup scripts or external `patch.exe`; oracle
   prep must stay noninteractive and auditable.

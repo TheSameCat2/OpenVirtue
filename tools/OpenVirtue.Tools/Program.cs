@@ -362,7 +362,7 @@ internal static class Cli
               ovtool wav info <sound.wav>
               ovtool wdl info <script.wdl>
               ovtool level info <archive.wrs> [main.wdl]
-              ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--dosbox-x <exe>]
+              ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
 
             Notes:
               These tools operate on game data you supply; no game data ships with
