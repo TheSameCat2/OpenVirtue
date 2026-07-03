@@ -45,7 +45,7 @@ public static class TextureLoader
 
         foreach ((string name, LevelTexture texture) in level.Textures)
         {
-            PcxImage? pcx = GetPcx(archive, texture.File, pcxByFile);
+            PcxImage? pcx = GetPcx(archive, texture.File, level.SearchPaths, pcxByFile);
             if (pcx is not null)
             {
                 images[name] = Crop(pcx, texture, colorKey: spriteTextures.Contains(name));
@@ -55,28 +55,41 @@ public static class TextureLoader
         return images;
     }
 
-    private static PcxImage? GetPcx(WrsArchive archive, string file, Dictionary<string, PcxImage?> cache)
+    private static PcxImage? GetPcx(
+        WrsArchive archive,
+        string file,
+        IReadOnlyList<string> searchPaths,
+        Dictionary<string, PcxImage?> cache)
     {
-        string key = Path.GetFileName(file);
+        List<string> candidates = CandidateEntryNames(file, searchPaths);
+        string key = string.Join('\0', candidates);
         if (cache.TryGetValue(key, out PcxImage? cached))
         {
             return cached;
         }
 
         PcxImage? pcx = null;
-        foreach (WrsEntry entry in archive.Entries)
+        foreach (string candidate in candidates)
         {
-            if (entry.Name.Equals(key, StringComparison.OrdinalIgnoreCase))
+            foreach (WrsEntry entry in archive.Entries)
             {
-                try
+                if (EntryNameEquals(entry.Name, candidate))
                 {
-                    pcx = PcxImage.Read(entry.GetData());
-                }
-                catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
-                {
-                    pcx = null; // skip a texture we can't decode rather than failing the whole load
-                }
+                    try
+                    {
+                        pcx = PcxImage.Read(entry.GetData());
+                    }
+                    catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+                    {
+                        pcx = null; // skip a texture we can't decode rather than failing the whole load
+                    }
 
+                    break;
+                }
+            }
+
+            if (pcx is not null)
+            {
                 break;
             }
         }
@@ -84,6 +97,40 @@ public static class TextureLoader
         cache[key] = pcx;
         return pcx;
     }
+
+    private static List<string> CandidateEntryNames(string file, IReadOnlyList<string> searchPaths)
+    {
+        var candidates = new List<string>();
+        string normalizedFile = NormalizeArchiveName(file);
+        if (normalizedFile.Length > 0)
+        {
+            candidates.Add(normalizedFile);
+        }
+
+        string fileName = NormalizeArchiveName(Path.GetFileName(normalizedFile));
+        if (fileName.Length > 0 && !EntryNameEquals(fileName, normalizedFile))
+        {
+            candidates.Add(fileName);
+        }
+
+        foreach (string path in searchPaths)
+        {
+            string normalizedPath = NormalizeArchiveName(path).Trim('/');
+            if (normalizedPath.Length == 0 || fileName.Length == 0)
+            {
+                continue;
+            }
+
+            candidates.Add(normalizedPath + "/" + fileName);
+        }
+
+        return candidates;
+    }
+
+    private static bool EntryNameEquals(string left, string right) =>
+        NormalizeArchiveName(left).Equals(NormalizeArchiveName(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeArchiveName(string value) => value.Replace('\\', '/');
 
     private static TextureImage Crop(PcxImage pcx, LevelTexture texture, bool colorKey)
     {

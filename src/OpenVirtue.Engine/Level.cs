@@ -25,6 +25,7 @@ public sealed class Level
         IReadOnlyDictionary<string, SkillRange> skillBounds,
         IReadOnlyDictionary<string, WdlString> strings,
         IReadOnlyDictionary<string, WdlSynonym> synonyms,
+        IReadOnlyList<string> searchPaths,
         IReadOnlyDictionary<string, LevelTexture> textures,
         IReadOnlyDictionary<string, WdlBlock> actions,
         IReadOnlyList<string?> eachTickActions,
@@ -42,6 +43,7 @@ public sealed class Level
         SkillBounds = skillBounds;
         Strings = strings;
         Synonyms = synonyms;
+        SearchPaths = searchPaths;
         Textures = textures;
         Actions = actions;
         EachTickActions = eachTickActions;
@@ -72,6 +74,9 @@ public sealed class Level
 
     /// <summary>Top-level WDL <c>SYNONYM</c> declarations, by synonym keyword.</summary>
     public IReadOnlyDictionary<string, WdlSynonym> Synonyms { get; }
+
+    /// <summary>Top-level WDL <c>PATH</c> declarations used when resolving external assets.</summary>
+    public IReadOnlyList<string> SearchPaths { get; }
 
     /// <summary>Resolved textures (name → source PCX file + rectangle + scale) referenced by the geometry.</summary>
     public IReadOnlyDictionary<string, LevelTexture> Textures { get; }

@@ -13,8 +13,9 @@ namespace OpenVirtue.Engine.Interpreter;
 /// <c>IF (expr) { … }</c> conditionals, synchronous <c>WHILE</c> loops, explicit
 /// <c>CALL</c>s, <c>GOTO</c>, <c>END</c>, and basic object-reference iteration via
 /// <c>NEXT_MY</c>/<c>NEXT_THERE</c>, plus documented string utility instructions.
-/// Optional runtime surfaces also handle documented print-file instructions. More statements
-/// (IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
+/// Optional runtime surfaces also handle documented print-file instructions and global
+/// <c>IF_*</c> hook reassignment. More statements (WAIT) and deeper scheduler semantics
+/// are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {

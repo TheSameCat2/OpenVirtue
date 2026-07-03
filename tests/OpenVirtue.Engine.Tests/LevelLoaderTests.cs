@@ -116,6 +116,28 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesSearchPaths()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\nPLAYER_START 1 2 45 0;#1",
+        };
+        string main =
+            "MAPFILE <test.wmp>; " +
+            "PATH \"gfx\"; PATH \"sound\"; PATH \"p03\"; PATH \"p04\"; PATH \"p05\"; PATH \"p06\"; " +
+            "PATH \"p07\"; PATH \"p08\"; PATH \"p09\"; PATH \"p10\"; PATH \"p11\"; PATH \"p12\"; " +
+            "PATH \"p13\"; PATH \"p14\"; PATH \"p15\"; PATH \"p16\"; PATH \"ignored\";";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(16, level.SearchPaths.Count);
+        Assert.Equal("gfx", level.SearchPaths[0]);
+        Assert.Equal("sound", level.SearchPaths[1]);
+        Assert.Equal("p16", level.SearchPaths[15]);
+        Assert.DoesNotContain("ignored", level.SearchPaths);
+    }
+
+    [Fact]
     public void LoadCore_LinksTexturesThroughTheDeclarationChain()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
