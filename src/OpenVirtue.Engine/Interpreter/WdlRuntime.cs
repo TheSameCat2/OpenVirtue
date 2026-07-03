@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Globalization;
+using System.Text;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Formats.Wdl;
 
@@ -17,7 +19,8 @@ public sealed class WdlRuntime :
     IWdlSchedulerContext,
     IWdlObjectGroupContext,
     IWdlObjectReferenceContext,
-    IWdlStringContext
+    IWdlStringContext,
+    IWdlPrintContext
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
@@ -34,13 +37,17 @@ public sealed class WdlRuntime :
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
     private readonly string? _startupAction;
+    private readonly string? _printDirectory;
+    private string _printBaseName = "PRINT";
+    private int _printNumber;
     private int _callDepth;
 
-    public WdlRuntime(Level level)
+    public WdlRuntime(Level level, string? printDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
         _bounds = level.SkillBounds;
+        _printDirectory = printDirectory;
         foreach ((string name, WdlString value) in level.Strings)
         {
             _strings[name] = value;
@@ -95,6 +102,20 @@ public sealed class WdlRuntime :
         _strings[name] = text.WithValue(value);
         return true;
     }
+
+    /// <inheritdoc/>
+    public void SetPrintFile(string baseName, int number)
+    {
+        _printBaseName = NormalizePrintBaseName(baseName);
+        _printNumber = Math.Clamp(number, 0, 999);
+    }
+
+    /// <inheritdoc/>
+    public void PrintValue(double value) =>
+        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture) + Environment.NewLine);
+
+    /// <inheritdoc/>
+    public void PrintString(string value) => AppendPrintText(value);
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
@@ -331,6 +352,47 @@ public sealed class WdlRuntime :
         }
 
         return true;
+    }
+
+    private void AppendPrintText(string text)
+    {
+        if (_printDirectory is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_printDirectory);
+        File.AppendAllText(PrintFilePath(), text, Encoding.Latin1);
+    }
+
+    private string PrintFilePath() =>
+        Path.Combine(_printDirectory!, $"{_printBaseName}{_printNumber:000}.TXT");
+
+    private static string NormalizePrintBaseName(string baseName)
+    {
+        if (string.IsNullOrEmpty(baseName))
+        {
+            return "PRINT";
+        }
+
+        var builder = new StringBuilder(capacity: 5);
+        char[] invalidChars = Path.GetInvalidFileNameChars();
+        foreach (char c in baseName)
+        {
+            if (builder.Length == 5)
+            {
+                break;
+            }
+
+            if (invalidChars.Contains(c) || c is '/' or '\\')
+            {
+                continue;
+            }
+
+            builder.Append(c);
+        }
+
+        return builder.Length == 0 ? "PRINT" : builder.ToString();
     }
 
     private readonly record struct CycleAction(AcknexObject Target, string ActionName);

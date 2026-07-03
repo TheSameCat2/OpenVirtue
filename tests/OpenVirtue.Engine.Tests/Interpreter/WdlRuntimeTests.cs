@@ -336,6 +336,38 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_PrintInstructions_AppendToSelectedTextFile()
+    {
+        string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; " +
+                "STRING line,\"hello\\nworld\"; SKILL value { VAL 12.3456; } " +
+                "ACTION log { PRINTFILE \"ovstate\", 7; PRINT_VALUE value; PRINT_STRING line; PRINT_STRING \"done\\n\"; }");
+            var runtime = new WdlRuntime(level, outputDir);
+
+            Assert.True(runtime.RunAction("log"));
+            Assert.True(runtime.RunAction("log"));
+
+            string outputPath = Path.Combine(outputDir, "ovsta007.TXT");
+            string text = File.ReadAllText(outputPath);
+            string expectedRun =
+                "12.346" + Environment.NewLine +
+                "hello" + Environment.NewLine +
+                "worlddone" + Environment.NewLine;
+            Assert.Equal(expectedRun + expectedRun, text);
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");

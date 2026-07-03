@@ -13,7 +13,8 @@ namespace OpenVirtue.Engine.Interpreter;
 /// <c>IF (expr) { … }</c> conditionals, synchronous <c>WHILE</c> loops, explicit
 /// <c>CALL</c>s, <c>GOTO</c>, <c>END</c>, and basic object-reference iteration via
 /// <c>NEXT_MY</c>/<c>NEXT_THERE</c>, plus documented string utility instructions.
-/// More statements (IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
+/// Optional runtime surfaces also handle documented print-file instructions. More statements
+/// (IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
@@ -101,6 +102,15 @@ public sealed class WdlInterpreter(IWdlContext context)
                         break;
                     case "SET_SKILL":
                         ExecuteSetSkill(item);
+                        break;
+                    case "PRINTFILE":
+                        ExecutePrintFile(item);
+                        break;
+                    case "PRINT_VALUE":
+                        ExecutePrintValue(item);
+                        break;
+                    case "PRINT_STRING":
+                        ExecutePrintString(item);
                         break;
                     case "RULE":
                         ExecuteRule(item);
@@ -316,6 +326,39 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         context.SetSkill(target, parsed);
+    }
+
+    private void ExecutePrintFile(WdlItem item)
+    {
+        int comma = IndexOfKind(item.Header, WdlTokenKind.Comma);
+        if (context is not IWdlPrintContext print ||
+            comma < 0 ||
+            !TryEvaluateString(item.Header, 0, comma, out string baseName))
+        {
+            return;
+        }
+
+        int number = (int)Math.Truncate(Evaluate(item.Header, comma + 1, item.Header.Count));
+        print.SetPrintFile(baseName, number);
+    }
+
+    private void ExecutePrintValue(WdlItem item)
+    {
+        if (context is IWdlPrintContext print && item.Header.Count > 0)
+        {
+            print.PrintValue(Evaluate(item.Header, 0, item.Header.Count));
+        }
+    }
+
+    private void ExecutePrintString(WdlItem item)
+    {
+        if (context is not IWdlPrintContext print ||
+            !TryEvaluateString(item.Header, 0, item.Header.Count, out string value))
+        {
+            return;
+        }
+
+        print.PrintString(value.Replace("\\n", Environment.NewLine, StringComparison.Ordinal));
     }
 
     private void ExecuteNextObject(string referenceName, WdlObjectIterationMode mode)

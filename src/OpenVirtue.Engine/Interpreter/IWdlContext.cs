@@ -81,3 +81,16 @@ public interface IWdlStringContext
     /// <summary>Assigns a named WDL string, preserving its declared capacity.</summary>
     bool SetString(string name, string value);
 }
+
+/// <summary>Optional output surface for WDL <c>PRINTFILE</c>/<c>PRINT_VALUE</c>/<c>PRINT_STRING</c>.</summary>
+public interface IWdlPrintContext
+{
+    /// <summary>Selects the text file that subsequent print instructions append to.</summary>
+    void SetPrintFile(string baseName, int number);
+
+    /// <summary>Appends a numeric value to the currently selected print file.</summary>
+    void PrintValue(double value);
+
+    /// <summary>Appends text to the currently selected print file.</summary>
+    void PrintString(string value);
+}
