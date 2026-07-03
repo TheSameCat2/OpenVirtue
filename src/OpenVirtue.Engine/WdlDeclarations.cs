@@ -124,7 +124,7 @@ public sealed class WdlDeclarations
 
         string? bitmap = null;
         double scaleX = DefaultTextureScale, scaleY = DefaultTextureScale;
-        double ambient = 1;
+        double ambient = 0;
         bool isSky = false;
         foreach (WdlItem property in body.Items)
         {

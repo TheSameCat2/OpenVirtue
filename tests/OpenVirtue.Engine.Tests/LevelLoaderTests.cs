@@ -72,7 +72,7 @@ public class LevelLoaderTests
         Assert.Equal("floor.pcx", texture.File);
         Assert.Equal(64, texture.Width);
         Assert.Equal(16, texture.ScaleX);
-        Assert.Equal(1, texture.Ambient);
+        Assert.Equal(0, texture.Ambient);
     }
 
     [Fact]

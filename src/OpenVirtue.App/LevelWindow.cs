@@ -563,7 +563,9 @@ internal sealed class LevelWindow : Form
     {
         if (texture is not null && _level.Textures.TryGetValue(texture, out LevelTexture levelTexture))
         {
-            return (float)Math.Clamp(levelTexture.Ambient, 0, 2);
+            // Store WDL AMBIENT as documented (-1..1, default 0) and map it onto
+            // the viewer's simple multiplicative tint while real palette lighting grows.
+            return (float)Math.Clamp(1 + levelTexture.Ambient, 0, 2);
         }
 
         return 1f;
