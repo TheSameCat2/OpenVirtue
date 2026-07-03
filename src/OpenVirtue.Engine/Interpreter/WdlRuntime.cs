@@ -35,6 +35,7 @@ public sealed class WdlRuntime :
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Region> _regions = [];
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
     private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
@@ -61,6 +62,7 @@ public sealed class WdlRuntime :
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
+        InitializePredefinedReferences(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
         InitializeObjectEachTickActions(level);
@@ -308,8 +310,9 @@ public sealed class WdlRuntime :
 
     private void RegisterLevelObjects(Level level)
     {
-        foreach (AcknexObject obj in level.Regions)
+        foreach (Region obj in level.Regions)
         {
+            _regions.Add(obj);
             RegisterNamedObject(obj);
         }
 
@@ -388,7 +391,18 @@ public sealed class WdlRuntime :
     private bool RunForObject(AcknexObject target, string actionName)
     {
         bool hadMy = _objects.TryGetValue("my", out AcknexObject? previousMy);
+        bool hadThere = _objects.TryGetValue("there", out AcknexObject? previousThere);
+        Region? targetRegion = RegionForObject(target);
         _objects["my"] = target;
+        if (targetRegion is not null)
+        {
+            _objects["there"] = targetRegion;
+        }
+        else
+        {
+            _objects.Remove("there");
+        }
+
         try
         {
             return Run(actionName);
@@ -402,6 +416,15 @@ public sealed class WdlRuntime :
             else
             {
                 _objects.Remove("my");
+            }
+
+            if (hadThere)
+            {
+                _objects["there"] = previousThere!;
+            }
+            else
+            {
+                _objects.Remove("there");
             }
         }
     }
@@ -451,6 +474,15 @@ public sealed class WdlRuntime :
         }
     }
 
+    private void InitializePredefinedReferences(Level level)
+    {
+        if (level.PlayerStart is { } playerStart &&
+            RegionAt(playerStart.Region) is { } here)
+        {
+            SetObjectReference("here", here);
+        }
+    }
+
     private void InitializeEachTickActions(Level level)
     {
         int count = Math.Min(_eachTickActions.Length, level.EachTickActions.Count);
@@ -482,6 +514,12 @@ public sealed class WdlRuntime :
     private static bool IsActionHookName(string name) =>
         name.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
         !name.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
+
+    private Region? RegionForObject(AcknexObject target) =>
+        target is MapEntity entity ? RegionAt(entity.Region) : null;
+
+    private Region? RegionAt(int index) =>
+        index >= 0 && index < _regions.Count ? _regions[index] : null;
 
     private bool TryResolveObjectByType(string name, string type, out AcknexObject? value)
     {

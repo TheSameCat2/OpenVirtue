@@ -271,6 +271,18 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_PredefinedHere_ReferencesPlayerStartRegion()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION room0 0 10;#0\nREGION room1 5 15;#1\nPLAYER_START 0 0 0 1;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>;");
+        var runtime = new WdlRuntime(level);
+
+        Assert.Same(level.Regions[1], runtime.GetObject("here"));
+    }
+
+    [Fact]
     public void Runtime_DuplicateWallNames_ResolveToFirstPlacedWall()
     {
         const string map =
@@ -725,23 +737,27 @@ public class WdlRuntimeTests
     public void Runtime_ObjectActionHooks_TriggerWithMyAndRestorePreviousReference()
     {
         const string map =
-            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
-            "THING pickup 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION old_room 0 10;#0\nREGION pickup_room 5 15;#1\n" +
+            "THING pickup 5 0 0 1;#1\nPLAYER_START 0 0 0 0;#2";
         Level level = LoadWithMap(
             map,
             "MAPFILE <m.wmp>; SKILL hits { VAL 0; } " +
             "THING pickup { IF_NEAR near_pickup; IF_FAR NULL; } " +
-            "ACTION near_pickup { RULE my.x += 3; RULE hits += 1; }");
+            "ACTION near_pickup { RULE my.x += 3; RULE there.FLOOR_HGT += 2; RULE hits += 1; }");
         Thing pickup = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
         var originalMy = new Thing("originalMy");
+        Region previousThere = level.Regions[0];
 
         runtime.RegisterObject("my", originalMy);
+        runtime.RegisterObject("there", previousThere);
 
         Assert.True(runtime.TriggerObjectActionHook(pickup, "IF_NEAR"));
         Assert.Equal(8, pickup.X);
+        Assert.Equal(7, level.Regions[1].FloorHeight);
         Assert.Equal(1, runtime.GetSkill("hits"));
         Assert.Same(originalMy, runtime.GetObject("my"));
+        Assert.Same(previousThere, runtime.GetObject("there"));
 
         Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_FAR"));
         Assert.False(runtime.TriggerObjectActionHook(pickup, "IF_HIT"));
