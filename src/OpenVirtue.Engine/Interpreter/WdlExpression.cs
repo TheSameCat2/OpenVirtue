@@ -18,6 +18,17 @@ public abstract class WdlExpression
         value = null;
         return false;
     }
+
+    /// <summary>Attempts to evaluate the expression as a keyword-valued parameter.</summary>
+    public virtual bool TryEvaluateKeyword(IWdlContext context, out string? value)
+    {
+        value = null;
+        return false;
+    }
+
+    /// <summary>Attempts to evaluate the expression as a keyword value or literal.</summary>
+    public virtual bool TryEvaluateKeywordLiteral(IWdlContext context, out string? value) =>
+        TryEvaluateKeyword(context, out value);
 }
 
 /// <summary>A numeric literal.</summary>
@@ -58,6 +69,36 @@ public sealed class NameExpression(string name) : WdlExpression
         value = null;
         return false;
     }
+
+    public override bool TryEvaluateKeyword(IWdlContext context, out string? value)
+    {
+        if (name.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            value = null;
+            return true;
+        }
+
+        if (context is IWdlKeywordReferenceContext keywords &&
+            keywords.TryGetKeywordReference(name, out string? referencedKeyword))
+        {
+            value = referencedKeyword;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    public override bool TryEvaluateKeywordLiteral(IWdlContext context, out string? value)
+    {
+        if (TryEvaluateKeyword(context, out value))
+        {
+            return true;
+        }
+
+        value = name;
+        return true;
+    }
 }
 
 /// <summary>Member access on an object reference (e.g. <c>my.x</c>, <c>you._x</c>).</summary>
@@ -68,6 +109,19 @@ public sealed class MemberExpression(string objectName, string property) : WdlEx
 
     public override double Evaluate(IWdlContext context) =>
         context.GetObject(objectName) is { } obj ? obj[property] : 0;
+
+    public override bool TryEvaluateKeyword(IWdlContext context, out string? value)
+    {
+        if (context.GetObject(objectName) is { } obj &&
+            obj.TryGetString(property, out string? memberValue))
+        {
+            value = memberValue;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
 }
 
 /// <summary>A unary operation: <c>-</c> (negation) or <c>!</c> (logical not).</summary>
@@ -137,6 +191,11 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             return (op == "==" ? equal : !equal) ? 1 : 0;
         }
 
+        if (op is "==" or "!=" && TryEvaluateKeywordComparison(context, out bool keywordEqual))
+        {
+            return (op == "==" ? keywordEqual : !keywordEqual) ? 1 : 0;
+        }
+
         double l = left.Evaluate(context);
         double r = right.Evaluate(context);
         return op switch
@@ -160,4 +219,36 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             _ => 0,
         };
     }
+
+    private bool TryEvaluateKeywordComparison(IWdlContext context, out bool equal)
+    {
+        bool leftKeyword = left.TryEvaluateKeyword(context, out string? leftValue);
+        bool rightKeyword = right.TryEvaluateKeyword(context, out string? rightValue);
+
+        if (leftKeyword && right.TryEvaluateKeywordLiteral(context, out string? rightLiteral))
+        {
+            equal = KeywordEquals(leftValue, rightLiteral);
+            return true;
+        }
+
+        if (rightKeyword && left.TryEvaluateKeywordLiteral(context, out string? leftLiteral))
+        {
+            equal = KeywordEquals(leftLiteral, rightValue);
+            return true;
+        }
+
+        if (leftKeyword || rightKeyword)
+        {
+            equal = false;
+            return true;
+        }
+
+        equal = false;
+        return false;
+    }
+
+    private static bool KeywordEquals(string? leftValue, string? rightValue) =>
+        leftValue is null || rightValue is null
+            ? leftValue is null && rightValue is null
+            : leftValue.Equals(rightValue, StringComparison.OrdinalIgnoreCase);
 }

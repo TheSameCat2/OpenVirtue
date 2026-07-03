@@ -292,6 +292,30 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_If_ComparesDocumentedTextureKeywordsAndNull()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION tank 0 10;#0\nTHING plant 5 6 90 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "SKILL matched { VAL 0; } SKILL missing { VAL 0; } SKILL notMatched { VAL 0; } " +
+            "REGION tank { FLOOR_TEX water_tex; } " +
+            "SYNONYM selected { TYPE TEXTURE; DEFAULT water_tex; } " +
+            "ACTION checkTextures { IF (tank.FLOOR_TEX == selected) { SET matched, 1; } " +
+            "IF (plant.TEXTURE == NULL) { SET missing, 1; } " +
+            "IF (tank.FLOOR_TEX == lava_tex) { SET notMatched, 1; } ELSE { SET notMatched, 2; } }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("checkTextures"));
+
+        Assert.Equal(1, runtime.GetSkill("matched"));
+        Assert.Equal(1, runtime.GetSkill("missing"));
+        Assert.Equal(2, runtime.GetSkill("notMatched"));
+    }
+
+    [Fact]
     public void Runtime_TextureSynonym_CanReceiveObjectTextureKeyword()
     {
         const string map =

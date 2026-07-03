@@ -118,6 +118,32 @@ public class WdlExpressionTests
     }
 
     [Fact]
+    public void Evaluates_DocumentedKeywordComparisons()
+    {
+        var context = new TestContext();
+        context.Objects["room"] = new Region("room") { FloorTexture = "water_tex" };
+        context.Objects["plant"] = new Thing("plant");
+        context.SetKeywordReference("selected_tex", "water_tex");
+
+        Assert.Equal(1, Eval("room.FLOOR_TEX == water_tex", context));
+        Assert.Equal(1, Eval("room.FLOOR_TEX == selected_tex", context));
+        Assert.Equal(0, Eval("room.FLOOR_TEX == lava_tex", context));
+        Assert.Equal(1, Eval("room.FLOOR_TEX != NULL", context));
+        Assert.Equal(1, Eval("plant.TEXTURE == NULL", context));
+        Assert.Equal(0, Eval("plant.TEXTURE == water_tex", context));
+    }
+
+    [Fact]
+    public void Evaluates_SkillEqualityNumerically()
+    {
+        var context = new TestContext();
+        context.SetSkill("x", 3);
+        context.SetSkill("y", 3);
+
+        Assert.Equal(1, Eval("x == y", context));
+    }
+
+    [Fact]
     public void UnknownSkill_EvaluatesToZero()
     {
         Assert.Equal(1, Eval("missing + 1", new TestContext()));
@@ -126,9 +152,10 @@ public class WdlExpressionTests
     private static double Eval(string expression, IWdlContext context) =>
         WdlExpressionParser.Parse(expression).Evaluate(context);
 
-    private sealed class TestContext : IWdlContext
+    private sealed class TestContext : IWdlContext, IWdlKeywordReferenceContext
     {
         private readonly Dictionary<string, double> _skills = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
 
         public Dictionary<string, AcknexObject> Objects { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -137,6 +164,13 @@ public class WdlExpressionTests
         public void SetSkill(string name, double value) => _skills[name] = value;
 
         public AcknexObject? GetObject(string name) => Objects.GetValueOrDefault(name);
+
+        public bool IsKeywordReference(string name) => _keywordReferences.ContainsKey(name);
+
+        public bool TryGetKeywordReference(string name, out string? value) =>
+            _keywordReferences.TryGetValue(name, out value);
+
+        public void SetKeywordReference(string name, string? value) => _keywordReferences[name] = value;
 
         public void CallAction(string name)
         {
