@@ -30,6 +30,7 @@ public sealed class WdlRuntime :
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _keywordReferenceTypes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -55,17 +56,10 @@ public sealed class WdlRuntime :
             _strings[name] = value;
         }
 
-        foreach ((string name, WdlSynonym synonym) in level.Synonyms)
-        {
-            if (synonym.Type.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
-            {
-                _keywordReferences[name] = synonym.DefaultKeyword;
-            }
-        }
-
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
+        InitializeSynonyms(level);
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -94,7 +88,8 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public bool TryGetString(string name, out string value)
     {
-        if (_strings.TryGetValue(name, out WdlString text))
+        string? resolvedName = ResolveStringName(name);
+        if (resolvedName is not null && _strings.TryGetValue(resolvedName, out WdlString text))
         {
             value = text.Value;
             return true;
@@ -107,12 +102,13 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public bool SetString(string name, string value)
     {
-        if (!_strings.TryGetValue(name, out WdlString text))
+        string? resolvedName = ResolveStringName(name);
+        if (resolvedName is null || !_strings.TryGetValue(resolvedName, out WdlString text))
         {
             return false;
         }
 
-        _strings[name] = text.WithValue(value);
+        _strings[resolvedName] = text.WithValue(value);
         return true;
     }
 
@@ -225,7 +221,7 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>Whether an action with this name exists.</summary>
-    public bool HasAction(string name) => _actions.ContainsKey(name);
+    public bool HasAction(string name) => ResolveActionName(name) is { } actionName && _actions.ContainsKey(actionName);
 
     /// <summary>Runs the level's <c>IF_START</c> startup action, if one is defined.</summary>
     /// <returns><c>true</c> if a startup action existed and ran.</returns>
@@ -367,7 +363,8 @@ public sealed class WdlRuntime :
     private bool Run(string name)
     {
         // Guard against runaway mutual recursion between actions.
-        if (_callDepth >= MaxCallDepth || !_actions.TryGetValue(name, out WdlBlock? block))
+        string? actionName = ResolveActionName(name);
+        if (_callDepth >= MaxCallDepth || actionName is null || !_actions.TryGetValue(actionName, out WdlBlock? block))
         {
             return false;
         }
@@ -384,6 +381,113 @@ public sealed class WdlRuntime :
 
         return true;
     }
+
+    private void InitializeSynonyms(Level level)
+    {
+        foreach ((string name, WdlSynonym synonym) in level.Synonyms)
+        {
+            if (IsObjectSynonymType(synonym.Type))
+            {
+                if (synonym.DefaultKeyword is not null &&
+                    TryResolveObjectByType(synonym.DefaultKeyword, synonym.Type, out AcknexObject? value))
+                {
+                    SetObjectReference(name, value);
+                }
+
+                continue;
+            }
+
+            if (IsKeywordSynonymType(synonym.Type))
+            {
+                _keywordReferences[name] = synonym.DefaultKeyword;
+                _keywordReferenceTypes[name] = synonym.Type;
+            }
+        }
+    }
+
+    private bool TryResolveObjectByType(string name, string type, out AcknexObject? value)
+    {
+        if (name.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            value = null;
+            return true;
+        }
+
+        if (!_objectsByName.TryGetValue(name, out List<AcknexObject>? matches))
+        {
+            value = null;
+            return false;
+        }
+
+        value = matches.FirstOrDefault(candidate => ObjectMatchesSynonymType(candidate, type));
+        return value is not null;
+    }
+
+    private string? ResolveActionName(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string current = name;
+        while (IsKeywordReferenceType(current, "ACTION"))
+        {
+            if (!seen.Add(current) ||
+                !_keywordReferences.TryGetValue(current, out string? target) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                return null;
+            }
+
+            current = target;
+        }
+
+        return current;
+    }
+
+    private string? ResolveStringName(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string current = name;
+        while (IsKeywordReferenceType(current, "STRING"))
+        {
+            if (!seen.Add(current) ||
+                !_keywordReferences.TryGetValue(current, out string? target) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                return null;
+            }
+
+            current = target;
+        }
+
+        return current;
+    }
+
+    private bool IsKeywordReferenceType(string name, string type) =>
+        _keywordReferenceTypes.TryGetValue(name, out string? declaredType) &&
+        declaredType.Equals(type, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsObjectSynonymType(string type) =>
+        type.Equals("REGION", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("WALL", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("THING", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("ACTOR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKeywordSynonymType(string type) =>
+        type.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("STRING", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("ACTION", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("PANEL", StringComparison.OrdinalIgnoreCase) ||
+        type.Equals("TEXT", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ObjectMatchesSynonymType(AcknexObject value, string type) =>
+        type.ToUpperInvariant() switch
+        {
+            "REGION" => value is Region,
+            "WALL" => value is Wall,
+            "THING" => value is Thing,
+            "ACTOR" => value is Actor,
+            _ => false,
+        };
 
     private void AppendPrintText(string text)
     {

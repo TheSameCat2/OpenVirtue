@@ -314,6 +314,59 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ObjectSynonym_SeedsDefaultReferenceByType()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION lift_1 0 10;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "SYNONYM lift_syn { TYPE REGION; DEFAULT lift_1; } " +
+            "ACTION raiseLift { RULE lift_syn.FLOOR_HGT += 2; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.Same(level.Regions[0], runtime.GetObject("lift_syn"));
+        Assert.True(runtime.RunAction("raiseLift"));
+
+        Assert.Equal(2, level.Regions[0].FloorHeight);
+    }
+
+    [Fact]
+    public void Runtime_ActionSynonym_CallsDefaultAndAssignedAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL result { VAL 0; } " +
+            "SYNONYM selected { TYPE ACTION; DEFAULT first; } " +
+            "ACTION first { RULE result = result * 10 + 1; } " +
+            "ACTION second { RULE result = result * 10 + 2; } " +
+            "ACTION drive { CALL selected; SET selected, second; selected; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("drive"));
+
+        Assert.Equal(12, runtime.GetSkill("result"));
+    }
+
+    [Fact]
+    public void Runtime_StringSynonym_ReadsAndWritesAssignedString()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; " +
+            "STRING source,\"alpha\"; STRING target,\".....\"; STRING sink,\".....\"; " +
+            "SYNONYM active { TYPE STRING; DEFAULT source; } " +
+            "ACTION editStrings { SET_STRING sink, active; SET active, target; " +
+            "SET_STRING active, \"beta\"; ADD_STRING active, \"!\"; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("editStrings"));
+
+        Assert.Equal("alpha", runtime.Strings["sink"].Value);
+        Assert.Equal("alpha", runtime.Strings["source"].Value);
+        Assert.Equal("beta!", runtime.Strings["target"].Value);
+    }
+
+    [Fact]
     public void Runtime_NextThere_CyclesThroughRegionsWithSameName()
     {
         const string map =
