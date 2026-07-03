@@ -19,10 +19,16 @@ its fixed-tick timing and quirks) *before* adding enhancements behind toggles.
 This is the project's defining constraint (ADR-0005). The best Acknex-3 references
 (firoball's `WDL2CS`, `WMPio`, `AcknexCSApi`) are **CC BY-NC / GPL-incompatible**, and the
 original game/patch are proprietary. They all live under the git-ignored `_research/` folder.
+The public 1998 ACKNEX/A3 manuals under
+`_research/official-acknex-a3-manuals/` are the preferred primary source for documented
+engine, WDL, WMP, and scheduler behavior before falling back to black-box oracle probes.
 
 - **Never copy, port, or paste code** from `_research/` or any third-party/decompiled source.
 - Extract *facts only* (format layouts, algorithm/behavior descriptions), restate them in
   your own words in `docs/`, and implement from `docs/` + your own byte/behavior analysis.
+- The official A3 manuals are appropriate as published specification/behavior references.
+  Prefer their split markdown files for quick lookup, quote sparingly, and do not copy bundled
+  sample WDL/WMP code or assets into distributed OpenVirtue files.
 - Each non-trivial format reader carries a **provenance note** explaining how the layout was
   learned (published spec, own analysis) and explicitly *not* "ported from <repo>". See
   [src/OpenVirtue.Formats/PROVENANCE.md](src/OpenVirtue.Formats/PROVENANCE.md) — keep it
@@ -142,6 +148,12 @@ commit game data or fixtures.
   when you make a significant architectural choice.
 - **`docs/clean-room/`** records the oracle/invariant discovery workflow. Use it before
   implementing behavior learned from the original runtime or other high-risk references.
+- **`_research/official-acknex-a3-manuals/README.md`** describes the local public A3 manual
+  corpus. Useful split markdown files include:
+  `markdown/acknex-3-reference-manual-1998/04-wmp-file-format.md`,
+  `05-the-acknex-3d-engine.md`,
+  `06-world-definition-language-introduction-keywords-files.md`, and
+  `09-wdl-actions-and-instructions.md`.
 - **`docs/planning/near-term-roadmap.md`** captures the current "finish the easy part,
   then measure hidden invariants" plan.
 - **`docs/recon/`** is research-phase background (dated 2026-06-25). Its proposed
