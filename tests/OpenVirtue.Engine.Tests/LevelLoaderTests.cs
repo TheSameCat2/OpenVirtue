@@ -396,6 +396,35 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_TopLevelClipDistance_DefaultsRegionsUnlessOverridden()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nREGION q 0 10;#1\nPLAYER_START 0 0 0 0;#2",
+        };
+        const string main = "MAPFILE <m.wmp>; CLIP_DIST 777; REGION q { CLIP_DIST 256; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(777, level.Regions[0]["clip_dist"]);
+        Assert.Equal(256, level.Regions[1]["clip_dist"]);
+    }
+
+    [Fact]
+    public void LoadCore_RegionClipDistance_DefaultsToDocumentedEngineValue()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main = "MAPFILE <m.wmp>;";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(1000, Assert.Single(level.Regions)["clip_dist"]);
+    }
+
+    [Fact]
     public void LoadCore_DressesObjectsFromDocumentedFlags()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

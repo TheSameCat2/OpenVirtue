@@ -17,6 +17,8 @@ namespace OpenVirtue.Engine;
 /// </summary>
 public static class LevelLoader
 {
+    private const double DefaultRegionClipDistance = 1000;
+
     /// <summary>
     /// Loads a level from a WRS archive. The main script is <paramref name="mainWdlName"/>
     /// (e.g. <c>APATHY.WDL</c>); the map is whichever file its <c>MAPFILE</c> directive names.
@@ -75,8 +77,9 @@ public static class LevelLoader
 
         WdlDeclarations declarations = WdlDeclarations.Index(program);
 
+        double defaultRegionClipDistance = FindNumber(program, "CLIP_DIST") ?? DefaultRegionClipDistance;
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
-        var regions = map.Regions.Select(r => BuildRegion(r, declarations)).ToList();
+        var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
         var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
@@ -92,9 +95,10 @@ public static class LevelLoader
             GatherEachTickActions(program), GatherActionHooks(program), FindActionName(program, "IF_START"));
     }
 
-    private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
+    private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations, double defaultClipDistance)
     {
         var region = new Region(r.Name) { FloorHeight = r.FloorHeight, CeilHeight = r.CeilHeight };
+        region["CLIP_DIST"] = defaultClipDistance;
         if (declarations.GetRegionTextures(r.Name) is { } textures)
         {
             region.FloorTexture = textures.Floor;
@@ -273,6 +277,20 @@ public static class LevelLoader
                 {
                     return token.Text;
                 }
+            }
+        }
+
+        return null;
+    }
+
+    private static double? FindNumber(WdlProgram program, string keyword)
+    {
+        foreach (WdlItem item in program.Items)
+        {
+            if (item.Keyword.Equals(keyword, StringComparison.OrdinalIgnoreCase) &&
+                ParseNumber(item) is { } value)
+            {
+                return value;
             }
         }
 
