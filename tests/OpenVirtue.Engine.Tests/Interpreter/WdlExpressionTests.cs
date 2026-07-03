@@ -70,6 +70,19 @@ public class WdlExpressionTests
         Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
     }
 
+    [Theory]
+    [InlineData("SIN(0)", 0)]
+    [InlineData("SIN(1.5707963267948966)", 1)]
+    [InlineData("COS(0)", 1)]
+    [InlineData("COS(3.141592653589793)", -1)]
+    [InlineData("TAN(0)", 0)]
+    [InlineData("ASIN(1)", Math.PI / 2)]
+    [InlineData("ACOS(0)", Math.PI / 2)]
+    public void Evaluates_DocumentedTrigonometricFunctionsInRadians(string expression, double expected)
+    {
+        Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
+    }
+
     [Fact]
     public void Evaluates_SkillNames_WithPrecedence()
     {

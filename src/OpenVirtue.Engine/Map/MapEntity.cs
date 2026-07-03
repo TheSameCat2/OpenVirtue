@@ -14,7 +14,15 @@ public abstract class MapEntity : AcknexObject
     public double X { get; set; }
     public double Y { get; set; }
     public double Z { get; set; }
+
+    /// <summary>The object's WED/WMP placement angle in degrees.</summary>
+    public double PlacementAngleDegrees { get; set; }
+
+    /// <summary>The WDL <c>ANGLE</c> parameter: a runtime radian offset from the WED placement angle.</summary>
     public double Angle { get; set; }
+
+    /// <summary>The combined facing angle in radians.</summary>
+    public double FacingAngleRadians => PlacementAngleDegrees * (Math.PI / 180.0) + Angle;
 
     /// <summary>The sprite's height in world units (its on-screen size; width follows the texture aspect).</summary>
     public double Height { get; set; } = 1;

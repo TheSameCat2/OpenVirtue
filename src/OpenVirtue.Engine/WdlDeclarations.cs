@@ -72,7 +72,7 @@ public sealed class WdlDeclarations
     public string? GetWallTexture(string name) =>
         _walls.TryGetValue(name, out string? value) ? value : null;
 
-    /// <summary>The sprite texture and height for a THING/ACTOR type, if defined.</summary>
+    /// <summary>The sprite texture, height, and WDL angle offset for a THING/ACTOR type, if defined.</summary>
     public EntityDef? GetEntity(string name) =>
         _entities.TryGetValue(name, out EntityDef value) ? value : null;
 
@@ -137,8 +137,7 @@ public sealed class WdlDeclarations
                 }
             }
             else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
-                     property.Header.Count > 0 &&
-                     double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedAmbient))
+                     FirstNumber(property.Header) is { } parsedAmbient)
             {
                 ambient = parsedAmbient;
             }
@@ -198,6 +197,7 @@ public sealed class WdlDeclarations
 
         string? texture = null;
         double height = 1;
+        double angle = 0;
         foreach (WdlItem property in item.Body!.Items)
         {
             if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
@@ -205,14 +205,18 @@ public sealed class WdlDeclarations
                 texture = property.Header[0].Text;
             }
             else if (property.Keyword.Equals("HEIGHT", StringComparison.OrdinalIgnoreCase) &&
-                     property.Header.Count > 0 &&
-                     double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+                     FirstNumber(property.Header) is { } parsed)
             {
                 height = parsed;
             }
+            else if (property.Keyword.Equals("ANGLE", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedAngle)
+            {
+                angle = parsedAngle;
+            }
         }
 
-        _entities[item.Header[0].Text] = new EntityDef(texture, height);
+        _entities[item.Header[0].Text] = new EntityDef(texture, height, angle);
     }
 
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
@@ -226,6 +230,29 @@ public sealed class WdlDeclarations
         }
 
         return null;
+    }
+
+    private static double? FirstNumber(IReadOnlyList<WdlToken> tokens)
+    {
+        if (tokens.Count == 0)
+        {
+            return null;
+        }
+
+        int sign = 1;
+        int index = 0;
+        if (tokens.Count > 1 &&
+            tokens[0].Kind == WdlTokenKind.Operator &&
+            (tokens[0].Text == "-" || tokens[0].Text == "+"))
+        {
+            sign = tokens[0].Text == "-" ? -1 : 1;
+            index = 1;
+        }
+
+        return tokens[index].Kind == WdlTokenKind.Number &&
+               double.TryParse(tokens[index].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? sign * value
+            : null;
     }
 
     private static int[] Numbers(IReadOnlyList<WdlToken> tokens)
@@ -250,6 +277,6 @@ public sealed class WdlDeclarations
     /// <summary>The floor and ceiling texture names declared for a region type.</summary>
     public readonly record struct RegionTextures(string? Floor, string? Ceiling);
 
-    /// <summary>The sprite texture name and height declared for a THING/ACTOR type.</summary>
-    public readonly record struct EntityDef(string? Texture, double Height);
+    /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
+    public readonly record struct EntityDef(string? Texture, double Height, double AngleRadians);
 }

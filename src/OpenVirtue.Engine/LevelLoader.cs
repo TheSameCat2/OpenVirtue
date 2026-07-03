@@ -133,14 +133,15 @@ public static class LevelLoader
     {
         entity.X = placement.X;
         entity.Y = placement.Y;
-        entity.Angle = placement.Angle;
+        entity.PlacementAngleDegrees = placement.Angle;
         entity.Region = placement.Region;
 
-        // Dress the placement from its WDL type definition (sprite texture + height).
+        // Dress the placement from its WDL type definition (sprite texture, height, angle offset).
         if (declarations.GetEntity(placement.Name) is { } definition)
         {
             entity.Texture = definition.Texture;
             entity.Height = definition.Height;
+            entity.Angle = definition.AngleRadians;
         }
 
         return entity;
@@ -227,9 +228,26 @@ public static class LevelLoader
         return (values, bounds);
     }
 
-    private static double? ParseNumber(WdlItem property) =>
-        property.Header.Count > 0 &&
-        double.TryParse(property.Header[0].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
-            ? value
+    private static double? ParseNumber(WdlItem property)
+    {
+        if (property.Header.Count == 0)
+        {
+            return null;
+        }
+
+        int sign = 1;
+        int index = 0;
+        if (property.Header.Count > 1 &&
+            property.Header[0].Kind == WdlTokenKind.Operator &&
+            (property.Header[0].Text == "-" || property.Header[0].Text == "+"))
+        {
+            sign = property.Header[0].Text == "-" ? -1 : 1;
+            index = 1;
+        }
+
+        return property.Header[index].Kind == WdlTokenKind.Number &&
+               double.TryParse(property.Header[index].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? sign * value
             : null;
+    }
 }

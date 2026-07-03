@@ -27,8 +27,16 @@ public class LevelLoaderTests
         Assert.Equal(2, level.Vertices.Count);
         Assert.Equal("room", Assert.Single(level.Regions).Name);
         Assert.Single(level.Walls);
-        Assert.Equal("torch", Assert.Single(level.Things).Name);
-        Assert.Equal("guard", Assert.Single(level.Actors).Name);
+        Thing torch = Assert.Single(level.Things);
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal("torch", torch.Name);
+        Assert.Equal(90, torch.PlacementAngleDegrees);
+        Assert.Equal(0, torch.Angle);
+        Assert.Equal(Math.PI / 2, torch.FacingAngleRadians, precision: 12);
+        Assert.Equal("guard", guard.Name);
+        Assert.Equal(180, guard.PlacementAngleDegrees);
+        Assert.Equal(0, guard.Angle);
+        Assert.Equal(Math.PI, guard.FacingAngleRadians, precision: 12);
         Assert.NotNull(level.PlayerStart);
         Assert.Equal(45, level.PlayerStart!.Value.Angle);
 
@@ -102,14 +110,17 @@ public class LevelLoaderTests
             MAPFILE <m.wmp>;
             BMAP plant_bmp, <plant.pcx>, 0, 0, 32, 64;
             TEXTURE plantTex { BMAPS plant_bmp; }
-            THING Plant1 { TEXTURE plantTex; HEIGHT 3; }
+            THING Plant1 { TEXTURE plantTex; HEIGHT -1; ANGLE -0.5; }
             """;
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Thing plant = Assert.Single(level.Things);
         Assert.Equal("plantTex", plant.Texture);
-        Assert.Equal(3, plant.Height);
+        Assert.Equal(-1, plant.Height);
+        Assert.Equal(90, plant.PlacementAngleDegrees);
+        Assert.Equal(-0.5, plant.Angle);
+        Assert.Equal((Math.PI / 2) - 0.5, plant.FacingAngleRadians, precision: 12);
     }
 
     [Fact]
@@ -119,13 +130,13 @@ public class LevelLoaderTests
         {
             ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nPLAYER_START 0 0 0 0;#1",
         };
-        const string main = "MAPFILE <m.wmp>; SKILL myHealth { VAL 100; MAX 100; MIN 0; } SKILL freeVal { VAL 5; }";
+        const string main = "MAPFILE <m.wmp>; SKILL myHealth { VAL -10; MAX 100; MIN -20; } SKILL freeVal { VAL 5; }";
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
-        Assert.Equal(100, level.Skills["myHealth"]);
+        Assert.Equal(-10, level.Skills["myHealth"]);
         SkillRange health = level.SkillBounds["myHealth"];
-        Assert.Equal(0, health.Min);
+        Assert.Equal(-20, health.Min);
         Assert.Equal(100, health.Max);
         Assert.False(level.SkillBounds.ContainsKey("freeVal")); // no MIN/MAX => no bounds entry
     }

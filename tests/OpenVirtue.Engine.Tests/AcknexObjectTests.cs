@@ -45,20 +45,27 @@ public class AcknexObjectTests
         var thing = new Thing("plant");
 
         thing["X"] = 3;
-        thing["ANGLE"] = 90;
+        thing["ANGLE"] = Math.PI / 2;
 
         Assert.Equal(3, thing.X);
-        Assert.Equal(90, thing.Angle);
+        Assert.Equal(Math.PI / 2, thing.Angle);
         Assert.Equal(3, thing["x"]);
     }
 
     [Fact]
     public void MapEntity_PoseFields_RoundTrip()
     {
-        var actor = new Actor("worldlyHead") { X = 101.4, Y = 603.8, Angle = 180 };
+        var actor = new Actor("worldlyHead")
+        {
+            X = 101.4,
+            Y = 603.8,
+            PlacementAngleDegrees = 90,
+            Angle = Math.PI,
+        };
 
         Assert.Equal(101.4, actor["x"]);
         Assert.Equal(603.8, actor["y"]);
-        Assert.Equal(180, actor["angle"]);
+        Assert.Equal(Math.PI, actor["angle"]);
+        Assert.Equal(Math.PI * 1.5, actor.FacingAngleRadians, precision: 12);
     }
 }
