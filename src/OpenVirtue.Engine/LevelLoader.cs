@@ -98,6 +98,7 @@ public static class LevelLoader
         {
             region.FloorTexture = textures.Floor;
             region.CeilTexture = textures.Ceiling;
+            region.Ambient = textures.Ambient;
         }
 
         return region;

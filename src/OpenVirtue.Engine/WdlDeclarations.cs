@@ -169,24 +169,25 @@ public sealed class WdlDeclarations
     private void IndexRegion(WdlItem item)
     {
         string? floor = null, ceiling = null;
+        double ambient = 0;
         foreach (WdlItem property in item.Body!.Items)
         {
-            if (property.Header.Count == 0)
-            {
-                continue;
-            }
-
             if (property.Keyword.Equals("FLOOR_TEX", StringComparison.OrdinalIgnoreCase))
             {
-                floor = property.Header[0].Text;
+                floor = property.Header.Count > 0 ? property.Header[0].Text : null;
             }
             else if (property.Keyword.Equals("CEIL_TEX", StringComparison.OrdinalIgnoreCase))
             {
-                ceiling = property.Header[0].Text;
+                ceiling = property.Header.Count > 0 ? property.Header[0].Text : null;
+            }
+            else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedAmbient)
+            {
+                ambient = parsedAmbient;
             }
         }
 
-        _regions[item.Header[0].Text] = new RegionTextures(floor, ceiling);
+        _regions[item.Header[0].Text] = new RegionTextures(floor, ceiling, ambient);
     }
 
     private void IndexWall(WdlItem item)
@@ -312,8 +313,8 @@ public sealed class WdlDeclarations
 
     private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, double Ambient, bool IsSky);
 
-    /// <summary>The floor and ceiling texture names declared for a region type.</summary>
-    public readonly record struct RegionTextures(string? Floor, string? Ceiling);
+    /// <summary>The surface texture names and ambient brightness declared for a region type.</summary>
+    public readonly record struct RegionTextures(string? Floor, string? Ceiling, double Ambient);
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
     public readonly record struct EntityDef(string? Texture, double Height, double AngleRadians);

@@ -10,6 +10,7 @@ public sealed class Region : AcknexObject
 
     public double FloorHeight { get; set; }
     public double CeilHeight { get; set; }
+    public double Ambient { get; set; }
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
 
@@ -19,6 +20,7 @@ public sealed class Region : AcknexObject
         {
             case "floor_hgt": value = FloorHeight; return true;
             case "ceil_hgt": value = CeilHeight; return true;
+            case "ambient": value = Ambient; return true;
             default: value = 0; return false;
         }
     }
@@ -29,6 +31,7 @@ public sealed class Region : AcknexObject
         {
             case "floor_hgt": FloorHeight = value; return true;
             case "ceil_hgt": CeilHeight = value; return true;
+            case "ambient": Ambient = value; return true;
             default: return false;
         }
     }

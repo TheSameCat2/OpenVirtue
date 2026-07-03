@@ -37,6 +37,10 @@ public class AcknexObjectTests
         region["ceil_hgt"] = 10;
         Assert.Equal(10, region.CeilHeight);        // reflective write -> typed
         Assert.False(region.HasSkill("ceil_hgt"));  // did NOT fall through to the dynamic table
+
+        region["AMBIENT"] = 0.25;
+        Assert.Equal(0.25, region.Ambient);
+        Assert.False(region.HasSkill("AMBIENT"));
     }
 
     [Fact]

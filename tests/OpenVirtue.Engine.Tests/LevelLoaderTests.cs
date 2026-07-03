@@ -59,13 +59,14 @@ public class LevelLoaderTests
             BMAP floor_map, <floor.pcx>, 0, 0, 64, 64;
             TEXTURE floorTex { SCALE_XY 16, 16; BMAPS floor_map; }
             WALL w { TEXTURE floorTex; }
-            REGION room { FLOOR_HGT 0; CEIL_HGT 10; FLOOR_TEX floorTex; CEIL_TEX floorTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; FLOOR_TEX floorTex; CEIL_TEX floorTex; AMBIENT 0.25; }
             """;
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Region room = Assert.Single(level.Regions);
         Assert.Equal("floorTex", room.FloorTexture);
+        Assert.Equal(0.25, room.Ambient);
         Assert.Equal("floorTex", Assert.Single(level.Walls).Texture);
 
         LevelTexture texture = level.Textures["floorTex"];
