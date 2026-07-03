@@ -99,6 +99,31 @@ public class LevelLoaderTests
         Assert.Equal(0, texture.Y);
         Assert.Equal(0, texture.Width);
         Assert.Equal(0, texture.Height);
+        Assert.Equal(16, texture.ScaleX);
+        Assert.Equal(16, texture.ScaleY);
+    }
+
+    [Fact]
+    public void LoadCore_TextureScaleAssignments_CaptureSeparateAxes()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP floor_map, <floor.pcx>;
+            TEXTURE floorTex { SCALE_X 8; SCALE_Y 12; BMAPS floor_map; }
+            WALL w { TEXTURE floorTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelTexture texture = level.Textures["floorTex"];
+        Assert.Equal(8, texture.ScaleX);
+        Assert.Equal(12, texture.ScaleY);
     }
 
     [Fact]

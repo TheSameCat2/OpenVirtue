@@ -15,6 +15,7 @@ namespace OpenVirtue.Engine;
 public sealed class WdlDeclarations
 {
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
+    private const double DefaultTextureScale = 16;
 
     private readonly Dictionary<string, BitmapDef> _bitmaps = new(Ci);
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
@@ -122,7 +123,7 @@ public sealed class WdlDeclarations
         }
 
         string? bitmap = null;
-        double scaleX = 1, scaleY = 1;
+        double scaleX = DefaultTextureScale, scaleY = DefaultTextureScale;
         double ambient = 1;
         bool isSky = false;
         foreach (WdlItem property in body.Items)
@@ -133,12 +134,22 @@ public sealed class WdlDeclarations
             }
             else if (property.Keyword.Equals("SCALE_XY", StringComparison.OrdinalIgnoreCase))
             {
-                int[] scale = Numbers(property.Header);
+                double[] scale = NumberValues(property.Header);
                 if (scale.Length >= 2)
                 {
                     scaleX = scale[0];
                     scaleY = scale[1];
                 }
+            }
+            else if (property.Keyword.Equals("SCALE_X", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedScaleX)
+            {
+                scaleX = parsedScaleX;
+            }
+            else if (property.Keyword.Equals("SCALE_Y", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedScaleY)
+            {
+                scaleY = parsedScaleY;
             }
             else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
                      FirstNumber(property.Header) is { } parsedAmbient)
@@ -261,13 +272,36 @@ public sealed class WdlDeclarations
 
     private static int[] Numbers(IReadOnlyList<WdlToken> tokens)
     {
-        var numbers = new List<int>();
-        foreach (WdlToken token in tokens)
+        double[] values = NumberValues(tokens);
+        var numbers = new int[values.Length];
+        for (int i = 0; i < values.Length; i++)
         {
+            numbers[i] = (int)values[i];
+        }
+
+        return numbers;
+    }
+
+    private static double[] NumberValues(IReadOnlyList<WdlToken> tokens)
+    {
+        var numbers = new List<double>();
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            WdlToken token = tokens[i];
+            int sign = 1;
+            if (token.Kind == WdlTokenKind.Operator &&
+                (token.Text == "-" || token.Text == "+") &&
+                i + 1 < tokens.Count &&
+                tokens[i + 1].Kind == WdlTokenKind.Number)
+            {
+                sign = token.Text == "-" ? -1 : 1;
+                token = tokens[++i];
+            }
+
             if (token.Kind == WdlTokenKind.Number &&
                 double.TryParse(token.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
             {
-                numbers.Add((int)value);
+                numbers.Add(sign * value);
             }
         }
 
