@@ -13,7 +13,6 @@ public class WdlExpressionTests
     [InlineData("(2 + 3) * 4", 20)]    // parentheses
     [InlineData("-5 + 3", -2)]         // unary minus
     [InlineData("10 / 4", 2.5)]
-    [InlineData("10 / 0", 0)]          // Acknex-safe divide-by-zero
     [InlineData("2 < 3", 1)]
     [InlineData("3 < 2", 0)]
     [InlineData("5 == 5", 1)]
@@ -29,7 +28,6 @@ public class WdlExpressionTests
     [InlineData("0 || 0", 0)]
     [InlineData("1 || 0", 1)]
     [InlineData("10 % 3", 1)]
-    [InlineData("10 % 0", 0)]            // Acknex-safe modulo-by-zero
     [InlineData("6 & 3", 2)]             // bitwise AND
     [InlineData("6 ^ 3", 5)]             // bitwise XOR
     [InlineData("6 | 3", 7)]             // bitwise OR
@@ -81,6 +79,20 @@ public class WdlExpressionTests
     public void Evaluates_DocumentedTrigonometricFunctionsInRadians(string expression, double expected)
     {
         Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
+    }
+
+    [Theory]
+    [InlineData("10 / 0")]
+    [InlineData("10 % 0")]
+    [InlineData("SQRT(-1)")]
+    [InlineData("LOG(0)")]
+    [InlineData("LOG10(-1)")]
+    [InlineData("LOG2(0)")]
+    [InlineData("ASIN(2)")]
+    [InlineData("ACOS(-2)")]
+    public void InvalidArithmeticOperations_Throw(string expression)
+    {
+        Assert.Throws<WdlExpressionException>(() => Eval(expression, new TestContext()));
     }
 
     [Fact]

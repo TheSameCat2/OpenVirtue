@@ -34,6 +34,32 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void Rule_DivisionByZero_AbortsExecution()
+    {
+        var context = new TestContext();
+        var interpreter = new WdlInterpreter(context);
+
+        Assert.Throws<WdlExpressionException>(() =>
+            interpreter.Execute(WdlParser.Parse("SET x, 1; RULE x = 10 / 0; SET y, 1;")));
+
+        Assert.Equal(1, context.GetSkill("x"));
+        Assert.Equal(0, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void Rule_CompoundDivisionByZero_AbortsExecution()
+    {
+        var context = new TestContext();
+        var interpreter = new WdlInterpreter(context);
+
+        Assert.Throws<WdlExpressionException>(() =>
+            interpreter.Execute(WdlParser.Parse("SET x, 10; RULE x /= 0; SET y, 1;")));
+
+        Assert.Equal(10, context.GetSkill("x"));
+        Assert.Equal(0, context.GetSkill("y"));
+    }
+
+    [Fact]
     public void If_ExecutesBodyWhenTrue()
     {
         TestContext context = Run("SET x, 5; IF (x > 3) { SET y, 1; }");

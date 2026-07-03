@@ -3,6 +3,9 @@
 
 namespace OpenVirtue.Engine.Interpreter;
 
+/// <summary>An invalid WDL arithmetic operation that aborts expression evaluation.</summary>
+public sealed class WdlExpressionException(string message) : InvalidOperationException(message);
+
 /// <summary>A WDL expression node that can be evaluated against an <see cref="IWdlContext"/>.</summary>
 public abstract class WdlExpression
 {
@@ -65,7 +68,7 @@ public sealed class FunctionExpression(string name, WdlExpression argument) : Wd
         double value = argument.Evaluate(context);
         return name.ToUpperInvariant() switch
         {
-            "SQRT" => Math.Sqrt(value),
+            "SQRT" => value >= 0 ? Math.Sqrt(value) : throw InvalidFunctionDomain("SQRT", value),
             "SIGN" => Math.Sign(value),
             "ABS" => Math.Abs(value),
             "INT" => Math.Truncate(value),
@@ -73,14 +76,17 @@ public sealed class FunctionExpression(string name, WdlExpression argument) : Wd
             "SIN" => Math.Sin(value),
             "COS" => Math.Cos(value),
             "TAN" => Math.Tan(value),
-            "ASIN" => Math.Asin(value),
-            "ACOS" => Math.Acos(value),
-            "LOG" => Math.Log(value),
-            "LOG10" => Math.Log10(value),
-            "LOG2" => Math.Log2(value),
+            "ASIN" => value is >= -1 and <= 1 ? Math.Asin(value) : throw InvalidFunctionDomain("ASIN", value),
+            "ACOS" => value is >= -1 and <= 1 ? Math.Acos(value) : throw InvalidFunctionDomain("ACOS", value),
+            "LOG" => value > 0 ? Math.Log(value) : throw InvalidFunctionDomain("LOG", value),
+            "LOG10" => value > 0 ? Math.Log10(value) : throw InvalidFunctionDomain("LOG10", value),
+            "LOG2" => value > 0 ? Math.Log2(value) : throw InvalidFunctionDomain("LOG2", value),
             _ => 0,
         };
     }
+
+    private static WdlExpressionException InvalidFunctionDomain(string function, double value) =>
+        new($"{function} is undefined for {value}.");
 }
 
 /// <summary>A binary operation: arithmetic (<c>+ - * / %</c>), comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>), bitwise (<c>&amp; ^ |</c>), or logical (<c>&amp;&amp; ||</c>).</summary>
@@ -99,7 +105,7 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             "+" => l + r,
             "-" => l - r,
             "*" => l * r,
-            "/" => r != 0 ? l / r : 0, // Acknex-safe: divide-by-zero yields 0
+            "/" => r != 0 ? l / r : throw new WdlExpressionException("Division by zero."),
             "<" => l < r ? 1 : 0,
             ">" => l > r ? 1 : 0,
             "<=" => l <= r ? 1 : 0,
@@ -108,7 +114,7 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             "!=" => l != r ? 1 : 0,
             "&&" => l != 0 && r != 0 ? 1 : 0,
             "||" => l != 0 || r != 0 ? 1 : 0,
-            "%" => r != 0 ? l % r : 0, // Acknex-safe: modulo-by-zero yields 0
+            "%" => r != 0 ? l % r : throw new WdlExpressionException("Modulo by zero."),
             "&" => (long)l & (long)r,
             "^" => (long)l ^ (long)r,
             "|" => (long)l | (long)r,

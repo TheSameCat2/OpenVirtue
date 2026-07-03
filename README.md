@@ -62,8 +62,9 @@ What works today:
   driven by a first-person debug player with floor following, point-based portal
   crossing/blocking, gravity, and jump.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
-  comparison, logical `&&`/`||`, modulo, member access) and `SET`/`RULE`/`IF`
-  statements with action-to-action calls run against a live skill table
+  comparison, logical `&&`/`||`, bitwise integer operators, modulo, documented
+  single-argument math functions, member access, and A3-style arithmetic aborts)
+  and `SET`/`RULE`/`IF` statements with action-to-action calls run against a live skill table
   (`WdlRuntime`); a level's `IF_START` script boots in the viewer, and a per-frame
   `Tick` maintains the fixed-tick `TIME_CORR` factor. Skill assignments respect
   declared `MIN`/`MAX` bounds. Runtime registration now tracks placed things/actors

@@ -211,7 +211,7 @@ public sealed class WdlInterpreter(IWdlContext context)
         "+=" => current + rvalue,
         "-=" => current - rvalue,
         "*=" => current * rvalue,
-        "/=" => rvalue != 0 ? current / rvalue : current,
+        "/=" => rvalue != 0 ? current / rvalue : throw new WdlExpressionException("Division by zero."),
         _ => rvalue,
     };
 

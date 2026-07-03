@@ -113,7 +113,7 @@ name, test comment, or nearby implementation note if the behavior is surprising.
 Example:
 
 ```csharp
-// OV-20260701-rule-divide-by-zero: Acknex-safe division yields 0.
+// OV-20260701-scheduler-if-start-cycle: EACH_TICK assigned during IF_START runs after startup.
 ```
 
 Use these comments sparingly; prefer tests as the durable record.

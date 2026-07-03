@@ -45,6 +45,6 @@ OV-YYYYMMDD-short-topic
 Examples:
 
 - `OV-20260701-time-corr-60fps`
-- `OV-20260701-rule-divide-by-zero`
+- `OV-20260701-scheduler-if-start-cycle`
 - `OV-20260701-portal-step-height`
 Keep IDs stable once referenced by tests or implementation notes.
