@@ -11,7 +11,7 @@ namespace OpenVirtue.Engine.Interpreter;
 /// scripts. Implements <see cref="IWdlContext"/> so the <see cref="WdlInterpreter"/> can
 /// read and write state, and exposes <see cref="RunAction"/> to invoke a script by name.
 /// </summary>
-public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
+public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGroupContext
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
@@ -19,6 +19,7 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
@@ -57,6 +58,10 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
 
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) => _objects.GetValueOrDefault(name);
+
+    /// <inheritdoc/>
+    public IEnumerable<AcknexObject> GetObjectsByName(string name) =>
+        _objectsByName.GetValueOrDefault(name) ?? [];
 
     /// <summary>Registers a named object reference (e.g. <c>my</c>, <c>you</c>, or a level object).</summary>
     public void RegisterObject(string name, AcknexObject value)
@@ -159,6 +164,14 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
 
     private void RegisterNamedObject(AcknexObject value)
     {
+        if (!_objectsByName.TryGetValue(value.Name, out List<AcknexObject>? matches))
+        {
+            matches = [];
+            _objectsByName[value.Name] = matches;
+        }
+
+        matches.Add(value);
+
         if (_ambiguousObjectNames.Contains(value.Name))
         {
             return;

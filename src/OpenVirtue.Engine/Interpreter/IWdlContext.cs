@@ -39,3 +39,13 @@ public interface IWdlSchedulerContext
     /// <param name="actionName">The action to run each tick, or <c>null</c> to clear the slot.</param>
     void SetEachTickAction(int slot, string? actionName);
 }
+
+/// <summary>
+/// Optional object-group surface for instructions such as <c>SET_ALL</c> that apply to
+/// every placed map object with the same WDL keyword instead of only the first unique one.
+/// </summary>
+public interface IWdlObjectGroupContext
+{
+    /// <summary>Returns every loaded object with the given WDL name, or an empty sequence.</summary>
+    IEnumerable<AcknexObject> GetObjectsByName(string name);
+}

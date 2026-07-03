@@ -85,6 +85,9 @@ public sealed class WdlInterpreter(IWdlContext context)
                     case "SET":
                         ExecuteSet(item);
                         break;
+                    case "SET_ALL":
+                        ExecuteSetAll(item);
+                        break;
                     case "RULE":
                         ExecuteRule(item);
                         break;
@@ -323,6 +326,53 @@ public sealed class WdlInterpreter(IWdlContext context)
 
         context.SetSkill(name, Apply(op, context.GetSkill(name), rvalue));
     }
+
+    private void ExecuteSetAll(WdlItem item)
+    {
+        int comma = IndexOfKind(item.Header, WdlTokenKind.Comma);
+        if (comma < 0 ||
+            context is not IWdlObjectGroupContext groups ||
+            !TryMemberTarget(item.Header, 0, comma, out string objectName, out string property) ||
+            IsSetAllPositionProperty(property))
+        {
+            return;
+        }
+
+        double value = Evaluate(item.Header, comma + 1, item.Header.Count);
+        foreach (AcknexObject obj in groups.GetObjectsByName(objectName))
+        {
+            obj[property] = value;
+        }
+    }
+
+    private static bool TryMemberTarget(
+        IReadOnlyList<WdlToken> header, int start, int end, out string objectName, out string property)
+    {
+        objectName = string.Empty;
+        property = string.Empty;
+        if (end - start < 3 ||
+            header[start].Kind != WdlTokenKind.Identifier ||
+            header[start + 1] is not { Kind: WdlTokenKind.Operator, Text: "." } ||
+            header[start + 2].Kind != WdlTokenKind.Identifier)
+        {
+            return false;
+        }
+
+        objectName = header[start].Text;
+        property = header[start + 2].Text;
+        return true;
+    }
+
+    private static bool IsSetAllPositionProperty(string property) =>
+        property.Equals("X", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Y", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Z", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("X1", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Y1", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Z1", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("X2", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Y2", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("Z2", StringComparison.OrdinalIgnoreCase);
 
     private static double Apply(string op, double current, double rvalue) => op switch
     {

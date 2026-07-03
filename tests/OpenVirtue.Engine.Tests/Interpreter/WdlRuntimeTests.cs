@@ -232,6 +232,31 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_SetAll_AppliesToEveryMatchingObjectExceptPositions()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nVERTEX 2 0 0;#2\nREGION r 0 10;#0\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nWALL gate 1 2 0 -1 0 0;#1\n" +
+            "THING plant 5 6 90 0;#2\nTHING plant 7 8 90 0;#3\nPLAYER_START 0 0 0 0;#4";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "ACTION markAll { SET_ALL plant.FLAG3, 1; SET_ALL plant.DIST, 7; SET_ALL plant.X, 99; SET_ALL gate.FLAG2, 1; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("markAll"));
+
+        Assert.All(level.Things, thing =>
+        {
+            Assert.Equal(1, thing["flag3"]);
+            Assert.Equal(7, thing["dist"]);
+        });
+        Assert.Equal(5, level.Things[0].X);
+        Assert.Equal(7, level.Things[1].X);
+        Assert.All(level.Walls, wall => Assert.Equal(1, wall["flag2"]));
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");
