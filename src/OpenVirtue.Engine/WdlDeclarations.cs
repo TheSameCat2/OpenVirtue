@@ -173,6 +173,7 @@ public sealed class WdlDeclarations
     {
         string? floor = null, ceiling = null;
         double ambient = 0;
+        double floorOffsetX = 0, floorOffsetY = 0, ceilOffsetX = 0, ceilOffsetY = 0;
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -189,13 +190,34 @@ public sealed class WdlDeclarations
             {
                 ambient = parsedAmbient;
             }
+            else if (property.Keyword.Equals("FLOOR_OFFS_X", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedFloorOffsetX)
+            {
+                floorOffsetX = parsedFloorOffsetX;
+            }
+            else if (property.Keyword.Equals("FLOOR_OFFS_Y", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedFloorOffsetY)
+            {
+                floorOffsetY = parsedFloorOffsetY;
+            }
+            else if (property.Keyword.Equals("CEIL_OFFS_X", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedCeilOffsetX)
+            {
+                ceilOffsetX = parsedCeilOffsetX;
+            }
+            else if (property.Keyword.Equals("CEIL_OFFS_Y", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedCeilOffsetY)
+            {
+                ceilOffsetY = parsedCeilOffsetY;
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
             }
         }
 
-        _regions[item.Header[0].Text] = new RegionTextures(floor, ceiling, ambient, skills);
+        _regions[item.Header[0].Text] = new RegionTextures(
+            floor, ceiling, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY, skills);
     }
 
     private void IndexWall(WdlItem item)
@@ -373,7 +395,14 @@ public sealed class WdlDeclarations
 
     /// <summary>The surface texture names and ambient brightness declared for a region type.</summary>
     public readonly record struct RegionTextures(
-        string? Floor, string? Ceiling, double Ambient, IReadOnlyDictionary<string, double> Skills);
+        string? Floor,
+        string? Ceiling,
+        double Ambient,
+        double FloorOffsetX,
+        double FloorOffsetY,
+        double CeilOffsetX,
+        double CeilOffsetY,
+        IReadOnlyDictionary<string, double> Skills);
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
     public readonly record struct EntityDef(

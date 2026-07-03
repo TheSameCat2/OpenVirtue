@@ -41,6 +41,16 @@ public class AcknexObjectTests
         region["AMBIENT"] = 0.25;
         Assert.Equal(0.25, region.Ambient);
         Assert.False(region.HasSkill("AMBIENT"));
+
+        region["FLOOR_OFFS_X"] = 8;
+        region["FLOOR_OFFS_Y"] = 9;
+        region["CEIL_OFFS_X"] = 10;
+        region["CEIL_OFFS_Y"] = 11;
+        Assert.Equal(8, region.FloorOffsetX);
+        Assert.Equal(9, region.FloorOffsetY);
+        Assert.Equal(10, region.CeilOffsetX);
+        Assert.Equal(11, region.CeilOffsetY);
+        Assert.False(region.HasSkill("FLOOR_OFFS_X"));
     }
 
     [Fact]

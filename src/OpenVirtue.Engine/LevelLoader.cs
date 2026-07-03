@@ -99,6 +99,10 @@ public static class LevelLoader
             region.FloorTexture = textures.Floor;
             region.CeilTexture = textures.Ceiling;
             region.Ambient = textures.Ambient;
+            region.FloorOffsetX = textures.FloorOffsetX;
+            region.FloorOffsetY = textures.FloorOffsetY;
+            region.CeilOffsetX = textures.CeilOffsetX;
+            region.CeilOffsetY = textures.CeilOffsetY;
             ApplySkills(region, textures.Skills);
         }
 

@@ -110,6 +110,51 @@ public class MeshBuilderTests
         Assert.Equal(wallsOnly.VertexCount + 12, full.VertexCount);
     }
 
+    [Fact]
+    public void Build_AppliesRegionSurfaceTextureOffsetsInPixels()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] =
+                "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
+                "REGION room 0 4;#0\n" +
+                "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\n" +
+                "WALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\nPLAYER_START 0 0 0 0;#4",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP floorMap, <floor.pcx>, 0, 0, 64, 64;
+            BMAP ceilMap, <ceil.pcx>, 0, 0, 64, 64;
+            TEXTURE floorTex { SCALE_XY 16, 16; BMAPS floorMap; }
+            TEXTURE ceilTex { SCALE_XY 16, 16; BMAPS ceilMap; }
+            REGION room
+            {
+                FLOOR_TEX floorTex;
+                CEIL_TEX ceilTex;
+                FLOOR_OFFS_X 16;
+                FLOOR_OFFS_Y 32;
+                CEIL_OFFS_X 8;
+                CEIL_OFFS_Y 24;
+            }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        LevelMesh mesh = MeshBuilder.Build(level);
+
+        MeshBatch floor = mesh.Batches.Single(b => b.Texture == "floorTex");
+        Assert.Equal(0.25f, floor.Vertices.Min(v => v.U));
+        Assert.Equal(1.25f, floor.Vertices.Max(v => v.U));
+        Assert.Equal(0.5f, floor.Vertices.Min(v => v.V));
+        Assert.Equal(1.5f, floor.Vertices.Max(v => v.V));
+
+        MeshBatch ceiling = mesh.Batches.Single(b => b.Texture == "ceilTex");
+        Assert.Equal(0.125f, ceiling.Vertices.Min(v => v.U));
+        Assert.Equal(1.125f, ceiling.Vertices.Max(v => v.U));
+        Assert.Equal(0.375f, ceiling.Vertices.Min(v => v.V));
+        Assert.Equal(1.375f, ceiling.Vertices.Max(v => v.V));
+    }
+
     /// <summary>
     /// Mirrors the `ovtool level info` mesh path for every local retail archive when
     /// user-supplied game data is present. No-op otherwise.

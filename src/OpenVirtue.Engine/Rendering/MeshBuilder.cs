@@ -95,13 +95,39 @@ public static class MeshBuilder
             }
 
             Region region = level.Regions[regionIndex];
-            EmitSurface(level, accumulator, loop, triangles, (float)region.FloorHeight, region.FloorTexture, flip: false);
-            EmitSurface(level, accumulator, loop, triangles, (float)region.CeilHeight, region.CeilTexture, flip: true);
+            EmitSurface(
+                level,
+                accumulator,
+                loop,
+                triangles,
+                (float)region.FloorHeight,
+                region.FloorTexture,
+                (float)region.FloorOffsetX,
+                (float)region.FloorOffsetY,
+                flip: false);
+            EmitSurface(
+                level,
+                accumulator,
+                loop,
+                triangles,
+                (float)region.CeilHeight,
+                region.CeilTexture,
+                (float)region.CeilOffsetX,
+                (float)region.CeilOffsetY,
+                flip: true);
         }
     }
 
     private static void EmitSurface(
-        Level level, Accumulator accumulator, List<int> loop, IReadOnlyList<int> triangles, float height, string? texture, bool flip)
+        Level level,
+        Accumulator accumulator,
+        List<int> loop,
+        IReadOnlyList<int> triangles,
+        float height,
+        string? texture,
+        float offsetX,
+        float offsetY,
+        bool flip)
     {
         TextureMapping mapping = TextureMappingFor(level, texture);
         List<RenderVertex> target = accumulator.Bucket(texture);
@@ -111,16 +137,22 @@ public static class MeshBuilder
             int a = loop[triangles[i]];
             int b = loop[triangles[flip ? i + 2 : i + 1]];
             int c = loop[triangles[flip ? i + 1 : i + 2]];
-            target.Add(SurfaceVertex(level, a, height, mapping));
-            target.Add(SurfaceVertex(level, b, height, mapping));
-            target.Add(SurfaceVertex(level, c, height, mapping));
+            target.Add(SurfaceVertex(level, a, height, mapping, offsetX, offsetY));
+            target.Add(SurfaceVertex(level, b, height, mapping, offsetX, offsetY));
+            target.Add(SurfaceVertex(level, c, height, mapping, offsetX, offsetY));
         }
     }
 
-    private static RenderVertex SurfaceVertex(Level level, int vertexIndex, float height, TextureMapping mapping)
+    private static RenderVertex SurfaceVertex(
+        Level level, int vertexIndex, float height, TextureMapping mapping, float offsetX, float offsetY)
     {
         Vertex vertex = level.Vertices[vertexIndex];
-        return new RenderVertex(vertex.X, height, vertex.Y, vertex.X * mapping.WorldToU, vertex.Y * mapping.WorldToV);
+        return new RenderVertex(
+            vertex.X,
+            height,
+            vertex.Y,
+            (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
+            (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV));
     }
 
     /// <summary>

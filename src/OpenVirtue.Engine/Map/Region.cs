@@ -11,6 +11,10 @@ public sealed class Region : AcknexObject
     public double FloorHeight { get; set; }
     public double CeilHeight { get; set; }
     public double Ambient { get; set; }
+    public double FloorOffsetX { get; set; }
+    public double FloorOffsetY { get; set; }
+    public double CeilOffsetX { get; set; }
+    public double CeilOffsetY { get; set; }
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
 
@@ -21,6 +25,10 @@ public sealed class Region : AcknexObject
             case "floor_hgt": value = FloorHeight; return true;
             case "ceil_hgt": value = CeilHeight; return true;
             case "ambient": value = Ambient; return true;
+            case "floor_offs_x": value = FloorOffsetX; return true;
+            case "floor_offs_y": value = FloorOffsetY; return true;
+            case "ceil_offs_x": value = CeilOffsetX; return true;
+            case "ceil_offs_y": value = CeilOffsetY; return true;
             default: value = 0; return false;
         }
     }
@@ -32,6 +40,10 @@ public sealed class Region : AcknexObject
             case "floor_hgt": FloorHeight = value; return true;
             case "ceil_hgt": CeilHeight = value; return true;
             case "ambient": Ambient = value; return true;
+            case "floor_offs_x": FloorOffsetX = value; return true;
+            case "floor_offs_y": FloorOffsetY = value; return true;
+            case "ceil_offs_x": CeilOffsetX = value; return true;
+            case "ceil_offs_y": CeilOffsetY = value; return true;
             default: return false;
         }
     }
