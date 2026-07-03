@@ -92,6 +92,8 @@ public sealed class Wall : AcknexObject
     {
         switch (name.ToLowerInvariant())
         {
+            case "left": value = LeftRegion; return true;
+            case "right": value = RightRegion; return true;
             case "offsx": value = OffsetX; return true;
             case "offset_x": value = OffsetX; return true;
             case "offsy": value = OffsetY; return true;

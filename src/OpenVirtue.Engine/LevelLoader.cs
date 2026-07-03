@@ -128,6 +128,7 @@ public static class LevelLoader
             OffsetX = w.OffsetX,
             OffsetY = w.OffsetY,
         };
+        wall["MAP_COLOR"] = 1;
 
         if (declarations.GetWall(w.Name) is { } definition)
         {
@@ -165,9 +166,11 @@ public static class LevelLoader
         entity.PlacementAngleDegrees = placement.Angle;
         entity.Region = placement.Region;
         entity["THING"] = 1;
+        entity["MAP_COLOR"] = 1;
         if (entity is Actor)
         {
             entity["ACTOR"] = 1;
+            entity["SAVE"] = 1;
         }
 
         // Dress the placement from its WDL type definition (sprite texture, height, angle offset).
