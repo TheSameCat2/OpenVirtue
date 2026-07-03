@@ -49,3 +49,25 @@ public interface IWdlObjectGroupContext
     /// <summary>Returns every loaded object with the given WDL name, or an empty sequence.</summary>
     IEnumerable<AcknexObject> GetObjectsByName(string name);
 }
+
+/// <summary>How a synonym-iteration instruction selects the next object reference.</summary>
+public enum WdlObjectIterationMode
+{
+    /// <summary>Advance among loaded objects with the current reference's WDL name.</summary>
+    SameName,
+
+    /// <summary>Advance among loaded objects in the current reference's region.</summary>
+    SameRegion,
+}
+
+/// <summary>
+/// Optional object-reference surface for WDL synonyms such as <c>MY</c> and <c>THERE</c>.
+/// </summary>
+public interface IWdlObjectReferenceContext
+{
+    /// <summary>Assigns or clears a named object reference.</summary>
+    void SetObjectReference(string name, AcknexObject? value);
+
+    /// <summary>Moves a named object reference to the next matching loaded object.</summary>
+    bool AdvanceObjectReference(string name, WdlObjectIterationMode mode);
+}

@@ -257,6 +257,66 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_NextThere_CyclesThroughRegionsWithSameName()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION lift1 0 10;#0\nREGION lift1 1 11;#1\nREGION lift1 2 12;#2\n" +
+            "PLAYER_START 0 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL visits { VAL 0; } " +
+            "ACTION liftAll { SET THERE,lift1; loop1: RULE THERE.FLOOR_HGT += 1; RULE visits += 1; " +
+            "NEXT_THERE; IF (THERE != lift1) { GOTO loop1; } }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("liftAll"));
+
+        Assert.Equal([1, 2, 3], level.Regions.Select(region => (int)region.FloorHeight));
+        Assert.Equal(3, runtime.GetSkill("visits"));
+        Assert.Same(level.Regions[0], runtime.GetObject("there"));
+    }
+
+    [Fact]
+    public void Runtime_NextMy_CyclesThroughObjectsWithSameName()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING plant 5 6 90 0;#1\nTHING plant 7 8 90 0;#2\nPLAYER_START 0 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL visits { VAL 0; } " +
+            "ACTION markPlants { SET MY,plant; loop1: RULE MY.SKILL1 += 1; RULE visits += 1; " +
+            "NEXT_MY; IF (MY != plant) { GOTO loop1; } }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("markPlants"));
+
+        Assert.All(level.Things, thing => Assert.Equal(1, thing["skill1"]));
+        Assert.Equal(2, runtime.GetSkill("visits"));
+        Assert.Same(level.Things[0], runtime.GetObject("my"));
+    }
+
+    [Fact]
+    public void Runtime_NextMyThere_CyclesThroughObjectsInSameRegion()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\n" +
+            "REGION r 0 10;#0\nREGION r 0 10;#1\n" +
+            "THING first 5 6 90 0;#0\nTHING second 7 8 90 0;#0\nTHING third 9 10 90 1;#1\n" +
+            "PLAYER_START 0 0 0 0;#4";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; ACTION hop { SET MY,first; NEXT_MY_THERE; SET seen, MY.x; NEXT_MY_THERE; SET back, MY.x; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("hop"));
+
+        Assert.Equal(7, runtime.GetSkill("seen"));
+        Assert.Equal(5, runtime.GetSkill("back"));
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");

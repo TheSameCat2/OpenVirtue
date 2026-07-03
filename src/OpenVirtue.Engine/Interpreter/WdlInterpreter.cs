@@ -10,8 +10,9 @@ namespace OpenVirtue.Engine.Interpreter;
 /// <see cref="IWdlContext"/>. This is the first slice of the runtime: <c>SET</c> and
 /// <c>RULE</c> assignments (including <c>+=</c>/<c>-=</c>/<c>*=</c>/<c>/=</c>) and
 /// <c>IF (expr) { … }</c> conditionals, synchronous <c>WHILE</c> loops, explicit
-/// <c>CALL</c>s, <c>GOTO</c>, and <c>END</c>. More statements (IF_* skips, WAIT)
-/// and deeper scheduler semantics are layered on later.
+/// <c>CALL</c>s, <c>GOTO</c>, <c>END</c>, and basic object-reference iteration via
+/// <c>NEXT_MY</c>/<c>NEXT_THERE</c>. More statements (IF_* skips, WAIT) and deeper
+/// scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
@@ -115,6 +116,15 @@ public sealed class WdlInterpreter(IWdlContext context)
                     case "CALL":
                         ExecuteCall(item);
                         break;
+                    case "NEXT_MY":
+                        ExecuteNextObject("my", WdlObjectIterationMode.SameName);
+                        break;
+                    case "NEXT_THERE":
+                        ExecuteNextObject("there", WdlObjectIterationMode.SameName);
+                        break;
+                    case "NEXT_MY_THERE":
+                        ExecuteNextObject("my", WdlObjectIterationMode.SameRegion);
+                        break;
                     case "GOTO":
                         ExecuteGoto(item);
                         break;
@@ -165,6 +175,11 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         if (TryExecuteEachTickSet(item.Header, comma))
+        {
+            return;
+        }
+
+        if (TryExecuteReferenceSet(item.Header, comma))
         {
             return;
         }
@@ -247,6 +262,14 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
     }
 
+    private void ExecuteNextObject(string referenceName, WdlObjectIterationMode mode)
+    {
+        if (context is IWdlObjectReferenceContext references)
+        {
+            references.AdvanceObjectReference(referenceName, mode);
+        }
+    }
+
     private bool TryExecuteEachTickSet(IReadOnlyList<WdlToken> header, int comma)
     {
         if (!IsEachTickTarget(header, comma, out int slot))
@@ -269,6 +292,46 @@ public sealed class WdlInterpreter(IWdlContext context)
 
         scheduler.SetEachTickAction(slot, actionName);
         return true;
+    }
+
+    private bool TryExecuteReferenceSet(IReadOnlyList<WdlToken> header, int comma)
+    {
+        if (context is not IWdlObjectReferenceContext references ||
+            comma != 1 ||
+            header[0].Kind != WdlTokenKind.Identifier ||
+            comma + 2 != header.Count ||
+            header[comma + 1].Kind != WdlTokenKind.Identifier ||
+            !TryResolveObjectReference(header[comma + 1].Text, out AcknexObject? value))
+        {
+            return false;
+        }
+
+        references.SetObjectReference(header[0].Text, value);
+        return true;
+    }
+
+    private bool TryResolveObjectReference(string name, out AcknexObject? value)
+    {
+        if (name.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            value = null;
+            return true;
+        }
+
+        if (context.GetObject(name) is { } reference)
+        {
+            value = reference;
+            return true;
+        }
+
+        if (context is IWdlObjectGroupContext groups)
+        {
+            value = groups.GetObjectsByName(name).FirstOrDefault();
+            return value is not null;
+        }
+
+        value = null;
+        return false;
     }
 
     private static bool IsEachTickTarget(IReadOnlyList<WdlToken> header, int comma, out int slot)

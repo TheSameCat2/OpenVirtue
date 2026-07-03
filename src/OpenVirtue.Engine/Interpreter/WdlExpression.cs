@@ -11,6 +11,13 @@ public abstract class WdlExpression
 {
     /// <summary>Evaluates the expression. Comparisons yield 1.0 (true) or 0.0 (false).</summary>
     public abstract double Evaluate(IWdlContext context);
+
+    /// <summary>Attempts to evaluate the expression as an object reference.</summary>
+    public virtual bool TryEvaluateObject(IWdlContext context, out AcknexObject? value)
+    {
+        value = null;
+        return false;
+    }
 }
 
 /// <summary>A numeric literal.</summary>
@@ -27,6 +34,30 @@ public sealed class NameExpression(string name) : WdlExpression
     public string Name => name;
 
     public override double Evaluate(IWdlContext context) => context.GetSkill(name);
+
+    public override bool TryEvaluateObject(IWdlContext context, out AcknexObject? value)
+    {
+        if (name.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+        {
+            value = null;
+            return true;
+        }
+
+        if (context.GetObject(name) is { } reference)
+        {
+            value = reference;
+            return true;
+        }
+
+        if (context is IWdlObjectGroupContext groups)
+        {
+            value = groups.GetObjectsByName(name).FirstOrDefault();
+            return value is not null;
+        }
+
+        value = null;
+        return false;
+    }
 }
 
 /// <summary>Member access on an object reference (e.g. <c>my.x</c>, <c>you._x</c>).</summary>
@@ -98,6 +129,14 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
 
     public override double Evaluate(IWdlContext context)
     {
+        if (op is "==" or "!=" &&
+            left.TryEvaluateObject(context, out AcknexObject? leftObject) &&
+            right.TryEvaluateObject(context, out AcknexObject? rightObject))
+        {
+            bool equal = ReferenceEquals(leftObject, rightObject);
+            return (op == "==" ? equal : !equal) ? 1 : 0;
+        }
+
         double l = left.Evaluate(context);
         double r = right.Evaluate(context);
         return op switch

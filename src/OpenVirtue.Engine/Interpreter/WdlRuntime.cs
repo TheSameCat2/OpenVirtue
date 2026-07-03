@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Engine.Map;
 using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine.Interpreter;
@@ -11,7 +12,7 @@ namespace OpenVirtue.Engine.Interpreter;
 /// scripts. Implements <see cref="IWdlContext"/> so the <see cref="WdlInterpreter"/> can
 /// read and write state, and exposes <see cref="RunAction"/> to invoke a script by name.
 /// </summary>
-public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGroupContext
+public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGroupContext, IWdlObjectReferenceContext
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
@@ -68,7 +69,46 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGr
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(value);
+        SetObjectReference(name, value);
+    }
+
+    /// <inheritdoc/>
+    public void SetObjectReference(string name, AcknexObject? value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (value is null)
+        {
+            _objects.Remove(name);
+            return;
+        }
+
         _objects[name] = value;
+    }
+
+    /// <inheritdoc/>
+    public bool AdvanceObjectReference(string name, WdlObjectIterationMode mode)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        if (!_objects.TryGetValue(name, out AcknexObject? current))
+        {
+            return false;
+        }
+
+        List<AcknexObject> candidates = mode switch
+        {
+            WdlObjectIterationMode.SameName => MatchingNameCandidates(current),
+            WdlObjectIterationMode.SameRegion => MatchingRegionCandidates(current),
+            _ => [],
+        };
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        int currentIndex = candidates.FindIndex(candidate => ReferenceEquals(candidate, current));
+        int nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % candidates.Count;
+        _objects[name] = candidates[nextIndex];
+        return true;
     }
 
     /// <summary>
@@ -160,6 +200,31 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext, IWdlObjectGr
     {
         _levelObjects.Add(value);
         RegisterNamedObject(value);
+    }
+
+    private List<AcknexObject> MatchingNameCandidates(AcknexObject current)
+    {
+        if (!_objectsByName.TryGetValue(current.Name, out List<AcknexObject>? matches))
+        {
+            return [];
+        }
+
+        Type currentType = current.GetType();
+        return matches.Where(candidate => candidate.GetType() == currentType).ToList();
+    }
+
+    private List<AcknexObject> MatchingRegionCandidates(AcknexObject current)
+    {
+        if (current is not MapEntity entity)
+        {
+            return [];
+        }
+
+        return _levelObjects
+            .OfType<MapEntity>()
+            .Where(candidate => candidate.Region == entity.Region)
+            .Cast<AcknexObject>()
+            .ToList();
     }
 
     private void RegisterNamedObject(AcknexObject value)
