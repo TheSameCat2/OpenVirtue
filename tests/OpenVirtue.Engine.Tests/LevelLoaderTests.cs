@@ -241,6 +241,69 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DressesObjectsFromDocumentedNumericProperties()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+                        "WALL gate 0 1 0 -1 0 0;#0\nTHING pickup 2 3 90 0;#1\n" +
+                        "ACTOR guard 4 5 180 0;#2\nPLAYER_START 0 0 0 0;#3",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            REGION r { CLIP_DIST 512; FLOOR_ANGLE 0.25; CEIL_ANGLE 0.5; }
+            WALL gate { CYCLE 2; POSITION 0.75; MAP_COLOR 12; DIST 30; }
+            THING pickup { CYCLE 3; MAP_COLOR 22; DIST 40; }
+            ACTOR guard
+            {
+                CYCLE 4;
+                WAYPOINT 5;
+                TARGET_X 6;
+                TARGET_Y 7;
+                REL_ANGLE 0.125;
+                REL_DIST 9;
+                SPEED 10;
+                VSPEED -11;
+                ASPEED 12;
+                MAP_COLOR 13;
+                DIST 14;
+            }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Region region = Assert.Single(level.Regions);
+        Assert.Equal(512, region["clip_dist"]);
+        Assert.Equal(0.25, region["floor_angle"]);
+        Assert.Equal(0.5, region["ceil_angle"]);
+
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal(2, wall["cycle"]);
+        Assert.Equal(0.75, wall["position"]);
+        Assert.Equal(12, wall["map_color"]);
+        Assert.Equal(30, wall["dist"]);
+
+        Thing pickup = Assert.Single(level.Things);
+        Assert.Equal(3, pickup["cycle"]);
+        Assert.Equal(22, pickup["map_color"]);
+        Assert.Equal(40, pickup["dist"]);
+
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal(4, guard["cycle"]);
+        Assert.Equal(5, guard["waypoint"]);
+        Assert.Equal(6, guard["target_x"]);
+        Assert.Equal(7, guard["target_y"]);
+        Assert.Equal(0.125, guard["rel_angle"]);
+        Assert.Equal(9, guard["rel_dist"]);
+        Assert.Equal(10, guard["speed"]);
+        Assert.Equal(-11, guard["vspeed"]);
+        Assert.Equal(12, guard["aspeed"]);
+        Assert.Equal(13, guard["map_color"]);
+        Assert.Equal(14, guard["dist"]);
+    }
+
+    [Fact]
     public void LoadCore_CapturesSkillMinMaxBounds()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

@@ -16,6 +16,33 @@ public sealed class WdlDeclarations
 {
     private static readonly StringComparer Ci = StringComparer.OrdinalIgnoreCase;
     private const double DefaultTextureScale = 16;
+    private static readonly HashSet<string> RegionNumericProperties = new(Ci)
+    {
+        "CLIP_DIST",
+        "FLOOR_ANGLE",
+        "CEIL_ANGLE",
+    };
+    private static readonly HashSet<string> WallNumericProperties = new(Ci)
+    {
+        "CYCLE",
+        "POSITION",
+        "MAP_COLOR",
+        "DIST",
+    };
+    private static readonly HashSet<string> EntityNumericProperties = new(Ci)
+    {
+        "CYCLE",
+        "WAYPOINT",
+        "TARGET_X",
+        "TARGET_Y",
+        "REL_ANGLE",
+        "REL_DIST",
+        "SPEED",
+        "VSPEED",
+        "ASPEED",
+        "MAP_COLOR",
+        "DIST",
+    };
 
     private readonly Dictionary<string, BitmapDef> _bitmaps = new(Ci);
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
@@ -214,6 +241,10 @@ public sealed class WdlDeclarations
             {
                 skills[skillName] = skillValue;
             }
+            else if (TryNumericProperty(property, RegionNumericProperties, out string propertyName, out double propertyValue))
+            {
+                skills[propertyName] = propertyValue;
+            }
         }
 
         _regions[item.Header[0].Text] = new RegionTextures(
@@ -245,6 +276,10 @@ public sealed class WdlDeclarations
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
+            }
+            else if (TryNumericProperty(property, WallNumericProperties, out string propertyName, out double propertyValue))
+            {
+                skills[propertyName] = propertyValue;
             }
         }
 
@@ -281,6 +316,10 @@ public sealed class WdlDeclarations
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
+            }
+            else if (TryNumericProperty(property, EntityNumericProperties, out string propertyName, out double propertyValue))
+            {
+                skills[propertyName] = propertyValue;
             }
         }
 
@@ -365,6 +404,20 @@ public sealed class WdlDeclarations
     {
         name = item.Keyword;
         if (!IsUniversalSkill(name) || FirstNumber(item.Header) is not { } parsed)
+        {
+            value = 0;
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryNumericProperty(
+        WdlItem item, HashSet<string> propertyNames, out string name, out double value)
+    {
+        name = item.Keyword;
+        if (!propertyNames.Contains(name) || FirstNumber(item.Header) is not { } parsed)
         {
             value = 0;
             return false;
