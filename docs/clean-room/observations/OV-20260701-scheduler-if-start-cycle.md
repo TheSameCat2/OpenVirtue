@@ -15,9 +15,10 @@ movement, animation, AI hooks, and any per-frame script logic.
 
 ## Clean-Room Boundary
 - Oracle used: black-box run of the original DOS runtime under DOSBox-X.
-- Reference material consulted: committed OpenVirtue docs and SaintsX run/readme
-  metadata for launch/debug-panel availability; no decompiled or disassembled
-  code.
+- Reference material consulted: committed OpenVirtue docs, the public 1998 A3
+  manual corpus under `_research/official-acknex-a3-manuals/`, and SaintsX
+  run/readme metadata for launch/debug-panel availability; no decompiled or
+  disassembled code.
 - Split-role mode used: not needed for this black-box probe.
 - Local-only artifacts: `_research/oracle-runs/OV-20260701-scheduler-if-start-cycle/`.
 - Confirmation that no proprietary code/assets are committed: generated
@@ -45,7 +46,16 @@ Record facts, not implementation guesses.
 | 2026-07-01 retail title WRS baseline | Runtime reported `Error: world or runtime module corrupt`. | Plain retail Windows install directory plus unpatched `VRUN.EXE -NJ TITLE` is not a viable DOS oracle path. |
 | 2026-07-01 SaintsX local setup attempt | Invalid run; external `patch.exe` triggered repeated Windows UAC prompts and some prompts were skipped. | Do not use this result. Do not rerun SaintsX setup scripts for this probe path; build a noninteractive, auditable prep step instead. |
 | 2026-07-01 OpenVirtue synthetic WRS prep | Not yet launched in the original runtime. Local `ovtool wrs list` and `ovtool level info` accept the generated archive. | The next runtime harness uses `ovtool`'s literal-only WRS writer instead of loose files or external setup scripts. |
-| Visible numeric panel after startup/tick | not observed | The scheduler invariant remains unanswered because no harness reached the probe panel. |
+| 2026-07-01 WRS-only synthetic archive launch | Marker `OPENVIRTUE_SYNTHETIC_WRS_ONLY` printed, then `VRUN.EXE -NJ TITLE` reported `Error: world or runtime module corrupt`. | The unpatched retail runtime shell does not accept the generated WRS-only archive. This does not distinguish archive encoding from runtime patch requirements because plain retail `TITLE.WRS` failed the same way. |
+| 2026-07-01 patched-VRUN loose-file launch | Patched `VRUN.EXE -NJ TITLE -RUN` entered graphics mode and rendered a mostly black frame with small unreadable glyphs in the upper-left corner. | This confirms the SaintsX `VRUN.EXE` binary patch is sufficient to boot a local loose-file harness. The first visual probe was too small/ambiguous to read the scheduler result. |
+| 2026-07-01 patched-VRUN text-marker launch | Patched runtime again entered graphics mode, but large text markers were not visible; the frame still showed small unreadable glyphs in the upper-left corner. | Treat font/text output as an unreliable observation channel for this probe. Next fixture uses generated solid-color panels instead. |
+| 2026-07-01 patched-VRUN color-panel launch | Patched runtime again entered graphics mode with the same mostly black frame and small unreadable upper-left glyphs; no visible color blocks. | The first color-panel fixture used palette indices 1 and 2, which are black/dark in the title/apathy palette. Do not treat this as evidence that panels cannot draw. |
+| 2026-07-01 patched-VRUN visible-index color launch | Patched runtime again entered graphics mode with the same mostly black frame and small unreadable upper-left glyphs; no visible red/yellow frame or panels. | Visual output remains unreliable even with known visible palette indices and `FRAME_COLOR`; switch to file-output side effects. |
+| 2026-07-01 patched-VRUN file-output launch | Patched runtime banner reported Acknex 3D engine V3.963 (1998-05-30), opened `TITLE.WDL`, then Genesis failed with 3 errors: `APPEND_MODE` was an unknown parameter. | File-output path reached WDL parsing, but this patched runtime does not accept `APPEND_MODE`; use independent marker files instead of append mode. |
+| 2026-07-03 public A3 manual review | The 1998 reference manual documents `PRINTFILE` output names as a maximum five-character base plus a three-digit number plus `.TXT`; `PRINT_VALUE`/`PRINT_STRING` append when the file already exists. It also documents `EACH_TICK` as up to 16 global slots performed after every frame cycle, changeable with `SET EACH_TICK.n,Action` or `SET EACH_TICK.n,NULL`, and `IF_START` as the action performed at game start. | Relevant local sources: `_research/official-acknex-a3-manuals/markdown/acknex-3-reference-manual-1998/09-wdl-actions-and-instructions.md` and `_research/official-acknex-a3-manuals/markdown/acknex-3-wdl-tutorial-1998/03-tuesday-moving-the-player.md`. The tutorial shows the documented pattern of `IF_START` assigning `EACH_TICK.16`, but it does not answer how soon the first post-start dispatch occurs. |
+| 2026-07-03 sanitized title-carrier regeneration | `ovtool oracle prepare scheduler-if-start-cycle --carrier-dir _research/oracle-runs/OV-20260701-scheduler-if-start-cycle/saintsx-prepared --dosbox-x _research/oracle-runs/OV-20260701-scheduler-if-start-cycle/saintsx-prepared/dosbox-x.exe` regenerated the local carrier launch. A search found only commented `#SET APPEND_MODE` lines in copied WDL files; injected `TITLE.WDL` markers use `PRINTFILE "ovsta"`, `PRINTFILE "ovsch"`, and `PRINTFILE "ovtik"`. No `ov*.txt` marker files existed before launch. | Not launched yet. `dotnet build OpenVirtue.slnx --configuration Release --no-incremental -warnaserror` and `dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal` passed on 2026-07-03. |
+| 2026-07-03 sanitized title-carrier launch | User approved launching `run-title-carrier.bat`; DOSBox-X process started at 2026-07-03 10:30:01 local time. The mounted carrier produced `OVSTA0.TXT` containing `START`, `OVSCH0.TXT` containing `SCHED`, and `OVTIK0.TXT` containing `TICK`, all with last-write time 2026-07-03 10:30:23 local time. | The manual-described three-digit suffix did not match patched V3.963's observed filename shape for number `0`; it wrote one digit. The marker set proves `IF_START` reached startup, assigned `EACH_TICK.1`, and the scheduled `testSpeed` action dispatched afterward in the same title-carrier launch. This probe does not distinguish same-frame versus next-frame dispatch. |
+| Visible numeric panel after startup/tick | not observed | Visual output stayed unreliable, but the later file-output carrier result answered the startup-versus-tick ordering question for this harness. |
 
 Probe encoding:
 
@@ -56,20 +66,30 @@ Probe encoding:
 | `0` | Startup did not run before observation. |
 
 ## Conclusion
-Pending. Current evidence only rejects the attempted harness shapes; it does not
-answer the scheduler ordering question.
+Confirmed for the sanitized patched-V3.963 title-carrier harness: an action
+assigned to `EACH_TICK.1` during `IF_START` does run after startup. The marker
+files show `START`, then scheduler assignment (`SCHED`), then the scheduled tick
+action (`TICK`) during the same launch.
+
+The exact first-dispatch phase remains unresolved: this file-output probe
+confirms that the callback runs promptly after startup, but does not distinguish
+same-frame from next-frame dispatch.
 
 ## Confidence
-low
+medium
 
 The launch attempts confirmed that DOSBox-X can mount and start the runtime.
-Loose-file and plain retail-WRS paths did not produce a valid oracle run; the
-`ovtool`-generated WRS path is prepared but not yet observed in the original
-runtime.
+Loose-file, plain retail-WRS, and generated-WRS-only paths have not produced a
+readable oracle result. The patched-runtime loose-file path boots, but font/text
+output has not been legible enough to answer the scheduler question. The first
+color-panel attempt selected non-visible palette indices; the visible-index
+attempt still did not produce readable output. The sanitized title-carrier
+file-output probe produced unambiguous startup/scheduler/tick markers, but not
+frame-level timing.
 
 ## Open Questions
-- Does the original runtime accept the `ovtool`-generated synthetic `TITLE.WRS`
-  with literal-only LZSS payloads?
+- Does patched V3.963 consistently write one-digit `PRINTFILE` suffixes for
+  number `0`, despite the manual's three-digit description?
 - Does assigning `EACH_TICK.1` during `IF_START` run the callback on the same
   frame, the next frame, or only after another engine transition?
 
