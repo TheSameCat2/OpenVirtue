@@ -40,6 +40,56 @@ public class MeshBuilderTests
     }
 
     [Fact]
+    public void BuildWalls_UsesTextureScaleAsPixelsPerStep()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 4;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { SCALE_XY 16, 16; BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+
+        Assert.Equal(0, batch.Vertices.Min(v => v.U));
+        Assert.Equal(1, batch.Vertices.Max(v => v.U));
+        Assert.Equal(0, batch.Vertices.Min(v => v.V));
+        Assert.Equal(1, batch.Vertices.Max(v => v.V));
+    }
+
+    [Fact]
+    public void BuildWalls_AppliesWallTextureOffsetsInPixels()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 4;#0\n" +
+                        "WALL w 0 1 0 -1 16 32;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { SCALE_XY 16, 16; BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+
+        Assert.Equal(0.25f, batch.Vertices.Min(v => v.U));
+        Assert.Equal(1.25f, batch.Vertices.Max(v => v.U));
+        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V));
+        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V));
+    }
+
+    [Fact]
     public void Build_AddsFloorAndCeilingForASquareRegion()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

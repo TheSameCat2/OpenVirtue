@@ -128,6 +128,27 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_WallOffsetDeclarations_OverridePlacementOffsets()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 1 2;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            WALL w { OFFSET_X 5; OFFSET_Y 6; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal(5, wall.OffsetX);
+        Assert.Equal(6, wall.OffsetY);
+    }
+
+    [Fact]
     public void LoadCore_CapturesSkyTextureFlag()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

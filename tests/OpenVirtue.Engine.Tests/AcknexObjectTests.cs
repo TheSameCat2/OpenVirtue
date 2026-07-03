@@ -44,6 +44,22 @@ public class AcknexObjectTests
     }
 
     [Fact]
+    public void WallOffsets_AccessibleReflectivelyByDocumentedNames()
+    {
+        var wall = new Wall("stone");
+
+        wall["OFFSET_X"] = 12;
+        wall["OFFSET_Y"] = 34;
+
+        Assert.Equal(12, wall.OffsetX);
+        Assert.Equal(34, wall.OffsetY);
+        Assert.Equal(12, wall["offsx"]);
+        Assert.Equal(34, wall["offsy"]);
+        Assert.False(wall.HasSkill("OFFSET_X"));
+        Assert.False(wall.HasSkill("OFFSET_Y"));
+    }
+
+    [Fact]
     public void ReflectiveAccess_IsCaseInsensitive()
     {
         var thing = new Thing("plant");

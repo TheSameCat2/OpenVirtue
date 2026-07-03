@@ -20,7 +20,7 @@ public sealed class WdlDeclarations
     private readonly Dictionary<string, BitmapDef> _bitmaps = new(Ci);
     private readonly Dictionary<string, TextureDef> _textures = new(Ci);
     private readonly Dictionary<string, RegionTextures> _regions = new(Ci);
-    private readonly Dictionary<string, string?> _walls = new(Ci);
+    private readonly Dictionary<string, WallDef> _walls = new(Ci);
     private readonly Dictionary<string, EntityDef> _entities = new(Ci);
     private readonly Dictionary<string, WdlBlock> _actions = new(Ci);
 
@@ -70,8 +70,11 @@ public sealed class WdlDeclarations
         _regions.TryGetValue(name, out RegionTextures value) ? value : null;
 
     /// <summary>The texture name for a wall type, if defined.</summary>
-    public string? GetWallTexture(string name) =>
-        _walls.TryGetValue(name, out string? value) ? value : null;
+    public string? GetWallTexture(string name) => GetWall(name)?.Texture;
+
+    /// <summary>The texture and optional placement overrides for a wall type, if defined.</summary>
+    public WallDef? GetWall(string name) =>
+        _walls.TryGetValue(name, out WallDef value) ? value : null;
 
     /// <summary>The sprite texture, height, and WDL angle offset for a THING/ACTOR type, if defined.</summary>
     public EntityDef? GetEntity(string name) =>
@@ -192,16 +195,28 @@ public sealed class WdlDeclarations
 
     private void IndexWall(WdlItem item)
     {
+        string? texture = null;
+        double? offsetX = null;
+        double? offsetY = null;
         foreach (WdlItem property in item.Body!.Items)
         {
             if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
             {
-                _walls[item.Header[0].Text] = property.Header[0].Text;
-                return;
+                texture = property.Header[0].Text;
+            }
+            else if (property.Keyword.Equals("OFFSET_X", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedOffsetX)
+            {
+                offsetX = parsedOffsetX;
+            }
+            else if (property.Keyword.Equals("OFFSET_Y", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedOffsetY)
+            {
+                offsetY = parsedOffsetY;
             }
         }
 
-        _walls[item.Header[0].Text] = null;
+        _walls[item.Header[0].Text] = new WallDef(texture, offsetX, offsetY);
     }
 
     private void IndexEntity(WdlItem item)
@@ -312,6 +327,9 @@ public sealed class WdlDeclarations
     private readonly record struct BitmapDef(string File, int X, int Y, int Width, int Height);
 
     private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, double Ambient, bool IsSky);
+
+    /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
+    public readonly record struct WallDef(string? Texture, double? OffsetX, double? OffsetY);
 
     /// <summary>The surface texture names and ambient brightness declared for a region type.</summary>
     public readonly record struct RegionTextures(string? Floor, string? Ceiling, double Ambient);

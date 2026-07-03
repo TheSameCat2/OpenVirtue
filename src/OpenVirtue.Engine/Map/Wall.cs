@@ -24,7 +24,9 @@ public sealed class Wall : AcknexObject
         switch (name.ToLowerInvariant())
         {
             case "offsx": value = OffsetX; return true;
+            case "offset_x": value = OffsetX; return true;
             case "offsy": value = OffsetY; return true;
+            case "offset_y": value = OffsetY; return true;
             default: value = 0; return false;
         }
     }
@@ -34,7 +36,9 @@ public sealed class Wall : AcknexObject
         switch (name.ToLowerInvariant())
         {
             case "offsx": OffsetX = value; return true;
+            case "offset_x": OffsetX = value; return true;
             case "offsy": OffsetY = value; return true;
+            case "offset_y": OffsetY = value; return true;
             default: return false;
         }
     }

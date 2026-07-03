@@ -51,15 +51,17 @@ public static class MeshBuilder
             float dz = v2.Y - v1.Y;
             float length = MathF.Sqrt((dx * dx) + (dz * dz));
             float height = ceiling - floor;
-            (float scaleX, float scaleY) = TextureScale(level, wall.Texture);
-            float u = length / scaleX;
-            float v = height / scaleY;
+            TextureMapping mapping = TextureMappingFor(level, wall.Texture);
+            float u0 = (float)wall.OffsetX * mapping.OffsetToU;
+            float v0 = (float)wall.OffsetY * mapping.OffsetToV;
+            float u1 = u0 + (length * mapping.WorldToU);
+            float textureV1 = v0 + (height * mapping.WorldToV);
 
             List<RenderVertex> target = accumulator.Bucket(wall.Texture);
-            var bottomLeft = new RenderVertex(v1.X, floor, v1.Y, 0, 0);
-            var bottomRight = new RenderVertex(v2.X, floor, v2.Y, u, 0);
-            var topRight = new RenderVertex(v2.X, ceiling, v2.Y, u, v);
-            var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, 0, v);
+            var bottomLeft = new RenderVertex(v1.X, floor, v1.Y, u0, v0);
+            var bottomRight = new RenderVertex(v2.X, floor, v2.Y, u1, v0);
+            var topRight = new RenderVertex(v2.X, ceiling, v2.Y, u1, textureV1);
+            var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, u0, textureV1);
             target.Add(bottomLeft);
             target.Add(bottomRight);
             target.Add(topRight);
@@ -101,7 +103,7 @@ public static class MeshBuilder
     private static void EmitSurface(
         Level level, Accumulator accumulator, List<int> loop, IReadOnlyList<int> triangles, float height, string? texture, bool flip)
     {
-        (float scaleX, float scaleY) = TextureScale(level, texture);
+        TextureMapping mapping = TextureMappingFor(level, texture);
         List<RenderVertex> target = accumulator.Bucket(texture);
 
         for (int i = 0; i < triangles.Count; i += 3)
@@ -109,16 +111,16 @@ public static class MeshBuilder
             int a = loop[triangles[i]];
             int b = loop[triangles[flip ? i + 2 : i + 1]];
             int c = loop[triangles[flip ? i + 1 : i + 2]];
-            target.Add(SurfaceVertex(level, a, height, scaleX, scaleY));
-            target.Add(SurfaceVertex(level, b, height, scaleX, scaleY));
-            target.Add(SurfaceVertex(level, c, height, scaleX, scaleY));
+            target.Add(SurfaceVertex(level, a, height, mapping));
+            target.Add(SurfaceVertex(level, b, height, mapping));
+            target.Add(SurfaceVertex(level, c, height, mapping));
         }
     }
 
-    private static RenderVertex SurfaceVertex(Level level, int vertexIndex, float height, float scaleX, float scaleY)
+    private static RenderVertex SurfaceVertex(Level level, int vertexIndex, float height, TextureMapping mapping)
     {
         Vertex vertex = level.Vertices[vertexIndex];
-        return new RenderVertex(vertex.X, height, vertex.Y, vertex.X / scaleX, vertex.Y / scaleY);
+        return new RenderVertex(vertex.X, height, vertex.Y, vertex.X * mapping.WorldToU, vertex.Y * mapping.WorldToV);
     }
 
     /// <summary>
@@ -226,17 +228,28 @@ public static class MeshBuilder
     private static Region? RegionAt(Level level, int index) =>
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
 
-    private static (float ScaleX, float ScaleY) TextureScale(Level level, string? texture)
+    private static TextureMapping TextureMappingFor(Level level, string? texture)
     {
         if (texture is not null &&
             level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
             resolved.ScaleX > 0 && resolved.ScaleY > 0)
         {
-            return ((float)resolved.ScaleX, (float)resolved.ScaleY);
+            if (resolved.Width > 0 && resolved.Height > 0)
+            {
+                return new TextureMapping(
+                    (float)(resolved.ScaleX / resolved.Width),
+                    (float)(resolved.ScaleY / resolved.Height),
+                    1f / resolved.Width,
+                    1f / resolved.Height);
+            }
+
+            return new TextureMapping(1f / (float)resolved.ScaleX, 1f / (float)resolved.ScaleY, 0, 0);
         }
 
-        return (DefaultScale, DefaultScale);
+        return new TextureMapping(1f / DefaultScale, 1f / DefaultScale, 0, 0);
     }
+
+    private readonly record struct TextureMapping(float WorldToU, float WorldToV, float OffsetToU, float OffsetToV);
 
     private sealed class Accumulator
     {

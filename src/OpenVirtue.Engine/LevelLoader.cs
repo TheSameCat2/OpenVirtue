@@ -104,16 +104,27 @@ public static class LevelLoader
         return region;
     }
 
-    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations) => new(w.Name)
+    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations)
     {
-        Vertex1 = w.Vertex1,
-        Vertex2 = w.Vertex2,
-        LeftRegion = w.Region1,
-        RightRegion = w.Region2,
-        OffsetX = w.OffsetX,
-        OffsetY = w.OffsetY,
-        Texture = declarations.GetWallTexture(w.Name),
-    };
+        var wall = new Wall(w.Name)
+        {
+            Vertex1 = w.Vertex1,
+            Vertex2 = w.Vertex2,
+            LeftRegion = w.Region1,
+            RightRegion = w.Region2,
+            OffsetX = w.OffsetX,
+            OffsetY = w.OffsetY,
+        };
+
+        if (declarations.GetWall(w.Name) is { } definition)
+        {
+            wall.Texture = definition.Texture;
+            wall.OffsetX = definition.OffsetX ?? wall.OffsetX;
+            wall.OffsetY = definition.OffsetY ?? wall.OffsetY;
+        }
+
+        return wall;
+    }
 
     private static Dictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
     {
