@@ -17,6 +17,7 @@ namespace OpenVirtue.Engine.Interpreter;
 public sealed class WdlRuntime :
     IWdlContext,
     IWdlSchedulerContext,
+    IWdlActionHookContext,
     IWdlObjectGroupContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
@@ -36,6 +37,7 @@ public sealed class WdlRuntime :
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
+    private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CycleAction> _cycleActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
@@ -61,6 +63,7 @@ public sealed class WdlRuntime :
         RegisterLevelObjects(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
+        InitializeActionHooks(level);
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -78,6 +81,9 @@ public sealed class WdlRuntime :
 
     /// <summary>All placed level objects registered for runtime iteration.</summary>
     public IReadOnlyList<AcknexObject> LevelObjects => _levelObjects;
+
+    /// <summary>The live global <c>IF_*</c> action-hook assignments.</summary>
+    public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
 
     /// <inheritdoc/>
     public double GetSkill(string name) => _skills.GetValueOrDefault(name);
@@ -221,6 +227,18 @@ public sealed class WdlRuntime :
         _eachTickActions[slot - 1] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
     }
 
+    /// <inheritdoc/>
+    public bool IsActionHook(string name) => IsActionHookName(name);
+
+    /// <inheritdoc/>
+    public void SetActionHook(string name, string? actionName)
+    {
+        if (IsActionHookName(name))
+        {
+            _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        }
+    }
+
     /// <summary>Whether an action with this name exists.</summary>
     public bool HasAction(string name) => ResolveActionName(name) is { } actionName && _actions.ContainsKey(actionName);
 
@@ -231,6 +249,13 @@ public sealed class WdlRuntime :
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
     public bool RunAction(string name) => Run(name);
+
+    /// <summary>Triggers a global <c>IF_*</c> action hook such as <c>IF_F1</c> or <c>IF_LEFT</c>.</summary>
+    /// <returns><c>true</c> if the hook was assigned to an action that ran.</returns>
+    public bool TriggerActionHook(string name) =>
+        _actionHooks.TryGetValue(name, out string? actionName) &&
+        actionName is not null &&
+        Run(actionName);
 
     /// <summary>
     /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
@@ -414,6 +439,18 @@ public sealed class WdlRuntime :
             _eachTickActions[i] = string.IsNullOrWhiteSpace(level.EachTickActions[i]) ? null : level.EachTickActions[i];
         }
     }
+
+    private void InitializeActionHooks(Level level)
+    {
+        foreach ((string name, string? actionName) in level.ActionHooks)
+        {
+            SetActionHook(name, actionName);
+        }
+    }
+
+    private static bool IsActionHookName(string name) =>
+        name.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
+        !name.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
 
     private bool TryResolveObjectByType(string name, string type, out AcknexObject? value)
     {

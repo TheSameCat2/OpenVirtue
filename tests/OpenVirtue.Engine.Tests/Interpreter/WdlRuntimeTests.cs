@@ -173,6 +173,34 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ActionHooks_TriggerAndCanBeReassigned()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; " +
+            "SKILL order { VAL 0; } " +
+            "IF_F1 first; " +
+            "ACTION first { RULE order = order * 10 + 1; } " +
+            "ACTION second { RULE order = order * 10 + 2; } " +
+            "ACTION rebind { SET IF_F1, second; } " +
+            "ACTION clear { SET IF_F1, NULL; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.Equal("first", runtime.ActionHooks["IF_F1"]);
+        Assert.True(runtime.TriggerActionHook("IF_F1"));
+        Assert.Equal(1, runtime.GetSkill("order"));
+
+        Assert.True(runtime.RunAction("rebind"));
+        Assert.Equal("second", runtime.ActionHooks["IF_F1"]);
+        Assert.True(runtime.TriggerActionHook("IF_F1"));
+        Assert.Equal(12, runtime.GetSkill("order"));
+
+        Assert.True(runtime.RunAction("clear"));
+        Assert.Null(runtime.ActionHooks["IF_F1"]);
+        Assert.False(runtime.TriggerActionHook("IF_F1"));
+        Assert.Equal(12, runtime.GetSkill("order"));
+    }
+
+    [Fact]
     public void Runtime_UnknownAction_ReturnsFalse()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));

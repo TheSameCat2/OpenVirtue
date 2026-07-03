@@ -99,6 +99,23 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesGlobalActionHooks()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\nPLAYER_START 1 2 45 0;#1",
+        };
+        const string main = "MAPFILE <test.wmp>; IF_F1 help; IF_LEFT click; IF_ANYKEY NULL; IF_START boot;";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal("help", level.ActionHooks["IF_F1"]);
+        Assert.Equal("click", level.ActionHooks["IF_LEFT"]);
+        Assert.Null(level.ActionHooks["IF_ANYKEY"]);
+        Assert.False(level.ActionHooks.ContainsKey("IF_START"));
+    }
+
+    [Fact]
     public void LoadCore_LinksTexturesThroughTheDeclarationChain()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

@@ -202,6 +202,11 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        if (TryExecuteActionHookSet(item.Header, comma))
+        {
+            return;
+        }
+
         if (TryExecuteReferenceSet(item.Header, comma))
         {
             return;
@@ -400,6 +405,28 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         scheduler.SetEachTickAction(slot, actionName);
+        return true;
+    }
+
+    private bool TryExecuteActionHookSet(IReadOnlyList<WdlToken> header, int comma)
+    {
+        if (context is not IWdlActionHookContext hooks ||
+            comma != 1 ||
+            header[0].Kind != WdlTokenKind.Identifier ||
+            !hooks.IsActionHook(header[0].Text))
+        {
+            return false;
+        }
+
+        string? actionName = null;
+        if (comma + 2 == header.Count && header[comma + 1].Kind == WdlTokenKind.Identifier)
+        {
+            actionName = header[comma + 1].Text.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : header[comma + 1].Text;
+        }
+
+        hooks.SetActionHook(header[0].Text, actionName);
         return true;
     }
 

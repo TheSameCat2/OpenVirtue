@@ -88,7 +88,7 @@ public static class LevelLoader
         return new Level(
             name, vertices, regions, walls, things, actors, start,
             skillValues, skillBounds, GatherStrings(program), GatherSynonyms(program), BuildTextures(declarations), declarations.Actions,
-            GatherEachTickActions(program), FindActionName(program, "IF_START"));
+            GatherEachTickActions(program), GatherActionHooks(program), FindActionName(program, "IF_START"));
     }
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations)
@@ -222,6 +222,39 @@ public static class LevelLoader
         }
 
         return actions;
+    }
+
+    private static Dictionary<string, string?> GatherActionHooks(WdlProgram program)
+    {
+        var hooks = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!IsActionHookKeyword(item.Keyword))
+            {
+                continue;
+            }
+
+            hooks[item.Keyword] = FirstIdentifierOrNull(item.Header);
+        }
+
+        return hooks;
+    }
+
+    private static bool IsActionHookKeyword(string keyword) =>
+        keyword.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
+        !keyword.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
+
+    private static string? FirstIdentifierOrNull(IReadOnlyList<WdlToken> tokens)
+    {
+        foreach (WdlToken token in tokens)
+        {
+            if (token.Kind == WdlTokenKind.Identifier)
+            {
+                return token.Text.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : token.Text;
+            }
+        }
+
+        return null;
     }
 
     private static string? FindFileRef(WdlProgram program, string keyword)

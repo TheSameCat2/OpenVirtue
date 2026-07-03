@@ -41,6 +41,18 @@ public interface IWdlSchedulerContext
 }
 
 /// <summary>
+/// Optional action-hook surface for global input/load callbacks such as <c>IF_F1</c> or <c>IF_LEFT</c>.
+/// </summary>
+public interface IWdlActionHookContext
+{
+    /// <summary>Whether the keyword names a documented global action hook.</summary>
+    bool IsActionHook(string name);
+
+    /// <summary>Assigns or clears a global action hook.</summary>
+    void SetActionHook(string name, string? actionName);
+}
+
+/// <summary>
 /// Optional object-group surface for instructions such as <c>SET_ALL</c> that apply to
 /// every placed map object with the same WDL keyword instead of only the first unique one.
 /// </summary>
