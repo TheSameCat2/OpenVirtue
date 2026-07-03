@@ -54,7 +54,7 @@ public sealed class UnaryExpression(string op, WdlExpression operand) : WdlExpre
     }
 }
 
-/// <summary>A single-argument mathematical function such as <c>SQRT(x)</c> or <c>ABS(x)</c>.</summary>
+/// <summary>A single-argument mathematical function such as <c>SQRT(x)</c> or <c>LOG(x)</c>.</summary>
 public sealed class FunctionExpression(string name, WdlExpression argument) : WdlExpression
 {
     public string Name => name;
@@ -70,6 +70,9 @@ public sealed class FunctionExpression(string name, WdlExpression argument) : Wd
             "ABS" => Math.Abs(value),
             "INT" => Math.Truncate(value),
             "EXP" => Math.Exp(value),
+            "LOG" => Math.Log(value),
+            "LOG10" => Math.Log10(value),
+            "LOG2" => Math.Log2(value),
             _ => 0,
         };
     }

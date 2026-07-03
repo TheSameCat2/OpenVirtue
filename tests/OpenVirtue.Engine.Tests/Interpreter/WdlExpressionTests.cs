@@ -61,6 +61,15 @@ public class WdlExpressionTests
         Assert.Equal(expected, Eval(expression, new TestContext()));
     }
 
+    [Theory]
+    [InlineData("LOG(1)", 0)]
+    [InlineData("LOG10(100)", 2)]
+    [InlineData("LOG2(8)", 3)]
+    public void Evaluates_DocumentedLogFunctions(string expression, double expected)
+    {
+        Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
+    }
+
     [Fact]
     public void Evaluates_SkillNames_WithPrecedence()
     {
