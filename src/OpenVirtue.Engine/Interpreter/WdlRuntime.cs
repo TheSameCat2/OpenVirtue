@@ -130,6 +130,16 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
 
     private void RegisterLevelObjects(Level level)
     {
+        foreach (AcknexObject obj in level.Regions)
+        {
+            RegisterNamedObject(obj);
+        }
+
+        foreach (AcknexObject obj in level.Walls)
+        {
+            RegisterNamedObject(obj);
+        }
+
         foreach (AcknexObject obj in level.Things)
         {
             RegisterLevelObject(obj);
@@ -144,6 +154,11 @@ public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
     private void RegisterLevelObject(AcknexObject value)
     {
         _levelObjects.Add(value);
+        RegisterNamedObject(value);
+    }
+
+    private void RegisterNamedObject(AcknexObject value)
+    {
         if (_ambiguousObjectNames.Contains(value.Name))
         {
             return;

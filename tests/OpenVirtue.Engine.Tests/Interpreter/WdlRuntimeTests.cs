@@ -196,6 +196,42 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_RegistersRegionsAndWallsByUniqueName()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "REGION room { AMBIENT 0.25; } " +
+            "ACTION updateWorld { RULE room.AMBIENT += 0.25; SET gate.OFFSET_X, 7; }");
+        Region room = Assert.Single(level.Regions);
+        Wall gate = Assert.Single(level.Walls);
+        var runtime = new WdlRuntime(level);
+
+        Assert.Same(room, runtime.GetObject("room"));
+        Assert.Same(gate, runtime.GetObject("gate"));
+        Assert.Empty(runtime.LevelObjects);
+
+        Assert.True(runtime.RunAction("updateWorld"));
+        Assert.Equal(0.5, room.Ambient);
+        Assert.Equal(7, gate.OffsetX);
+    }
+
+    [Fact]
+    public void Runtime_DuplicateWallNames_AreKeptButNotAmbiguouslyNamed()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nVERTEX 2 0 0;#2\nREGION r 0 10;#0\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nWALL gate 1 2 0 -1 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        var runtime = new WdlRuntime(LoadWithMap(map, "MAPFILE <m.wmp>;"));
+
+        Assert.Null(runtime.GetObject("gate"));
+        Assert.False(runtime.Objects.ContainsKey("gate"));
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");
