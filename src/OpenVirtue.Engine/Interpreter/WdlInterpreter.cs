@@ -76,6 +76,11 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        if (TryExecuteEachTickSet(item.Header, comma))
+        {
+            return;
+        }
+
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
         Assign(item.Header, 0, comma, "=", value);
     }
@@ -100,6 +105,59 @@ public sealed class WdlInterpreter(IWdlContext context)
         {
             Execute(body);
         }
+    }
+
+    private bool TryExecuteEachTickSet(IReadOnlyList<WdlToken> header, int comma)
+    {
+        if (!IsEachTickTarget(header, comma, out int slot))
+        {
+            return false;
+        }
+
+        if (slot is < 1 or > 16 || context is not IWdlSchedulerContext scheduler)
+        {
+            return true;
+        }
+
+        string? actionName = null;
+        if (comma + 1 < header.Count && header[comma + 1].Kind == WdlTokenKind.Identifier)
+        {
+            actionName = header[comma + 1].Text.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : header[comma + 1].Text;
+        }
+
+        scheduler.SetEachTickAction(slot, actionName);
+        return true;
+    }
+
+    private static bool IsEachTickTarget(IReadOnlyList<WdlToken> header, int comma, out int slot)
+    {
+        slot = 0;
+        if (comma <= 0 || header.Count == 0)
+        {
+            return false;
+        }
+
+        if (header[0] is not { Kind: WdlTokenKind.Identifier, Text: var schedulerName } ||
+            !schedulerName.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (comma == 2 && header[1].Kind == WdlTokenKind.Number && header[1].Text.StartsWith('.'))
+        {
+            return int.TryParse(header[1].Text[1..], out slot);
+        }
+
+        if (comma == 3 &&
+            header[1] is { Kind: WdlTokenKind.Operator, Text: "." } &&
+            header[2].Kind == WdlTokenKind.Number)
+        {
+            return int.TryParse(header[2].Text, out slot);
+        }
+
+        return false;
     }
 
     private double Evaluate(IReadOnlyList<WdlToken> tokens, int start, int end) =>

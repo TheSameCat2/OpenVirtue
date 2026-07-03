@@ -25,3 +25,17 @@ public interface IWdlContext
     /// </summary>
     void CallAction(string name);
 }
+
+/// <summary>
+/// Optional scheduler surface for WDL instructions that assign named actions to
+/// engine-managed callback slots instead of numeric skills.
+/// </summary>
+public interface IWdlSchedulerContext
+{
+    /// <summary>
+    /// Assigns or clears one of the 16 global <c>EACH_TICK</c> slots.
+    /// </summary>
+    /// <param name="slot">The one-based scheduler slot, from 1 through 16.</param>
+    /// <param name="actionName">The action to run each tick, or <c>null</c> to clear the slot.</param>
+    void SetEachTickAction(int slot, string? actionName);
+}

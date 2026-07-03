@@ -83,6 +83,30 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_RunStartup_AssignsEachTickAction_AndDispatchesOnFirstTick()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; " +
+            "SKILL order { VAL 0; } SKILL ticks { VAL 0; } " +
+            "ACTION boot { SET order, 1; SET EACH_TICK.1, probe_tick; } " +
+            "ACTION probe_tick { RULE order = order * 10 + 2; RULE ticks += 1; SET EACH_TICK.1, NULL; } " +
+            "IF_START boot;");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunStartup());
+        Assert.Equal(1, runtime.GetSkill("order"));
+        Assert.Equal(0, runtime.GetSkill("ticks"));
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(12, runtime.GetSkill("order"));
+        Assert.Equal(1, runtime.GetSkill("ticks"));
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(12, runtime.GetSkill("order"));
+        Assert.Equal(1, runtime.GetSkill("ticks"));
+    }
+
+    [Fact]
     public void Runtime_UnknownAction_ReturnsFalse()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));

@@ -11,15 +11,17 @@ namespace OpenVirtue.Engine.Interpreter;
 /// scripts. Implements <see cref="IWdlContext"/> so the <see cref="WdlInterpreter"/> can
 /// read and write state, and exposes <see cref="RunAction"/> to invoke a script by name.
 /// </summary>
-public sealed class WdlRuntime : IWdlContext
+public sealed class WdlRuntime : IWdlContext, IWdlSchedulerContext
 {
     private const int MaxCallDepth = 64;
+    private const int EachTickSlotCount = 16;
 
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AcknexObject> _levelObjects = [];
+    private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
     private readonly List<CycleAction> _cycleActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
@@ -75,6 +77,17 @@ public sealed class WdlRuntime : IWdlContext
         _cycleActions.Add(new CycleAction(target, actionName));
     }
 
+    /// <inheritdoc/>
+    public void SetEachTickAction(int slot, string? actionName)
+    {
+        if (slot is < 1 or > EachTickSlotCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(slot), "EACH_TICK slots are numbered 1 through 16.");
+        }
+
+        _eachTickActions[slot - 1] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+    }
+
     /// <summary>Whether an action with this name exists.</summary>
     public bool HasAction(string name) => _actions.ContainsKey(name);
 
@@ -96,6 +109,14 @@ public sealed class WdlRuntime : IWdlContext
     {
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
+        foreach (string? actionName in _eachTickActions)
+        {
+            if (actionName is not null)
+            {
+                Run(actionName);
+            }
+        }
+
         foreach (CycleAction cycle in _cycleActions)
         {
             RunForObject(cycle.Target, cycle.ActionName);

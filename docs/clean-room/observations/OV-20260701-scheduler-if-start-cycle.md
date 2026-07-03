@@ -94,10 +94,12 @@ frame-level timing.
   frame, the next frame, or only after another engine transition?
 
 ## Tests To Add Or Update
-- Add a synthetic runtime test for startup-versus-first-cycle ordering once the
-  oracle result is confirmed.
+- Added `Runtime_RunStartup_AssignsEachTickAction_AndDispatchesOnFirstTick` to
+  cover `IF_START` assigning `EACH_TICK.1`, first runtime tick dispatch, and
+  `SET EACH_TICK.1,NULL` clearing.
 
 ## Implementation Notes
-Do not change scheduler behavior from this proposed note alone. Confirm the
-oracle result first, then implement from the confirmed conclusion and test.
-The aborted SaintsX setup attempt is explicitly excluded from the evidence set.
+The confirmed oracle result supports implementing the `EACH_TICK` assignment
+surface, while same-frame versus next-frame dispatch remains an open parity
+question. The aborted SaintsX setup attempt is explicitly excluded from the
+evidence set.
