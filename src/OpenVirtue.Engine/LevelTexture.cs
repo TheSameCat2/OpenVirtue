@@ -6,7 +6,8 @@ namespace OpenVirtue.Engine;
 /// <summary>
 /// A texture resolved from the WDL declaration chain (<c>TEXTURE</c> → <c>BMAPS</c> →
 /// <c>BMAP</c>): the source PCX file, the sub-rectangle within it, and the texture's
-/// scale. The renderer loads <see cref="File"/> and samples the given rectangle.
+/// scale. The renderer loads <see cref="File"/> and samples the given rectangle;
+/// non-positive dimensions request the whole image.
 /// </summary>
 public readonly record struct LevelTexture(
     string Name,

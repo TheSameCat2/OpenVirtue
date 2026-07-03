@@ -94,7 +94,7 @@ public sealed class WdlDeclarations
 
     private void IndexBitmap(WdlItem item)
     {
-        // BMAP name, <file.pcx>, x, y, width, height
+        // BMAP name, <file.pcx>[, x, y, width, height]
         if (item.Header.Count == 0)
         {
             return;
@@ -103,10 +103,14 @@ public sealed class WdlDeclarations
         string name = item.Header[0].Text;
         string? file = FirstFileRef(item.Header);
         int[] numbers = Numbers(item.Header);
-        if (file is not null && numbers.Length >= 4)
+        if (file is null)
         {
-            _bitmaps[name] = new BitmapDef(file, numbers[0], numbers[1], numbers[2], numbers[3]);
+            return;
         }
+
+        _bitmaps[name] = numbers.Length >= 4
+            ? new BitmapDef(file, numbers[0], numbers[1], numbers[2], numbers[3])
+            : new BitmapDef(file, 0, 0, 0, 0);
     }
 
     private void IndexTexture(WdlItem item)

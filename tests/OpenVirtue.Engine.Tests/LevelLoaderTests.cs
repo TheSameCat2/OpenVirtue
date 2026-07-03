@@ -76,6 +76,32 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_BmapWithoutRectangle_ResolvesWholeImageTexture()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP floor_map, <floor.pcx>;
+            TEXTURE floorTex { BMAPS floor_map; }
+            WALL w { TEXTURE floorTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelTexture texture = level.Textures["floorTex"];
+        Assert.Equal("floor.pcx", texture.File);
+        Assert.Equal(0, texture.X);
+        Assert.Equal(0, texture.Y);
+        Assert.Equal(0, texture.Width);
+        Assert.Equal(0, texture.Height);
+    }
+
+    [Fact]
     public void LoadCore_CapturesSkyTextureFlag()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
