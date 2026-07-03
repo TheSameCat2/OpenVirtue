@@ -60,6 +60,32 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void Call_InvokesNamedAction()
+    {
+        var context = new TestContext();
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("CALL openDoor;"));
+
+        Assert.Equal("openDoor", Assert.Single(context.Calls));
+    }
+
+    [Fact]
+    public void End_TerminatesRemainingStatements()
+    {
+        TestContext context = Run("SET x, 1; END; SET x, 2;");
+
+        Assert.Equal(1, context.GetSkill("x"));
+    }
+
+    [Fact]
+    public void End_InsideNestedBlock_TerminatesOuterAction()
+    {
+        TestContext context = Run("SET x, 1; IF (x == 1) { END; } SET x, 2;");
+
+        Assert.Equal(1, context.GetSkill("x"));
+    }
+
+    [Fact]
     public void If_ExecutesBodyWhenTrue()
     {
         TestContext context = Run("SET x, 5; IF (x > 3) { SET y, 1; }");
@@ -127,15 +153,14 @@ public class WdlInterpreterTests
 
         public Dictionary<string, AcknexObject> Objects { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+        public List<string> Calls { get; } = [];
+
         public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
         public void SetSkill(string name, double value) => _skills[name] = value;
 
         public AcknexObject? GetObject(string name) => Objects.GetValueOrDefault(name);
 
-        public void CallAction(string name)
-        {
-            // No action registry in this stub.
-        }
+        public void CallAction(string name) => Calls.Add(name);
     }
 }

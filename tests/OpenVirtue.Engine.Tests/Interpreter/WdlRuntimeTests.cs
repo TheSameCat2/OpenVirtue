@@ -52,6 +52,30 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CallInstruction_CallsNamedAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL x { VAL 0; } ACTION outer { CALL inner; SET x, x + 1; } ACTION inner { SET x, 7; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("outer");
+
+        Assert.Equal(8, runtime.GetSkill("x"));
+    }
+
+    [Fact]
+    public void Runtime_EndInstruction_TerminatesAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL x { VAL 0; } ACTION stopEarly { SET x, 1; END; SET x, 2; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("stopEarly");
+
+        Assert.Equal(1, runtime.GetSkill("x"));
+    }
+
+    [Fact]
     public void Runtime_MutualRecursion_DoesNotStackOverflow()
     {
         // a -> b -> a -> ... is bounded by the call-depth guard.

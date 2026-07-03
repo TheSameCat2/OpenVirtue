@@ -9,8 +9,8 @@ namespace OpenVirtue.Engine.Interpreter;
 /// Executes WDL statement blocks (ACTION bodies and nested IF blocks) against an
 /// <see cref="IWdlContext"/>. This is the first slice of the runtime: <c>SET</c> and
 /// <c>RULE</c> assignments (including <c>+=</c>/<c>-=</c>/<c>*=</c>/<c>/=</c>) and
-/// <c>IF (expr) { … }</c> conditionals. More statements (loops, IF_* skips, WAIT,
-/// function calls) and the fixed-tick scheduler are layered on later.
+/// <c>IF (expr) { … }</c> conditionals, explicit <c>CALL</c>s, and <c>END</c>.
+/// More statements (loops, IF_* skips, WAIT) and deeper scheduler semantics are layered on later.
 /// </summary>
 public sealed class WdlInterpreter(IWdlContext context)
 {
@@ -18,14 +18,28 @@ public sealed class WdlInterpreter(IWdlContext context)
     public void Execute(WdlBlock block)
     {
         ArgumentNullException.ThrowIfNull(block);
-        ExecuteItems(block.Items);
+        try
+        {
+            ExecuteItems(block.Items);
+        }
+        catch (EndActionException)
+        {
+            // END terminates the current action.
+        }
     }
 
     /// <summary>Executes the top-level items of a document as statements.</summary>
     public void Execute(WdlDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        ExecuteItems(document.Items);
+        try
+        {
+            ExecuteItems(document.Items);
+        }
+        catch (EndActionException)
+        {
+            // END terminates the current action/document execution.
+        }
     }
 
     private void ExecuteItems(IReadOnlyList<WdlItem> items)
@@ -54,7 +68,7 @@ public sealed class WdlInterpreter(IWdlContext context)
                         {
                             if (!condition && items[i + 1].Body is { } elseBody)
                             {
-                                Execute(elseBody);
+                                ExecuteItems(elseBody.Items);
                             }
 
                             i++;
@@ -62,6 +76,11 @@ public sealed class WdlInterpreter(IWdlContext context)
                         break;
                     case "ELSE":
                         break;
+                    case "CALL":
+                        ExecuteCall(item);
+                        break;
+                    case "END":
+                        throw new EndActionException();
 
                     default:
                         // A bare keyword may name another action to run; the context invokes it
@@ -116,7 +135,7 @@ public sealed class WdlInterpreter(IWdlContext context)
         bool condition = WdlExpressionParser.Parse(item.Header).Evaluate(context) != 0;
         if (condition && item.Body is { } body)
         {
-            Execute(body);
+            ExecuteItems(body.Items);
         }
 
         return condition;
@@ -124,6 +143,14 @@ public sealed class WdlInterpreter(IWdlContext context)
 
     private static bool IsElse(WdlItem item) =>
         !item.IsLabel && item.Keyword.Equals("ELSE", StringComparison.OrdinalIgnoreCase);
+
+    private void ExecuteCall(WdlItem item)
+    {
+        if (item.Header.Count > 0 && item.Header[0].Kind == WdlTokenKind.Identifier)
+        {
+            context.CallAction(item.Header[0].Text);
+        }
+    }
 
     private bool TryExecuteEachTickSet(IReadOnlyList<WdlToken> header, int comma)
     {
@@ -251,5 +278,9 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         return slice;
+    }
+
+    private sealed class EndActionException : Exception
+    {
     }
 }
