@@ -25,6 +25,19 @@ public class WdlPreprocessorTests
     }
 
     [Fact]
+    public void Flatten_MainItems_ExcludeIncludedDeclarations()
+    {
+        const string main = "SKILL a { VAL 1; } INCLUDE <mod.wdl>; SKILL c { VAL 3; }";
+        const string module = "SKILL b { VAL 2; }";
+
+        WdlProgram program = WdlPreprocessor.Flatten(
+            main,
+            name => name.Equals("mod.wdl", StringComparison.OrdinalIgnoreCase) ? module : null);
+
+        Assert.Equal(["a", "c"], SkillNames(program.MainItems));
+    }
+
+    [Fact]
     public void Flatten_RepeatedInclude_InlinesEachOccurrence()
     {
         const string main = "INCLUDE <mod.wdl>; INCLUDE <mod.wdl>;";
@@ -212,7 +225,9 @@ public class WdlPreprocessorTests
         Assert.Contains("HIRES", program.DefinedSymbols);
     }
 
-    private static string[] SkillNames(WdlProgram program) => program.Items
+    private static string[] SkillNames(WdlProgram program) => SkillNames(program.Items);
+
+    private static string[] SkillNames(IReadOnlyList<WdlItem> items) => items
         .Where(i => i.Keyword.Equals("SKILL", StringComparison.OrdinalIgnoreCase))
         .Select(i => i.Header[0].Text)
         .ToArray();

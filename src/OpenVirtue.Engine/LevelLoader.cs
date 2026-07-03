@@ -69,7 +69,7 @@ public static class LevelLoader
 
         WdlProgram program = WdlPreprocessor.Flatten(mainSource, n => resolveResource(n), defines);
 
-        string mapName = FindFileRef(program, "MAPFILE")
+        string mapName = FindFileRef(program.MainItems, "MAPFILE")
             ?? throw new InvalidDataException("Level WDL has no MAPFILE directive.");
         string mapText = resolveResource(mapName)
             ?? throw new InvalidDataException($"Map '{mapName}' could not be resolved.");
@@ -262,9 +262,9 @@ public static class LevelLoader
         return null;
     }
 
-    private static string? FindFileRef(WdlProgram program, string keyword)
+    private static string? FindFileRef(IReadOnlyList<WdlItem> items, string keyword)
     {
-        foreach (WdlItem item in program.Items)
+        foreach (WdlItem item in items)
         {
             if (!item.Keyword.Equals(keyword, StringComparison.OrdinalIgnoreCase))
             {

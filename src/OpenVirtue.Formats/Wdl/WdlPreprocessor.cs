@@ -25,6 +25,7 @@ public sealed class WdlPreprocessor
     private readonly Dictionary<string, IReadOnlyList<WdlToken>> _aliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _includeStack;
     private readonly List<WdlItem> _output = [];
+    private readonly List<WdlItem> _mainOutput = [];
 
     private WdlPreprocessor(ModuleResolver resolve, HashSet<string> symbols)
     {
@@ -47,13 +48,13 @@ public sealed class WdlPreprocessor
 
         var symbols = new HashSet<string>(predefinedSymbols ?? [], StringComparer.OrdinalIgnoreCase);
         var preprocessor = new WdlPreprocessor(resolveModule, symbols);
-        preprocessor.ProcessSource(mainSource);
-        return new WdlProgram(preprocessor._output, symbols);
+        preprocessor.ProcessSource(mainSource, isMain: true);
+        return new WdlProgram(preprocessor._output, preprocessor._mainOutput, symbols);
     }
 
-    private void ProcessSource(string source) => ProcessItems(WdlParser.Parse(source).Items);
+    private void ProcessSource(string source, bool isMain) => ProcessItems(WdlParser.Parse(source).Items, isMain);
 
-    private void ProcessItems(IReadOnlyList<WdlItem> items)
+    private void ProcessItems(IReadOnlyList<WdlItem> items, bool isMain)
     {
         // A stack of conditional frames; the program emits while the top frame emits
         // (or the stack is empty).
@@ -110,7 +111,7 @@ public sealed class WdlPreprocessor
                             }
                         }
 
-                        _output.Add(item); // keep — a DEFINE may also be a named constant
+                        AddOutput(item, isMain); // keep — a DEFINE may also be a named constant
                     }
 
                     break;
@@ -128,7 +129,7 @@ public sealed class WdlPreprocessor
                 default:
                     if (Active())
                     {
-                        _output.Add(ApplyDefines(item));
+                        AddOutput(ApplyDefines(item), isMain);
                     }
 
                     break;
@@ -142,6 +143,15 @@ public sealed class WdlPreprocessor
             bool isDefined = _symbols.Contains(symbol);
             bool matched = parentActive && (isNegated ? !isDefined : isDefined);
             frames.Add(new Frame(parentActive, matched, matched));
+        }
+    }
+
+    private void AddOutput(WdlItem item, bool isMain)
+    {
+        _output.Add(item);
+        if (isMain)
+        {
+            _mainOutput.Add(item);
         }
     }
 
@@ -218,7 +228,7 @@ public sealed class WdlPreprocessor
             string? source = _resolve(moduleName);
             if (source is not null)
             {
-                ProcessSource(source);
+                ProcessSource(source, isMain: false);
             }
         }
         finally
@@ -257,14 +267,18 @@ public sealed class WdlPreprocessor
 /// <summary>The result of flattening a WDL program: its active declarations and the defined symbols.</summary>
 public sealed class WdlProgram
 {
-    public WdlProgram(IReadOnlyList<WdlItem> items, IReadOnlySet<string> definedSymbols)
+    public WdlProgram(IReadOnlyList<WdlItem> items, IReadOnlyList<WdlItem> mainItems, IReadOnlySet<string> definedSymbols)
     {
         Items = items;
+        MainItems = mainItems;
         DefinedSymbols = definedSymbols;
     }
 
     /// <summary>The flattened, in-order active declaration items (INCLUDEs inlined, conditionals applied).</summary>
     public IReadOnlyList<WdlItem> Items { get; }
+
+    /// <summary>The active declaration items that came directly from the main WDL, excluding INCLUDEd modules.</summary>
+    public IReadOnlyList<WdlItem> MainItems { get; }
 
     /// <summary>Symbols defined after preprocessing (predefined plus <c>DEFINE</c>s, minus active <c>UNDEF</c>s).</summary>
     public IReadOnlySet<string> DefinedSymbols { get; }

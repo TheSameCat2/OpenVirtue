@@ -46,6 +46,37 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_MapFileMustComeFromMainWdl()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+            ["mod.wdl"] = "MAPFILE <test.wmp>; SKILL energy { VAL 100; }",
+        };
+        const string main = "INCLUDE <mod.wdl>; SKILL health { VAL 50; }";
+
+        InvalidDataException ex = Assert.Throws<InvalidDataException>(
+            () => LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n))));
+
+        Assert.Contains("no MAPFILE", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LoadCore_MapFileInMainWdl_CanUseDefineFromIncludedModule()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+            ["mod.wdl"] = "DEFINE MAP,MAPFILE;",
+        };
+        const string main = "INCLUDE <mod.wdl>; MAP <test.wmp>;";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal("room", Assert.Single(level.Regions).Name);
+    }
+
+    [Fact]
     public void LoadCore_CapturesStringDeclarationsWithFixedCapacity()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
