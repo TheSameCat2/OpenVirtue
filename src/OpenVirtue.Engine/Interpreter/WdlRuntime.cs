@@ -288,6 +288,9 @@ public sealed class WdlRuntime :
     {
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
+        _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
+        _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
+        _skills[Timing.SecondsSkill] = GetSkill(Timing.SecondsSkill) + Timing.EffectiveFrameSeconds(deltaSeconds);
         foreach (string? actionName in _eachTickActions)
         {
             if (actionName is not null)

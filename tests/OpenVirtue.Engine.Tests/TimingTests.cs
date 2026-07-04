@@ -18,6 +18,16 @@ public class TimingTests
         Assert.Equal(expected, Timing.TimeCorrection(deltaSeconds), 9);
     }
 
+    [Theory]
+    [InlineData(1.0 / 16, 1.0)]
+    [InlineData(1.0 / 32, 2.0)]
+    [InlineData(1.0 / 8, 0.5)]
+    [InlineData(0, 0)]
+    public void TimeFactor_IsInverseTimeCorrection(double deltaSeconds, double expected)
+    {
+        Assert.Equal(expected, Timing.TimeFactor(deltaSeconds), 9);
+    }
+
     [Fact]
     public void TicksPerSecond_IsSixteen()
     {
@@ -32,5 +42,6 @@ public class TimingTests
         double expected = Timing.MaxFrameSeconds * Timing.TicksPerSecond;
         Assert.Equal(expected, Timing.TimeCorrection(10.0), 9);
         Assert.Equal(expected, Timing.TimeCorrection(Timing.MaxFrameSeconds), 9);
+        Assert.Equal(Timing.MaxFrameSeconds, Timing.EffectiveFrameSeconds(10.0), 9);
     }
 }

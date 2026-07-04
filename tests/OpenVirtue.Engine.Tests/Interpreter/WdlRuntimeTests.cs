@@ -135,23 +135,23 @@ public class WdlRuntimeTests
     {
         Level level = Load(
             "MAPFILE <m.wmp>; " +
-            "SKILL order { VAL 0; } SKILL ticks { VAL 0; } " +
+            "SKILL order { VAL 0; } SKILL tick_count { VAL 0; } " +
             "ACTION boot { SET order, 1; SET EACH_TICK.1, probe_tick; } " +
-            "ACTION probe_tick { RULE order = order * 10 + 2; RULE ticks += 1; SET EACH_TICK.1, NULL; } " +
+            "ACTION probe_tick { RULE order = order * 10 + 2; RULE tick_count += 1; SET EACH_TICK.1, NULL; } " +
             "IF_START boot;");
         var runtime = new WdlRuntime(level);
 
         Assert.True(runtime.RunStartup());
         Assert.Equal(1, runtime.GetSkill("order"));
-        Assert.Equal(0, runtime.GetSkill("ticks"));
+        Assert.Equal(0, runtime.GetSkill("tick_count"));
 
         runtime.Tick(1.0 / 16);
         Assert.Equal(12, runtime.GetSkill("order"));
-        Assert.Equal(1, runtime.GetSkill("ticks"));
+        Assert.Equal(1, runtime.GetSkill("tick_count"));
 
         runtime.Tick(1.0 / 16);
         Assert.Equal(12, runtime.GetSkill("order"));
-        Assert.Equal(1, runtime.GetSkill("ticks"));
+        Assert.Equal(1, runtime.GetSkill("tick_count"));
     }
 
     [Fact]
@@ -658,6 +658,32 @@ public class WdlRuntimeTests
 
         Assert.Equal(1.0, tc, 9);
         Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+        Assert.Equal(1.0, runtime.GetSkill("TIME_FAC"), 9);
+        Assert.Equal(1.0, runtime.GetSkill("TICKS"), 9);
+        Assert.Equal(1.0 / 16, runtime.GetSkill("SECS"), 9);
+    }
+
+    [Fact]
+    public void Tick_AccumulatesDocumentedTimingSkillsBeforeScheduledActions()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL observed { VAL 0; } " +
+            "EACH_TICK probe; " +
+            "ACTION probe { SET observed, TIME_FAC * 100 + TICKS * 10 + SECS; SET EACH_TICK.1, NULL; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 32);
+
+        Assert.Equal(0.5, runtime.GetSkill("TIME_CORR"), 9);
+        Assert.Equal(2.0, runtime.GetSkill("TIME_FAC"), 9);
+        Assert.Equal(0.5, runtime.GetSkill("TICKS"), 9);
+        Assert.Equal(1.0 / 32, runtime.GetSkill("SECS"), 9);
+        Assert.Equal(205 + (1.0 / 32), runtime.GetSkill("observed"), 9);
+
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(1.5, runtime.GetSkill("TICKS"), 9);
+        Assert.Equal((1.0 / 32) + (1.0 / 16), runtime.GetSkill("SECS"), 9);
     }
 
     [Fact]
@@ -713,10 +739,10 @@ public class WdlRuntimeTests
             "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
         Level level = LoadWithMap(
             map,
-            "MAPFILE <m.wmp>; SKILL speed { VAL 4; } SKILL ticks { VAL 0; } " +
+            "MAPFILE <m.wmp>; SKILL speed { VAL 4; } SKILL tick_count { VAL 0; } " +
             "THING runner { EACH_TICK object_tick; EACH_CYCLE object_cycle; } " +
-            "ACTION object_tick { RULE my.x += speed * TIME_CORR; RULE ticks += 1; } " +
-            "ACTION object_cycle { RULE ticks += 100; }");
+            "ACTION object_tick { RULE my.x += speed * TIME_CORR; RULE tick_count += 1; } " +
+            "ACTION object_cycle { RULE tick_count += 100; }");
         Thing runner = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
         var originalMy = new Thing("originalMy");
@@ -725,11 +751,11 @@ public class WdlRuntimeTests
 
         runtime.Tick(1.0 / 16);
         Assert.Equal(9, runner.X);
-        Assert.Equal(1, runtime.GetSkill("ticks"));
+        Assert.Equal(1, runtime.GetSkill("tick_count"));
 
         runtime.Tick(1.0 / 32);
         Assert.Equal(11, runner.X);
-        Assert.Equal(2, runtime.GetSkill("ticks"));
+        Assert.Equal(2, runtime.GetSkill("tick_count"));
         Assert.Same(originalMy, runtime.GetObject("my"));
     }
 
