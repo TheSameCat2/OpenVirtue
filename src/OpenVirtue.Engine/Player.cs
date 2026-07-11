@@ -3,26 +3,36 @@
 
 using System.Numerics;
 using OpenVirtue.Engine.Map;
+using OpenVirtue.Engine.Rendering;
 
 namespace OpenVirtue.Engine;
 
+/// <summary>A documented vertical transition through a linked region surface.</summary>
+public readonly record struct PlayerVerticalTransition(
+    Region Source,
+    int FromRegion,
+    int ToRegion,
+    string HookName);
+
 /// <summary>
 /// First-person player physics over a level's sector geometry: tracks the region the player
-/// stands in, follows its floor with gravity/jump, and moves horizontally using portal
+/// stands in, resolves floor/ceiling motion, and moves horizontally using portal
 /// crossing — passing through walls into neighbouring rooms, or being blocked by "solid"
 /// walls (where the neighbour has no headroom or the step up is too high).
 /// </summary>
 /// <remarks>
-/// Movement is point-based (no body radius yet) and blocks rather than slides on a solid wall —
-/// a deliberate first cut. Physics constants are world-unit tunables.
+/// Horizontal movement is point-based until radius-aware collision is applied.
 /// </remarks>
 public sealed class Player : AcknexObject
 {
     private readonly Level _level;
+    private readonly LevelCollisionWorld _collisionWorld;
     private readonly Dictionary<int, List<int>> _regionWalls = [];
+    private readonly Dictionary<int, RegionSurface?> _regionSurfaces = [];
     private Vector3 _position;
     private int _region;
     private float _velocityY;
+    private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
 
     public Vector3 Position
     {
@@ -36,14 +46,26 @@ public sealed class Player : AcknexObject
 
     public bool Grounded { get; private set; }
 
-    /// <summary>Eye height above the floor (capped to the region's headroom).</summary>
-    public float EyeHeight { get; set; } = 12f;
+    /// <summary>Vertical region transitions produced by the latest velocity move.</summary>
+    public IReadOnlyList<PlayerVerticalTransition> VerticalTransitions => _verticalTransitions;
+
+    /// <summary>Distance between the player's feet and eyes.</summary>
+    public float EyeHeight { get; set; } = 3f;
+
+    /// <summary>Minimum distance maintained from solid walls and objects.</summary>
+    public float Width { get; set; } = 1.2f;
+
+    /// <summary>Global collision-width multiplier for actors.</summary>
+    public float ActorWidthFactor { get; set; } = 1f;
+
+    /// <summary>Global collision-width multiplier for things.</summary>
+    public float ThingWidthFactor { get; set; } = 1f;
 
     /// <summary>Minimum neighbour headroom required to step through a wall (else it is solid).</summary>
-    public float MinHeadroom { get; set; } = 5f;
+    public float MinHeadroom { get; set; } = 3f;
 
     /// <summary>Largest floor rise the player can step up through a portal.</summary>
-    public float StepUp { get; set; } = 16f;
+    public float StepUp { get; set; } = 1.5f;
 
     /// <summary>Downward acceleration applied per tick.</summary>
     public float Gravity { get; set; } = 2f;
@@ -51,10 +73,39 @@ public sealed class Player : AcknexObject
     /// <summary>Upward velocity applied on a jump.</summary>
     public float JumpSpeed { get; set; } = 25f;
 
+    /// <summary>Current region floor height at the player's position.</summary>
+    public float FloorHeight => FloorOf(_region);
+
+    /// <summary>Current region ceiling height at the player's position.</summary>
+    public float CeilingHeight => CeilingOf(_region);
+
+    /// <summary>Floor ascent per map step along the X and Y axes at the player's position.</summary>
+    public Vector2 FloorSlope
+    {
+        get
+        {
+            const float SampleDistance = 0.01f;
+            if (!TryGetSurfaceHeightOffset(_region, _position.X, _position.Z, out double center))
+            {
+                return Vector2.Zero;
+            }
+
+            float x = SampleSlopeAxis(_position.X, _position.Z, SampleDistance, 0, center);
+            float y = SampleSlopeAxis(_position.X, _position.Z, 0, SampleDistance, center);
+            return new Vector2(x, y);
+        }
+    }
+
+    /// <summary>Depth of the current region's documented underwater <c>BELOW</c> link.</summary>
+    public float WaterDepth => TryDiveRegion(_region, out int below)
+        ? FloorOf(_region) - FloorOf(below)
+        : 0;
+
     public Player(Level level) : base("player")
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        _collisionWorld = new LevelCollisionWorld(level);
 
         for (int i = 0; i < level.Walls.Count; i++)
         {
@@ -65,7 +116,7 @@ public sealed class Player : AcknexObject
         if (level.PlayerStart is { } start)
         {
             _region = start.Region;
-            _position = new Vector3(start.X, FloorOf(_region) + EyeOffset(_region), start.Y);
+            _position = new Vector3(start.X, FloorOf(_region, start.X, start.Y) + EyeOffset(_region), start.Y);
         }
     }
 
@@ -94,34 +145,259 @@ public sealed class Player : AcknexObject
         }
     }
 
-    /// <summary>Attempts a horizontal move, crossing portals and blocking on solid walls.</summary>
-    public void MoveHorizontal(float dx, float dz)
+    /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
+    public Vector2 MoveHorizontal(float dx, float dz)
+    {
+        var start = new Vector2(_position.X, _position.Z);
+        CircleMoveResult result = _collisionWorld.Move(
+            start,
+            _region,
+            new Vector2(dx, dz),
+            Width,
+            CanCross,
+            EntityCollisionRadius,
+            static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0);
+        _region = result.Region;
+        _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
+        return result.Displacement;
+    }
+
+    private bool CanCross(Wall wall, int currentRegion, int otherRegion)
+    {
+        if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+        {
+            return wall["PASSABLE"] > 0;
+        }
+
+        return Enterable(currentRegion, otherRegion);
+    }
+
+    private float EntityCollisionRadius(MapEntity entity)
+    {
+        if (!MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size))
+        {
+            return 0;
+        }
+
+        float factor = entity is Actor ? ActorWidthFactor : ThingWidthFactor;
+        return size.Width * 0.5f * Math.Max(0, factor);
+    }
+
+    private void MoveHorizontalStep(Vector2 step)
     {
         var from = new Vector2(_position.X, _position.Z);
-        var to = new Vector2(_position.X + dx, _position.Z + dz);
+        Vector2 desired = from + step;
+        CrossPortals(from, desired);
 
-        if (_regionWalls.TryGetValue(_region, out List<int>? walls))
+        for (int pass = 0; pass < 4; pass++)
         {
-            foreach (int wallIndex in walls)
+            bool adjusted = false;
+            if (_regionWalls.TryGetValue(_region, out List<int>? walls))
             {
-                Wall wall = _level.Walls[wallIndex];
-                if (!Vertex(wall.Vertex1, out Vector2 a) || !Vertex(wall.Vertex2, out Vector2 b) || !Crosses(from, to, a, b))
+                foreach (int wallIndex in walls)
                 {
-                    continue;
-                }
+                    Wall wall = _level.Walls[wallIndex];
+                    if (CanCross(wall, out _) ||
+                        !Vertex(wall.Vertex1, out Vector2 a) ||
+                        !Vertex(wall.Vertex2, out Vector2 b))
+                    {
+                        continue;
+                    }
 
-                int other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
-                if (!Enterable(other))
-                {
-                    return; // solid wall — block the whole move
-                }
+                    Vector2 closest = ClosestPoint(desired, a, b, out float along);
+                    float distanceSquared = Vector2.DistanceSquared(desired, closest);
+                    if (distanceSquared >= Width * Width)
+                    {
+                        continue;
+                    }
 
-                _region = other; // step through the portal
+                    Vector2 normal = CollisionNormal(from, desired, closest, a, b, along);
+                    desired = closest + (normal * Width);
+                    adjusted = true;
+                }
+            }
+
+            adjusted |= ResolveEntityCollisions(from, ref desired);
+
+            if (!adjusted)
+            {
                 break;
             }
         }
 
-        _position = new Vector3(to.X, _position.Y, to.Y);
+        _position = new Vector3(desired.X, _position.Y, desired.Y);
+    }
+
+    private bool ResolveEntityCollisions(Vector2 from, ref Vector2 desired)
+    {
+        bool adjusted = false;
+        foreach (Thing thing in _level.Things)
+        {
+            adjusted |= ResolveEntityCollision(thing, ThingWidthFactor, from, ref desired);
+        }
+
+        foreach (Actor actor in _level.Actors)
+        {
+            adjusted |= ResolveEntityCollision(actor, ActorWidthFactor, from, ref desired);
+        }
+
+        return adjusted;
+    }
+
+    private bool ResolveEntityCollision(MapEntity entity, float widthFactor, Vector2 from, ref Vector2 desired)
+    {
+        if (entity.Region != _region ||
+            entity["passable"] > 0 ||
+            entity["invisible"] > 0 ||
+            !MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size))
+        {
+            return false;
+        }
+
+        float radius = Width + (size.Width * 0.5f * Math.Max(0, widthFactor));
+        var center = new Vector2((float)entity.X, (float)entity.Y);
+        Vector2 offset = desired - center;
+        if (offset.LengthSquared() >= radius * radius)
+        {
+            return false;
+        }
+
+        Vector2 previousOffset = from - center;
+        Vector2 normal = offset.LengthSquared() > float.Epsilon && Vector2.Dot(offset, previousOffset) >= 0
+            ? Vector2.Normalize(offset)
+            : previousOffset.LengthSquared() > float.Epsilon
+                ? Vector2.Normalize(previousOffset)
+                : Vector2.UnitX;
+        desired = center + (normal * radius);
+        return true;
+    }
+
+    private void CrossPortals(Vector2 from, Vector2 to)
+    {
+        if (!_regionWalls.TryGetValue(_region, out List<int>? walls))
+        {
+            return;
+        }
+
+        foreach (int wallIndex in walls)
+        {
+            Wall wall = _level.Walls[wallIndex];
+            if (!CanCross(wall, out int other) ||
+                other == _region ||
+                other < 0 ||
+                !Vertex(wall.Vertex1, out Vector2 a) ||
+                !Vertex(wall.Vertex2, out Vector2 b) ||
+                !CrossesPortal(from, to, a, b))
+            {
+                continue;
+            }
+
+            _region = other;
+            return;
+        }
+    }
+
+    private bool CanCross(Wall wall, out int other)
+    {
+        other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
+        if (other == _region || other < 0 || other >= _level.Regions.Count)
+        {
+            return wall["passable"] > 0;
+        }
+
+        return Enterable(other);
+    }
+
+    private static Vector2 ClosestPoint(Vector2 point, Vector2 a, Vector2 b, out float along)
+    {
+        Vector2 segment = b - a;
+        float lengthSquared = segment.LengthSquared();
+        along = lengthSquared > float.Epsilon
+            ? Math.Clamp(Vector2.Dot(point - a, segment) / lengthSquared, 0, 1)
+            : 0;
+        return a + (segment * along);
+    }
+
+    private static Vector2 CollisionNormal(
+        Vector2 from,
+        Vector2 desired,
+        Vector2 closest,
+        Vector2 a,
+        Vector2 b,
+        float along)
+    {
+        if (along <= 0.0001f || along >= 0.9999f)
+        {
+            Vector2 radial = desired - closest;
+            Vector2 previousRadial = from - closest;
+            if (radial.LengthSquared() > float.Epsilon && Vector2.Dot(radial, previousRadial) >= 0)
+            {
+                return Vector2.Normalize(radial);
+            }
+
+            if (previousRadial.LengthSquared() > float.Epsilon)
+            {
+                return Vector2.Normalize(previousRadial);
+            }
+        }
+
+        Vector2 segment = b - a;
+        if (segment.LengthSquared() <= float.Epsilon)
+        {
+            return Vector2.UnitX;
+        }
+
+        Vector2 leftNormal = Vector2.Normalize(new Vector2(-segment.Y, segment.X));
+        return Orient(a, b, from) >= 0 ? leftNormal : -leftNormal;
+    }
+
+    /// <summary>Moves the player's eye vertically, clamping velocity motion to floor and ceiling.</summary>
+    public float MoveVertical(float dy)
+    {
+        _verticalTransitions.Clear();
+        if (dy == 0)
+        {
+            Grounded = !TryDiveRegion(_region, out _) &&
+                       _position.Y - EyeHeight <= FloorOf(_region) + 0.0001f;
+            return 0;
+        }
+
+        float from = _position.Y;
+        float requested = from + dy;
+        for (int pass = 0; pass < 4; pass++)
+        {
+            if (dy < 0 &&
+                TryDiveRegion(_region, out int below) &&
+                requested < FloorOf(_region))
+            {
+                int previous = _region;
+                Region source = _level.Regions[previous];
+                _region = below;
+                _verticalTransitions.Add(new PlayerVerticalTransition(source, previous, below, "IF_DIVE"));
+                continue;
+            }
+
+            if (dy > 0 &&
+                TryAriseRegion(_region, out int above) &&
+                requested > CeilingOf(_region))
+            {
+                int previous = _region;
+                Region source = _level.Regions[previous];
+                _region = above;
+                _verticalTransitions.Add(new PlayerVerticalTransition(source, previous, above, "IF_ARISE"));
+                continue;
+            }
+
+            break;
+        }
+
+        bool permeableFloor = TryDiveRegion(_region, out _);
+        float floor = FloorOf(_region) + (permeableFloor ? 0 : EyeHeight);
+        float ceiling = CeilingOf(_region);
+        float to = Math.Clamp(requested, floor, Math.Max(floor, ceiling));
+        _position.Y = to;
+        Grounded = !permeableFloor && to <= floor + 0.0001f;
+        return to - from;
     }
 
     /// <summary>Advances vertical physics one tick: gravity, then land on the current region's floor.</summary>
@@ -147,7 +423,7 @@ public sealed class Player : AcknexObject
     public void MoveTo(int region, float x, float z)
     {
         _region = region;
-        _position = new Vector3(x, FloorOf(region) + EyeOffset(region), z);
+        _position = new Vector3(x, FloorOf(region, x, z) + EyeOffset(region), z);
         _velocityY = 0;
         Grounded = true;
     }
@@ -172,7 +448,9 @@ public sealed class Player : AcknexObject
         list.Add(wallIndex);
     }
 
-    private bool Enterable(int region)
+    private bool Enterable(int region) => Enterable(_region, region);
+
+    private bool Enterable(int fromRegion, int region)
     {
         if (region < 0 || region >= _level.Regions.Count)
         {
@@ -181,12 +459,140 @@ public sealed class Player : AcknexObject
 
         var target = _level.Regions[region];
         float headroom = (float)(target.CeilHeight - target.FloorHeight);
-        float step = (float)target.FloorHeight - FloorOf(_region);
+        float step = (float)target.FloorHeight - FloorOf(fromRegion);
         return headroom >= MinHeadroom && step <= StepUp;
     }
 
-    private float FloorOf(int region) =>
-        region >= 0 && region < _level.Regions.Count ? (float)_level.Regions[region].FloorHeight : _position.Y - EyeHeight;
+    private bool TryDiveRegion(int region, out int below)
+    {
+        below = -1;
+        if (region < 0 || region >= _level.Regions.Count)
+        {
+            return false;
+        }
+
+        Region upper = _level.Regions[region];
+        if (upper.BelowName is not { } belowName ||
+            !HasAction(upper, "IF_DIVE"))
+        {
+            return false;
+        }
+
+        below = FindRegionIndex(candidate => candidate.Name.Equals(belowName, StringComparison.OrdinalIgnoreCase));
+        return below >= 0 &&
+               HasAction(_level.Regions[below], "IF_ARISE") &&
+               Math.Abs(upper.FloorHeight - _level.Regions[below].CeilHeight) <= 0.001;
+    }
+
+    private bool TryAriseRegion(int region, out int above)
+    {
+        above = -1;
+        if (region < 0 || region >= _level.Regions.Count)
+        {
+            return false;
+        }
+
+        Region lower = _level.Regions[region];
+        if (!HasAction(lower, "IF_ARISE"))
+        {
+            return false;
+        }
+
+        above = FindRegionIndex(candidate =>
+            candidate.BelowName is { } belowName &&
+            belowName.Equals(lower.Name, StringComparison.OrdinalIgnoreCase) &&
+            HasAction(candidate, "IF_DIVE") &&
+            Math.Abs(candidate.FloorHeight - lower.CeilHeight) <= 0.001);
+        return above >= 0;
+    }
+
+    private static bool HasAction(Region region, string hookName) =>
+        region.TryGetActionHook(hookName, out string? actionName) && !string.IsNullOrWhiteSpace(actionName);
+
+    private int FindRegionIndex(Func<Region, bool> predicate)
+    {
+        for (int i = 0; i < _level.Regions.Count; i++)
+        {
+            if (predicate(_level.Regions[i]))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private float FloorOf(int region) => FloorOf(region, _position.X, _position.Z);
+
+    private float FloorOf(int region, float x, float z)
+    {
+        if (region < 0 || region >= _level.Regions.Count)
+        {
+            return _position.Y - EyeHeight;
+        }
+
+        double offset = TryGetSurfaceHeightOffset(region, x, z, out double value) ? value : 0;
+        return (float)(_level.Regions[region].FloorHeight + offset);
+    }
+
+    private float CeilingOf(int region)
+    {
+        if (region < 0 || region >= _level.Regions.Count)
+        {
+            return _position.Y;
+        }
+
+        double offset = TryGetSurfaceHeightOffset(region, _position.X, _position.Z, out double value) ? value : 0;
+        return (float)(_level.Regions[region].CeilHeight + offset);
+    }
+
+    private bool TryGetSurfaceHeightOffset(int region, float x, float z, out double offset)
+    {
+        if (!_regionSurfaces.TryGetValue(region, out RegionSurface? surface))
+        {
+            List<int>? loop = LevelTopology.TraceRegionLoop(_level, region);
+            if (loop is not null)
+            {
+                Vector2[] footprint = loop
+                    .Select(index => new Vector2(_level.Vertices[index].X, _level.Vertices[index].Y))
+                    .ToArray();
+                IReadOnlyList<int> triangles = EarClipping.Triangulate(footprint);
+                surface = triangles.Count > 0 ? new RegionSurface(loop, triangles) : null;
+            }
+
+            _regionSurfaces[region] = surface;
+        }
+
+        if (surface is null)
+        {
+            offset = 0;
+            return false;
+        }
+
+        return LevelTopology.TryGetSurfaceHeightOffset(
+            _level,
+            surface.Loop,
+            surface.Triangles,
+            x,
+            z,
+            out offset);
+    }
+
+    private float SampleSlopeAxis(float x, float z, float dx, float dz, double center)
+    {
+        const float SampleDistance = 0.01f;
+        if (TryGetSurfaceHeightOffset(_region, x + dx, z + dz, out double forward))
+        {
+            return (float)((forward - center) / SampleDistance);
+        }
+
+        if (TryGetSurfaceHeightOffset(_region, x - dx, z - dz, out double backward))
+        {
+            return (float)((center - backward) / SampleDistance);
+        }
+
+        return 0;
+    }
 
     private float EyeOffset(int region)
     {
@@ -212,16 +618,26 @@ public sealed class Player : AcknexObject
         return false;
     }
 
-    // True if segment p1->p2 crosses segment p3->p4.
-    private static bool Crosses(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4)
+    private static bool CrossesPortal(Vector2 from, Vector2 to, Vector2 a, Vector2 b)
     {
-        float d1 = Orient(p3, p4, p1);
-        float d2 = Orient(p3, p4, p2);
-        float d3 = Orient(p1, p2, p3);
-        float d4 = Orient(p1, p2, p4);
-        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+        const float epsilon = 0.00001f;
+        float fromSide = Orient(a, b, from);
+        float toSide = Orient(a, b, to);
+        if (MathF.Abs(fromSide) <= epsilon ||
+            (fromSide > 0 && toSide > epsilon) ||
+            (fromSide < 0 && toSide < -epsilon))
+        {
+            return false;
+        }
+
+        float endpointSide1 = Orient(from, to, a);
+        float endpointSide2 = Orient(from, to, b);
+        return !((endpointSide1 > epsilon && endpointSide2 > epsilon) ||
+                 (endpointSide1 < -epsilon && endpointSide2 < -epsilon));
     }
 
     private static float Orient(Vector2 a, Vector2 b, Vector2 c) =>
         ((b.X - a.X) * (c.Y - a.Y)) - ((b.Y - a.Y) * (c.X - a.X));
+
+    private sealed record RegionSurface(List<int> Loop, IReadOnlyList<int> Triangles);
 }

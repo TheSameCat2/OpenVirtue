@@ -41,34 +41,75 @@ public static class MeshBuilder
         {
             if (!TryVertex(level, wall.Vertex1, out Vertex v1) ||
                 !TryVertex(level, wall.Vertex2, out Vertex v2) ||
-                !TryHeights(level, wall, out float floor, out float ceiling) ||
-                ceiling <= floor)
+                IsSkyTexture(level, wall.Texture))
             {
                 continue;
             }
 
-            float dx = v2.X - v1.X;
-            float dz = v2.Y - v1.Y;
-            float length = MathF.Sqrt((dx * dx) + (dz * dz));
-            float height = ceiling - floor;
-            TextureMapping mapping = TextureMappingFor(level, wall.Texture);
-            float u0 = (float)wall.OffsetX * mapping.OffsetToU;
-            float v0 = (float)wall.OffsetY * mapping.OffsetToV;
-            float u1 = u0 + (length * mapping.WorldToU);
-            float textureV1 = v0 + (height * mapping.WorldToV);
+            Region? left = RegionAt(level, wall.LeftRegion);
+            Region? right = RegionAt(level, wall.RightRegion);
+            if (left is not null && right is not null && !ReferenceEquals(left, right))
+            {
+                float leftFloor = (float)left.FloorHeight;
+                float rightFloor = (float)right.FloorHeight;
+                EmitWallSegment(level, accumulator, wall, v1, v2,
+                    Math.Min(leftFloor, rightFloor), Math.Max(leftFloor, rightFloor));
 
-            List<RenderVertex> target = accumulator.Bucket(wall.Texture);
-            var bottomLeft = new RenderVertex(v1.X, floor, v1.Y, u0, v0);
-            var bottomRight = new RenderVertex(v2.X, floor, v2.Y, u1, v0);
-            var topRight = new RenderVertex(v2.X, ceiling, v2.Y, u1, textureV1);
-            var topLeft = new RenderVertex(v1.X, ceiling, v1.Y, u0, textureV1);
-            target.Add(bottomLeft);
-            target.Add(bottomRight);
-            target.Add(topRight);
-            target.Add(bottomLeft);
-            target.Add(topRight);
-            target.Add(topLeft);
+                float leftCeiling = (float)left.CeilHeight;
+                float rightCeiling = (float)right.CeilHeight;
+                EmitWallSegment(level, accumulator, wall, v1, v2,
+                    Math.Min(leftCeiling, rightCeiling), Math.Max(leftCeiling, rightCeiling));
+                continue;
+            }
+
+            Region? region = left ?? right;
+            if (region is not null)
+            {
+                EmitWallSegment(level, accumulator, wall, v1, v2,
+                    (float)region.FloorHeight, (float)region.CeilHeight);
+            }
         }
+    }
+
+    private static void EmitWallSegment(
+        Level level,
+        Accumulator accumulator,
+        Wall wall,
+        Vertex v1,
+        Vertex v2,
+        float floor,
+        float ceiling)
+    {
+        if (ceiling <= floor)
+        {
+            return;
+        }
+
+        float dx = v2.X - v1.X;
+        float dz = v2.Y - v1.Y;
+        float length = MathF.Sqrt((dx * dx) + (dz * dz));
+        float height = ceiling - floor;
+        TextureMapping mapping = TextureMappingFor(level, wall.Texture);
+        float u0 = (float)wall.OffsetX * mapping.OffsetToU;
+        float v0 = (float)wall.OffsetY * mapping.OffsetToV;
+        float u1 = u0 + (length * mapping.WorldToU);
+        float textureV1 = v0 + (height * mapping.WorldToV);
+        float ambient = WallAmbient(level, wall);
+
+        List<RenderVertex> target = accumulator.Bucket(
+            wall.Texture,
+            AnimationSourceFor(level, wall.Texture, wall),
+            alphaTest: wall["TRANSPARENT"] > 0);
+        var bottomLeft = new RenderVertex(v1.X, floor + v1.Z, v1.Y, u0, v0, ambient);
+        var bottomRight = new RenderVertex(v2.X, floor + v2.Z, v2.Y, u1, v0, ambient);
+        var topRight = new RenderVertex(v2.X, ceiling + v2.Z, v2.Y, u1, textureV1, ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling + v1.Z, v1.Y, u0, textureV1, ambient);
+        target.Add(bottomLeft);
+        target.Add(bottomRight);
+        target.Add(topRight);
+        target.Add(bottomLeft);
+        target.Add(topRight);
+        target.Add(topLeft);
     }
 
     private static void AddSurfaces(Level level, Accumulator accumulator)
@@ -102,6 +143,7 @@ public static class MeshBuilder
                 triangles,
                 (float)region.FloorHeight,
                 region.FloorTexture,
+                region,
                 (float)region.FloorOffsetX,
                 (float)region.FloorOffsetY,
                 flip: false);
@@ -112,6 +154,7 @@ public static class MeshBuilder
                 triangles,
                 (float)region.CeilHeight,
                 region.CeilTexture,
+                region,
                 (float)region.CeilOffsetX,
                 (float)region.CeilOffsetY,
                 flip: true);
@@ -125,34 +168,43 @@ public static class MeshBuilder
         IReadOnlyList<int> triangles,
         float height,
         string? texture,
+        Region region,
         float offsetX,
         float offsetY,
         bool flip)
     {
+        if (IsSkyTexture(level, texture))
+        {
+            return;
+        }
+
         TextureMapping mapping = TextureMappingFor(level, texture);
-        List<RenderVertex> target = accumulator.Bucket(texture);
+        List<RenderVertex> target = accumulator.Bucket(
+            texture,
+            AnimationSourceFor(level, texture, region));
 
         for (int i = 0; i < triangles.Count; i += 3)
         {
             int a = loop[triangles[i]];
             int b = loop[triangles[flip ? i + 2 : i + 1]];
             int c = loop[triangles[flip ? i + 1 : i + 2]];
-            target.Add(SurfaceVertex(level, a, height, mapping, offsetX, offsetY));
-            target.Add(SurfaceVertex(level, b, height, mapping, offsetX, offsetY));
-            target.Add(SurfaceVertex(level, c, height, mapping, offsetX, offsetY));
+            target.Add(SurfaceVertex(level, a, height, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, b, height, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, c, height, mapping, offsetX, offsetY, (float)region.Ambient));
         }
     }
 
     private static RenderVertex SurfaceVertex(
-        Level level, int vertexIndex, float height, TextureMapping mapping, float offsetX, float offsetY)
+        Level level, int vertexIndex, float height, TextureMapping mapping, float offsetX, float offsetY, float ambient)
     {
         Vertex vertex = level.Vertices[vertexIndex];
         return new RenderVertex(
             vertex.X,
-            height,
+            height + vertex.Z,
             vertex.Y,
             (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
-            (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV));
+            (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
+            ambient);
     }
 
     /// <summary>
@@ -243,22 +295,15 @@ public static class MeshBuilder
         return false;
     }
 
-    private static bool TryHeights(Level level, Wall wall, out float floor, out float ceiling)
-    {
-        Region? region = RegionAt(level, wall.LeftRegion) ?? RegionAt(level, wall.RightRegion);
-        if (region is null)
-        {
-            floor = ceiling = 0;
-            return false;
-        }
-
-        floor = (float)region.FloorHeight;
-        ceiling = (float)region.CeilHeight;
-        return true;
-    }
-
     private static Region? RegionAt(Level level, int index) =>
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
+
+    private static float WallAmbient(Level level, Wall wall)
+    {
+        float left = RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient : 0;
+        float right = RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient : 0;
+        return Math.Max(left, right);
+    }
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)
     {
@@ -281,35 +326,81 @@ public static class MeshBuilder
         return new TextureMapping(1f / DefaultScale, 1f / DefaultScale, 0, 0);
     }
 
+    private static AcknexObject? AnimationSourceFor(
+        Level level,
+        string? textureName,
+        AcknexObject source)
+    {
+        return textureName is not null &&
+               level.Textures.TryGetValue(textureName, out LevelTexture texture) &&
+               (texture.Cycles > 1 || texture.IsOneShot)
+            ? source
+            : null;
+    }
+
+    private static bool IsSkyTexture(Level level, string? textureName) =>
+        textureName is not null &&
+        level.Textures.TryGetValue(textureName, out LevelTexture texture) &&
+        texture.IsSky;
+
     private readonly record struct TextureMapping(float WorldToU, float WorldToV, float OffsetToU, float OffsetToV);
 
     private sealed class Accumulator
     {
-        private readonly Dictionary<string, List<RenderVertex>> _byTexture = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, TextureBuckets> _byTexture = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<AcknexObject, Dictionary<string, TextureBuckets>> _animated = [];
         private readonly List<RenderVertex> _untextured = [];
 
-        public List<RenderVertex> Bucket(string? texture)
+        public List<RenderVertex> Bucket(
+            string? texture,
+            AcknexObject? animationSource = null,
+            bool alphaTest = false)
         {
             if (texture is null)
             {
                 return _untextured;
             }
 
-            if (!_byTexture.TryGetValue(texture, out List<RenderVertex>? list))
+            if (animationSource is not null)
             {
-                list = [];
-                _byTexture[texture] = list;
+                if (!_animated.TryGetValue(animationSource, out Dictionary<string, TextureBuckets>? byTexture))
+                {
+                    byTexture = new Dictionary<string, TextureBuckets>(StringComparer.OrdinalIgnoreCase);
+                    _animated[animationSource] = byTexture;
+                }
+
+                if (!byTexture.TryGetValue(texture, out TextureBuckets? animatedBuckets))
+                {
+                    animatedBuckets = new TextureBuckets();
+                    byTexture[texture] = animatedBuckets;
+                }
+
+                return animatedBuckets.For(alphaTest);
             }
 
-            return list;
+            if (!_byTexture.TryGetValue(texture, out TextureBuckets? buckets))
+            {
+                buckets = new TextureBuckets();
+                _byTexture[texture] = buckets;
+            }
+
+            return buckets.For(alphaTest);
         }
 
         public LevelMesh ToMesh()
         {
-            var batches = new List<MeshBatch>(_byTexture.Count + 1);
-            foreach ((string texture, List<RenderVertex> vertices) in _byTexture)
+            var batches = new List<MeshBatch>(_byTexture.Count + _animated.Count + 1);
+            foreach ((string texture, TextureBuckets buckets) in _byTexture)
             {
-                batches.Add(new MeshBatch(texture, vertices));
+                buckets.AddBatches(batches, texture, animationSource: null);
+            }
+
+            foreach ((AcknexObject source, Dictionary<string, TextureBuckets> byTexture) in _animated)
+            {
+                foreach ((string texture, TextureBuckets buckets) in byTexture)
+                {
+                    buckets.AddBatches(batches, texture, source);
+                }
             }
 
             if (_untextured.Count > 0)
@@ -318,6 +409,27 @@ public static class MeshBuilder
             }
 
             return new LevelMesh(batches);
+        }
+
+        private sealed class TextureBuckets
+        {
+            private readonly List<RenderVertex> _opaque = [];
+            private readonly List<RenderVertex> _alphaTested = [];
+
+            public List<RenderVertex> For(bool alphaTest) => alphaTest ? _alphaTested : _opaque;
+
+            public void AddBatches(List<MeshBatch> batches, string texture, AcknexObject? animationSource)
+            {
+                if (_opaque.Count > 0)
+                {
+                    batches.Add(new MeshBatch(texture, _opaque, animationSource));
+                }
+
+                if (_alphaTested.Count > 0)
+                {
+                    batches.Add(new MeshBatch(texture, _alphaTested, animationSource, alphaTest: true));
+                }
+            }
         }
     }
 }

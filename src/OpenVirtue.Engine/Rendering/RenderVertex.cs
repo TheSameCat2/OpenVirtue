@@ -4,7 +4,7 @@
 namespace OpenVirtue.Engine.Rendering;
 
 /// <summary>
-/// A renderer-ready vertex: a world position (x, y up, z) and a texture coordinate.
+/// A renderer-ready vertex: a world position (x, y up, z), texture coordinate, and local ambient light.
 /// WMP map coordinates (x, y) map to world (x, z); region heights map to world y.
 /// </summary>
-public readonly record struct RenderVertex(float X, float Y, float Z, float U, float V);
+public readonly record struct RenderVertex(float X, float Y, float Z, float U, float V, float Ambient = 0);

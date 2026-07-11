@@ -166,6 +166,7 @@ public sealed class FunctionExpression(string name, WdlExpression argument) : Wd
             "LOG" => value > 0 ? Math.Log(value) : throw InvalidFunctionDomain("LOG", value),
             "LOG10" => value > 0 ? Math.Log10(value) : throw InvalidFunctionDomain("LOG10", value),
             "LOG2" => value > 0 ? Math.Log2(value) : throw InvalidFunctionDomain("LOG2", value),
+            "RANDOM" => context is IWdlRandomContext random ? random.Random(value) : Random.Shared.NextDouble() * value,
             _ => 0,
         };
     }

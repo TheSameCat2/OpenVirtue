@@ -29,6 +29,62 @@ public class TextureLoaderTests
         Assert.Equal([1, 2, 3, 0xFF], image.Rgba);
     }
 
+    [Fact]
+    public void Load_AnimatedTexture_LoadsEveryNonNullBitmapPhase()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING actor 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        const string main =
+            "MAPFILE <m.wmp>; BMAP first,<first.pcx>; BMAP second,<second.pcx>; " +
+            "TEXTURE animated { CYCLES 3; BMAPS first,second,NULL; } " +
+            "THING actor { TEXTURE animated; }";
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => Path.GetFileName(n) == "m.wmp" ? map : null);
+        WrsArchive archive = BuildArchiveWithRawNames(
+            ("first.pcx", BuildPcx(1, 1, 1, [0x01])),
+            ("second.pcx", BuildPcx(1, 1, 1, [0x02])));
+
+        IReadOnlyDictionary<string, TextureImage> images = TextureLoader.Load(archive, level);
+
+        Assert.Equal([1, 2, 3, 0xFF], images["animated"].Rgba);
+        Assert.Equal([2, 3, 4, 0xFF], images[TextureAnimation.FrameKey("animated", 1)].Rgba);
+        Assert.DoesNotContain(TextureAnimation.FrameKey("animated", 2), images);
+    }
+
+    [Fact]
+    public void Load_EntityAttachment_UsesSpriteColorKey()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING actor 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        const string main =
+            "MAPFILE <m.wmp>; BMAP glowMap,<glow.pcx>; TEXTURE glowTex { BMAPS glowMap; } " +
+            "THING actor { ATTACH glowTex; }";
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => Path.GetFileName(n) == "m.wmp" ? map : null);
+        WrsArchive archive = BuildArchiveWithRawNames(("glow.pcx", BuildPcx(1, 1, 1, [0x00])));
+
+        TextureImage image = Assert.Contains("glowTex", TextureLoader.Load(archive, level));
+
+        Assert.Equal([0, 1, 2, 0], image.Rgba);
+    }
+
+    [Fact]
+    public void Load_WorldTexturePreservesColorKeyAlphaForMaterialSelection()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "WALL wall 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        const string main =
+            "MAPFILE <m.wmp>; BMAP wallMap,<wall.pcx>; TEXTURE wallTex { BMAPS wallMap; } " +
+            "WALL wall { TEXTURE wallTex; }";
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => Path.GetFileName(n) == "m.wmp" ? map : null);
+        WrsArchive archive = BuildArchiveWithRawNames(("wall.pcx", BuildPcx(1, 1, 1, [0x00])));
+
+        TextureImage image = Assert.Contains("wallTex", TextureLoader.Load(archive, level));
+
+        Assert.Equal([0, 1, 2, 0], image.Rgba);
+    }
+
     /// <summary>
     /// Decodes referenced textures for every local retail archive when user-supplied game
     /// data is present. No-op otherwise.

@@ -46,7 +46,7 @@ What works today:
 
 - **Asset pipeline** — clean-room readers for `WRS` (LZSS archives), `PCX` (8-bit
   paletted images), `WDL` (lexer + parser + `INCLUDE`/`DEFINE`/`IFDEF`/`IFNDEF` preprocessor), `WMP`
-  (text maps) and `WAV`, each validated against all six retail archives via guarded,
+  (text maps), `WAV`, and 8-bit Autodesk `FLI`/`FLC`, validated against retail data via guarded,
   local-only integration tests. Inspectable with the `ovtool` CLI.
 - **Headless level load** — `LevelLoader` combines a level's flattened WDL with its
   WMP map into a typed object model (regions, walls, things, actors, skills, actions,
@@ -55,12 +55,15 @@ What works today:
 - **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). It recognizes WDL
-  `FLAGS SKY` textures for a first-pass sky-colored background and applies
-  `TEXTURE AMBIENT` as a first-pass brightness tint. Static sprite billboards are
+  `FLAGS SKY` textures as a camera-selected textured background, renders open
+  portal wall spans, alpha-tests palette-index-0 holes only on walls marked
+  `TRANSPARENT`, and combines global/texture/region ambient lighting with
+  `PLAYER_LIGHT`. Static sprite billboards are
   laid out in the engine layer and drawn back-to-front for deterministic static scenes.
-  The camera is now
-  driven by a first-person debug player with floor following, point-based portal
-  crossing/blocking, gravity, and jump.
+  The camera is driven by the WDL-visible player with radius-aware wall, portal,
+  and entity collision. Floor/ceiling queries interpolate WMP vertex heights so
+  authored slopes feed vertical collision, WDL height/slope skills, and the
+  rendered feet/shadows of things and actors.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
   comparison, logical `&&`/`||`, bitwise integer operators, modulo, documented
   single-argument math functions, member access, and A3-style arithmetic aborts)
@@ -71,11 +74,49 @@ What works today:
   for iteration, exposes unique placement names for script member access, and registers
   the debug player as a script-visible object in the viewer. A provisional scheduler
   API dispatches registered per-frame object actions with `my` and `TIME_CORR` bound.
+  The app exposes live keyboard/mouse polling and movement-force skills, consumes
+  script-authored player velocity/rotation, and now runs Apathy's retail
+  label/`GOTO` movement action after startup; a guarded integration test verifies
+  sustained input produces valid collision-aware movement. Player hitscan and
+  actor sight checks traverse visible portal openings and dispatch retail
+  `IF_HIT` actions. Player shots use the live directional animation frame and
+  alpha mask, continue through transparent sprite pixels, and publish sprite
+  `HIT_X`/`HIT_Y`; wall hits report offset-aware texture coordinates for attached
+  decals. Normalized `SHOOT_X`/`SHOOT_Y` deviations share the app's live
+  `PLAYER_TILT`/`PLAYER_ARC` projection. Apathy's real left-input weapon path is covered by a guarded
+  runtime test and rendered smoke. The app also
+  renders first-pass WDL text, panels, buttons, sliders, bars, and bitmap widgets;
+  visible text with `IF_KLICK` uses its live rendered glyph bounds for hit testing.
+  `MSPRITE` metadata is preserved separately from its overlay and follows the
+  documented `MOUSE_MODE` visibility and mouse-position/hotspot behavior. The
+  app publishes per-frame virtual-pixel `MICKEY_X/Y` deltas, leaves active
+  `MOUSE_X/Y` coordinates under script control, tracks `MOUSE_MOVING`, dispatches
+  `IF_MSTOP`, and hides the native cursor over the custom pointer surface. In
+  mouse modes 0/1, bounded `MOUSE_SENSE`-scaled deltas feed the retail movement
+  action through `FORCE_ROT`/`FORCE_TILT`; mode 2 remains cursor-only.
+  An eight-voice NAudio host plays overlapping retail WAV effects with immediate
+  `CHANNEL`/`CHANNEL_0..7` state, global and per-sound volume, numeric stereo pan,
+  and first-pass object-relative `SDIST`/`SVDIST` attenuation. Texture `SOUND`,
+  `SVOL`, `SCYCLES`, and `SLOOP` metadata is retained; grounded movement triggers
+  floor sounds and entering a region starts or loops its ceiling sound through the
+  same eight-channel host. Looping wall, thing, and actor textures occupy channels
+  within earshot and continuously update attenuation and stereo direction. Animated
+  wall and entity textures fire non-looping sounds on their authored `SCYCLES`
+  phases after host-side distance filtering.
+  Skill loading preserves whether `VAL` was explicitly authored, so bare
+  declarations of predefined engine skills receive their documented defaults
+  without overriding intentional zero initializers.
+  The retail title sequence now decodes and plays its full-screen FLC at the
+  authored cadence while world simulation pauses and global `EACH_TICK` remains
+  active. Playback updates `FLIC_FRAME`, resumes the invoking action on completion
+  or `STOP_FLIC`, and can proceed through the keyboard-driven title/menu flow into
+  Apathy in one host process.
 
-Not yet complete: textured skybox/sky scrolling, palette shading,
-Acknex-parity `each_cycle` discovery/dispatch order, Acknex-accurate
-player-movement parity, body-radius/sliding collision, actor animation/AI, audio
-playback, HUD/menus/inventory, save/load, and the DOSBox-X oracle-diff harness.
+Not yet complete: exact sky scrolling and indexed-palette shading,
+Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,
+slope, stacked-region edge semantics, and exact actor AI/path event ordering,
+exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
+legacy-compatible save/load, and the DOSBox-X oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in

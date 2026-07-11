@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Engine.Tests.TestSupport;
 using OpenVirtue.Formats.Wrs;
@@ -23,7 +24,7 @@ public class MeshBuilderTests
             BMAP m, <t.pcx>, 0, 0, 64, 64;
             TEXTURE floorTex { BMAPS m; }
             WALL w { TEXTURE floorTex; }
-            REGION room { FLOOR_HGT 0; CEIL_HGT 10; FLOOR_TEX floorTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; FLOOR_TEX floorTex; AMBIENT 0.6; }
             """;
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
@@ -37,6 +38,103 @@ public class MeshBuilderTests
         // The quad spans the region's floor (y=0) to ceiling (y=10).
         Assert.Contains(batch.Vertices, v => v.Y == 0);
         Assert.Contains(batch.Vertices, v => v.Y == 10);
+        Assert.All(batch.Vertices, vertex => Assert.Equal(0.6f, vertex.Ambient));
+    }
+
+    [Fact]
+    public void BuildWalls_TwoSidedWallWithMatchingHeights_IsOpenPortal()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\n" +
+                        "REGION left 0 10;#0\nREGION right 0 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP m,<t.pcx>,0,0,64,64; TEXTURE wallTex { BMAPS m; } " +
+            "WALL w { TEXTURE wallTex; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelMesh mesh = MeshBuilder.BuildWalls(level);
+
+        Assert.Empty(mesh.Batches);
+        Assert.Equal(0, mesh.VertexCount);
+    }
+
+    [Fact]
+    public void BuildWalls_TwoSidedWall_EmitsOnlyFloorAndCeilingHeightDifferences()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\n" +
+                        "REGION left 0 12;#0\nREGION right 2 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP m,<t.pcx>,0,0,64,64; TEXTURE wallTex { BMAPS m; } " +
+            "WALL w { TEXTURE wallTex; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+
+        Assert.Equal(12, batch.Vertices.Count);
+        Assert.Contains(batch.Vertices, vertex => vertex.Y == 0);
+        Assert.Contains(batch.Vertices, vertex => vertex.Y == 2);
+        Assert.Contains(batch.Vertices, vertex => vertex.Y == 10);
+        Assert.Contains(batch.Vertices, vertex => vertex.Y == 12);
+    }
+
+    [Fact]
+    public void Build_SkyTextures_AreExcludedFromPerspectiveGeometry()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] =
+                "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
+                "REGION room 0 10;#0\n" +
+                "WALL skyWall 0 1 0 -1 0 0;#0\nWALL skyWall 1 2 0 -1 0 0;#1\n" +
+                "WALL skyWall 2 3 0 -1 0 0;#2\nWALL skyWall 3 0 0 -1 0 0;#3\n" +
+                "PLAYER_START 0 0 0 0;#4",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP skyMap,<sky.pcx>,0,0,64,64; " +
+            "TEXTURE skyTex { BMAPS skyMap; FLAGS SKY; } " +
+            "REGION room { FLOOR_TEX skyTex; CEIL_TEX skyTex; } WALL skyWall { TEXTURE skyTex; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelMesh mesh = MeshBuilder.Build(level);
+
+        Assert.Empty(mesh.Batches);
+        Assert.Equal(0, mesh.VertexCount);
+    }
+
+    [Fact]
+    public void Build_AnimatedWorldSurfaces_SelectCurrentTexturePhase()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] =
+                "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
+                "REGION room 0 10;#0\n" +
+                "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\n" +
+                "WALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\nPLAYER_START 0 0 0 0;#4",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP p1,<p1.pcx>,0,0,64,64; BMAP p2,<p2.pcx>,0,0,64,64; " +
+            "TEXTURE animated { CYCLES 2; BMAPS p1,p2; } " +
+            "REGION room { FLOOR_TEX animated; CEIL_TEX animated; CYCLE 2; } " +
+            "WALL w { TEXTURE animated; CYCLE 2; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelMesh mesh = MeshBuilder.Build(level);
+
+        Assert.All(mesh.Batches, batch => Assert.Equal("animated", batch.Texture));
+        MeshBatch regionBatch = Assert.Single(
+            mesh.Batches,
+            batch => ReferenceEquals(batch.AnimationSource, level.Regions[0]));
+        Assert.Equal(12, regionBatch.Vertices.Count);
+        Assert.Equal(4, mesh.Batches.Count(batch => batch.AnimationSource is Wall));
+        Assert.Equal(36, mesh.VertexCount);
     }
 
     [Fact]
@@ -90,6 +188,28 @@ public class MeshBuilderTests
     }
 
     [Fact]
+    public void BuildWalls_SharedTextureSeparatesTransparentAndOpaqueMaterials()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\n" +
+                        "REGION room 0 4;#0\nWALL solid 0 1 0 -1 0 0;#0\n" +
+                        "WALL grate 1 2 0 -1 0 0;#1\nPLAYER_START 0 0 0 0;#2",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP m,<t.pcx>,0,0,64,64; TEXTURE wallTex { BMAPS m; } " +
+            "WALL solid { TEXTURE wallTex; } WALL grate { TEXTURE wallTex; FLAGS TRANSPARENT; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        IReadOnlyList<MeshBatch> batches = MeshBuilder.BuildWalls(level).Batches;
+
+        Assert.Equal(2, batches.Count);
+        Assert.Single(batches, batch => !batch.AlphaTest);
+        Assert.Single(batches, batch => batch.AlphaTest);
+        Assert.All(batches, batch => Assert.Equal(6, batch.Vertices.Count));
+    }
+
+    [Fact]
     public void Build_AddsFloorAndCeilingForASquareRegion()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -108,6 +228,35 @@ public class MeshBuilderTests
 
         // The square region adds a floor (2 triangles) and a ceiling (2 triangles) = 12 vertices.
         Assert.Equal(wallsOnly.VertexCount + 12, full.VertexCount);
+    }
+
+    [Fact]
+    public void Build_UsesVertexHeightOffsetsForWallsFloorsAndCeilings()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] =
+                "VERTEX 0 0 2;#0\nVERTEX 4 0 2;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
+                "REGION room 5 15;#0\n" +
+                "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\n" +
+                "WALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\nPLAYER_START 0 0 0 0;#4",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE floorTex { BMAPS m; }
+            REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; }
+            WALL w { TEXTURE floorTex; }
+            """;
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        MeshBatch batch = Assert.Single(MeshBuilder.Build(level).Batches);
+
+        Assert.Contains(batch.Vertices, v => v.Y == 7);
+        Assert.Contains(batch.Vertices, v => v.Y == 17);
+        Assert.Contains(batch.Vertices, v => v.Y == 5);
+        Assert.Contains(batch.Vertices, v => v.Y == 15);
     }
 
     [Fact]

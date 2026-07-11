@@ -8,7 +8,7 @@ namespace OpenVirtue.Engine;
 
 /// <summary>
 /// Indexes a flattened WDL program's declarations needed to dress the geometry:
-/// <c>BMAP</c> bitmaps, <c>TEXTURE</c> definitions, and the <c>REGION</c>/<c>WALL</c>
+/// <c>BMAP</c>/<c>OVLY</c> bitmaps, <c>TEXTURE</c> definitions, and the <c>REGION</c>/<c>WALL</c>
 /// type definitions that name textures. Resolves a texture name through
 /// <c>TEXTURE → BMAPS → BMAP</c> to a concrete <see cref="LevelTexture"/>.
 /// </summary>
@@ -18,6 +18,8 @@ public sealed class WdlDeclarations
     private const double DefaultTextureScale = 16;
     private static readonly HashSet<string> RegionNumericProperties = new(Ci)
     {
+        "CYCLE",
+        "POSITION",
         "CLIP_DIST",
         "FLOOR_ANGLE",
         "CEIL_ANGLE",
@@ -45,6 +47,7 @@ public sealed class WdlDeclarations
     private static readonly HashSet<string> EntityNumericProperties = new(Ci)
     {
         "CYCLE",
+        "POSITION",
         "WAYPOINT",
         "TARGET_X",
         "TARGET_Y",
@@ -62,6 +65,14 @@ public sealed class WdlDeclarations
         "IF_FAR",
         "IF_ARRIVED",
         "IF_HIT",
+        "IF_KLICK",
+    };
+    private static readonly HashSet<string> EntityKeywordProperties = new(Ci)
+    {
+        "TARGET",
+        "WAY",
+        "OVERLAY",
+        "ATTACH",
     };
 
     private readonly Dictionary<string, BitmapDef> _bitmaps = new(Ci);
@@ -73,6 +84,9 @@ public sealed class WdlDeclarations
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
+
+    /// <summary>The names of all declared bitmap-like resources.</summary>
+    public IReadOnlyCollection<string> BitmapNames => _bitmaps.Keys;
 
     /// <summary>The body of each <c>ACTION</c> declaration, by name.</summary>
     public IReadOnlyDictionary<string, WdlBlock> Actions => _actions;
@@ -88,6 +102,7 @@ public sealed class WdlDeclarations
             switch (item.Keyword.ToUpperInvariant())
             {
                 case "BMAP":
+                case "OVLY":
                     declarations.IndexBitmap(item);
                     break;
                 case "TEXTURE":
@@ -127,25 +142,50 @@ public sealed class WdlDeclarations
     public EntityDef? GetEntity(string name) =>
         _entities.TryGetValue(name, out EntityDef value) ? value : null;
 
+    /// <summary>Resolves a top-level <c>BMAP</c> or <c>OVLY</c> declaration by name.</summary>
+    public LevelBitmap? ResolveBitmap(string? bitmapName)
+    {
+        if (bitmapName is null ||
+            !_bitmaps.TryGetValue(bitmapName, out BitmapDef bitmap))
+        {
+            return null;
+        }
+
+        return new LevelBitmap(bitmapName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height);
+    }
+
     /// <summary>Resolves a texture name to its source PCX file, sub-rectangle, and scale.</summary>
     public LevelTexture? ResolveTexture(string? textureName)
     {
         if (textureName is null ||
-            !_textures.TryGetValue(textureName, out TextureDef texture) ||
-            texture.Bitmap is null ||
-            !_bitmaps.TryGetValue(texture.Bitmap, out BitmapDef bitmap))
+            !_textures.TryGetValue(textureName, out TextureDef texture))
+        {
+            return null;
+        }
+
+        LevelBitmap?[] frames = texture.Bitmaps
+            .Select(ResolveBitmap)
+            .ToArray();
+        LevelBitmap? firstFrame = frames.FirstOrDefault(static frame => frame is not null);
+        if (firstFrame is not { } bitmap)
         {
             return null;
         }
 
         return new LevelTexture(
             textureName, bitmap.File, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height,
-            texture.ScaleX, texture.ScaleY, texture.Ambient, texture.IsSky);
+            texture.ScaleX, texture.ScaleY, texture.Ambient, texture.IsSky, texture.IsLightmap,
+            texture.IsBehind, texture.IsShadow, frames,
+            texture.Sides, texture.Cycles, texture.Delays, texture.IsOneShot,
+            texture.Mirrors, texture.FrameOffsetsX, texture.FrameOffsetsY,
+            texture.SoundDistance, texture.SoundVerticalDistance,
+            texture.SoundName, texture.SoundVolume, texture.SoundCycles, texture.IsSoundLoop,
+            texture.RandomDelayFactor);
     }
 
     private void IndexBitmap(WdlItem item)
     {
-        // BMAP name, <file.pcx>[, x, y, width, height]
+        // BMAP/OVLY name, <file.pcx>[, x, y, width, height]
         if (item.Header.Count == 0)
         {
             return;
@@ -173,14 +213,64 @@ public sealed class WdlDeclarations
         }
 
         string? bitmap = null;
+        var bitmaps = new List<string>();
         double scaleX = DefaultTextureScale, scaleY = DefaultTextureScale;
         double ambient = 0;
+        double soundDistance = 100;
+        double soundVerticalDistance = 0;
+        string? soundName = null;
+        double soundVolume = 0.5;
+        bool[] soundCycles = [];
+        double randomDelayFactor = 0;
+        int sides = 1;
+        int cycles = 1;
+        double[] delays = [];
+        bool[] mirrors = [];
+        double[] frameOffsetsX = [];
+        double[] frameOffsetsY = [];
         bool isSky = false;
+        bool isLightmap = false;
+        bool isBehind = false;
+        bool isShadow = false;
+        bool isOneShot = false;
+        bool isSoundLoop = false;
         foreach (WdlItem property in body.Items)
         {
             if (property.Keyword.Equals("BMAPS", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
             {
-                bitmap = property.Header[0].Text;
+                bitmaps.AddRange(IdentifierValues(property.Header));
+                bitmap = bitmaps.Count > 0 ? bitmaps[0] : property.Header[0].Text;
+            }
+            else if (property.Keyword.Equals("SIDES", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedSides)
+            {
+                sides = Math.Max(1, (int)parsedSides);
+            }
+            else if (property.Keyword.Equals("CYCLES", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedCycles)
+            {
+                cycles = Math.Max(1, (int)parsedCycles);
+            }
+            else if (property.Keyword.Equals("DELAY", StringComparison.OrdinalIgnoreCase))
+            {
+                delays = NumberValues(property.Header);
+            }
+            else if (property.Keyword.Equals("RANDOM", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedRandomDelayFactor)
+            {
+                randomDelayFactor = Math.Clamp(parsedRandomDelayFactor, 0, 1);
+            }
+            else if (property.Keyword.Equals("MIRROR", StringComparison.OrdinalIgnoreCase))
+            {
+                mirrors = NumberValues(property.Header).Select(static value => value != 0).ToArray();
+            }
+            else if (property.Keyword.Equals("OFFSET_X", StringComparison.OrdinalIgnoreCase))
+            {
+                frameOffsetsX = NumberValues(property.Header);
+            }
+            else if (property.Keyword.Equals("OFFSET_Y", StringComparison.OrdinalIgnoreCase))
+            {
+                frameOffsetsY = NumberValues(property.Header);
             }
             else if (property.Keyword.Equals("SCALE_XY", StringComparison.OrdinalIgnoreCase))
             {
@@ -206,19 +296,52 @@ public sealed class WdlDeclarations
             {
                 ambient = parsedAmbient;
             }
-            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase) &&
-                     property.Header.Any(static t => t.Text.Equals("SKY", StringComparison.OrdinalIgnoreCase)))
+            else if (property.Keyword.Equals("SOUND", StringComparison.OrdinalIgnoreCase))
             {
-                isSky = true;
+                soundName = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("SVOL", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedSoundVolume)
+            {
+                soundVolume = Math.Clamp(parsedSoundVolume, 0, 1);
+            }
+            else if (property.Keyword.Equals("SDIST", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedSoundDistance)
+            {
+                soundDistance = Math.Max(0, parsedSoundDistance);
+            }
+            else if (property.Keyword.Equals("SVDIST", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedSoundVerticalDistance)
+            {
+                soundVerticalDistance = Math.Max(0, parsedSoundVerticalDistance);
+            }
+            else if (property.Keyword.Equals("SCYCLES", StringComparison.OrdinalIgnoreCase))
+            {
+                soundCycles = NumberValues(property.Header).Select(static value => value != 0).ToArray();
+            }
+            else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+            {
+                isSky |= property.Header.Any(static t => t.Text.Equals("SKY", StringComparison.OrdinalIgnoreCase));
+                isLightmap |= property.Header.Any(static t => t.Text.Equals("LIGHTMAP", StringComparison.OrdinalIgnoreCase));
+                isBehind |= property.Header.Any(static t => t.Text.Equals("BEHIND", StringComparison.OrdinalIgnoreCase));
+                isShadow |= property.Header.Any(static t => t.Text.Equals("SHADOW", StringComparison.OrdinalIgnoreCase));
+                isOneShot |= property.Header.Any(static t => t.Text.Equals("ONESHOT", StringComparison.OrdinalIgnoreCase));
+                isSoundLoop |= property.Header.Any(static t => t.Text.Equals("SLOOP", StringComparison.OrdinalIgnoreCase));
             }
         }
 
-        _textures[item.Header[0].Text] = new TextureDef(bitmap, scaleX, scaleY, ambient, isSky);
+        _textures[item.Header[0].Text] = new TextureDef(
+            bitmap, bitmaps.ToArray(), scaleX, scaleY, ambient, isSky, isLightmap, isBehind, isShadow,
+            sides, cycles, delays, isOneShot,
+            mirrors, frameOffsetsX, frameOffsetsY, soundDistance, soundVerticalDistance,
+            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor);
     }
 
     private void IndexRegion(WdlItem item)
     {
         string? floor = null, ceiling = null;
+        string? genius = null;
+        string? below = null;
         double ambient = 0;
         double floorOffsetX = 0, floorOffsetY = 0, ceilOffsetX = 0, ceilOffsetY = 0;
         string? eachTickAction = null;
@@ -234,6 +357,14 @@ public sealed class WdlDeclarations
             else if (property.Keyword.Equals("CEIL_TEX", StringComparison.OrdinalIgnoreCase))
             {
                 ceiling = property.Header.Count > 0 ? property.Header[0].Text : null;
+            }
+            else if (property.Keyword.Equals("GENIUS", StringComparison.OrdinalIgnoreCase))
+            {
+                genius = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("BELOW", StringComparison.OrdinalIgnoreCase))
+            {
+                below = FirstIdentifierOrNull(property.Header);
             }
             else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
                      FirstNumber(property.Header) is { } parsedAmbient)
@@ -287,13 +418,14 @@ public sealed class WdlDeclarations
         }
 
         _regions[item.Header[0].Text] = new RegionTextures(
-            floor, ceiling, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY,
+            floor, ceiling, genius, below, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY,
             eachTickAction, eachCycleAction, actionHooks, skills);
     }
 
     private void IndexWall(WdlItem item)
     {
         string? texture = null;
+        string? attach = null;
         double? offsetX = null;
         double? offsetY = null;
         string? eachTickAction = null;
@@ -305,6 +437,10 @@ public sealed class WdlDeclarations
             if (property.Keyword.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
             {
                 texture = property.Header[0].Text;
+            }
+            else if (property.Keyword.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+            {
+                attach = FirstIdentifierOrNull(property.Header);
             }
             else if (property.Keyword.Equals("OFFSET_X", StringComparison.OrdinalIgnoreCase) &&
                      FirstNumber(property.Header) is { } parsedOffsetX)
@@ -343,7 +479,7 @@ public sealed class WdlDeclarations
         }
 
         _walls[item.Header[0].Text] = new WallDef(
-            texture, offsetX, offsetY, eachTickAction, eachCycleAction, actionHooks, skills);
+            texture, attach, offsetX, offsetY, eachTickAction, eachCycleAction, actionHooks, skills);
     }
 
     private void IndexEntity(WdlItem item)
@@ -354,11 +490,12 @@ public sealed class WdlDeclarations
         }
 
         string? texture = null;
-        double height = 1;
+        double height = 0;
         double angle = 0;
         string? eachTickAction = null;
         string? eachCycleAction = null;
         var actionHooks = new Dictionary<string, string?>(Ci);
+        var strings = new Dictionary<string, string?>(Ci);
         var skills = new Dictionary<string, double>(Ci);
         foreach (WdlItem property in item.Body!.Items)
         {
@@ -388,6 +525,10 @@ public sealed class WdlDeclarations
             {
                 actionHooks[property.Keyword] = FirstIdentifierOrNull(property.Header);
             }
+            else if (EntityKeywordProperties.Contains(property.Keyword))
+            {
+                strings[property.Keyword] = FirstIdentifierOrNull(property.Header);
+            }
             else if (TryUniversalSkill(property, out string skillName, out double skillValue))
             {
                 skills[skillName] = skillValue;
@@ -403,7 +544,7 @@ public sealed class WdlDeclarations
         }
 
         _entities[item.Header[0].Text] = new EntityDef(
-            texture, height, angle, eachTickAction, eachCycleAction, actionHooks, skills);
+            texture, height, angle, eachTickAction, eachCycleAction, actionHooks, strings, skills);
     }
 
     private static string? FirstFileRef(IReadOnlyList<WdlToken> tokens)
@@ -520,6 +661,17 @@ public sealed class WdlDeclarations
         return null;
     }
 
+    private static IEnumerable<string> IdentifierValues(IReadOnlyList<WdlToken> tokens)
+    {
+        foreach (WdlToken token in tokens)
+        {
+            if (token.Kind == WdlTokenKind.Identifier)
+            {
+                yield return token.Text;
+            }
+        }
+    }
+
     private static void AddFlags(WdlItem item, Dictionary<string, double> skills)
     {
         foreach (WdlToken token in item.Header)
@@ -544,11 +696,35 @@ public sealed class WdlDeclarations
 
     private readonly record struct BitmapDef(string File, int X, int Y, int Width, int Height);
 
-    private readonly record struct TextureDef(string? Bitmap, double ScaleX, double ScaleY, double Ambient, bool IsSky);
+    private readonly record struct TextureDef(
+        string? Bitmap,
+        IReadOnlyList<string> Bitmaps,
+        double ScaleX,
+        double ScaleY,
+        double Ambient,
+        bool IsSky,
+        bool IsLightmap,
+        bool IsBehind,
+        bool IsShadow,
+        int Sides,
+        int Cycles,
+        IReadOnlyList<double> Delays,
+        bool IsOneShot,
+        IReadOnlyList<bool> Mirrors,
+        IReadOnlyList<double> FrameOffsetsX,
+        IReadOnlyList<double> FrameOffsetsY,
+        double SoundDistance,
+        double SoundVerticalDistance,
+        string? SoundName,
+        double SoundVolume,
+        IReadOnlyList<bool> SoundCycles,
+        bool IsSoundLoop,
+        double RandomDelayFactor);
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
     public readonly record struct WallDef(
         string? Texture,
+        string? AttachTexture,
         double? OffsetX,
         double? OffsetY,
         string? EachTickAction,
@@ -560,6 +736,8 @@ public sealed class WdlDeclarations
     public readonly record struct RegionTextures(
         string? Floor,
         string? Ceiling,
+        string? Genius,
+        string? Below,
         double Ambient,
         double FloorOffsetX,
         double FloorOffsetY,
@@ -578,5 +756,6 @@ public sealed class WdlDeclarations
         string? EachTickAction,
         string? EachCycleAction,
         IReadOnlyDictionary<string, string?> ActionHooks,
+        IReadOnlyDictionary<string, string?> Strings,
         IReadOnlyDictionary<string, double> Skills);
 }

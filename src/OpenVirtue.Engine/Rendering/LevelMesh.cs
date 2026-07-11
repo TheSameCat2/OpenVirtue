@@ -6,14 +6,26 @@ namespace OpenVirtue.Engine.Rendering;
 /// <summary>A batch of triangles that share one texture.</summary>
 public sealed class MeshBatch
 {
-    public MeshBatch(string? texture, IReadOnlyList<RenderVertex> vertices)
+    public MeshBatch(
+        string? texture,
+        IReadOnlyList<RenderVertex> vertices,
+        AcknexObject? animationSource = null,
+        bool alphaTest = false)
     {
         Texture = texture;
         Vertices = vertices;
+        AnimationSource = animationSource;
+        AlphaTest = alphaTest;
     }
 
     /// <summary>The texture name for this batch (resolve via <see cref="Level.Textures"/>), or null for untextured.</summary>
     public string? Texture { get; }
+
+    /// <summary>The wall or region whose live <c>CYCLE</c> selects this batch's bitmap phase.</summary>
+    public AcknexObject? AnimationSource { get; }
+
+    /// <summary>Whether palette index 0 is discarded for this material batch.</summary>
+    public bool AlphaTest { get; }
 
     /// <summary>Triangle-list vertices (every three form a triangle).</summary>
     public IReadOnlyList<RenderVertex> Vertices { get; }

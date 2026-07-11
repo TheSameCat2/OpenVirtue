@@ -184,6 +184,37 @@ public class WdlPreprocessorTests
     }
 
     [Fact]
+    public void Flatten_ActionBodyConditionals_FilterStatements()
+    {
+        const string source =
+            """
+            DEFINE HARD;
+            ACTION choose
+            {
+                SET before, 1;
+                IFDEF HARD;
+                    SET mode, 2;
+                IFELSE;
+                    SET mode, 1;
+                ENDIF;
+                IFNDEF MISSING;
+                    SET fallback, 1;
+                ENDIF;
+            }
+            """;
+
+        WdlProgram program = WdlPreprocessor.Flatten(source, _ => null);
+
+        WdlItem action = Assert.Single(
+            program.Items,
+            item => item.Keyword.Equals("ACTION", StringComparison.OrdinalIgnoreCase));
+        string[] statements = action.Body!.Items.Select(item => item.Keyword).ToArray();
+        Assert.Equal(["SET", "SET", "SET"], statements);
+        Assert.DoesNotContain(statements, keyword => keyword.Equals("IFDEF", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("2", action.Body.Items[1].Header[2].Text);
+    }
+
+    [Fact]
     public void Flatten_Undef_RemovesFollowingAliasReplacement()
     {
         const string source = "DEFINE SpriteHeight,HEIGHT; UNDEF SpriteHeight; THING crate { SpriteHeight 42; }";

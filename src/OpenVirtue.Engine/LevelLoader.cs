@@ -24,7 +24,11 @@ public static class LevelLoader
     /// (e.g. <c>APATHY.WDL</c>); the map is whichever file its <c>MAPFILE</c> directive names.
     /// </summary>
     /// <exception cref="InvalidDataException">The archive lacks the main script, the MAPFILE, or the map.</exception>
-    public static Level Load(WrsArchive archive, string mainWdlName, IEnumerable<string>? defines = null)
+    public static Level Load(
+        WrsArchive archive,
+        string mainWdlName,
+        IEnumerable<string>? defines = null,
+        string? mapOverrideName = null)
     {
         ArgumentNullException.ThrowIfNull(archive);
         ArgumentException.ThrowIfNullOrEmpty(mainWdlName);
@@ -49,7 +53,8 @@ public static class LevelLoader
             mainWdlName,
             mainSource,
             name => resources.GetValueOrDefault(Path.GetFileName(name)),
-            defines);
+            defines,
+            mapOverrideName);
     }
 
     /// <summary>
@@ -62,15 +67,18 @@ public static class LevelLoader
         string name,
         string mainSource,
         Func<string, string?> resolveResource,
-        IEnumerable<string>? defines = null)
+        IEnumerable<string>? defines = null,
+        string? mapOverrideName = null)
     {
         ArgumentNullException.ThrowIfNull(mainSource);
         ArgumentNullException.ThrowIfNull(resolveResource);
 
         WdlProgram program = WdlPreprocessor.Flatten(mainSource, n => resolveResource(n), defines);
 
-        string mapName = FindFileRef(program.MainItems, "MAPFILE")
-            ?? throw new InvalidDataException("Level WDL has no MAPFILE directive.");
+        string mapName = string.IsNullOrWhiteSpace(mapOverrideName)
+            ? FindFileRef(program.MainItems, "MAPFILE")
+                ?? throw new InvalidDataException("Level WDL has no MAPFILE directive.")
+            : mapOverrideName;
         string mapText = resolveResource(mapName)
             ?? throw new InvalidDataException($"Map '{mapName}' could not be resolved.");
         WmpMap map = WmpMap.Read(mapText);
@@ -83,16 +91,55 @@ public static class LevelLoader
         var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
+        var ways = map.Ways.ToDictionary(
+            way => way.Name,
+            way => new LevelWay(
+                way.Name,
+                way.Points.Select(point => new LevelWayPoint(point.X, point.Y)).ToList()),
+            StringComparer.OrdinalIgnoreCase);
         PlayerStart? start = map.PlayerStart is { } ps
             ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
             : null;
 
-        (Dictionary<string, double> skillValues, Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
+        (Dictionary<string, double> skillValues,
+            HashSet<string> globalSkills,
+            HashSet<string> explicitlyInitializedSkills,
+            Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
         return new Level(
-            name, vertices, regions, walls, things, actors, start,
-            skillValues, skillBounds, GatherStrings(program), GatherSynonyms(program), GatherSearchPaths(program),
+            name, vertices, regions, walls, things, actors, ways, start,
+            FindVideoMode(program),
+            skillValues, globalSkills, explicitlyInitializedSkills, skillBounds,
+            GatherStrings(program), GatherSynonyms(program), GatherSearchPaths(program),
+            GatherSounds(program), GatherPalettes(program), GatherUiElements(program), BuildBitmaps(declarations),
             BuildTextures(declarations), declarations.Actions,
             GatherEachTickActions(program), GatherActionHooks(program), FindActionName(program, "IF_START"));
+    }
+
+    private static LevelVideoMode? FindVideoMode(WdlProgram program)
+    {
+        LevelVideoMode? result = null;
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("VIDEO", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string mode = string.Concat(item.Header
+                .Where(static token => token.Kind is WdlTokenKind.Identifier or WdlTokenKind.Number)
+                .Select(static token => token.Text));
+            result = mode.ToUpperInvariant() switch
+            {
+                "320X200" => new LevelVideoMode("320x200", 320, 200),
+                "X320X240" => new LevelVideoMode("X320x240", 320, 240),
+                "X320X400" => new LevelVideoMode("X320x400", 320, 400),
+                "S640X480" => new LevelVideoMode("S640x480", 640, 480),
+                "S800X600" => new LevelVideoMode("S800x600", 800, 600),
+                _ => result,
+            };
+        }
+
+        return result;
     }
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations, double defaultClipDistance)
@@ -103,6 +150,8 @@ public static class LevelLoader
         {
             region.FloorTexture = textures.Floor;
             region.CeilTexture = textures.Ceiling;
+            region.GeniusName = textures.Genius;
+            region.BelowName = textures.Below;
             region.Ambient = textures.Ambient;
             region.FloorOffsetX = textures.FloorOffsetX;
             region.FloorOffsetY = textures.FloorOffsetY;
@@ -133,6 +182,7 @@ public static class LevelLoader
         if (declarations.GetWall(w.Name) is { } definition)
         {
             wall.Texture = definition.Texture;
+            wall.AttachTexture = definition.AttachTexture;
             wall.OffsetX = definition.OffsetX ?? wall.OffsetX;
             wall.OffsetY = definition.OffsetY ?? wall.OffsetY;
             wall.EachTickAction = definition.EachTickAction;
@@ -152,6 +202,20 @@ public static class LevelLoader
             if (declarations.ResolveTexture(textureName) is { } texture)
             {
                 catalog[textureName] = texture;
+            }
+        }
+
+        return catalog;
+    }
+
+    private static Dictionary<string, LevelBitmap> BuildBitmaps(WdlDeclarations declarations)
+    {
+        var catalog = new Dictionary<string, LevelBitmap>(StringComparer.OrdinalIgnoreCase);
+        foreach (string bitmapName in declarations.BitmapNames)
+        {
+            if (declarations.ResolveBitmap(bitmapName) is { } bitmap)
+            {
+                catalog[bitmapName] = bitmap;
             }
         }
 
@@ -182,6 +246,10 @@ public static class LevelLoader
             entity.EachTickAction = definition.EachTickAction;
             entity.EachCycleAction = definition.EachCycleAction;
             ApplyActionHooks(entity, definition.ActionHooks);
+            foreach ((string name, string? value) in definition.Strings)
+            {
+                entity.TrySetString(name, value);
+            }
             ApplySkills(entity, definition.Skills);
         }
 
@@ -328,9 +396,15 @@ public static class LevelLoader
         return null;
     }
 
-    private static (Dictionary<string, double> Values, Dictionary<string, SkillRange> Bounds) GatherSkills(WdlProgram program)
+    private static (
+        Dictionary<string, double> Values,
+        HashSet<string> Global,
+        HashSet<string> ExplicitlyInitialized,
+        Dictionary<string, SkillRange> Bounds) GatherSkills(WdlProgram program)
     {
         var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        var global = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var explicitlyInitialized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var bounds = new Dictionary<string, SkillRange>(StringComparer.OrdinalIgnoreCase);
 
         foreach (WdlItem item in program.Items)
@@ -341,6 +415,8 @@ public static class LevelLoader
             }
 
             double value = 0;
+            bool hasExplicitValue = false;
+            bool isGlobal = false;
             double? min = null;
             double? max = null;
             if (item.Body is { } body)
@@ -350,6 +426,7 @@ public static class LevelLoader
                     if (property.Keyword.Equals("VAL", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedVal)
                     {
                         value = parsedVal;
+                        hasExplicitValue = true;
                     }
                     else if (property.Keyword.Equals("MIN", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedMin)
                     {
@@ -359,18 +436,39 @@ public static class LevelLoader
                     {
                         max = parsedMax;
                     }
+                    else if (property.Keyword.Equals("TYPE", StringComparison.OrdinalIgnoreCase) &&
+                        property.Header.Any(token => token.Text.Equals("GLOBAL", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        isGlobal = true;
+                    }
                 }
             }
 
             string name = item.Header[0].Text;
             values[name] = value;
+            if (isGlobal)
+            {
+                global.Add(name);
+            }
+            else
+            {
+                global.Remove(name);
+            }
+            if (hasExplicitValue)
+            {
+                explicitlyInitialized.Add(name);
+            }
+            else
+            {
+                explicitlyInitialized.Remove(name);
+            }
             if (min is not null || max is not null)
             {
                 bounds[name] = new SkillRange(min ?? double.NegativeInfinity, max ?? double.PositiveInfinity);
             }
         }
 
-        return (values, bounds);
+        return (values, global, explicitlyInitialized, bounds);
     }
 
     private static Dictionary<string, WdlString> GatherStrings(WdlProgram program)
@@ -471,6 +569,110 @@ public static class LevelLoader
 
         return paths.ToArray();
     }
+
+    private static Dictionary<string, string> GatherSounds(WdlProgram program)
+    {
+        var sounds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("SOUND", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Header[0].Kind != WdlTokenKind.Identifier)
+            {
+                continue;
+            }
+
+            foreach (WdlToken token in item.Header.Skip(1))
+            {
+                if (token.Kind is WdlTokenKind.FileRef or WdlTokenKind.StringLiteral)
+                {
+                    sounds[item.Header[0].Text] = token.Text;
+                    break;
+                }
+            }
+        }
+
+        return sounds;
+    }
+
+    private static Dictionary<string, string> GatherPalettes(WdlProgram program)
+    {
+        var palettes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("PALETTE", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Header[0].Kind != WdlTokenKind.Identifier ||
+                item.Body is not { } body)
+            {
+                continue;
+            }
+
+            foreach (WdlItem property in body.Items)
+            {
+                if (!property.Keyword.Equals("PALFILE", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                foreach (WdlToken token in property.Header)
+                {
+                    if (token.Kind is WdlTokenKind.FileRef or WdlTokenKind.StringLiteral)
+                    {
+                        palettes[item.Header[0].Text] = token.Text;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return palettes;
+    }
+
+    private static Dictionary<string, WdlUiElement> GatherUiElements(WdlProgram program)
+    {
+        var elements = new Dictionary<string, WdlUiElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!IsUiDeclaration(item.Keyword) ||
+                item.Header.Count == 0 ||
+                item.Header[0].Kind != WdlTokenKind.Identifier)
+            {
+                continue;
+            }
+
+            string name = item.Header[0].Text;
+            string key = item.Keyword.Equals("MSPRITE", StringComparison.OrdinalIgnoreCase)
+                ? "$MSPRITE"
+                : name;
+            elements[key] = new WdlUiElement(
+                item.Keyword,
+                name,
+                item.Header.Skip(1).Select(ToUiValue).ToArray(),
+                item.Body?.Items.Select(ToUiProperty).ToArray() ?? []);
+        }
+
+        return elements;
+    }
+
+    private static WdlUiProperty ToUiProperty(WdlItem item) =>
+        new(item.Keyword, item.Header.Select(ToUiValue).ToArray());
+
+    private static WdlUiValue ToUiValue(WdlToken token) =>
+        new(token.Kind.ToString(), token.Text);
+
+    private static bool IsUiDeclaration(string keyword) =>
+        keyword.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("OVLY", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("PANEL", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("TEXT", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("FONT", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("VIDEO", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("DITHER", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("MSPRITE", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("NEXUS", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("SAVEDIR", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("BIND", StringComparison.OrdinalIgnoreCase);
 
     private static double? ParseNumber(WdlItem property)
     {

@@ -25,30 +25,73 @@ public static class TextureLoader
         var pcxByFile = new Dictionary<string, PcxImage?>(StringComparer.OrdinalIgnoreCase);
         var images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
 
-        // Textures used by things/actors are sprites: palette index 0 is their transparent color key.
-        var spriteTextures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var thing in level.Things)
-        {
-            if (thing.Texture is { } t)
-            {
-                spriteTextures.Add(t);
-            }
-        }
-
-        foreach (var actor in level.Actors)
-        {
-            if (actor.Texture is { } t)
-            {
-                spriteTextures.Add(t);
-            }
-        }
-
         foreach ((string name, LevelTexture texture) in level.Textures)
         {
             PcxImage? pcx = GetPcx(archive, texture.File, level.SearchPaths, pcxByFile);
             if (pcx is not null)
             {
-                images[name] = Crop(pcx, texture, colorKey: spriteTextures.Contains(name));
+                images[name] = Crop(pcx, texture, colorKey: true);
+            }
+
+            for (int frameIndex = 1; frameIndex < texture.Frames.Count; frameIndex++)
+            {
+                if (texture.Frames[frameIndex] is not { } frame)
+                {
+                    continue;
+                }
+
+                PcxImage? framePcx = GetPcx(archive, frame.File, level.SearchPaths, pcxByFile);
+                if (framePcx is not null)
+                {
+                    images[TextureAnimation.FrameKey(name, frameIndex)] =
+                        Crop(framePcx, frame, colorKey: true);
+                }
+            }
+        }
+
+        return images;
+    }
+
+    /// <summary>Loads top-level bitmap-like resources used by UI overlays and panels.</summary>
+    public static IReadOnlyDictionary<string, TextureImage> LoadBitmaps(WrsArchive archive, Level level)
+    {
+        ArgumentNullException.ThrowIfNull(archive);
+        ArgumentNullException.ThrowIfNull(level);
+
+        var pcxByFile = new Dictionary<string, PcxImage?>(StringComparer.OrdinalIgnoreCase);
+        var images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, LevelBitmap bitmap) in level.Bitmaps)
+        {
+            PcxImage? pcx = GetPcx(archive, bitmap.File, level.SearchPaths, pcxByFile);
+            if (pcx is not null)
+            {
+                images[name] = Crop(pcx, bitmap, colorKey: true);
+            }
+        }
+
+        return images;
+    }
+
+    /// <summary>Loads top-level WDL <c>FONT</c> atlases used by visible text declarations.</summary>
+    public static IReadOnlyDictionary<string, TextureImage> LoadFonts(WrsArchive archive, Level level)
+    {
+        ArgumentNullException.ThrowIfNull(archive);
+        ArgumentNullException.ThrowIfNull(level);
+
+        var pcxByFile = new Dictionary<string, PcxImage?>(StringComparer.OrdinalIgnoreCase);
+        var images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlUiElement element in level.UiElements.Values)
+        {
+            if (!element.Keyword.Equals("FONT", StringComparison.OrdinalIgnoreCase) ||
+                FirstFileRef(element.Header) is not { } file)
+            {
+                continue;
+            }
+
+            PcxImage? pcx = GetPcx(archive, file, level.SearchPaths, pcxByFile);
+            if (pcx is not null)
+            {
+                images[element.Name] = Crop(pcx, 0, 0, 0, 0, colorKey: true);
             }
         }
 
@@ -132,13 +175,32 @@ public static class TextureLoader
 
     private static string NormalizeArchiveName(string value) => value.Replace('\\', '/');
 
-    private static TextureImage Crop(PcxImage pcx, LevelTexture texture, bool colorKey)
+    private static string? FirstFileRef(IReadOnlyList<WdlUiValue> values)
+    {
+        foreach (WdlUiValue value in values)
+        {
+            if (value.Kind.Equals("FileRef", StringComparison.OrdinalIgnoreCase))
+            {
+                return value.Text;
+            }
+        }
+
+        return null;
+    }
+
+    private static TextureImage Crop(PcxImage pcx, LevelTexture texture, bool colorKey) =>
+        Crop(pcx, texture.X, texture.Y, texture.Width, texture.Height, colorKey);
+
+    private static TextureImage Crop(PcxImage pcx, LevelBitmap bitmap, bool colorKey) =>
+        Crop(pcx, bitmap.X, bitmap.Y, bitmap.Width, bitmap.Height, colorKey);
+
+    private static TextureImage Crop(PcxImage pcx, int sourceX, int sourceY, int sourceWidth, int sourceHeight, bool colorKey)
     {
         // Clamp the BMAP rectangle to the image; a non-positive size means "the whole image".
-        int x = Math.Clamp(texture.X, 0, pcx.Width);
-        int y = Math.Clamp(texture.Y, 0, pcx.Height);
-        int width = texture.Width > 0 ? Math.Min(texture.Width, pcx.Width - x) : pcx.Width - x;
-        int height = texture.Height > 0 ? Math.Min(texture.Height, pcx.Height - y) : pcx.Height - y;
+        int x = Math.Clamp(sourceX, 0, pcx.Width);
+        int y = Math.Clamp(sourceY, 0, pcx.Height);
+        int width = sourceWidth > 0 ? Math.Min(sourceWidth, pcx.Width - x) : pcx.Width - x;
+        int height = sourceHeight > 0 ? Math.Min(sourceHeight, pcx.Height - y) : pcx.Height - y;
         width = Math.Max(1, width);
         height = Math.Max(1, height);
 

@@ -27,6 +27,7 @@ public sealed class Wall : AcknexObject
     public double OffsetX { get; set; }
     public double OffsetY { get; set; }
     public string? Texture { get; set; }
+    public string? AttachTexture { get; set; }
 
     /// <summary>The action declared by wall-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
     public string? EachTickAction { get; set; }
@@ -59,6 +60,24 @@ public sealed class Wall : AcknexObject
             return true;
         }
 
+        if (name.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+        {
+            value = AttachTexture;
+            return true;
+        }
+
+        if (name.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        {
+            value = EachTickAction;
+            return true;
+        }
+
+        if (name.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+        {
+            value = EachCycleAction;
+            return true;
+        }
+
         if (IsWallActionHook(name))
         {
             _actionHooks.TryGetValue(name, out value);
@@ -74,6 +93,26 @@ public sealed class Wall : AcknexObject
         if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
         {
             Texture = value;
+            return true;
+        }
+
+        if (name.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+        {
+            AttachTexture = string.IsNullOrWhiteSpace(value) || value.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : value;
+            return true;
+        }
+
+        if (name.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        {
+            EachTickAction = string.IsNullOrWhiteSpace(value) ? null : value;
+            return true;
+        }
+
+        if (name.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+        {
+            EachCycleAction = string.IsNullOrWhiteSpace(value) ? null : value;
             return true;
         }
 

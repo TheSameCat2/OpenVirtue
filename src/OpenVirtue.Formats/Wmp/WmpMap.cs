@@ -8,7 +8,7 @@ namespace OpenVirtue.Formats.Wmp;
 
 /// <summary>
 /// A parsed Acknex-3 <c>WMP</c> map: the level geometry (vertices, regions, walls)
-/// and placed objects (things, actors, player start).
+/// and placed objects (things, actors, actor ways, player start).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,6 +23,7 @@ namespace OpenVirtue.Formats.Wmp;
 /// REGION        name floor_hgt ceil_hgt
 /// WALL          name vertex1 vertex2 region1 region2 offsx offsy
 /// THING / ACTOR name x y angle region
+/// WAY            name x1 y1 ... xn yn
 /// PLAYER_START  x y angle region
 /// </code>
 /// </remarks>
@@ -34,6 +35,7 @@ public sealed class WmpMap
         IReadOnlyList<WmpWall> walls,
         IReadOnlyList<WmpPlacement> things,
         IReadOnlyList<WmpPlacement> actors,
+        IReadOnlyList<WmpWay> ways,
         WmpPlayerStart? playerStart)
     {
         Vertices = vertices;
@@ -41,6 +43,7 @@ public sealed class WmpMap
         Walls = walls;
         Things = things;
         Actors = actors;
+        Ways = ways;
         PlayerStart = playerStart;
     }
 
@@ -49,6 +52,7 @@ public sealed class WmpMap
     public IReadOnlyList<WmpWall> Walls { get; }
     public IReadOnlyList<WmpPlacement> Things { get; }
     public IReadOnlyList<WmpPlacement> Actors { get; }
+    public IReadOnlyList<WmpWay> Ways { get; }
     public WmpPlayerStart? PlayerStart { get; }
 
     /// <summary>Parses a WMP map from its text.</summary>
@@ -62,6 +66,7 @@ public sealed class WmpMap
         var walls = new List<WmpWall>();
         var things = new List<WmpPlacement>();
         var actors = new List<WmpPlacement>();
+        var ways = new List<WmpWay>();
         WmpPlayerStart? playerStart = null;
 
         foreach (string[] record in EnumerateRecords(text))
@@ -87,6 +92,9 @@ public sealed class WmpMap
                 case "ACTOR":
                     actors.Add(ReadPlacement(record));
                     break;
+                case "WAY":
+                    ways.Add(ReadWay(record));
+                    break;
                 case "PLAYER_START":
                     playerStart = new WmpPlayerStart(Float(record, 1), Float(record, 2), Float(record, 3), Int(record, 4));
                     break;
@@ -95,7 +103,7 @@ public sealed class WmpMap
             }
         }
 
-        return new WmpMap(vertices, regions, walls, things, actors, playerStart);
+        return new WmpMap(vertices, regions, walls, things, actors, ways, playerStart);
     }
 
     /// <summary>Parses a WMP map from bytes (decoded as Latin1 DOS text).</summary>
@@ -110,6 +118,23 @@ public sealed class WmpMap
 
     private static WmpPlacement ReadPlacement(string[] record) =>
         new(record[1], Float(record, 2), Float(record, 3), Float(record, 4), Int(record, 5));
+
+    private static WmpWay ReadWay(string[] record)
+    {
+        Require(record, 3);
+        if ((record.Length - 2) % 2 != 0)
+        {
+            throw new InvalidDataException($"WMP WAY record '{record[1]}' has an unmatched coordinate.");
+        }
+
+        var points = new List<WmpWayPoint>((record.Length - 2) / 2);
+        for (int i = 2; i < record.Length; i += 2)
+        {
+            points.Add(new WmpWayPoint(Float(record, i), Float(record, i + 1)));
+        }
+
+        return new WmpWay(record[1], points);
+    }
 
     /// <summary>
     /// Splits the source into records: whitespace-separated token arrays, one per

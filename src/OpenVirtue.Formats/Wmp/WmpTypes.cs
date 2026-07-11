@@ -30,5 +30,11 @@ public readonly record struct WmpWall(
 /// </summary>
 public readonly record struct WmpPlacement(string Name, float X, float Y, float Angle, int Region);
 
+/// <summary>A named closed path of 2D waypoints assigned to actors by WED.</summary>
+public sealed record WmpWay(string Name, IReadOnlyList<WmpWayPoint> Points);
+
+/// <summary>A point on a WED actor path.</summary>
+public readonly record struct WmpWayPoint(float X, float Y);
+
 /// <summary>The player's spawn position, facing angle, and starting region.</summary>
 public readonly record struct WmpPlayerStart(float X, float Y, float Angle, int Region);
