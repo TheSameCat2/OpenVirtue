@@ -27,6 +27,8 @@ public sealed class Region : AcknexObject
     public double CeilOffsetY { get; set; }
     public string? FloorTexture { get; set; }
     public string? CeilTexture { get; set; }
+    public string? GeniusName { get; set; }
+    public string? BelowName { get; set; }
 
     /// <summary>The action declared by region-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
     public string? EachTickAction { get; set; }
@@ -57,6 +59,10 @@ public sealed class Region : AcknexObject
         {
             case "floor_tex": value = FloorTexture; return true;
             case "ceil_tex": value = CeilTexture; return true;
+            case "genius": value = GeniusName; return true;
+            case "below": value = BelowName; return true;
+            case "each_tick": value = EachTickAction; return true;
+            case "each_cycle": value = EachCycleAction; return true;
         }
 
         if (IsRegionActionHook(name))
@@ -75,6 +81,10 @@ public sealed class Region : AcknexObject
         {
             case "floor_tex": FloorTexture = value; return true;
             case "ceil_tex": CeilTexture = value; return true;
+            case "genius": GeniusName = value; return true;
+            case "below": BelowName = string.IsNullOrWhiteSpace(value) ? null : value; return true;
+            case "each_tick": EachTickAction = string.IsNullOrWhiteSpace(value) ? null : value; return true;
+            case "each_cycle": EachCycleAction = string.IsNullOrWhiteSpace(value) ? null : value; return true;
         }
 
         if (IsRegionActionHook(name))

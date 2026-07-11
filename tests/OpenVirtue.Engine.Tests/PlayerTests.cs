@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using System.Numerics;
+using OpenVirtue.Engine.Map;
 
 namespace OpenVirtue.Engine.Tests;
 
@@ -24,18 +25,127 @@ public class PlayerTests
         player.MoveHorizontal(0, 10); // cross y=0 into region b
 
         Assert.Equal(1, player.Region);
-        Assert.Equal(5f, player.Position.Z);
+        Assert.Equal(5f, player.Position.Z, 3);
     }
 
     [Fact]
-    public void MoveHorizontal_IntoSolidWall_IsBlocked()
+    public void MoveHorizontal_DownTallLedge_CrossesPortalWithoutReverseCollision()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\n" +
+            "REGION upper 8 20;#0\nREGION lower 0 20;#1\n" +
+            "WALL ledge 0 1 0 1 0 0;#0\n" +
+            "PLAYER_START 5 -1 0 0;#1";
+        var player = new Player(Load(map));
+
+        Vector2 displacement = player.MoveHorizontal(0, 2);
+
+        Assert.Equal(1, player.Region);
+        Assert.True(displacement.Y > 0);
+        Assert.True(player.Position.Z > 0);
+    }
+
+    [Fact]
+    public void MoveHorizontal_UpTallLedge_RemainsBlocked()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\n" +
+            "REGION upper 8 20;#0\nREGION lower 0 20;#1\n" +
+            "WALL ledge 0 1 0 1 0 0;#0\n" +
+            "PLAYER_START 5 1 0 1;#1";
+        var player = new Player(Load(map));
+
+        player.MoveHorizontal(0, -2);
+
+        Assert.Equal(1, player.Region);
+        Assert.Equal(player.Width, player.Position.Z, 3);
+    }
+
+    [Fact]
+    public void MoveHorizontal_IntoSolidWall_StopsAtPlayerWidth()
     {
         var player = new Player(Load());
 
         player.MoveHorizontal(-10, 0); // toward the solid region across x=0
 
-        Assert.Equal(0, player.Region);   // did not cross
-        Assert.Equal(5f, player.Position.X); // position unchanged
+        Assert.Equal(0, player.Region);
+        Assert.Equal(player.Width, player.Position.X, 3);
+    }
+
+    [Fact]
+    public void MoveHorizontal_DiagonallyIntoSolidWall_SlidesAlongWall()
+    {
+        var player = new Player(Load());
+
+        Vector2 displacement = player.MoveHorizontal(-10, 4);
+
+        Assert.Equal(player.Width, player.Position.X, 3);
+        Assert.Equal(-1, player.Position.Z, 3);
+        Assert.True(displacement.Y > 3.9f);
+    }
+
+    [Fact]
+    public void MoveHorizontal_ApproachingSolidWallWithoutCrossing_MaintainsPlayerWidth()
+    {
+        var player = new Player(Load());
+
+        player.MoveHorizontal(-4.5f, 0);
+
+        Assert.Equal(player.Width, player.Position.X, 3);
+    }
+
+    [Fact]
+    public void MoveHorizontal_InteriorWallBecomesCrossableWhenPassableChangesAtRuntime()
+    {
+        const string map =
+            "VERTEX 0 -20 0;#0\nVERTEX 0 20 0;#1\n" +
+            "REGION room 0 20;#0\nWALL divider 0 1 0 0 0 0;#0\n" +
+            "PLAYER_START 5 0 0 0;#1";
+        Level level = Load(map);
+        var blocked = new Player(level);
+
+        blocked.MoveHorizontal(-10, 0);
+
+        Assert.Equal(blocked.Width, blocked.Position.X, 3);
+
+        level.Walls[0]["passable"] = 1;
+        var passable = new Player(level);
+        passable.MoveHorizontal(-10, 0);
+
+        Assert.Equal(-5, passable.Position.X, 3);
+        Assert.Equal(0, passable.Region);
+    }
+
+    [Fact]
+    public void MoveHorizontal_ThingCollisionUsesTextureScaleAndLivePassableFlag()
+    {
+        const string map =
+            "VERTEX -20 -20 0;#0\nVERTEX 20 -20 0;#1\n" +
+            "REGION room 0 20;#0\nTHING crate 0 0 0 0;#0\n" +
+            "PLAYER_START 5 0 0 0;#1";
+        const string main =
+            "MAPFILE <m.wmp>; " +
+            "BMAP crateMap, <crate.pcx>, 0, 0, 32, 16; " +
+            "TEXTURE crateTex { BMAPS crateMap; } " +
+            "THING crate { TEXTURE crateTex; }";
+        Level level = Load(map, main);
+        Thing thing = Assert.Single(level.Things);
+        Assert.Equal("crateTex", thing.Texture);
+        Assert.True(MapEntitySizing.TryGetSize(level, thing, out MapEntitySize size));
+        Assert.Equal(2, size.Width);
+        Assert.Equal(0, thing["passable"]);
+        Assert.Equal(0, thing["invisible"]);
+        var blocked = new Player(level);
+
+        blocked.MoveHorizontal(-10, 0);
+
+        Assert.Equal(2.2f, blocked.Position.X, 3);
+
+        level.Things[0]["passable"] = 1;
+        var passable = new Player(level);
+        passable.MoveHorizontal(-10, 0);
+
+        Assert.Equal(-5, passable.Position.X, 3);
     }
 
     [Fact]
@@ -51,6 +161,28 @@ public class PlayerTests
 
         Assert.Equal(groundY, player.Position.Y); // fell back and landed
         Assert.True(player.Grounded);
+    }
+
+    [Fact]
+    public void SurfaceHeights_SlopedRegionInterpolateVertexOffsetsAtPlayerPosition()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 10;#1\nVERTEX 10 10 10;#2\nVERTEX 0 10 0;#3\n" +
+            "REGION ramp 2 12;#0\n" +
+            "WALL a 0 1 0 -1 0 0;#0\nWALL b 1 2 0 -1 0 0;#1\n" +
+            "WALL c 2 3 0 -1 0 0;#2\nWALL d 3 0 0 -1 0 0;#3\n" +
+            "PLAYER_START 5 5 0 0;#4";
+        var player = new Player(Load(map));
+
+        Assert.Equal(7, player.FloorHeight, 3);
+        Assert.Equal(17, player.CeilingHeight, 3);
+        Assert.Equal(10, player.Position.Y, 3);
+
+        player.MoveTo(0, 2, 5);
+
+        Assert.Equal(4, player.FloorHeight, 3);
+        Assert.Equal(14, player.CeilingHeight, 3);
+        Assert.Equal(7, player.Position.Y, 3);
     }
 
     [Fact]
@@ -89,9 +221,9 @@ public class PlayerTests
         Assert.Equal(1, player.Region);
     }
 
-    private static Level Load()
+    private static Level Load(string map = Map, string main = "MAPFILE <m.wmp>;")
     {
-        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };
-        return LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
     }
 }

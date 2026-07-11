@@ -177,19 +177,98 @@ public sealed class WdlPreprocessor
             keyword = keywordReplacement[0].Text;
         }
 
-        WdlBlock? body = item.Body is null ? null : new WdlBlock(ApplyDefines(item.Body.Items));
+        WdlBlock? body = item.Body is null ? null : new WdlBlock(ProcessBlockItems(item.Body.Items));
         return new WdlItem(keyword, ApplyDefines(item.Header), body, item.IsLabel);
     }
 
-    private List<WdlItem> ApplyDefines(IReadOnlyList<WdlItem> items)
+    private List<WdlItem> ProcessBlockItems(IReadOnlyList<WdlItem> items)
     {
         var result = new List<WdlItem>(items.Count);
+        var frames = new List<Frame>();
+        bool Active() => frames.Count == 0 || frames[^1].Emitting;
+
         foreach (WdlItem item in items)
         {
-            result.Add(ApplyDefines(item));
+            switch (item.Keyword.ToUpperInvariant())
+            {
+                case "IFDEF":
+                    StartConditional(item, isNegated: false);
+                    break;
+
+                case "IFNDEF":
+                    StartConditional(item, isNegated: true);
+                    break;
+
+                case "IFELSE":
+                    if (frames.Count > 0)
+                    {
+                        Frame top = frames[^1];
+                        frames[^1] = top with { Emitting = top.ParentActive && !top.Matched };
+                    }
+                    else if (Active())
+                    {
+                        result.Add(ApplyDefines(item));
+                    }
+
+                    break;
+
+                case "ENDIF":
+                    if (frames.Count > 0)
+                    {
+                        frames.RemoveAt(frames.Count - 1);
+                    }
+                    else if (Active())
+                    {
+                        result.Add(ApplyDefines(item));
+                    }
+
+                    break;
+
+                case "DEFINE":
+                    if (Active() && item.Header.Count > 0)
+                    {
+                        string symbol = item.Header[0].Text;
+                        _symbols.Add(symbol);
+                        if (DefineReplacement(item.Header) is { } replacement)
+                        {
+                            _aliases[symbol] = replacement;
+                        }
+
+                        result.Add(ApplyDefines(item));
+                    }
+
+                    break;
+
+                case "UNDEF":
+                    if (Active() && item.Header.Count > 0)
+                    {
+                        string symbol = item.Header[0].Text;
+                        _symbols.Remove(symbol);
+                        _aliases.Remove(symbol);
+                    }
+
+                    break;
+
+                default:
+                    if (Active())
+                    {
+                        result.Add(ApplyDefines(item));
+                    }
+
+                    break;
+            }
         }
 
         return result;
+
+        void StartConditional(WdlItem item, bool isNegated)
+        {
+            bool parentActive = Active();
+            string symbol = item.Header.Count > 0 ? item.Header[0].Text : string.Empty;
+            bool isDefined = _symbols.Contains(symbol);
+            bool matched = parentActive && (isNegated ? !isDefined : isDefined);
+            frames.Add(new Frame(parentActive, matched, matched));
+        }
     }
 
     private List<WdlToken> ApplyDefines(IReadOnlyList<WdlToken> tokens)

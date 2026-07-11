@@ -38,6 +38,19 @@ and validate against real game data used only locally (never committed).
   retail archives decodes to a `Width*Height` index buffer + 256-color palette via
   the guarded integration test.
 
+## FLI/FLC (`Flic/FlicAnimation.cs`)
+
+- **Source of truth:** published descriptions of Autodesk's FLI/FLC container:
+  the 128-byte little-endian file header, 16-byte frame headers, palette packets,
+  byte-run, line-compressed delta, word-delta, black, and full-copy chunks.
+- **Own byte analysis:** sanitized inspection of the user-supplied retail title
+  animation confirmed an 8-bit 320x200 FLC with 239 displayed frames at 55 ms,
+  using only COLOR_256, BRUN, and LC chunks plus one trailing ring frame. No frame
+  pixels, palettes, or proprietary media are copied into the repository.
+- **Validation:** synthetic hand-built chunks cover stateful palette/raster updates;
+  a guarded local integration test checks only dimensions, timing, frame count,
+  and decoded buffer sizes against user-supplied data.
+
 ## WDL parser (`Wdl/WdlParser.cs`, `Wdl/WdlItem.cs`)
 
 - **Approach:** a generic syntax tree — each item is `keyword header… ( { block } | ; )`
@@ -74,13 +87,15 @@ and validate against real game data used only locally (never committed).
 ## WMP map (`Wmp/WmpMap.cs`, `Wmp/WmpTypes.cs`)
 
 - **Source of truth:** the game's own `.WMP` files, which are **text** emitted by
-  WED (a self-describing format with column-header comments). We derived the record
-  grammar by reading the maps directly — not from firoball's `WMPio` (CC-BY-NC, not
+  WED (a self-describing format with column-header comments), plus the published
+  1998 A3 reference manual's WMP record descriptions. We derived and checked the
+  record grammar from those sources — not from firoball's `WMPio` (CC-BY-NC, not
   consulted).
 - **Records** (whitespace-delimited, `;`-terminated, `#` comments): `VERTEX x y z`;
   `REGION name floor ceil`; `WALL name v1 v2 r1 r2 offsx offsy`; `THING`/`ACTOR
-  name x y angle region`; `PLAYER_START x y angle region`. Confirmed to be the full
-  set across all six maps.
+  name x y angle region`; `WAY name x1 y1 ... xn yn`; `PLAYER_START x y angle region`.
+  The variable-length `WAY` form is specified by the public manual; the other forms
+  are also confirmed across all six retail maps.
 - **Confirmed against real data:** all six maps parse; apathy's record counts are
   pinned and every wall references valid vertices (guarded integration test).
 

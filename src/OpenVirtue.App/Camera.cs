@@ -21,8 +21,12 @@ internal sealed class Camera
 
     public Matrix4x4 View => Matrix4x4.CreateLookAt(Position, Position + Forward, Vector3.UnitY);
 
-    public static Matrix4x4 Projection(float aspect) =>
-        Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, aspect, 1f, 200000f);
+    public static Matrix4x4 Projection(float aspect, float arc) =>
+        Matrix4x4.CreatePerspectiveFieldOfView(
+            Math.Clamp(arc, 0.01f, MathF.PI - 0.01f),
+            aspect,
+            1f,
+            200000f);
 
     public void MoveForward(float amount) => Position += Forward * amount;
 

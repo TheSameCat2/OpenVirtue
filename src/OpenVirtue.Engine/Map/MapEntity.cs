@@ -15,6 +15,7 @@ public abstract class MapEntity : AcknexObject
         "IF_FAR",
         "IF_ARRIVED",
         "IF_HIT",
+        "IF_KLICK",
     };
 
     private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
@@ -34,14 +35,30 @@ public abstract class MapEntity : AcknexObject
     /// <summary>The combined facing angle in radians.</summary>
     public double FacingAngleRadians => PlacementAngleDegrees * (Math.PI / 180.0) + Angle;
 
-    /// <summary>The sprite's height in world units (its on-screen size; width follows the texture aspect).</summary>
-    public double Height { get; set; } = 1;
+    /// <summary>The documented <c>HEIGHT</c> alias for the object's feet offset (<see cref="Z"/>).</summary>
+    public double Height
+    {
+        get => Z;
+        set => Z = value;
+    }
 
     /// <summary>Index of the region the entity is in.</summary>
     public int Region { get; set; }
 
     /// <summary>The entity's current texture/sprite name.</summary>
     public string? Texture { get; set; }
+
+    /// <summary>The actor's current movement target or target mode keyword.</summary>
+    public string? Target { get; set; }
+
+    /// <summary>The actor's assigned waypoint path keyword.</summary>
+    public string? WayName { get; set; }
+
+    /// <summary>The inventory/interaction overlay assigned to this object.</summary>
+    public string? OverlayName { get; set; }
+
+    /// <summary>The texture attached to this object.</summary>
+    public string? AttachTexture { get; set; }
 
     /// <summary>The action declared by object-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
     public string? EachTickAction { get; set; }
@@ -74,6 +91,42 @@ public abstract class MapEntity : AcknexObject
             return true;
         }
 
+        if (name.Equals("TARGET", StringComparison.OrdinalIgnoreCase))
+        {
+            value = Target;
+            return true;
+        }
+
+        if (name.Equals("WAY", StringComparison.OrdinalIgnoreCase))
+        {
+            value = WayName;
+            return true;
+        }
+
+        if (name.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase))
+        {
+            value = OverlayName;
+            return true;
+        }
+
+        if (name.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+        {
+            value = AttachTexture;
+            return true;
+        }
+
+        if (name.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        {
+            value = EachTickAction;
+            return true;
+        }
+
+        if (name.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+        {
+            value = EachCycleAction;
+            return true;
+        }
+
         if (IsEntityActionHook(name))
         {
             _actionHooks.TryGetValue(name, out value);
@@ -92,6 +145,42 @@ public abstract class MapEntity : AcknexObject
             return true;
         }
 
+        if (name.Equals("TARGET", StringComparison.OrdinalIgnoreCase))
+        {
+            Target = NormalizeKeyword(value);
+            return true;
+        }
+
+        if (name.Equals("WAY", StringComparison.OrdinalIgnoreCase))
+        {
+            WayName = NormalizeKeyword(value);
+            return true;
+        }
+
+        if (name.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase))
+        {
+            OverlayName = NormalizeKeyword(value);
+            return true;
+        }
+
+        if (name.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+        {
+            AttachTexture = NormalizeKeyword(value);
+            return true;
+        }
+
+        if (name.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        {
+            EachTickAction = string.IsNullOrWhiteSpace(value) ? null : value;
+            return true;
+        }
+
+        if (name.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase))
+        {
+            EachCycleAction = string.IsNullOrWhiteSpace(value) ? null : value;
+            return true;
+        }
+
         if (IsEntityActionHook(name))
         {
             SetActionHook(name, value);
@@ -102,6 +191,9 @@ public abstract class MapEntity : AcknexObject
     }
 
     private static bool IsEntityActionHook(string name) => EntityActionHookNames.Contains(name);
+
+    private static string? NormalizeKeyword(string? value) =>
+        string.IsNullOrWhiteSpace(value) || value.Equals("NULL", StringComparison.OrdinalIgnoreCase) ? null : value;
 
     protected override bool TryGetTyped(string name, out double value)
     {

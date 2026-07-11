@@ -10,6 +10,22 @@ namespace OpenVirtue.Engine.Tests;
 public class LevelLoaderTests
 {
     [Fact]
+    public void LoadCore_VideoMode_PreservesActiveVirtualResolution()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+
+        Level level = LevelLoader.LoadCore(
+            "x",
+            "VIDEO S640x480; MAPFILE <m.wmp>;",
+            n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(new LevelVideoMode("S640x480", 640, 480), level.VideoMode);
+    }
+
+    [Fact]
     public void LoadCore_CombinesWdlDeclarationsAndWmpGeometry()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -46,6 +62,44 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DistinguishesImplicitSkillZeroFromExplicitValZero()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main = "MAPFILE <m.wmp>; SKILL implicitZero; SKILL explicitZero { VAL 0; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(0, level.Skills["implicitZero"]);
+        Assert.Equal(0, level.Skills["explicitZero"]);
+        Assert.DoesNotContain("implicitZero", level.ExplicitlyInitializedSkills);
+        Assert.Contains("explicitZero", level.ExplicitlyInitializedSkills);
+    }
+
+    [Fact]
+    public void LoadCore_SkillTypes_TracksOnlyLatestGlobalDeclarations()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main = """
+            MAPFILE <m.wmp>;
+            SKILL retained { TYPE GLOBAL; VAL 1; }
+            SKILL ordinary { VAL 2; }
+            SKILL localValue { TYPE LOCAL; VAL 3; }
+            SKILL redefined { TYPE GLOBAL; VAL 4; }
+            SKILL redefined { TYPE PLAYER; VAL 5; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(["retained"], level.GlobalSkills);
+    }
+
+    [Fact]
     public void LoadCore_MapFileMustComeFromMainWdl()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -74,6 +128,28 @@ public class LevelLoaderTests
         Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Assert.Equal("room", Assert.Single(level.Regions).Name);
+    }
+
+    [Fact]
+    public void LoadCore_MapOverride_UsesCurrentWdlDeclarationsWithReplacementMap()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["first.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION first 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+            ["second.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION second 0 10;#0\nTHING torch 2 3 90 0;#1\nPLAYER_START 2 3 180 0;#2",
+        };
+        const string main = "MAPFILE <first.wmp>; SKILL health { VAL 50; } THING torch { HEIGHT 7; }";
+
+        Level level = LevelLoader.LoadCore(
+            "test.wdl",
+            main,
+            n => resources.GetValueOrDefault(Path.GetFileName(n)),
+            mapOverrideName: "second.wmp");
+
+        Assert.Equal("second", Assert.Single(level.Regions).Name);
+        Assert.Equal(50, level.Skills["health"]);
+        Assert.Equal(7, Assert.Single(level.Things)["HEIGHT"]);
+        Assert.Equal(180, level.PlayerStart!.Value.Angle);
     }
 
     [Fact]
@@ -169,6 +245,53 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesStructuralUiDeclarations()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\nPLAYER_START 1 2 45 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <test.wmp>;
+            BMAP titleMap, <title.pcx>, 4, 5, 64, 32;
+            FONT menuFont, <menu.pcx>, 8, 8;
+            OVERLAY titleOverlay { BMAP titleMap; POS_X 12; FLAGS VISIBLE; }
+            PANEL hudPanel { POS_X 1; POS_Y 2; OVLY titleOverlay; }
+            TEXT promptText { STRING prompt; FONT menuFont; POS_X 3; }
+            VIDEO introVideo { FILE <intro.fli>; }
+            """;
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        WdlUiElement font = level.UiElements["menuFont"];
+        Assert.Equal("FONT", font.Keyword);
+        Assert.Equal("FileRef", font.Header[1].Kind);
+        Assert.Equal("menu.pcx", font.Header[1].Text);
+
+        LevelBitmap bitmap = level.Bitmaps["titleMap"];
+        Assert.Equal("title.pcx", bitmap.File);
+        Assert.Equal(4, bitmap.X);
+        Assert.Equal(5, bitmap.Y);
+        Assert.Equal(64, bitmap.Width);
+        Assert.Equal(32, bitmap.Height);
+
+        WdlUiElement overlay = level.UiElements["titleOverlay"];
+        Assert.Equal("OVERLAY", overlay.Keyword);
+        Assert.Contains(overlay.Properties, property => property.Keyword == "BMAP" && property.Values[0].Text == "titleMap");
+        Assert.Contains(overlay.Properties, property => property.Keyword == "POS_X" && property.Values[0].Text == "12");
+
+        WdlUiElement panel = level.UiElements["hudPanel"];
+        Assert.Contains(panel.Properties, property => property.Keyword == "OVLY" && property.Values[0].Text == "titleOverlay");
+
+        WdlUiElement text = level.UiElements["promptText"];
+        Assert.Contains(text.Properties, property => property.Keyword == "FONT" && property.Values[0].Text == "menuFont");
+
+        WdlUiElement video = level.UiElements["introVideo"];
+        Assert.Contains(video.Properties, property => property.Keyword == "FILE" && property.Values[0].Text == "intro.fli");
+    }
+
+    [Fact]
     public void LoadCore_LinksTexturesThroughTheDeclarationChain()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -179,8 +302,20 @@ public class LevelLoaderTests
         const string main =
             """
             MAPFILE <m.wmp>;
+            SOUND step, <step.wav>;
             BMAP floor_map, <floor.pcx>, 0, 0, 64, 64;
-            TEXTURE floorTex { SCALE_XY 16, 16; BMAPS floor_map; }
+            TEXTURE floorTex
+            {
+                SCALE_XY 16, 16;
+                SOUND step;
+                SVOL 0.75;
+                RANDOM 0.2;
+                SDIST 42;
+                SVDIST 7;
+                SCYCLES 1, 0;
+                FLAGS SLOOP;
+                BMAPS floor_map;
+            }
             WALL w { TEXTURE floorTex; }
             REGION room
             {
@@ -193,6 +328,7 @@ public class LevelLoaderTests
                 CEIL_OFFS_X 14;
                 CEIL_OFFS_Y 15;
                 AMBIENT 0.25;
+                GENIUS wheel_center;
             }
             """;
 
@@ -205,6 +341,7 @@ public class LevelLoaderTests
         Assert.Equal(13, room.FloorOffsetY);
         Assert.Equal(14, room.CeilOffsetX);
         Assert.Equal(15, room.CeilOffsetY);
+        Assert.Equal("wheel_center", room.GeniusName);
         Assert.Equal("floorTex", Assert.Single(level.Walls).Texture);
 
         LevelTexture texture = level.Textures["floorTex"];
@@ -212,6 +349,13 @@ public class LevelLoaderTests
         Assert.Equal(64, texture.Width);
         Assert.Equal(16, texture.ScaleX);
         Assert.Equal(0, texture.Ambient);
+        Assert.Equal(42, texture.SoundDistance);
+        Assert.Equal(7, texture.SoundVerticalDistance);
+        Assert.Equal("step", texture.SoundName);
+        Assert.Equal(0.75, texture.SoundVolume);
+        Assert.Equal([true, false], texture.SoundCycles);
+        Assert.True(texture.IsSoundLoop);
+        Assert.Equal(0.2, texture.RandomDelayFactor);
     }
 
     [Fact]
@@ -240,6 +384,13 @@ public class LevelLoaderTests
         Assert.Equal(0, texture.Height);
         Assert.Equal(16, texture.ScaleX);
         Assert.Equal(16, texture.ScaleY);
+        Assert.Equal(100, texture.SoundDistance);
+        Assert.Equal(0, texture.SoundVerticalDistance);
+        Assert.Null(texture.SoundName);
+        Assert.Equal(0.5, texture.SoundVolume);
+        Assert.Empty(texture.SoundCycles);
+        Assert.False(texture.IsSoundLoop);
+        Assert.Equal(0, texture.RandomDelayFactor);
     }
 
     [Fact]
@@ -263,6 +414,38 @@ public class LevelLoaderTests
         LevelTexture texture = level.Textures["floorTex"];
         Assert.Equal(8, texture.ScaleX);
         Assert.Equal(12, texture.ScaleY);
+    }
+
+    [Fact]
+    public void LoadCore_TextureAnimation_PreservesMetadataAndNullFrameSlots()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "THING actor 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; " +
+            "BMAP front1,<f1.pcx>,0,0,16,16; BMAP front2,<f2.pcx>,0,0,20,18; " +
+            "BMAP back1,<b1.pcx>,0,0,24,22; " +
+            "TEXTURE animated { SIDES 2; CYCLES 2; BMAPS front1,front2,back1,NULL; " +
+            "DELAY 3,5; MIRROR 0,1; OFFSET_X 1,2,3,4; OFFSET_Y 5,6,7,8; " +
+            "FLAGS ONESHOT; } THING actor { TEXTURE animated; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelTexture texture = level.Textures["animated"];
+        Assert.Equal(2, texture.Sides);
+        Assert.Equal(2, texture.Cycles);
+        Assert.Equal([3d, 5d], texture.Delays);
+        Assert.Equal([false, true], texture.Mirrors);
+        Assert.Equal([1d, 2d, 3d, 4d], texture.FrameOffsetsX);
+        Assert.Equal([5d, 6d, 7d, 8d], texture.FrameOffsetsY);
+        Assert.True(texture.IsOneShot);
+        Assert.Equal(4, texture.Frames.Count);
+        Assert.Equal("front2", texture.Frames[1]?.Name);
+        Assert.Equal("back1", texture.Frames[2]?.Name);
+        Assert.Null(texture.Frames[3]);
     }
 
     [Fact]
@@ -309,6 +492,30 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesWallAttachAndLightmapTextureFlag()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            "MAPFILE <m.wmp>; BMAP lightMap,<light.pcx>,0,0,64,64; " +
+            "TEXTURE lightTex { BMAPS lightMap; FLAGS LIGHTMAP,BEHIND,SHADOW; } " +
+            "WALL w { ATTACH lightTex; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.True(level.Textures["lightTex"].IsLightmap);
+        Assert.True(level.Textures["lightTex"].IsBehind);
+        Assert.True(level.Textures["lightTex"].IsShadow);
+        Wall wall = Assert.Single(level.Walls);
+        Assert.Equal("lightTex", wall.AttachTexture);
+        Assert.True(wall.TryGetString("ATTACH", out string? attach));
+        Assert.Equal("lightTex", attach);
+    }
+
+    [Fact]
     public void LoadCore_DressesThingsFromTheirTypeDefinitions()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -329,6 +536,7 @@ public class LevelLoaderTests
         Thing plant = Assert.Single(level.Things);
         Assert.Equal("plantTex", plant.Texture);
         Assert.Equal(-1, plant.Height);
+        Assert.Equal(-1, plant.Z);
         Assert.Equal(90, plant.PlacementAngleDegrees);
         Assert.Equal(-0.5, plant.Angle);
         Assert.Equal((Math.PI / 2) - 0.5, plant.FacingAngleRadians, precision: 12);
@@ -375,11 +583,13 @@ public class LevelLoaderTests
         const string main =
             """
             MAPFILE <m.wmp>;
-            REGION r { CLIP_DIST 512; FLOOR_ANGLE 0.25; CEIL_ANGLE 0.5; }
+            REGION r { CYCLE 0.5; POSITION 0.25; CLIP_DIST 512; FLOOR_ANGLE 0.25; CEIL_ANGLE 0.5; }
             WALL gate { CYCLE 2; POSITION 0.75; MAP_COLOR 12; DIST 30; }
-            THING pickup { CYCLE 3; MAP_COLOR 22; DIST 40; }
+            THING pickup { CYCLE 3; POSITION 0.125; MAP_COLOR 22; DIST 40; OVERLAY pickupOverlay; ATTACH glowTex; }
             ACTOR guard
             {
+                TARGET FOLLOW;
+                WAY patrolWay;
                 CYCLE 4;
                 WAYPOINT 5;
                 TARGET_X 6;
@@ -397,6 +607,8 @@ public class LevelLoaderTests
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Region region = Assert.Single(level.Regions);
+        Assert.Equal(0.5, region["cycle"]);
+        Assert.Equal(0.25, region["position"]);
         Assert.Equal(512, region["clip_dist"]);
         Assert.Equal(0.25, region["floor_angle"]);
         Assert.Equal(0.5, region["ceil_angle"]);
@@ -409,8 +621,11 @@ public class LevelLoaderTests
 
         Thing pickup = Assert.Single(level.Things);
         Assert.Equal(3, pickup["cycle"]);
+        Assert.Equal(0.125, pickup["position"]);
         Assert.Equal(22, pickup["map_color"]);
         Assert.Equal(40, pickup["dist"]);
+        Assert.Equal("pickupOverlay", pickup.OverlayName);
+        Assert.Equal("glowTex", pickup.AttachTexture);
 
         Actor guard = Assert.Single(level.Actors);
         Assert.Equal(4, guard["cycle"]);
@@ -424,6 +639,8 @@ public class LevelLoaderTests
         Assert.Equal(12, guard["aspeed"]);
         Assert.Equal(13, guard["map_color"]);
         Assert.Equal(14, guard["dist"]);
+        Assert.Equal("FOLLOW", guard.Target);
+        Assert.Equal("patrolWay", guard.WayName);
     }
 
     [Fact]
@@ -489,7 +706,7 @@ public class LevelLoaderTests
         const string main =
             """
             MAPFILE <m.wmp>;
-            THING pickup { IF_NEAR pickup_near; IF_FAR pickup_far; IF_HIT NULL; }
+            THING pickup { IF_NEAR pickup_near; IF_FAR pickup_far; IF_HIT NULL; IF_KLICK pickup_click; }
             ACTOR guard { IF_ARRIVED guard_arrived; IF_HIT guard_hit; }
             """;
 
@@ -499,6 +716,7 @@ public class LevelLoaderTests
         Assert.Equal("pickup_near", pickup.ActionHooks["IF_NEAR"]);
         Assert.Equal("pickup_far", pickup.ActionHooks["IF_FAR"]);
         Assert.Null(pickup.ActionHooks["IF_HIT"]);
+        Assert.Equal("pickup_click", pickup.ActionHooks["IF_KLICK"]);
 
         Actor guard = Assert.Single(level.Actors);
         Assert.Equal("guard_arrived", guard.ActionHooks["IF_ARRIVED"]);
@@ -713,6 +931,32 @@ public class LevelLoaderTests
         Assert.NotEmpty(level.Textures);
         Assert.Contains(level.Regions, r => r.FloorTexture is not null);
         Assert.All(level.Textures.Values, t => Assert.EndsWith(".pcx", t.File, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Load_RealGameplayLevels_DeclareMatchingGlobalSkillSets()
+    {
+        string[] expectedArchives = ["APATHY.WRS", "HEART.WRS", "LEGALISM.WRS", "NEWAGE.WRS"];
+        Dictionary<string, string> archives = ResearchData.WrsFiles()
+            .Where(path => expectedArchives.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
+            .GroupBy(path => Path.GetFileName(path)!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        if (expectedArchives.Any(name => !archives.ContainsKey(name)))
+        {
+            return;
+        }
+
+        List<Level> levels = expectedArchives
+            .Select(name => LevelLoader.Load(WrsArchive.ReadFile(archives[name]), Path.ChangeExtension(name, ".WDL")))
+            .ToList();
+        IReadOnlySet<string> expectedGlobals = levels[0].GlobalSkills;
+
+        Assert.NotEmpty(expectedGlobals);
+        Assert.All(
+            levels.Skip(1),
+            level => Assert.True(
+                expectedGlobals.SetEquals(level.GlobalSkills),
+                $"Expected matching GLOBAL declarations; counts were {expectedGlobals.Count} and {level.GlobalSkills.Count}."));
     }
 
 }

@@ -34,6 +34,55 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void Accel_AcceleratesSkillUsingTimeCorrectionFrictionAndInertia()
+    {
+        TestContext context = Run(
+            "SET TIME_CORR, 0.5; SET FRICTION, 0.25; SET INERTIA, 2; " +
+            "SET PLAYER_VX, 10; ACCEL PLAYER_VX, 4;");
+
+        Assert.Equal(9.75, context.GetSkill("PLAYER_VX"), 9);
+    }
+
+    [Fact]
+    public void Add_IncrementsSkillAndObjectMember()
+    {
+        var context = new TestContext();
+        var thing = new Thing("crate") { X = 4 };
+        context.Objects["my"] = thing;
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("SET score, 10; ADD score, 3 + 2; ADD my.x, 6;"));
+
+        Assert.Equal(15, context.GetSkill("score"));
+        Assert.Equal(10, thing.X);
+    }
+
+    [Fact]
+    public void Addt_IncrementsByTimeCorrectedAmount()
+    {
+        TestContext context = Run("SET TIME_CORR, 0.25; SET speed, 2; ADDT speed, 8;");
+
+        Assert.Equal(4, context.GetSkill("speed"));
+    }
+
+    [Fact]
+    public void Randomize_ReseedsRandomContext()
+    {
+        var context = new TestContext();
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("RANDOMIZE;"));
+
+        Assert.Equal(1, context.RandomizeCount);
+    }
+
+    [Fact]
+    public void Skip_AdvancesPastFollowingStatements()
+    {
+        TestContext context = Run("SET x, 0; SKIP 2; SET x, 1; SET x, 2; SET x, 3;");
+
+        Assert.Equal(3, context.GetSkill("x"));
+    }
+
+    [Fact]
     public void Rule_DivisionByZero_AbortsExecution()
     {
         var context = new TestContext();
@@ -65,6 +114,16 @@ public class WdlInterpreterTests
         var context = new TestContext();
 
         new WdlInterpreter(context).Execute(WdlParser.Parse("CALL openDoor;"));
+
+        Assert.Equal("openDoor", Assert.Single(context.Calls));
+    }
+
+    [Fact]
+    public void Branch_InvokesNamedAction()
+    {
+        var context = new TestContext();
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("BRANCH openDoor;"));
 
         Assert.Equal("openDoor", Assert.Single(context.Calls));
     }
@@ -174,6 +233,104 @@ public class WdlInterpreterTests
     }
 
     [Fact]
+    public void LegacyIfEqual_ExecutesThenBranchWhenEqual()
+    {
+        TestContext context = Run("SET x, 5; IF_EQUAL x, 5; SET y, 1; ELSE; SET y, 2; ENDIF;");
+
+        Assert.Equal(1, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void LegacyIfEqual_ExecutesElseBranchWhenNotEqual()
+    {
+        TestContext context = Run("SET x, 5; IF_EQUAL x, 4; SET y, 1; ELSE; SET y, 2; ENDIF;");
+
+        Assert.Equal(2, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void LegacyIf_SkipsThenBranchWhenNoElseExists()
+    {
+        TestContext context = Run("SET x, 5; IF_ABOVE x, 10; SET y, 1; ENDIF; SET z, 2;");
+
+        Assert.Equal(0, context.GetSkill("y"));
+        Assert.Equal(2, context.GetSkill("z"));
+    }
+
+    [Fact]
+    public void LegacyIf_WithoutEndifConditionsOnlyNextInstruction()
+    {
+        TestContext context = Run(
+            "SET x, 0; IF_EQUAL x, 1; SET skipped, 1; SET reached, 2; " +
+            "IF_EQUAL x, 0; SET matched, 3;");
+
+        Assert.Equal(0, context.GetSkill("skipped"));
+        Assert.Equal(2, context.GetSkill("reached"));
+        Assert.Equal(3, context.GetSkill("matched"));
+    }
+
+    [Fact]
+    public void Continue_LegacyIfWithoutEndifConditionsOnlyNextInstruction()
+    {
+        var context = new TestContext();
+        OpenVirtue.Formats.Wdl.WdlDocument document = WdlParser.Parse(
+            "SET x, 0; IF_EQUAL x, 1; SET skipped, 1; SET reached, 2;");
+        var block = new OpenVirtue.Formats.Wdl.WdlBlock(document.Items);
+        var interpreter = new WdlInterpreter(context);
+
+        WdlExecutionResult result = interpreter.Continue(WdlInterpreter.Start(block));
+
+        Assert.Equal(WdlExecutionStatus.Completed, result.Status);
+        Assert.Equal(0, context.GetSkill("skipped"));
+        Assert.Equal(2, context.GetSkill("reached"));
+    }
+
+    [Fact]
+    public void LegacyIf_NestsWithoutMatchingInnerElseOrEndif()
+    {
+        TestContext context = Run(
+            "SET x, 1; SET y, 2; " +
+            "IF_EQUAL x, 0; " +
+            "IF_EQUAL y, 2; SET result, 1; ELSE; SET result, 2; ENDIF; " +
+            "ELSE; SET result, 3; ENDIF;");
+
+        Assert.Equal(3, context.GetSkill("result"));
+    }
+
+    [Fact]
+    public void LegacyIfComparisonVariants_EvaluateNumericComparisons()
+    {
+        TestContext context = Run(
+            "SET x, 5; " +
+            "IF_NEQUAL x, 4; SET nequal, 1; ENDIF; " +
+            "IF_BELOW x, 6; SET below, 1; ENDIF; " +
+            "IF_ABOVE x, 4; SET above, 1; ENDIF;");
+
+        Assert.Equal(1, context.GetSkill("nequal"));
+        Assert.Equal(1, context.GetSkill("below"));
+        Assert.Equal(1, context.GetSkill("above"));
+    }
+
+    [Fact]
+    public void LegacyIfMin_UsesDeclaredMinimumPredicate()
+    {
+        var context = new TestContext();
+        context.MinimumSkills.Add("health");
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("IF_MIN health; SET result, 1; ELSE; SET result, 2; ENDIF;"));
+
+        Assert.Equal(1, context.GetSkill("result"));
+    }
+
+    [Fact]
+    public void LegacyIfMin_ExecutesElseWhenNotAtMinimum()
+    {
+        TestContext context = Run("IF_MIN health; SET result, 1; ELSE; SET result, 2; ENDIF;");
+
+        Assert.Equal(2, context.GetSkill("result"));
+    }
+
+    [Fact]
     public void Set_WritesObjectMemberTarget()
     {
         var context = new TestContext();
@@ -203,13 +360,17 @@ public class WdlInterpreterTests
         return context;
     }
 
-    private sealed class TestContext : IWdlContext
+    private sealed class TestContext : IWdlContext, IWdlRandomContext, IWdlSkillBoundsContext
     {
         private readonly Dictionary<string, double> _skills = new(StringComparer.OrdinalIgnoreCase);
 
         public Dictionary<string, AcknexObject> Objects { get; } = new(StringComparer.OrdinalIgnoreCase);
 
         public List<string> Calls { get; } = [];
+
+        public HashSet<string> MinimumSkills { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public int RandomizeCount { get; private set; }
 
         public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
@@ -218,5 +379,11 @@ public class WdlInterpreterTests
         public AcknexObject? GetObject(string name) => Objects.GetValueOrDefault(name);
 
         public void CallAction(string name) => Calls.Add(name);
+
+        public double Random(double maximum) => 0.5 * maximum;
+
+        public void Randomize() => RandomizeCount++;
+
+        public bool IsSkillAtMinimum(string name) => MinimumSkills.Contains(name);
     }
 }

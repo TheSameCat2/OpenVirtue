@@ -2,8 +2,10 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using System.Globalization;
+using System.Numerics;
 using System.Text;
 using OpenVirtue.Engine.Map;
+using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine.Interpreter;
@@ -19,19 +21,109 @@ public sealed class WdlRuntime :
     IWdlSchedulerContext,
     IWdlActionHookContext,
     IWdlObjectGroupContext,
+    IWdlObjectMutationContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
+    IWdlInputContext,
     IWdlPrintContext,
-    IWdlKeywordReferenceContext
+    IWdlSoundContext,
+    IWdlPaletteContext,
+    IWdlLocationContext,
+    IWdlRandomContext,
+    IWdlSkillBoundsContext,
+    IWdlGeometryContext,
+    IWdlHitContext,
+    IWdlPresentationContext,
+    IWdlPersistenceContext,
+    IWdlKeywordReferenceContext,
+    IWdlUiContext,
+    IWdlControlContext,
+    IWdlExecutionDiagnostics
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
+    private static readonly string[] RegionNumberFields =
+    [
+        "FLOOR_HGT",
+        "CEIL_HGT",
+        "AMBIENT",
+        "FLOOR_OFFS_X",
+        "FLOOR_OFFS_Y",
+        "CEIL_OFFS_X",
+        "CEIL_OFFS_Y",
+    ];
+    private static readonly string[] RegionStringFields =
+    [
+        "FLOOR_TEX",
+        "CEIL_TEX",
+        "GENIUS",
+        "EACH_TICK",
+        "EACH_CYCLE",
+        "IF_ENTER",
+        "IF_LEAVE",
+        "IF_DIVE",
+        "IF_ARISE",
+    ];
+    private static readonly string[] WallNumberFields =
+    [
+        "OFFSX",
+        "OFFSY",
+    ];
+    private static readonly string[] WallStringFields =
+    [
+        "TEXTURE",
+        "TARGET",
+        "WAY",
+        "OVERLAY",
+        "ATTACH",
+        "EACH_TICK",
+        "EACH_CYCLE",
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_HIT",
+    ];
+    private static readonly string[] EntityNumberFields =
+    [
+        "X",
+        "Y",
+        "Z",
+        "ANGLE",
+        "HEIGHT",
+        "REGION",
+    ];
+    private static readonly string[] EntityStringFields =
+    [
+        "TEXTURE",
+        "EACH_TICK",
+        "EACH_CYCLE",
+        "IF_NEAR",
+        "IF_FAR",
+        "IF_ARRIVED",
+        "IF_HIT",
+        "IF_KLICK",
+    ];
 
+    private readonly Level _level;
     private readonly Dictionary<string, double> _skills;
     private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, WdlUiElement> _uiElements = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _keywordReferenceTypes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IReadOnlyDictionary<string, string> _sounds;
+    private readonly IReadOnlyDictionary<string, string> _palettes;
+    private readonly List<WdlSoundRequest> _soundRequests = [];
+    private readonly List<WdlAudioRequest> _audioRequests = [];
+    private readonly List<WdlTextureSoundRequest> _textureSoundRequests = [];
+    private readonly List<WdlPaletteFadeRequest> _paletteFadeRequests = [];
+    private readonly List<WdlShakeRequest> _shakeRequests = [];
+    private readonly List<WdlFlicRequest> _flicRequests = [];
+    private readonly List<WdlScreenshotRequest> _screenshotRequests = [];
+    private readonly List<WdlPersistenceRequest> _persistenceRequests = [];
+    private readonly List<WdlInputRequest> _inputRequests = [];
+    private readonly Dictionary<int, ActiveInputAction> _inputActions = [];
+    private readonly Dictionary<int, ActiveFlicAction> _flicActions = [];
+    private Random _random = new();
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -39,24 +131,49 @@ public sealed class WdlRuntime :
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
     private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<ObjectTickAction> _objectTickActions = [];
+    private readonly List<ActiveAction> _waitingActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
     private readonly WdlInterpreter _interpreter;
     private readonly string? _startupAction;
     private readonly string? _printDirectory;
+    private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
+    private readonly HashSet<AcknexObject> _arrivedTargets = [];
+    private readonly Dictionary<Actor, string> _actorTargetStates = [];
+    private readonly Dictionary<AcknexObject, TextureAnimationState> _textureAnimationStates = [];
+    private readonly LevelCollisionWorld _collisionWorld;
+    private readonly IReadOnlyDictionary<string, TextureImage> _hitTextures;
     private string _printBaseName = "PRINT";
     private int _printNumber;
     private int _callDepth;
+    private int _nextInputRequestId;
+    private int _nextFlicRequestId;
+    private int? _observedPlayerRegion;
+    private AcknexObject? _activeActionTarget;
+    private bool _dispatchingGlobalEachTick;
 
-    public WdlRuntime(Level level, string? printDirectory = null)
+    public WdlRuntime(
+        Level level,
+        string? printDirectory = null,
+        IReadOnlyDictionary<string, TextureImage>? hitTextures = null)
     {
         ArgumentNullException.ThrowIfNull(level);
+        _level = level;
+        _collisionWorld = new LevelCollisionWorld(level);
+        _hitTextures = hitTextures ?? new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
         _bounds = level.SkillBounds;
+        InitializePredefinedSkillDefaults();
         _printDirectory = printDirectory;
+        _sounds = level.Sounds;
+        _palettes = level.Palettes;
         foreach ((string name, WdlString value) in level.Strings)
         {
             _strings[name] = value;
+        }
+
+        foreach ((string name, WdlUiElement value) in level.UiElements)
+        {
+            _uiElements[name] = value;
         }
 
         _actions = level.Actions;
@@ -65,13 +182,42 @@ public sealed class WdlRuntime :
         InitializePredefinedReferences(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
-        InitializeObjectEachTickActions(level);
         InitializeActionHooks(level);
+        RefreshEntityVisibilityFlags();
+        InitializeAnimationCycles();
         _interpreter = new WdlInterpreter(this);
     }
 
     /// <summary>The live global skill values.</summary>
     public IReadOnlyDictionary<string, double> Skills => _skills;
+
+    /// <summary>Captures the declared <c>GLOBAL</c> values that survive a documented <c>LEVEL</c> change.</summary>
+    public IReadOnlyDictionary<string, double> CaptureLevelTransitionGlobals()
+    {
+        var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in _level.GlobalSkills)
+        {
+            if (_skills.TryGetValue(name, out double value))
+            {
+                values[name] = value;
+            }
+        }
+
+        return values;
+    }
+
+    /// <summary>Restores values captured before <c>LEVEL</c>, limited to globals declared by this level.</summary>
+    public void RestoreLevelTransitionGlobals(IReadOnlyDictionary<string, double> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        foreach (string name in _level.GlobalSkills)
+        {
+            if (values.TryGetValue(name, out double value))
+            {
+                SetSkill(name, value);
+            }
+        }
+    }
 
     /// <summary>The named object references available to scripts.</summary>
     public IReadOnlyDictionary<string, AcknexObject> Objects => _objects;
@@ -79,8 +225,77 @@ public sealed class WdlRuntime :
     /// <summary>The live WDL string values.</summary>
     public IReadOnlyDictionary<string, WdlString> Strings => _strings;
 
+    /// <summary>The live WDL UI declaration state.</summary>
+    public IReadOnlyDictionary<string, WdlUiElement> UiElements => _uiElements;
+
     /// <summary>The live keyword-valued synonym references.</summary>
     public IReadOnlyDictionary<string, string?> KeywordReferences => _keywordReferences;
+
+    /// <summary>Sound playback requests emitted by WDL sound instructions.</summary>
+    public IReadOnlyList<WdlSoundRequest> SoundRequests => _soundRequests;
+
+    /// <summary>Chronological host audio requests emitted by WDL sound instructions.</summary>
+    public IReadOnlyList<WdlAudioRequest> AudioRequests => _audioRequests;
+
+    /// <summary>Automatic animation-phase texture sounds awaiting host distance filtering.</summary>
+    public IReadOnlyList<WdlTextureSoundRequest> TextureSoundRequests => _textureSoundRequests;
+
+    /// <summary>Palette fade requests emitted by WDL palette instructions.</summary>
+    public IReadOnlyList<WdlPaletteFadeRequest> PaletteFadeRequests => _paletteFadeRequests;
+
+    /// <summary>Geometry invalidations emitted by WDL <c>SHAKE</c> instructions.</summary>
+    public IReadOnlyList<WdlShakeRequest> ShakeRequests => _shakeRequests;
+
+    /// <summary>Full-screen flic playback requests emitted by WDL flic instructions.</summary>
+    public IReadOnlyList<WdlFlicRequest> FlicRequests => _flicRequests;
+
+    /// <summary>Screenshot requests emitted by WDL <c>SCREENSHOT</c> instructions.</summary>
+    public IReadOnlyList<WdlScreenshotRequest> ScreenshotRequests => _screenshotRequests;
+
+    /// <summary>Save/load requests emitted by documented WDL persistence instructions.</summary>
+    public IReadOnlyList<WdlPersistenceRequest> PersistenceRequests => _persistenceRequests;
+
+    /// <summary>Pending text-entry requests emitted by WDL <c>INKEY</c> instructions.</summary>
+    public IReadOnlyList<WdlInputRequest> PendingInputRequests => _inputRequests;
+
+    /// <summary>How many times WDL requested that all running sounds be stopped.</summary>
+    public int StopSoundCount { get; private set; }
+
+    /// <summary>How many diagnostic beeps WDL requested.</summary>
+    public int BeepCount { get; private set; }
+
+    /// <summary>How many times WDL requested that the current flic be stopped.</summary>
+    public int StopFlicCount { get; private set; }
+
+    /// <summary>How many actions are suspended until host flic playback completes.</summary>
+    public int FlicWaitingActionCount => _flicActions.Count;
+
+    /// <summary>How many actions are currently suspended by <c>WAIT</c> or <c>WAITT</c>.</summary>
+    public int WaitingActionCount => _waitingActions.Count;
+
+    /// <summary>How many global <c>EACH_TICK</c> scheduler slots are currently occupied.</summary>
+    public int ActiveEachTickActionCount => _eachTickActions.Count(actionName => actionName is not null);
+
+    /// <summary>How many occupied global scheduler slots directly reference player input and velocity skills.</summary>
+    public int ActivePlayerMovementActionCount => _eachTickActions.Count(IsPlayerMovementAction);
+
+    /// <summary>Number of player-velocity assignments made by global scheduler actions in the latest tick.</summary>
+    public int LastTickPlayerVelocityWriteCount { get; private set; }
+
+    /// <summary>Number of statements entered by global scheduler actions in the latest tick.</summary>
+    public int LastTickGlobalStatementCount { get; private set; }
+
+    /// <summary>Number of entered global scheduler statements targeting a player velocity skill.</summary>
+    public int LastTickPlayerVelocityStatementCount { get; private set; }
+
+    /// <summary>Number of global scheduler statements skipped for unsupported expression forms.</summary>
+    public int LastTickUnsupportedExpressionCount { get; private set; }
+
+    /// <summary>Number of true conditional evaluations in global scheduler actions during the latest tick.</summary>
+    public int LastTickTrueConditionCount { get; private set; }
+
+    /// <summary>Number of false conditional evaluations in global scheduler actions during the latest tick.</summary>
+    public int LastTickFalseConditionCount { get; private set; }
 
     /// <summary>All placed level objects registered for runtime iteration.</summary>
     public IReadOnlyList<AcknexObject> LevelObjects => _levelObjects;
@@ -88,12 +303,112 @@ public sealed class WdlRuntime :
     /// <summary>The live global <c>IF_*</c> action-hook assignments.</summary>
     public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
 
+    /// <summary>Whether a WDL <c>EXIT</c> instruction has requested game termination.</summary>
+    public bool ExitRequested { get; private set; }
+
+    /// <summary>The optional message supplied by the WDL <c>EXIT</c> instruction.</summary>
+    public string? ExitMessage { get; private set; }
+
+    /// <summary>The latest WDL level name requested by a <c>LEVEL</c> instruction.</summary>
+    public string? RequestedLevelName { get; private set; }
+
+    /// <summary>The optional WRS resource name supplied by a <c>LEVEL</c> instruction.</summary>
+    public string? RequestedLevelResource { get; private set; }
+
+    /// <summary>The latest WMP map name requested by a <c>MAP</c> instruction.</summary>
+    public string? RequestedMapName { get; private set; }
+
+    /// <summary>Captures the live runtime and mutable level state for OpenVirtue harness save/load.</summary>
+    public WdlRuntimeSnapshot CaptureSnapshot() =>
+        new(
+            new Dictionary<string, double>(_skills, StringComparer.OrdinalIgnoreCase),
+            _strings.ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, string?>(_keywordReferences, StringComparer.OrdinalIgnoreCase),
+            _eachTickActions.ToList(),
+            new Dictionary<string, string?>(_actionHooks, StringComparer.OrdinalIgnoreCase),
+            _level.Vertices.ToList(),
+            MutableLevelObjects().Select(CaptureObjectSnapshot).ToList(),
+            CapturePlayerSnapshot());
+
+    /// <summary>Restores a state previously captured with <see cref="CaptureSnapshot"/>.</summary>
+    public void RestoreSnapshot(WdlRuntimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        RestoreSkills(snapshot.Skills);
+        for (int channel = 0; channel < 8; channel++)
+        {
+            SetSkill($"CHANNEL_{channel}", 0);
+        }
+
+        RestoreStrings(snapshot.Strings);
+        RestoreKeywordReferences(snapshot.KeywordReferences);
+        RestoreEachTickActions(snapshot.EachTickActions);
+        RestoreActionHooks(snapshot.ActionHooks);
+        RestoreVertices(snapshot.Vertices);
+        RestoreLevelObjects(snapshot.LevelObjects);
+        RestorePlayer(snapshot.Player);
+        RefreshEntityVisibilityFlags();
+        _proximityStates.Clear();
+        _arrivedTargets.Clear();
+        _actorTargetStates.Clear();
+        _textureAnimationStates.Clear();
+        _observedPlayerRegion = null;
+    }
+
     /// <inheritdoc/>
     public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
     /// <inheritdoc/>
-    public void SetSkill(string name, double value) =>
+    public void SetSkill(string name, double value)
+    {
         _skills[name] = _bounds.TryGetValue(name, out SkillRange range) ? range.Clamp(value) : value;
+        if (_dispatchingGlobalEachTick && name.StartsWith("PLAYER_V", StringComparison.OrdinalIgnoreCase))
+        {
+            LastTickPlayerVelocityWriteCount++;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void RecordStatementExecution(string keyword, string? target)
+    {
+        if (!_dispatchingGlobalEachTick)
+        {
+            return;
+        }
+
+        LastTickGlobalStatementCount++;
+        if (target?.StartsWith("PLAYER_V", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            LastTickPlayerVelocityStatementCount++;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void RecordUnsupportedStatementExpression()
+    {
+        if (_dispatchingGlobalEachTick)
+        {
+            LastTickUnsupportedExpressionCount++;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void RecordConditionEvaluation(bool result)
+    {
+        if (!_dispatchingGlobalEachTick)
+        {
+            return;
+        }
+
+        if (result)
+        {
+            LastTickTrueConditionCount++;
+        }
+        else
+        {
+            LastTickFalseConditionCount++;
+        }
+    }
 
     /// <inheritdoc/>
     public bool TryGetString(string name, out string value)
@@ -123,6 +438,51 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    public bool BeginInput(string stringName, out WdlInputRequest request)
+    {
+        string? resolvedName = ResolveStringName(stringName);
+        if (resolvedName is null || !_strings.TryGetValue(resolvedName, out WdlString text))
+        {
+            request = default;
+            return false;
+        }
+
+        request = new WdlInputRequest(++_nextInputRequestId, resolvedName, text.Value, text.Capacity);
+        _inputRequests.Add(request);
+        return true;
+    }
+
+    /// <summary>
+    /// Completes a pending <c>INKEY</c> request and resumes the suspended action, if any.
+    /// Result code 0 accepts <paramref name="value"/>; other documented codes restore the original string.
+    /// </summary>
+    public bool CompleteInput(int requestId, string? value, int resultCode = 0)
+    {
+        int index = _inputRequests.FindIndex(request => request.Id == requestId);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        WdlInputRequest request = _inputRequests[index];
+        _inputRequests.RemoveAt(index);
+
+        string nextValue = resultCode == 0 ? (value ?? string.Empty).TrimEnd() : request.InitialValue;
+        SetString(request.StringName, nextValue);
+        TryGetString(request.StringName, out string current);
+        SetSkill("RESULT", resultCode);
+        SetSkill("STR_LEN", current.Length);
+
+        if (_inputActions.Remove(requestId, out ActiveInputAction? action))
+        {
+            WdlExecutionResult result = ContinueWithScope(action.State, action.Scope);
+            StoreSuspendedAction(action.State, result, action.Scope);
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
     public void SetPrintFile(string baseName, int number)
     {
         _printBaseName = NormalizePrintBaseName(baseName);
@@ -135,6 +495,471 @@ public sealed class WdlRuntime :
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);
+
+    /// <inheritdoc/>
+    public void PlaySound(string soundName, string? fileName, double volume, double? balance, string? emitterName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = _sounds.GetValueOrDefault(soundName);
+        }
+
+        int channel = ReserveSoundChannel();
+        if (channel < 0)
+        {
+            return;
+        }
+
+        var request = new WdlSoundRequest(
+            soundName,
+            fileName,
+            volume,
+            balance,
+            emitterName,
+            Streamed: false,
+            channel,
+            Loop: false);
+        _soundRequests.Add(request);
+        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.Play, request));
+    }
+
+    /// <inheritdoc/>
+    public void PlaySoundFile(string fileName, double volume, double? balance)
+    {
+        int channel = ReserveSoundChannel();
+        if (channel < 0)
+        {
+            return;
+        }
+
+        var request = new WdlSoundRequest(
+            fileName,
+            fileName,
+            volume,
+            balance,
+            EmitterName: null,
+            Streamed: true,
+            channel,
+            Loop: false);
+        _soundRequests.Add(request);
+        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.Play, request));
+    }
+
+    /// <inheritdoc/>
+    public void StopSounds()
+    {
+        StopSoundCount++;
+        for (int channel = 0; channel < 8; channel++)
+        {
+            SetSkill($"CHANNEL_{channel}", 0);
+        }
+
+        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopAll, default));
+    }
+
+    /// <summary>Requests playback for a floor or ceiling texture sound.</summary>
+    public int PlayTextureSound(string soundName, double volume, bool loop, double? balance = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(soundName);
+        int channel = ReserveSoundChannel();
+        if (channel < 0)
+        {
+            return -1;
+        }
+
+        var request = new WdlSoundRequest(
+            soundName,
+            _sounds.GetValueOrDefault(soundName),
+            volume,
+            balance,
+            EmitterName: null,
+            Streamed: false,
+            channel,
+            loop);
+        _soundRequests.Add(request);
+        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.Play, request));
+        return channel;
+    }
+
+    /// <summary>Stops one host sound channel and releases its script-visible state.</summary>
+    public bool StopSoundChannel(int channel)
+    {
+        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0)
+        {
+            return false;
+        }
+
+        SetSkill($"CHANNEL_{channel}", 0);
+        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopChannel, default, channel));
+        return true;
+    }
+
+    /// <summary>Releases a script-visible sound channel after host playback stops.</summary>
+    public bool CompleteSound(int channel)
+    {
+        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0)
+        {
+            return false;
+        }
+
+        SetSkill($"CHANNEL_{channel}", 0);
+        return true;
+    }
+
+    private int ReserveSoundChannel()
+    {
+        for (int channel = 0; channel < 8; channel++)
+        {
+            if (GetSkill($"CHANNEL_{channel}") != 0)
+            {
+                continue;
+            }
+
+            SetSkill($"CHANNEL_{channel}", 1);
+            SetSkill("CHANNEL", channel);
+            return channel;
+        }
+
+        SetSkill("CHANNEL", -1);
+        return -1;
+    }
+
+    /// <inheritdoc/>
+    public void FadePalette(string paletteName, string? fileName, double factor)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            fileName = _palettes.GetValueOrDefault(paletteName);
+        }
+
+        _paletteFadeRequests.Add(new WdlPaletteFadeRequest(paletteName, fileName, factor));
+    }
+
+    /// <inheritdoc/>
+    public bool Locate(AcknexObject? target)
+    {
+        target ??= GetObject("player");
+        if (target is null || !TryGetMapPosition(target, out double x, out double y))
+        {
+            return false;
+        }
+
+        if (LevelTopology.LocateRegion(_level, x, y) is not { } region)
+        {
+            return false;
+        }
+
+        target["region"] = region;
+        if (ReferenceEquals(target, GetObject("player")) && RegionAt(region) is { } here)
+        {
+            SetObjectReference("here", here);
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public double Random(double maximum) => _random.NextDouble() * maximum;
+
+    /// <inheritdoc/>
+    public void Randomize() => _random = new Random();
+
+    /// <inheritdoc/>
+    public bool IsSkillAtMinimum(string name) =>
+        _bounds.TryGetValue(name, out SkillRange range) && GetSkill(name) <= range.Min;
+
+    /// <inheritdoc/>
+    public void Shake(AcknexObject target) => RecordGeometryInvalidation(target);
+
+    /// <inheritdoc/>
+    public bool DropObject(AcknexObject target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (target is not MapEntity entity ||
+            GetObject("player") is not Player player)
+        {
+            return false;
+        }
+
+        double distance = entity["DIST"];
+        double angle = GetSkill("MOUSE_MODE") != 0 ? GetSkill("MOUSE_ANGLE") : GetSkill("PLAYER_ANGLE");
+        Vector3 position = player.Position;
+        entity.X = position.X + (Math.Cos(angle) * distance);
+        entity.Y = position.Z + (Math.Sin(angle) * distance);
+        entity.Region = player.Region;
+        RecordGeometryInvalidation(entity);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool ShiftRegion(Region region, double dx, double dy)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        int regionIndex = _regions.FindIndex(candidate => ReferenceEquals(candidate, region));
+        if (regionIndex < 0 ||
+            _level.Vertices is not IList<Vertex> vertices ||
+            LevelTopology.TraceRegionLoop(_level, regionIndex) is not { } loop)
+        {
+            return false;
+        }
+
+        foreach (int vertexIndex in loop.Distinct())
+        {
+            Vertex vertex = vertices[vertexIndex];
+            vertices[vertexIndex] = new Vertex(vertex.X + (float)dx, vertex.Y + (float)dy, vertex.Z);
+        }
+
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (entity.Region == regionIndex)
+            {
+                entity.X += dx;
+                entity.Y += dy;
+            }
+        }
+
+        foreach (Player player in _objects.Values.OfType<Player>().Distinct())
+        {
+            if (player.Region == regionIndex)
+            {
+                Vector3 position = player.Position;
+                player.Position = new Vector3(position.X + (float)dx, position.Y, position.Z + (float)dy);
+            }
+        }
+
+        RecordGeometryInvalidation(region);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool LiftRegion(Region region, double amount)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        int regionIndex = _regions.FindIndex(candidate => ReferenceEquals(candidate, region));
+        if (regionIndex < 0 ||
+            _level.Vertices is not IList<Vertex> vertices ||
+            LevelTopology.TraceRegionLoop(_level, regionIndex) is not { } loop)
+        {
+            return false;
+        }
+
+        foreach (int vertexIndex in loop.Distinct())
+        {
+            Vertex vertex = vertices[vertexIndex];
+            vertices[vertexIndex] = new Vertex(vertex.X, vertex.Y, vertex.Z + (float)amount);
+        }
+
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (entity.Region == regionIndex)
+            {
+                entity.Z += amount;
+            }
+        }
+
+        RecordGeometryInvalidation(region);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool RotateRegion(Region region, double radians)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        int regionIndex = _regions.FindIndex(candidate => ReferenceEquals(candidate, region));
+        if (regionIndex < 0 ||
+            string.IsNullOrWhiteSpace(region.GeniusName) ||
+            GetObject(region.GeniusName) is not { } center ||
+            !TryGetMapPosition(center, out double centerX, out double centerY) ||
+            _level.Vertices is not IList<Vertex> vertices ||
+            LevelTopology.TraceRegionLoop(_level, regionIndex) is not { } loop)
+        {
+            return false;
+        }
+
+        double sin = Math.Sin(radians);
+        double cos = Math.Cos(radians);
+        foreach (int vertexIndex in loop.Distinct())
+        {
+            Vertex vertex = vertices[vertexIndex];
+            (double x, double y) = RotateMapPoint(vertex.X, vertex.Y, centerX, centerY, sin, cos);
+            vertices[vertexIndex] = new Vertex((float)x, (float)y, vertex.Z);
+        }
+
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (entity.Region == regionIndex)
+            {
+                (entity.X, entity.Y) = RotateMapPoint(entity.X, entity.Y, centerX, centerY, sin, cos);
+                entity.Angle += radians;
+            }
+        }
+
+        foreach (Player player in _objects.Values.OfType<Player>().Distinct())
+        {
+            if (player.Region == regionIndex)
+            {
+                Vector3 position = player.Position;
+                (double x, double y) = RotateMapPoint(position.X, position.Z, centerX, centerY, sin, cos);
+                player.Position = new Vector3((float)x, position.Y, (float)y);
+            }
+        }
+
+        RecordGeometryInvalidation(region);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void Shoot(AcknexObject? source)
+    {
+        if (source is null)
+        {
+            ShootFromPlayer(GetSkill("SHOOT_RANGE"), useShootDeviation: true);
+            return;
+        }
+
+        if (source is not MapEntity entity ||
+            GetObject("player") is not Player player)
+        {
+            ClearHitResult();
+            return;
+        }
+
+        double dx = player.Position.X - entity.X;
+        double dy = player.Position.Z - entity.Y;
+        double distance = Math.Sqrt((dx * dx) + (dy * dy));
+        double angle = Math.Atan2(dy, dx);
+        SetSkill("SHOOT_ANGLE", angle);
+
+        double range = GetSkill("SHOOT_RANGE");
+        double sector = GetSkill("SHOOT_SECTOR");
+        double delta = NormalizeAngle(angle - entity.FacingAngleRadians);
+        if (range > 0 &&
+            distance <= range &&
+            Math.Abs(delta) <= sector / 2 &&
+            HasPortalLineOfSight(
+                entity.X,
+                entity.Y,
+                player.Position.Y,
+                Math.Cos(angle),
+                Math.Sin(angle),
+                distance,
+                entity.Region,
+                player.Region))
+        {
+            SetHitResult(distance, range);
+            return;
+        }
+
+        ClearHitResult();
+    }
+
+    /// <inheritdoc/>
+    public void Push(double distance) => ShootFromPlayer(distance, useShootDeviation: false);
+
+    /// <inheritdoc/>
+    public void Explode(AcknexObject source)
+    {
+        if (source is not MapEntity entity)
+        {
+            ClearHitResult();
+            SetSkill("HIT_MINDIST", 0);
+            return;
+        }
+
+        double range = GetSkill("SHOOT_RANGE");
+        if (range <= 0)
+        {
+            ClearHitResult();
+            SetSkill("HIT_MINDIST", 0);
+            return;
+        }
+
+        double nearest = double.PositiveInfinity;
+        AcknexObject? nearestTarget = null;
+        foreach (AcknexObject target in FragileTargets(entity.Region))
+        {
+            if (!TryDistanceFromPoint(entity.X, entity.Y, target, out double distance) ||
+                distance > range)
+            {
+                continue;
+            }
+
+            if (distance < nearest)
+            {
+                nearest = distance;
+                nearestTarget = target;
+            }
+
+            SetHitResult(distance, range);
+            TriggerObjectActionHook(target, "IF_HIT");
+        }
+
+        if (nearestTarget is not null)
+        {
+            SetObjectReference("hit", nearestTarget);
+            SetSkill("HIT_MINDIST", nearest);
+        }
+        else
+        {
+            SetSkill("HIT_MINDIST", 0);
+        }
+
+        SetPlayerExplosionResult(entity.X, entity.Y, range);
+    }
+
+    /// <inheritdoc/>
+    public void Beep() => BeepCount++;
+
+    /// <inheritdoc/>
+    public bool BeginFlicFile(string fileName, out WdlFlicRequest request)
+    {
+        request = new WdlFlicRequest(++_nextFlicRequestId, fileName, Streamed: true);
+        _flicRequests.Add(request);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void StopFlic()
+    {
+        StopFlicCount++;
+        foreach (int requestId in _flicActions.Keys.ToArray())
+        {
+            CompleteFlic(requestId);
+        }
+    }
+
+    /// <summary>Completes host flic playback and resumes its invoking WDL action.</summary>
+    public bool CompleteFlic(int requestId)
+    {
+        if (!_flicActions.Remove(requestId, out ActiveFlicAction? action))
+        {
+            return false;
+        }
+
+        WdlExecutionResult result = ContinueWithScope(action.State, action.Scope);
+        StoreSuspendedAction(action.State, result, action.Scope);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void Screenshot(string baseName, int number) =>
+        _screenshotRequests.Add(new WdlScreenshotRequest(NormalizePrintBaseName(baseName), Math.Clamp(number, 0, 999)));
+
+    /// <inheritdoc/>
+    public void SaveGame(string baseName, int number, bool infoOnly) =>
+        _persistenceRequests.Add(new WdlPersistenceRequest(
+            WdlPersistenceOperation.Save,
+            NormalizePrintBaseName(baseName),
+            Math.Clamp(number, 0, 999),
+            infoOnly));
+
+    /// <inheritdoc/>
+    public void LoadGame(string baseName, int number, bool infoOnly) =>
+        _persistenceRequests.Add(new WdlPersistenceRequest(
+            WdlPersistenceOperation.Load,
+            NormalizePrintBaseName(baseName),
+            Math.Clamp(number, 0, 999),
+            infoOnly));
 
     /// <inheritdoc/>
     public bool IsKeywordReference(string name) => _keywordReferences.ContainsKey(name);
@@ -153,6 +978,96 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    public bool TryGetUiNumber(string elementName, string memberName, out double value)
+    {
+        value = 0;
+        if (ResolveUiElementName(elementName) is not { } resolved ||
+            !_uiElements.TryGetValue(resolved, out WdlUiElement? element) ||
+            element is null)
+        {
+            return false;
+        }
+
+        if (IsUiFlag(memberName))
+        {
+            value = HasUiFlag(element, memberName) ? 1 : 0;
+            return true;
+        }
+
+        if (TryGetUiPropertyNumber(element, memberName, out value))
+        {
+            return true;
+        }
+
+        value = 0;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TrySetUiNumber(string elementName, string memberName, double value)
+    {
+        if (ResolveUiElementName(elementName) is not { } resolved ||
+            !_uiElements.TryGetValue(resolved, out WdlUiElement? element) ||
+            element is null)
+        {
+            return false;
+        }
+
+        _uiElements[resolved] = IsUiFlag(memberName)
+            ? SetUiFlag(element, memberName, value != 0)
+            : SetUiPropertyNumber(element, memberName, value);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGetUiKeyword(string elementName, string memberName, out string? value)
+    {
+        value = null;
+        if (!IsUiKeywordProperty(memberName) ||
+            ResolveUiElementName(elementName) is not { } resolved ||
+            !_uiElements.TryGetValue(resolved, out WdlUiElement? element) ||
+            element is null)
+        {
+            return false;
+        }
+
+        value = UiKeywordValue(element, memberName);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TrySetUiKeyword(string elementName, string memberName, string? value)
+    {
+        if (!IsUiKeywordProperty(memberName) ||
+            ResolveUiElementName(elementName) is not { } resolved ||
+            !_uiElements.TryGetValue(resolved, out WdlUiElement? element) ||
+            element is null)
+        {
+            return false;
+        }
+
+        _uiElements[resolved] = SetUiPropertyKeyword(element, memberName, value);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void RequestExit(string? message)
+    {
+        ExitRequested = true;
+        ExitMessage = message;
+    }
+
+    /// <inheritdoc/>
+    public void RequestLevelChange(string levelName, string? resourceName)
+    {
+        RequestedLevelName = levelName;
+        RequestedLevelResource = resourceName;
+    }
+
+    /// <inheritdoc/>
+    public void RequestMapChange(string mapName) => RequestedMapName = mapName;
+
+    /// <inheritdoc/>
     public AcknexObject? GetObject(string name) =>
         _objects.GetValueOrDefault(name) ??
         (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null);
@@ -160,6 +1075,42 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public IEnumerable<AcknexObject> GetObjectsByName(string name) =>
         _objectsByName.GetValueOrDefault(name) ?? [];
+
+    /// <inheritdoc/>
+    public void SetObjectNumber(AcknexObject target, string memberName, double value)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrEmpty(memberName);
+        if (target is MapEntity visibilityEntity &&
+            memberName.Equals("INVISIBLE", StringComparison.OrdinalIgnoreCase))
+        {
+            visibilityEntity[memberName] = value;
+            visibilityEntity["VISIBLE"] = value > 0 ? 0 : 1;
+            return;
+        }
+
+        if (target is not MapEntity entity ||
+            !memberName.Equals("GROUND", StringComparison.OrdinalIgnoreCase) ||
+            entity.Region < 0 ||
+            entity.Region >= _level.Regions.Count)
+        {
+            target[memberName] = value;
+            return;
+        }
+
+        bool wasAbsolute = entity["GROUND"] > 0;
+        bool becomesAbsolute = value > 0;
+        if (wasAbsolute == becomesAbsolute)
+        {
+            entity[memberName] = value;
+            return;
+        }
+
+        double floorHeight = _level.Regions[entity.Region].FloorHeight;
+        double worldHeight = wasAbsolute ? entity.Z : floorHeight + entity.Z;
+        entity[memberName] = value;
+        entity.Z = becomesAbsolute ? worldHeight : worldHeight - floorHeight;
+    }
 
     /// <summary>Registers a named object reference (e.g. <c>my</c>, <c>you</c>, or a level object).</summary>
     public void RegisterObject(string name, AcknexObject value)
@@ -211,17 +1162,40 @@ public sealed class WdlRuntime :
     /// <summary>
     /// Registers an object/action pair for object-level <c>EACH_TICK</c>, dispatched once per frame.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "This is intentionally an instance runtime API for host scheduler registration.")]
     public void RegisterEachTick(AcknexObject target, string actionName)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentException.ThrowIfNullOrEmpty(actionName);
-        _objectTickActions.Add(new ObjectTickAction(target, actionName));
+        SetObjectSchedulerAction(target, eachCycle: false, actionName);
     }
 
     /// <summary>
-    /// Registers an object/action pair with the earlier provisional per-frame scheduler name.
+    /// Registers an object/action pair for <c>EACH_CYCLE</c>, dispatched when the host observes animation-cycle completion.
     /// </summary>
-    public void RegisterEachCycle(AcknexObject target, string actionName) => RegisterEachTick(target, actionName);
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1822:Mark members as static",
+        Justification = "This is intentionally an instance runtime API for host scheduler registration.")]
+    public void RegisterEachCycle(AcknexObject target, string actionName)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrEmpty(actionName);
+        SetObjectSchedulerAction(target, eachCycle: true, actionName);
+    }
+
+    /// <summary>Triggers a target's current <c>EACH_CYCLE</c> action, if one is assigned.</summary>
+    public bool TriggerEachCycle(AcknexObject target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return !IsInactiveEntity(target) &&
+               TryGetObjectSchedulerAction(target, eachCycle: true, out string? actionName) &&
+               actionName is not null &&
+               RunForActionTarget(target, actionName);
+    }
 
     /// <inheritdoc/>
     public void SetEachTickAction(int slot, string? actionName)
@@ -273,9 +1247,22 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentException.ThrowIfNullOrEmpty(name);
-        return TryGetObjectActionHook(target, name, out string? actionName) &&
+        return !IsInactiveEntity(target) &&
+               TryGetObjectActionHook(target, name, out string? actionName) &&
                actionName is not null &&
                RunForActionTarget(target, actionName);
+    }
+
+    /// <summary>Dispatches a documented vertical player-region transition without horizontal enter/leave hooks.</summary>
+    public void DispatchPlayerVerticalTransition(PlayerVerticalTransition transition)
+    {
+        _observedPlayerRegion = transition.ToRegion;
+        if (RegionAt(transition.ToRegion) is { } current)
+        {
+            SetObjectReference("here", current);
+        }
+
+        TriggerObjectActionHook(transition.Source, transition.HookName);
     }
 
     /// <summary>
@@ -286,25 +1273,68 @@ public sealed class WdlRuntime :
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
+        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        RefreshEntityVisibilityFlags();
+        ResumeWaitingActions(timeCorrection);
+        DispatchPlayerRegionEvents();
+        DispatchProximityEvents();
+        AdvanceAnimationCycles(timeCorrection);
+        AdvanceActorTargets(timeCorrection);
+        DispatchGlobalEachTickActions();
+
+        foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
+        {
+            PrepareActorTickSkills(target);
+            RunForActionTarget(target, actionName);
+        }
+
+        return timeCorrection;
+    }
+
+    /// <summary>
+    /// Advances timing and global scheduler actions while host FLIC playback pauses
+    /// normal world movement, animation, proximity, and object scheduler processing.
+    /// </summary>
+    public double TickFlic(double deltaSeconds)
+    {
+        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        DispatchGlobalEachTickActions();
+        return timeCorrection;
+    }
+
+    private double UpdateTimingSkills(double deltaSeconds)
+    {
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
         _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
         _skills[Timing.SecondsSkill] = GetSkill(Timing.SecondsSkill) + Timing.EffectiveFrameSeconds(deltaSeconds);
-        foreach (string? actionName in _eachTickActions)
+        return timeCorrection;
+    }
+
+    private void DispatchGlobalEachTickActions()
+    {
+        LastTickPlayerVelocityWriteCount = 0;
+        LastTickGlobalStatementCount = 0;
+        LastTickPlayerVelocityStatementCount = 0;
+        LastTickUnsupportedExpressionCount = 0;
+        LastTickTrueConditionCount = 0;
+        LastTickFalseConditionCount = 0;
+        _dispatchingGlobalEachTick = true;
+        try
         {
-            if (actionName is not null)
+            foreach (string? actionName in _eachTickActions)
             {
-                Run(actionName);
+                if (actionName is not null)
+                {
+                    Run(actionName);
+                }
             }
         }
-
-        foreach (ObjectTickAction tickAction in _objectTickActions)
+        finally
         {
-            RunForActionTarget(tickAction.Target, tickAction.ActionName);
+            _dispatchingGlobalEachTick = false;
         }
-
-        return timeCorrection;
     }
 
     /// <inheritdoc/>
@@ -394,6 +1424,7 @@ public sealed class WdlRuntime :
     {
         bool hadMy = _objects.TryGetValue("my", out AcknexObject? previousMy);
         bool hadThere = _objects.TryGetValue("there", out AcknexObject? previousThere);
+        AcknexObject? previousActionTarget = _activeActionTarget;
         bool bindMy = target is not Region;
         Region? targetRegion = RegionForActionTarget(target);
         if (bindMy)
@@ -414,12 +1445,15 @@ public sealed class WdlRuntime :
             _objects.Remove("there");
         }
 
+        _activeActionTarget = target;
+
         try
         {
             return Run(actionName);
         }
         finally
         {
+            _activeActionTarget = previousActionTarget;
             if (hadMy)
             {
                 _objects["my"] = previousMy!;
@@ -452,7 +1486,9 @@ public sealed class WdlRuntime :
         _callDepth++;
         try
         {
-            _interpreter.Execute(block);
+            WdlExecutionState state = WdlInterpreter.Start(block);
+            WdlExecutionResult result = _interpreter.Continue(state);
+            StoreSuspendedAction(state, result, CaptureActionScope());
         }
         finally
         {
@@ -460,6 +1496,174 @@ public sealed class WdlRuntime :
         }
 
         return true;
+    }
+
+    private bool IsPlayerMovementAction(string? name) =>
+        name is not null &&
+        ResolveActionName(name) is { } actionName &&
+        _actions.TryGetValue(actionName, out WdlBlock? body) &&
+        WdlCoverageAnalyzer.ReferencesPlayerMovement(body);
+
+    private void InitializePredefinedSkillDefaults()
+    {
+        EnsureSkillDefault("FRICTION", 0.5);
+        EnsureSkillDefault("INERTIA", 1);
+        EnsureSkillDefault("SHOOT_RANGE", 500);
+        EnsureSkillDefault("SHOOT_FAC", 1);
+        EnsureSkillDefault("SHOOT_SECTOR", Math.Tau);
+        EnsureSkillDefault("SHOOT_X", 0);
+        EnsureSkillDefault("SHOOT_Y", 0);
+        EnsureSkillDefault("KEY_SENSE", 0.7);
+        EnsureSkillDefault("SHIFT_SENSE", 2);
+        EnsureSkillDefault("MOUSE_SENSE", 1);
+        EnsureSkillDefault("JOY_SENSE", 1);
+        EnsureSkillDefault("MOUSE_MODE", 0);
+        EnsureSkillDefault("TOUCH_MODE", 1);
+        EnsureSkillDefault("MOUSE_MOVING", 0);
+        EnsureSkillDefault("MOUSE_CALM", 3);
+        EnsureSkillDefault("MOUSE_TIME", 4);
+        EnsureSkillDefault("MICKEY_X", 0);
+        EnsureSkillDefault("MICKEY_Y", 0);
+        EnsureSkillDefault("MOUSE_X", 0);
+        EnsureSkillDefault("MOUSE_Y", 0);
+        EnsureSkillDefault("MOUSE_ANGLE", 0);
+        EnsureSkillDefault("PLAYER_WIDTH", 1.2);
+        EnsureSkillDefault("PLAYER_SIZE", 3);
+        EnsureSkillDefault("PLAYER_CLIMB", 1.5);
+        EnsureSkillDefault("PLAYER_TILT", 0);
+        EnsureValidSkillDefault("PLAYER_ARC", 1, value => value is >= 0.2 and <= 2);
+        EnsureSkillDefault("PLAYER_LIGHT", 1);
+        EnsureSkillDefault("LIGHT_DIST", 10);
+        EnsureSkillDefault("SOUND_VOL", 1);
+        EnsureSkillDefault("MUSIC_VOL", 1);
+        EnsureSkillDefault("WALK_PERIOD", 4);
+        EnsureSkillDefault("WALK_TIME", 4);
+        EnsureSkillDefault("WAVE_PERIOD", 16);
+        EnsureSkillDefault("WALK", 0);
+        EnsureSkillDefault("WAVE", 0);
+        EnsureSkillDefault("PSOUND_VOL", 1);
+        EnsureSkillDefault("PSOUND_TONE", 1);
+        EnsureSkillDefault("CHANNEL", -1);
+        for (int channel = 0; channel < 8; channel++)
+        {
+            EnsureSkillDefault($"CHANNEL_{channel}", 0);
+        }
+
+        EnsureSkillDefault("ACTOR_WIDTH", 1);
+        EnsureSkillDefault("THING_WIDTH", 1);
+        EnsureSkillDefault("SCREEN_X", 0);
+        EnsureSkillDefault("SCREEN_Y", 0);
+        EnsureSkillDefault("SCREEN_WIDTH", _level.VideoMode?.Width ?? 640);
+        EnsureSkillDefault("SCREEN_HGT", _level.VideoMode?.Height ?? 480);
+    }
+
+    private void EnsureSkillDefault(string name, double value)
+    {
+        if (!_skills.ContainsKey(name) || !_level.ExplicitlyInitializedSkills.Contains(name))
+        {
+            _skills[name] = value;
+        }
+    }
+
+    private void EnsureValidSkillDefault(string name, double value, Func<double, bool> isValid)
+    {
+        if (!_skills.TryGetValue(name, out double current) ||
+            !_level.ExplicitlyInitializedSkills.Contains(name) ||
+            !double.IsFinite(current) ||
+            !isValid(current))
+        {
+            _skills[name] = value;
+        }
+    }
+
+    private void ResumeWaitingActions(double timeCorrection)
+    {
+        int initialCount = _waitingActions.Count;
+        for (int processed = 0; processed < initialCount; processed++)
+        {
+            ActiveAction action = _waitingActions[0];
+            _waitingActions.RemoveAt(0);
+
+            if (IsInactiveEntity(action.Scope.Target))
+            {
+                _waitingActions.Add(action);
+                continue;
+            }
+
+            action.Remaining -= action.Mode == WdlWaitMode.FrameCycles ? 1 : timeCorrection;
+            if (action.Remaining > 0)
+            {
+                _waitingActions.Add(action);
+                continue;
+            }
+
+            WdlExecutionResult result = ContinueWithScope(action);
+            StoreSuspendedAction(action.State, result, action.Scope);
+        }
+    }
+
+    private WdlExecutionResult ContinueWithScope(ActiveAction action)
+    {
+        return ContinueWithScope(action.State, action.Scope);
+    }
+
+    private WdlExecutionResult ContinueWithScope(WdlExecutionState state, ActionScope scope)
+    {
+        ActionScope previous = CaptureActionScope();
+        ApplyActionScope(scope);
+        try
+        {
+            return _interpreter.Continue(state);
+        }
+        finally
+        {
+            ApplyActionScope(previous);
+        }
+    }
+
+    private void StoreSuspendedAction(WdlExecutionState state, WdlExecutionResult result, ActionScope scope)
+    {
+        switch (result)
+        {
+            case { Status: WdlExecutionStatus.Waiting, Wait: { } wait }:
+                _waitingActions.Add(new ActiveAction(state, wait, scope));
+                break;
+            case { Status: WdlExecutionStatus.InputWaiting, Input: { } input }:
+                _inputActions[input.Id] = new ActiveInputAction(state, input, scope);
+                break;
+            case { Status: WdlExecutionStatus.FlicWaiting, Flic: { } flic }:
+                _flicActions[flic.Id] = new ActiveFlicAction(state, flic, scope);
+                break;
+        }
+    }
+
+    private ActionScope CaptureActionScope()
+    {
+        bool hasMy = _objects.TryGetValue("my", out AcknexObject? my);
+        bool hasThere = _objects.TryGetValue("there", out AcknexObject? there);
+        return new ActionScope(hasMy, my, hasThere, there, _activeActionTarget);
+    }
+
+    private void ApplyActionScope(ActionScope scope)
+    {
+        _activeActionTarget = scope.Target;
+        if (scope.HasMy)
+        {
+            _objects["my"] = scope.My!;
+        }
+        else
+        {
+            _objects.Remove("my");
+        }
+
+        if (scope.HasThere)
+        {
+            _objects["there"] = scope.There!;
+        }
+        else
+        {
+            _objects.Remove("there");
+        }
     }
 
     private void InitializeSynonyms(Level level)
@@ -503,24 +1707,6 @@ public sealed class WdlRuntime :
         }
     }
 
-    private void InitializeObjectEachTickActions(Level level)
-    {
-        foreach (Region region in level.Regions)
-        {
-            RegisterEachTickIfPresent(region, region.EachTickAction);
-        }
-
-        foreach (Wall wall in level.Walls)
-        {
-            RegisterEachTickIfPresent(wall, wall.EachTickAction);
-        }
-
-        foreach (MapEntity entity in level.Things.Cast<MapEntity>().Concat(level.Actors))
-        {
-            RegisterEachTickIfPresent(entity, entity.EachTickAction);
-        }
-    }
-
     private void InitializeActionHooks(Level level)
     {
         foreach ((string name, string? actionName) in level.ActionHooks)
@@ -533,11 +1719,807 @@ public sealed class WdlRuntime :
         name.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
         !name.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
 
-    private void RegisterEachTickIfPresent(AcknexObject target, string? actionName)
+    private void DispatchPlayerRegionEvents()
     {
-        if (!string.IsNullOrWhiteSpace(actionName))
+        if (GetObject("player") is not Player player ||
+            RegionAt(player.Region) is not { } currentRegion)
         {
-            RegisterEachTick(target, actionName);
+            return;
+        }
+
+        SetObjectReference("here", currentRegion);
+        if (_observedPlayerRegion is null)
+        {
+            _observedPlayerRegion = player.Region;
+            return;
+        }
+
+        int previousRegion = _observedPlayerRegion.Value;
+        if (previousRegion == player.Region)
+        {
+            return;
+        }
+
+        _observedPlayerRegion = player.Region;
+        if (RegionAt(previousRegion) is { } previous)
+        {
+            TriggerObjectActionHook(previous, "IF_LEAVE");
+        }
+
+        TriggerObjectActionHook(currentRegion, "IF_ENTER");
+    }
+
+    private void DispatchProximityEvents()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            _proximityStates.Clear();
+            return;
+        }
+
+        foreach (AcknexObject target in CurrentProximityTargets())
+        {
+            if (!ShouldTrackProximity(target) ||
+                !TryCurrentProximity(player, target, out bool isNear))
+            {
+                _proximityStates.Remove(target);
+                continue;
+            }
+
+            bool hadPrevious = _proximityStates.TryGetValue(target, out bool wasNear);
+            _proximityStates[target] = isNear;
+            if (isNear && (!hadPrevious || !wasNear))
+            {
+                TriggerObjectActionHook(target, "IF_NEAR");
+            }
+            else if (!isNear && hadPrevious && wasNear)
+            {
+                TriggerObjectActionHook(target, "IF_FAR");
+            }
+        }
+    }
+
+    private IEnumerable<AcknexObject> CurrentProximityTargets()
+    {
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        {
+            yield return entity;
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            yield return wall;
+        }
+    }
+
+    private static bool ShouldTrackProximity(AcknexObject target) =>
+        !IsInactiveEntity(target) &&
+        (TryGetObjectActionHook(target, "IF_NEAR", out _) ||
+         TryGetObjectActionHook(target, "IF_FAR", out _));
+
+    private bool TryCurrentProximity(Player player, AcknexObject target, out bool isNear)
+    {
+        double threshold = target["DIST"];
+        if (threshold <= 0)
+        {
+            isNear = false;
+            return false;
+        }
+
+        if (!TargetCanSeePlayerRegion(target, player.Region) ||
+            !TryDistanceFromPoint(player.Position.X, player.Position.Z, target, out double distance))
+        {
+            isNear = false;
+            return true;
+        }
+
+        isNear = distance <= threshold;
+        return true;
+    }
+
+    private static bool TargetCanSeePlayerRegion(AcknexObject target, int playerRegion) =>
+        target switch
+        {
+            MapEntity entity => entity.Region == playerRegion,
+            Wall wall => wall.LeftRegion == playerRegion || wall.RightRegion == playerRegion,
+            _ => false,
+        };
+
+    private void AdvanceActorTargets(double timeCorrection)
+    {
+        foreach (Actor actor in _level.Actors)
+        {
+            actor["MOVED"] = 0;
+            actor["IMPACT_VX"] = 0;
+            actor["IMPACT_VY"] = 0;
+            actor["IMPACT_VZ"] = 0;
+            actor["IMPACT_VROT"] = 0;
+            string? target = actor.Target;
+            LevelWay? way = null;
+            bool followsWay = target is null &&
+                              actor.WayName is { } wayName &&
+                              _level.Ways.TryGetValue(wayName, out way) &&
+                              way.Points.Count > 0;
+            if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
+            {
+                _arrivedTargets.Remove(actor);
+                _actorTargetStates.Remove(actor);
+                continue;
+            }
+
+            string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
+            bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
+                                 !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
+            _actorTargetStates[actor] = targetState;
+            if (targetChanged && targetState.Equals("STICK", StringComparison.OrdinalIgnoreCase))
+            {
+                InitializeStickTarget(actor);
+            }
+
+            if (followsWay)
+            {
+                if (AdvanceActorWay(actor, way!, timeCorrection))
+                {
+                    TriggerObjectActionHook(actor, "IF_ARRIVED");
+                }
+
+                _arrivedTargets.Remove(actor);
+                continue;
+            }
+
+            bool arrived = target!.ToUpperInvariant() switch
+            {
+                "MOVE" or "BULLET" => AdvanceActorForward(actor, timeCorrection),
+                "FOLLOW" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: false),
+                "REPEL" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: true),
+                "VERTEX" => AdvanceActorToward(actor, actor["TARGET_X"], actor["TARGET_Y"], timeCorrection),
+                "STICK" => AdvanceStickActor(actor, timeCorrection),
+                "HOLD" or "NODE1" or "NODE2" => false,
+                _ => AdvanceActorTowardNamedTarget(actor, target, timeCorrection),
+            };
+
+            if (arrived)
+            {
+                if (_arrivedTargets.Add(actor))
+                {
+                    TriggerObjectActionHook(actor, "IF_ARRIVED");
+                }
+            }
+            else
+            {
+                _arrivedTargets.Remove(actor);
+            }
+        }
+    }
+
+    private bool AdvanceActorWay(Actor actor, LevelWay way, double timeCorrection)
+    {
+        int waypoint = (int)Math.Truncate(actor["WAYPOINT"]);
+        if (waypoint <= 0)
+        {
+            waypoint = 1;
+        }
+        else if (waypoint > way.Points.Count)
+        {
+            waypoint = ((waypoint - 1) % way.Points.Count) + 1;
+        }
+
+        actor["WAYPOINT"] = waypoint;
+        LevelWayPoint point = way.Points[waypoint - 1];
+        bool arrived = AdvanceActorToward(actor, point.X, point.Y, timeCorrection);
+        if (!arrived)
+        {
+            return false;
+        }
+
+        int nextWaypoint = (waypoint % way.Points.Count) + 1;
+        actor["WAYPOINT"] = nextWaypoint;
+        LevelWayPoint next = way.Points[nextWaypoint - 1];
+        actor["TARGET_X"] = next.X;
+        actor["TARGET_Y"] = next.Y;
+        return true;
+    }
+
+    private void PrepareActorTickSkills(AcknexObject target)
+    {
+        if (target is not Actor actor)
+        {
+            return;
+        }
+
+        SetSkill("ACTOR_IMPACT_VX", actor["IMPACT_VX"]);
+        SetSkill("ACTOR_IMPACT_VY", actor["IMPACT_VY"]);
+        SetSkill("ACTOR_IMPACT_VZ", actor["IMPACT_VZ"]);
+        SetSkill("IMPACT_VROT", actor["IMPACT_VROT"]);
+        if (actor.Region >= 0 && actor.Region < _level.Regions.Count)
+        {
+            Region region = _level.Regions[actor.Region];
+            double offset = LevelTopology.TryGetSurfaceHeightOffset(
+                _level,
+                actor.Region,
+                actor.X,
+                actor.Y,
+                out double value) ? value : 0;
+            SetSkill("ACTOR_FLOOR_HGT", region.FloorHeight + offset);
+            SetSkill("ACTOR_CEIL_HGT", region.CeilHeight + offset);
+        }
+    }
+
+    private bool AdvanceActorForward(Actor actor, double timeCorrection)
+    {
+        double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+        if (distance <= 0)
+        {
+            return false;
+        }
+
+        double angle = actor.FacingAngleRadians;
+        double previousX = actor.X;
+        double previousY = actor.Y;
+        MoveActor(actor, actor.X + (Math.Cos(angle) * distance), actor.Y + (Math.Sin(angle) * distance));
+        double actualDistance = Math.Sqrt(
+            ((actor.X - previousX) * (actor.X - previousX)) +
+            ((actor.Y - previousY) * (actor.Y - previousY)));
+        actor.Z += actualDistance * actor["VSPEED"];
+
+        return false;
+    }
+
+    private bool AdvanceActorRelativeToPlayer(Actor actor, double timeCorrection, bool repel)
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return false;
+        }
+
+        double targetX = player.Position.X;
+        double targetY = player.Position.Z;
+        actor["TARGET_X"] = targetX;
+        actor["TARGET_Y"] = targetY;
+        if (repel)
+        {
+            double dx = actor.X - targetX;
+            double dy = actor.Y - targetY;
+            double length = Math.Sqrt((dx * dx) + (dy * dy));
+            if (length <= 0.000001)
+            {
+                return false;
+            }
+
+            double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+            MoveActor(actor, actor.X + ((dx / length) * distance), actor.Y + ((dy / length) * distance));
+            return false;
+        }
+
+        bool arrived = AdvanceActorToward(actor, targetX, targetY, timeCorrection);
+        AdjustActorHeightTowardPlayer(actor, player, timeCorrection);
+        return arrived;
+    }
+
+    private void InitializeStickTarget(Actor actor)
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        double dx = actor.X - player.Position.X;
+        double dy = actor.Y - player.Position.Z;
+        if (!actor.Skills.ContainsKey("REL_DIST"))
+        {
+            actor["REL_DIST"] = Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        if (!actor.Skills.ContainsKey("REL_ANGLE"))
+        {
+            actor["REL_ANGLE"] = NormalizeSignedAngle(Math.Atan2(dy, dx) - GetSkill("PLAYER_ANGLE"));
+        }
+    }
+
+    private bool AdvanceStickActor(Actor actor, double timeCorrection)
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return false;
+        }
+
+        double angle = GetSkill("PLAYER_ANGLE") + actor["REL_ANGLE"];
+        double distance = actor["REL_DIST"];
+        double targetX = player.Position.X + (Math.Cos(angle) * distance);
+        double targetY = player.Position.Z + (Math.Sin(angle) * distance);
+        AdvanceActorToward(actor, targetX, targetY, timeCorrection);
+        return false;
+    }
+
+    private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
+    {
+        actor["TARGET_X"] = targetX;
+        actor["TARGET_Y"] = targetY;
+        double dx = targetX - actor.X;
+        double dy = targetY - actor.Y;
+        double remaining = Math.Sqrt((dx * dx) + (dy * dy));
+        if (remaining <= 0.000001)
+        {
+            return true;
+        }
+
+        double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+        if (distance <= 0)
+        {
+            return false;
+        }
+
+        TurnActorToward(actor, Math.Atan2(dy, dx), timeCorrection);
+        if (distance >= remaining)
+        {
+            MoveActor(actor, targetX, targetY);
+            return true;
+        }
+
+        MoveActor(actor, actor.X + ((dx / remaining) * distance), actor.Y + ((dy / remaining) * distance));
+        return false;
+    }
+
+    private bool AdvanceActorTowardNamedTarget(Actor actor, string target, double timeCorrection)
+    {
+        if (!TryActorTargetPoint(target, out double x, out double y, out double? height))
+        {
+            return false;
+        }
+
+        bool horizontalArrived = AdvanceActorToward(actor, x, y, timeCorrection);
+        bool verticalArrived = true;
+        if (height is { } targetHeight)
+        {
+            double currentHeight = ActorWorldHeight(actor);
+            double difference = targetHeight - currentHeight;
+            double maximum = Math.Abs(actor["VSPEED"]) * timeCorrection;
+            if (maximum > 0)
+            {
+                SetActorWorldHeight(actor, currentHeight + Math.Clamp(difference, -maximum, maximum));
+            }
+
+            verticalArrived = Math.Abs(targetHeight - ActorWorldHeight(actor)) <= 0.000001;
+        }
+
+        return horizontalArrived && verticalArrived;
+    }
+
+    private void AdjustActorHeightTowardPlayer(Actor actor, Player player, double timeCorrection)
+    {
+        double verticalSpeed = actor["VSPEED"];
+        if (verticalSpeed == 0)
+        {
+            return;
+        }
+
+        double targetFeet = player.Position.Y - player.EyeHeight;
+        double currentFeet = ActorWorldHeight(actor);
+        double difference = targetFeet - currentFeet;
+        double maximum = difference >= 0
+            ? (verticalSpeed > 0 ? verticalSpeed : Math.Max(0, actor["SPEED"])) * timeCorrection
+            : Math.Abs(verticalSpeed) * timeCorrection;
+        SetActorWorldHeight(actor, currentFeet + Math.Clamp(difference, -maximum, maximum));
+    }
+
+    private double ActorWorldHeight(Actor actor)
+    {
+        if (actor["GROUND"] > 0 || actor.Region < 0 || actor.Region >= _level.Regions.Count)
+        {
+            return actor.Z;
+        }
+
+        return _level.Regions[actor.Region].FloorHeight + actor.Z;
+    }
+
+    private void SetActorWorldHeight(Actor actor, double height)
+    {
+        actor.Z = actor["GROUND"] > 0 || actor.Region < 0 || actor.Region >= _level.Regions.Count
+            ? height
+            : height - _level.Regions[actor.Region].FloorHeight;
+    }
+
+    private void MoveActor(Actor actor, double x, double y)
+    {
+        if (Math.Abs(actor.X - x) <= 0.000001 && Math.Abs(actor.Y - y) <= 0.000001)
+        {
+            return;
+        }
+
+        double requestedX = x - actor.X;
+        double requestedY = y - actor.Y;
+        int previousRegion = actor.Region;
+        bool carefully = actor["CAREFULLY"] > 0;
+        if (carefully)
+        {
+            var start = new Vector2((float)actor.X, (float)actor.Y);
+            CircleMoveResult result = _collisionWorld.Move(
+                start,
+                actor.Region,
+                new Vector2((float)requestedX, (float)requestedY),
+                ActorCollisionRadius(actor),
+                ActorCanCross,
+                EntityCollisionRadius,
+                static entity => entity["INVISIBLE"] > 0,
+                actor);
+            actor.X = result.Position.X;
+            actor.Y = result.Position.Y;
+            actor.Region = result.Region;
+            actor["IMPACT_VX"] = result.Displacement.X - requestedX;
+            actor["IMPACT_VY"] = result.Displacement.Y - requestedY;
+            if (actor.Target?.Equals("STICK", StringComparison.OrdinalIgnoreCase) == true &&
+                GetObject("player") is Player player)
+            {
+                double actualRelativeAngle = Math.Atan2(
+                    actor.Y - player.Position.Z,
+                    actor.X - player.Position.X) - GetSkill("PLAYER_ANGLE");
+                actor["IMPACT_VROT"] = NormalizeSignedAngle(actualRelativeAngle - actor["REL_ANGLE"]);
+            }
+            if (result.Collided &&
+                (actor["SENSITIVE"] > 0 || actor.Target?.Equals("BULLET", StringComparison.OrdinalIgnoreCase) == true))
+            {
+                TriggerObjectActionHook(actor, "IF_HIT");
+            }
+        }
+        else
+        {
+            actor.X = x;
+            actor.Y = y;
+            UpdateActorRegion(actor);
+        }
+
+        actor["MOVED"] = Math.Abs(actor.X - (x - requestedX)) > 0.000001 ||
+                         Math.Abs(actor.Y - (y - requestedY)) > 0.000001
+            ? 1
+            : 0;
+        if (carefully && actor.Region != previousRegion)
+        {
+            TriggerObjectActionHook(actor, "IF_ARRIVED");
+        }
+    }
+
+    private bool ActorCanCross(Wall wall, int currentRegion, int otherRegion)
+    {
+        if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+        {
+            return wall["PASSABLE"] > 0;
+        }
+
+        return true;
+    }
+
+    private float ActorCollisionRadius(Actor actor) => EntityCollisionRadius(actor);
+
+    private float EntityCollisionRadius(MapEntity entity)
+    {
+        if (!MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size))
+        {
+            return 0.5f;
+        }
+
+        double factor = entity is Actor ? GetSkill("ACTOR_WIDTH") : GetSkill("THING_WIDTH");
+        return size.Width * 0.5f * (float)Math.Max(0, factor);
+    }
+
+    private void UpdateActorRegion(Actor actor)
+    {
+        if (LevelTopology.LocateRegion(_level, actor.X, actor.Y) is { } region)
+        {
+            actor.Region = region;
+        }
+    }
+
+    private static void TurnActorToward(Actor actor, double desiredFacing, double timeCorrection)
+    {
+        double placementAngle = actor.PlacementAngleDegrees * (Math.PI / 180.0);
+        double targetAngle = NormalizeSignedAngle(desiredFacing - placementAngle);
+        double maximumTurn = Math.Max(0, actor["ASPEED"]) * timeCorrection;
+        if (maximumTurn <= 0)
+        {
+            actor.Angle = targetAngle;
+            return;
+        }
+
+        double difference = NormalizeSignedAngle(targetAngle - actor.Angle);
+        actor.Angle = NormalizeSignedAngle(actor.Angle + Math.Clamp(difference, -maximumTurn, maximumTurn));
+    }
+
+    private bool TryActorTargetPoint(string target, out double x, out double y, out double? height)
+    {
+        switch (GetObject(target))
+        {
+            case MapEntity entity:
+                x = entity.X;
+                y = entity.Y;
+                height = entity["GROUND"] > 0 || entity.Region < 0 || entity.Region >= _level.Regions.Count
+                    ? entity.Z
+                    : _level.Regions[entity.Region].FloorHeight + entity.Z;
+                return true;
+            case Player player:
+                x = player.Position.X;
+                y = player.Position.Z;
+                height = player.Position.Y - player.EyeHeight;
+                return true;
+            case Wall wall when wall.Vertex1 >= 0 && wall.Vertex1 < _level.Vertices.Count:
+                x = _level.Vertices[wall.Vertex1].X;
+                y = _level.Vertices[wall.Vertex1].Y;
+                height = null;
+                return true;
+            default:
+                x = 0;
+                y = 0;
+                height = null;
+                return false;
+        }
+    }
+
+    private static double NormalizeSignedAngle(double angle)
+    {
+        angle %= Math.Tau;
+        if (angle > Math.PI)
+        {
+            angle -= Math.Tau;
+        }
+        else if (angle < -Math.PI)
+        {
+            angle += Math.Tau;
+        }
+
+        return angle;
+    }
+
+    private void RecordGeometryInvalidation(AcknexObject target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        _shakeRequests.Add(new WdlShakeRequest(target.Name));
+    }
+
+    private void AdvanceAnimationCycles(double timeCorrection)
+    {
+        if (timeCorrection <= 0)
+        {
+            return;
+        }
+
+        foreach (AcknexObject target in CurrentCycleTargets())
+        {
+            if (IsInactiveEntity(target) ||
+                AnimationTexture(target) is not { } texture ||
+                (texture.Cycles <= 1 && !texture.IsOneShot))
+            {
+                continue;
+            }
+
+            if (!_textureAnimationStates.TryGetValue(target, out TextureAnimationState? state))
+            {
+                state = new TextureAnimationState();
+                _textureAnimationStates[target] = state;
+            }
+
+            AdvanceAnimationTarget(target, texture, state, timeCorrection);
+        }
+    }
+
+    private void AdvanceAnimationTarget(
+        AcknexObject target,
+        LevelTexture texture,
+        TextureAnimationState state,
+        double timeCorrection)
+    {
+        int cycles = Math.Max(1, texture.Cycles);
+        bool play = target["PLAY"] > 0;
+        if (texture.IsOneShot)
+        {
+            if (!play)
+            {
+                state.WasPlaying = false;
+                state.ElapsedTicks = 0;
+                return;
+            }
+
+            if (!state.WasPlaying)
+            {
+                SetAnimationCycle(target, 1);
+                QueueAnimationTextureSound(target, texture, 1);
+                state.ElapsedTicks = 0;
+                state.WasPlaying = true;
+            }
+        }
+
+        int cycle = NormalizeAnimationCycle(target["CYCLE"], cycles);
+        if (target["CYCLE"] != cycle)
+        {
+            SetAnimationCycle(target, cycle);
+        }
+
+        state.ElapsedTicks += timeCorrection;
+        int phasesAdvanced = 0;
+        while (state.ElapsedTicks >= AnimationDelay(texture, cycle) && phasesAdvanced++ < 4096)
+        {
+            state.ElapsedTicks -= AnimationDelay(texture, cycle);
+            if (cycle < cycles)
+            {
+                cycle++;
+                SetAnimationCycle(target, cycle);
+                QueueAnimationTextureSound(target, texture, cycle);
+                continue;
+            }
+
+            TriggerEachCycle(target);
+            if (texture.IsOneShot)
+            {
+                target["PLAY"] = 0;
+                state.WasPlaying = false;
+                state.ElapsedTicks = 0;
+                break;
+            }
+
+            cycle = 1;
+            SetAnimationCycle(target, cycle);
+            QueueAnimationTextureSound(target, texture, cycle);
+        }
+    }
+
+    private void QueueAnimationTextureSound(AcknexObject target, LevelTexture texture, int cycle)
+    {
+        if (target is Region || texture.IsSoundLoop || string.IsNullOrWhiteSpace(texture.SoundName))
+        {
+            return;
+        }
+
+        int index = cycle - 1;
+        bool trigger = texture.SoundCycles.Count == 0
+            ? cycle == 1
+            : index >= 0 && index < texture.SoundCycles.Count && texture.SoundCycles[index];
+        if (trigger)
+        {
+            _textureSoundRequests.Add(new WdlTextureSoundRequest(target, texture));
+        }
+    }
+
+    private void InitializeAnimationCycles()
+    {
+        foreach (AcknexObject target in CurrentCycleTargets())
+        {
+            if (AnimationTexture(target) is not null && target["CYCLE"] <= 0)
+            {
+                target["CYCLE"] = 1;
+            }
+        }
+    }
+
+    private LevelTexture? AnimationTexture(AcknexObject target)
+    {
+        string? textureName = target switch
+        {
+            MapEntity entity => entity.Texture,
+            Wall wall => wall.Texture,
+            Region region => PreferredRegionAnimationTexture(region),
+            _ => null,
+        };
+        return textureName is not null && _level.Textures.TryGetValue(textureName, out LevelTexture texture)
+            ? texture
+            : null;
+    }
+
+    private string? PreferredRegionAnimationTexture(Region region)
+    {
+        if (region.FloorTexture is { } floor &&
+            _level.Textures.TryGetValue(floor, out LevelTexture floorTexture) &&
+            (floorTexture.Cycles > 1 || floorTexture.IsOneShot))
+        {
+            return floor;
+        }
+
+        return region.CeilTexture;
+    }
+
+    private static void SetAnimationCycle(AcknexObject target, int cycle)
+    {
+        if (target["CYCLE"] == cycle)
+        {
+            return;
+        }
+
+        target["CYCLE"] = cycle;
+    }
+
+    private static int NormalizeAnimationCycle(double value, int cycles) =>
+        value > 0 ? Math.Clamp((int)Math.Floor(value), 1, cycles) : 1;
+
+    private static double AnimationDelay(LevelTexture texture, int cycle)
+    {
+        int index = cycle - 1;
+        return index >= 0 && index < texture.Delays.Count && texture.Delays[index] > 0
+            ? texture.Delays[index]
+            : 1;
+    }
+
+    private IEnumerable<AcknexObject> CurrentCycleTargets()
+    {
+        foreach (Region region in _regions)
+        {
+            yield return region;
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            yield return wall;
+        }
+
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        {
+            yield return entity;
+        }
+    }
+
+    private List<(AcknexObject Target, string ActionName)> CurrentObjectSchedulerActions(bool eachCycle)
+    {
+        var actions = new List<(AcknexObject Target, string ActionName)>();
+        foreach (Region region in _regions)
+        {
+            AddIfPresent(region);
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            AddIfPresent(wall);
+        }
+
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        {
+            AddIfPresent(entity);
+        }
+
+        return actions;
+
+        void AddIfPresent(AcknexObject target)
+        {
+            if (!IsInactiveEntity(target) &&
+                TryGetObjectSchedulerAction(target, eachCycle, out string? actionName) &&
+                !string.IsNullOrWhiteSpace(actionName))
+            {
+                actions.Add((target, actionName));
+            }
+        }
+    }
+
+    private static bool TryGetObjectSchedulerAction(AcknexObject target, bool eachCycle, out string? actionName)
+    {
+        actionName = target switch
+        {
+            Region region => eachCycle ? region.EachCycleAction : region.EachTickAction,
+            Wall wall => eachCycle ? wall.EachCycleAction : wall.EachTickAction,
+            MapEntity entity => eachCycle ? entity.EachCycleAction : entity.EachTickAction,
+            _ => null,
+        };
+
+        return target is Region or Wall or MapEntity;
+    }
+
+    private static void SetObjectSchedulerAction(AcknexObject target, bool eachCycle, string? actionName)
+    {
+        actionName = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        switch (target)
+        {
+            case Region region when eachCycle:
+                region.EachCycleAction = actionName;
+                break;
+            case Region region:
+                region.EachTickAction = actionName;
+                break;
+            case Wall wall when eachCycle:
+                wall.EachCycleAction = actionName;
+                break;
+            case Wall wall:
+                wall.EachTickAction = actionName;
+                break;
+            case MapEntity entity when eachCycle:
+                entity.EachCycleAction = actionName;
+                break;
+            case MapEntity entity:
+                entity.EachTickAction = actionName;
+                break;
         }
     }
 
@@ -567,6 +2549,573 @@ public sealed class WdlRuntime :
 
     private Region? RegionAt(int index) =>
         index >= 0 && index < _regions.Count ? _regions[index] : null;
+
+    private static bool TryGetMapPosition(AcknexObject target, out double x, out double y)
+    {
+        switch (target)
+        {
+            case MapEntity entity:
+                x = entity.X;
+                y = entity.Y;
+                return true;
+            case Player player:
+                x = player.Position.X;
+                y = player.Position.Z;
+                return true;
+            default:
+                x = y = 0;
+                return false;
+        }
+    }
+
+    private static (double X, double Y) RotateMapPoint(
+        double x,
+        double y,
+        double centerX,
+        double centerY,
+        double sin,
+        double cos)
+    {
+        double dx = x - centerX;
+        double dy = y - centerY;
+        return (centerX + (dx * cos) - (dy * sin), centerY + (dx * sin) + (dy * cos));
+    }
+
+    private void ShootFromPlayer(double range, bool useShootDeviation)
+    {
+        if (GetObject("player") is not Player player || range <= 0)
+        {
+            ClearHitResult();
+            return;
+        }
+
+        double originX = player.Position.X;
+        double originY = player.Position.Z;
+        double arc = Math.Clamp(GetSkill("PLAYER_ARC"), 0.2, 2);
+        double height = Math.Max(1, GetSkill("SCREEN_HGT"));
+        double aspect = Math.Max(0.01, GetSkill("SCREEN_WIDTH") / height);
+        double verticalTan = Math.Tan(arc * 0.5);
+        double shootX = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_X"), -1, 1) : 0;
+        double shootY = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_Y"), -1, 1) : 0;
+        double horizontalDeviation = shootX * verticalTan * aspect;
+        double pitch = Math.Atan(GetSkill("PLAYER_TILT"));
+        double screenVertical = -shootY * verticalTan;
+        double forwardHorizontal = Math.Cos(pitch) - (screenVertical * Math.Sin(pitch));
+        double rayVertical = Math.Sin(pitch) + (screenVertical * Math.Cos(pitch));
+        double horizontalMagnitude = Math.Max(
+            1e-9,
+            Math.Sqrt((forwardHorizontal * forwardHorizontal) + (horizontalDeviation * horizontalDeviation)));
+        double verticalSlope = rayVertical / horizontalMagnitude;
+        double angle = GetSkill("PLAYER_ANGLE") - Math.Atan2(horizontalDeviation, forwardHorizontal);
+        double dirX = Math.Cos(angle);
+        double dirY = Math.Sin(angle);
+        double distanceScale = Math.Sqrt(1 + (verticalSlope * verticalSlope));
+        HitCandidate? hit = FindClosestHit(
+            originX,
+            originY,
+            player.Position.Y,
+            dirX,
+            dirY,
+            verticalSlope,
+            range / distanceScale,
+            distanceScale,
+            player.Region);
+        if (hit is null)
+        {
+            ClearHitResult();
+            return;
+        }
+
+        SetObjectReference("hit", hit.Target);
+        SetHitResult(hit.Distance, range, hit.HitX, hit.HitY);
+        TriggerObjectActionHook(hit.Target, "IF_HIT");
+    }
+
+    private HitCandidate? FindClosestHit(
+        double originX,
+        double originY,
+        double eyeHeight,
+        double dirX,
+        double dirY,
+        double verticalSlope,
+        double horizontalRange,
+        double distanceScale,
+        int startRegion)
+    {
+        int region = startRegion;
+        double minimumDistance = 0;
+        Dictionary<MapEntity, SpriteBillboard> hitSprites = SpriteBuilder
+            .Build(_level, new Vector2((float)originX, (float)originY))
+            .Where(sprite => sprite.Source is not null &&
+                !sprite.IsAttachment &&
+                sprite.Orientation == SpriteOrientation.Upright)
+            .ToDictionary(sprite => sprite.Source!);
+        var traversedPortals = new HashSet<(int Region, int Wall)>();
+        for (int traversal = 0; traversal <= _level.Regions.Count; traversal++)
+        {
+            HitCandidate? bestEntity = null;
+            foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+            {
+                if (entity.Region != region || entity["IMMATERIAL"] != 0 || IsInactiveEntity(entity))
+                {
+                    continue;
+                }
+
+                double dx = entity.X - originX;
+                double dy = entity.Y - originY;
+                double along = (dx * dirX) + (dy * dirY);
+                if (along <= minimumDistance || along > horizontalRange)
+                {
+                    continue;
+                }
+
+                double signedCenter = (dx * dirY) - (dy * dirX);
+                if (hitSprites.TryGetValue(entity, out SpriteBillboard sprite))
+                {
+                    double width = sprite.HalfWidth * 2;
+                    double height = sprite.HalfHeight * 2;
+                    double u = 0.5 - ((signedCenter + sprite.CenterOffset.X) / width);
+                    double shotHeight = eyeHeight + (along * verticalSlope);
+                    double bottom = sprite.BasePosition.Y + sprite.CenterOffset.Y;
+                    double v = 1 - ((shotHeight - bottom) / height);
+                    if (u < 0 || u > 1 || v < 0 || v > 1)
+                    {
+                        continue;
+                    }
+
+                    double hitX = 0;
+                    double hitY = 0;
+                    if (_hitTextures.TryGetValue(sprite.Texture, out TextureImage image) &&
+                        SpriteBuilder.TrySamplePixel(
+                            image,
+                            (float)u,
+                            (float)v,
+                            sprite.Mirror,
+                            out int pixelX,
+                            out int pixelY,
+                            out bool opaque))
+                    {
+                        if (!opaque)
+                        {
+                            continue;
+                        }
+
+                        hitX = pixelX;
+                        hitY = pixelY;
+                    }
+
+                    bestEntity = Nearer(
+                        bestEntity,
+                        new HitCandidate(entity, along * distanceScale, along, hitX, hitY));
+                }
+                else
+                {
+                    double radius = Math.Max(0.01, EntityCollisionRadius(entity));
+                    if (Math.Abs(signedCenter) <= radius)
+                    {
+                        bestEntity = Nearer(
+                            bestEntity,
+                            new HitCandidate(entity, along * distanceScale, along));
+                    }
+                }
+            }
+
+            HitCandidate? bestWall = null;
+            int bestWallIndex = -1;
+            for (int i = 0; i < _level.Walls.Count; i++)
+            {
+                Wall wall = _level.Walls[i];
+                if ((wall.LeftRegion != region && wall.RightRegion != region) ||
+                    wall["IMMATERIAL"] != 0 ||
+                    !TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) ||
+                    !TryRaySegmentDistance(originX, originY, dirX, dirY, ax, ay, bx, by, out double distance) ||
+                    distance <= minimumDistance ||
+                    distance > horizontalRange)
+                {
+                    continue;
+                }
+
+                if (bestWall is null || distance < bestWall.TraceDistance)
+                {
+                    double wallHeight = eyeHeight + (distance * verticalSlope);
+                    bestWall = CreateWallHitCandidate(
+                        wall,
+                        distance * distanceScale,
+                        distance,
+                        originX + (dirX * distance),
+                        originY + (dirY * distance),
+                        wallHeight,
+                        ax,
+                        ay,
+                        bx,
+                        by);
+                    bestWallIndex = i;
+                }
+            }
+
+            if (bestEntity is not null && (bestWall is null || bestEntity.Distance < bestWall.Distance))
+            {
+                return bestEntity;
+            }
+
+            if (bestWall is null || bestWallIndex < 0)
+            {
+                return null;
+            }
+
+            Wall portal = _level.Walls[bestWallIndex];
+            if (!TryTraverseShotPortal(
+                    portal,
+                    bestWallIndex,
+                    region,
+                    originX + (dirX * bestWall.TraceDistance),
+                    originY + (dirY * bestWall.TraceDistance),
+                    eyeHeight + (bestWall.TraceDistance * verticalSlope),
+                    traversedPortals,
+                    out int nextRegion))
+            {
+                return bestWall;
+            }
+
+            region = nextRegion;
+            minimumDistance = bestWall.TraceDistance + 1e-6;
+        }
+
+        return null;
+    }
+
+    private HitCandidate CreateWallHitCandidate(
+        Wall wall,
+        double distance,
+        double traceDistance,
+        double hitMapX,
+        double hitMapY,
+        double eyeHeight,
+        double ax,
+        double ay,
+        double bx,
+        double by)
+    {
+        if (wall.Texture is not { } textureName ||
+            !_level.Textures.TryGetValue(textureName, out LevelTexture texture))
+        {
+            return new HitCandidate(wall, distance, traceDistance);
+        }
+
+        double segmentX = bx - ax;
+        double segmentY = by - ay;
+        double length = Math.Sqrt((segmentX * segmentX) + (segmentY * segmentY));
+        if (length <= 0)
+        {
+            return new HitCandidate(wall, distance, traceDistance);
+        }
+
+        double along = Math.Clamp(
+            (((hitMapX - ax) * segmentX) + ((hitMapY - ay) * segmentY)) / (length * length),
+            0,
+            1);
+        double pixelsPerStepX = texture.ScaleX > 0 ? texture.ScaleX : 16;
+        double pixelsPerStepY = texture.ScaleY > 0 ? texture.ScaleY : 16;
+        double hitX = Math.Floor(wall.OffsetX + (along * length * pixelsPerStepX));
+        double wallTop = WallSegmentTopAtHit(wall, along, eyeHeight);
+        double hitY = Math.Floor(wall.OffsetY + ((wallTop - eyeHeight) * pixelsPerStepY));
+        return new HitCandidate(wall, distance, traceDistance, hitX, hitY);
+    }
+
+    private double WallSegmentTopAtHit(Wall wall, double along, double eyeHeight)
+    {
+        double vertexOffset = 0;
+        if (wall.Vertex1 >= 0 && wall.Vertex1 < _level.Vertices.Count &&
+            wall.Vertex2 >= 0 && wall.Vertex2 < _level.Vertices.Count)
+        {
+            vertexOffset = _level.Vertices[wall.Vertex1].Z +
+                ((_level.Vertices[wall.Vertex2].Z - _level.Vertices[wall.Vertex1].Z) * along);
+        }
+
+        Region? left = wall.LeftRegion >= 0 && wall.LeftRegion < _level.Regions.Count
+            ? _level.Regions[wall.LeftRegion]
+            : null;
+        Region? right = wall.RightRegion >= 0 && wall.RightRegion < _level.Regions.Count
+            ? _level.Regions[wall.RightRegion]
+            : null;
+        if (left is not null && right is not null && !ReferenceEquals(left, right))
+        {
+            double openingFloor = Math.Max(left.FloorHeight, right.FloorHeight) + vertexOffset;
+            return eyeHeight <= openingFloor
+                ? openingFloor
+                : Math.Max(left.CeilHeight, right.CeilHeight) + vertexOffset;
+        }
+
+        Region? region = left ?? right;
+        return (region?.CeilHeight ?? eyeHeight) + vertexOffset;
+    }
+
+    private bool TryTraverseShotPortal(
+        Wall wall,
+        int wallIndex,
+        int region,
+        double x,
+        double y,
+        double eyeHeight,
+        HashSet<(int Region, int Wall)> traversed,
+        out int nextRegion)
+    {
+        nextRegion = wall.LeftRegion == region ? wall.RightRegion : wall.LeftRegion;
+        if (nextRegion < 0 ||
+            nextRegion >= _level.Regions.Count ||
+            !traversed.Add((region, wallIndex)))
+        {
+            return false;
+        }
+
+        Region current = _level.Regions[region];
+        Region next = _level.Regions[nextRegion];
+        double currentOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, region, x, y, out double currentValue)
+            ? currentValue
+            : 0;
+        double nextOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, nextRegion, x, y, out double nextValue)
+            ? nextValue
+            : 0;
+        double openingFloor = Math.Max(current.FloorHeight + currentOffset, next.FloorHeight + nextOffset);
+        double openingCeiling = Math.Min(current.CeilHeight + currentOffset, next.CeilHeight + nextOffset);
+        return eyeHeight > openingFloor && eyeHeight < openingCeiling;
+    }
+
+    private bool HasPortalLineOfSight(
+        double originX,
+        double originY,
+        double eyeHeight,
+        double dirX,
+        double dirY,
+        double range,
+        int startRegion,
+        int targetRegion)
+    {
+        int region = startRegion;
+        double minimumDistance = 0;
+        var traversedPortals = new HashSet<(int Region, int Wall)>();
+        for (int traversal = 0; traversal <= _level.Regions.Count; traversal++)
+        {
+            double nearestDistance = double.PositiveInfinity;
+            int nearestWall = -1;
+            for (int i = 0; i < _level.Walls.Count; i++)
+            {
+                Wall wall = _level.Walls[i];
+                if ((wall.LeftRegion != region && wall.RightRegion != region) ||
+                    wall["IMMATERIAL"] != 0 ||
+                    !TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) ||
+                    !TryRaySegmentDistance(originX, originY, dirX, dirY, ax, ay, bx, by, out double distance) ||
+                    distance <= minimumDistance ||
+                    distance >= range ||
+                    distance >= nearestDistance)
+                {
+                    continue;
+                }
+
+                nearestDistance = distance;
+                nearestWall = i;
+            }
+
+            if (nearestWall < 0)
+            {
+                return region == targetRegion;
+            }
+
+            Wall portal = _level.Walls[nearestWall];
+            if (!TryTraverseShotPortal(
+                    portal,
+                    nearestWall,
+                    region,
+                    originX + (dirX * nearestDistance),
+                    originY + (dirY * nearestDistance),
+                    eyeHeight,
+                    traversedPortals,
+                    out int nextRegion))
+            {
+                return false;
+            }
+
+            region = nextRegion;
+            minimumDistance = nearestDistance + 1e-6;
+        }
+
+        return false;
+    }
+
+    private static HitCandidate Nearer(HitCandidate? current, HitCandidate candidate) =>
+        current is null || candidate.Distance < current.Distance ? candidate : current;
+
+    private bool TryGetWallSegment(Wall wall, out double ax, out double ay, out double bx, out double by)
+    {
+        if (wall.Vertex1 < 0 || wall.Vertex1 >= _level.Vertices.Count ||
+            wall.Vertex2 < 0 || wall.Vertex2 >= _level.Vertices.Count)
+        {
+            ax = ay = bx = by = 0;
+            return false;
+        }
+
+        Vertex a = _level.Vertices[wall.Vertex1];
+        Vertex b = _level.Vertices[wall.Vertex2];
+        ax = a.X;
+        ay = a.Y;
+        bx = b.X;
+        by = b.Y;
+        return true;
+    }
+
+    private static bool TryRaySegmentDistance(
+        double originX,
+        double originY,
+        double dirX,
+        double dirY,
+        double ax,
+        double ay,
+        double bx,
+        double by,
+        out double distance)
+    {
+        double sx = bx - ax;
+        double sy = by - ay;
+        double denominator = Cross(dirX, dirY, sx, sy);
+        if (Math.Abs(denominator) < 1e-9)
+        {
+            distance = 0;
+            return false;
+        }
+
+        double qx = ax - originX;
+        double qy = ay - originY;
+        double rayDistance = Cross(qx, qy, sx, sy) / denominator;
+        double segmentPosition = Cross(qx, qy, dirX, dirY) / denominator;
+        if (rayDistance < 0 || segmentPosition is < 0 or > 1)
+        {
+            distance = 0;
+            return false;
+        }
+
+        distance = rayDistance;
+        return true;
+    }
+
+    private static double Cross(double ax, double ay, double bx, double by) => (ax * by) - (ay * bx);
+
+    private IEnumerable<AcknexObject> FragileTargets(int region)
+    {
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (entity.Region == region && entity["FRAGILE"] != 0 && !IsInactiveEntity(entity))
+            {
+                yield return entity;
+            }
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((wall.LeftRegion == region || wall.RightRegion == region) && wall["FRAGILE"] != 0)
+            {
+                yield return wall;
+            }
+        }
+    }
+
+    private bool TryDistanceFromPoint(double x, double y, AcknexObject target, out double distance)
+    {
+        switch (target)
+        {
+            case MapEntity entity:
+                distance = Distance(x, y, entity.X, entity.Y);
+                return true;
+            case Wall wall when TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by):
+                distance = DistanceToSegment(x, y, ax, ay, bx, by);
+                return true;
+            default:
+                distance = 0;
+                return false;
+        }
+    }
+
+    private void SetPlayerExplosionResult(double x, double y, double range)
+    {
+        if (GetObject("player") is not Player player)
+        {
+            ClearHitResult();
+            return;
+        }
+
+        double distance = Distance(x, y, player.Position.X, player.Position.Z);
+        if (distance <= range)
+        {
+            SetHitResult(distance, range);
+        }
+        else
+        {
+            ClearHitResult();
+        }
+    }
+
+    private static double Distance(double ax, double ay, double bx, double by)
+    {
+        double dx = bx - ax;
+        double dy = by - ay;
+        return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private void RefreshEntityVisibilityFlags()
+    {
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        {
+            entity["VISIBLE"] = entity["INVISIBLE"] > 0 ? 0 : 1;
+        }
+    }
+
+    private static bool IsInactiveEntity(AcknexObject? target) =>
+        target is MapEntity entity && entity["INVISIBLE"] > 0;
+
+    private static double DistanceToSegment(double px, double py, double ax, double ay, double bx, double by)
+    {
+        double sx = bx - ax;
+        double sy = by - ay;
+        double lengthSquared = (sx * sx) + (sy * sy);
+        if (lengthSquared == 0)
+        {
+            return Distance(px, py, ax, ay);
+        }
+
+        double t = (((px - ax) * sx) + ((py - ay) * sy)) / lengthSquared;
+        t = Math.Clamp(t, 0, 1);
+        return Distance(px, py, ax + (t * sx), ay + (t * sy));
+    }
+
+    private void SetHitResult(double distance, double range, double hitX = 0, double hitY = 0)
+    {
+        SetSkill("HIT_DIST", distance);
+        SetSkill("RESULT", range > 0 ? Math.Max(0, GetSkill("SHOOT_FAC") * (1 - (distance / range))) : 0);
+        SetSkill("HIT_X", hitX);
+        SetSkill("HIT_Y", hitY);
+    }
+
+    private void ClearHitResult()
+    {
+        SetSkill("HIT_DIST", 0);
+        SetSkill("RESULT", 0);
+        SetSkill("HIT_X", 0);
+        SetSkill("HIT_Y", 0);
+    }
+
+    private static double NormalizeAngle(double radians)
+    {
+        while (radians <= -Math.PI)
+        {
+            radians += Math.Tau;
+        }
+
+        while (radians > Math.PI)
+        {
+            radians -= Math.Tau;
+        }
+
+        return radians;
+    }
 
     private bool TryResolveObjectByType(string name, string type, out AcknexObject? value)
     {
@@ -622,6 +3171,335 @@ public sealed class WdlRuntime :
         }
 
         return current;
+    }
+
+    private string? ResolveUiElementName(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string current = name;
+        while (IsUiKeywordReference(current))
+        {
+            if (!seen.Add(current) ||
+                !_keywordReferences.TryGetValue(current, out string? target) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                return null;
+            }
+
+            current = target;
+        }
+
+        return _uiElements.ContainsKey(current) ? current : null;
+    }
+
+    private bool IsUiKeywordReference(string name) =>
+        IsKeywordReferenceType(name, "OVERLAY") ||
+        IsKeywordReferenceType(name, "PANEL") ||
+        IsKeywordReferenceType(name, "TEXT");
+
+    private static bool IsUiFlag(string property) =>
+        property.Equals("VISIBLE", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("ABSPOS", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("RELPOS", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("REFRESH", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("TRANSPARENT", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("CENTER_X", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("CENTER_Y", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("CONDENSED", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("NARROW", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsUiKeywordProperty(string property) =>
+        property.Equals("BMAP", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("FONT", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("IF_KLICK", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("OVLY", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("OVLYS", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("PAN_MAP", StringComparison.OrdinalIgnoreCase) ||
+        property.Equals("STRING", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasUiFlag(WdlUiElement element, string flag) =>
+        element.Properties.Any(property =>
+            property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase) &&
+            property.Values.Any(value => value.Text.Equals(flag, StringComparison.OrdinalIgnoreCase)));
+
+    private static WdlUiElement SetUiFlag(WdlUiElement element, string flag, bool enabled)
+    {
+        var properties = new List<WdlUiProperty>();
+        bool handled = false;
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+            {
+                properties.Add(property);
+                continue;
+            }
+
+            handled = true;
+            var values = property.Values
+                .Where(value => !value.Text.Equals(flag, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (enabled)
+            {
+                values.Add(new WdlUiValue("Identifier", flag.ToUpperInvariant()));
+            }
+
+            if (values.Count > 0)
+            {
+                properties.Add(property with { Values = values.ToArray() });
+            }
+        }
+
+        if (!handled && enabled)
+        {
+            properties.Add(new WdlUiProperty("FLAGS", [new WdlUiValue("Identifier", flag.ToUpperInvariant())]));
+        }
+
+        return element with { Properties = properties.ToArray() };
+    }
+
+    private static bool TryGetUiPropertyNumber(WdlUiElement element, string propertyName, out double value)
+    {
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (property.Keyword.Equals(propertyName, StringComparison.OrdinalIgnoreCase) &&
+                FirstUiNumber(property.Values) is { } parsed)
+            {
+                value = parsed;
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    private static WdlUiElement SetUiPropertyNumber(WdlUiElement element, string propertyName, double value)
+    {
+        var properties = new List<WdlUiProperty>();
+        bool handled = false;
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                properties.Add(property);
+                continue;
+            }
+
+            handled = true;
+            properties.Add(property with
+            {
+                Values = [new WdlUiValue("Number", value.ToString("G15", CultureInfo.InvariantCulture))],
+            });
+        }
+
+        if (!handled)
+        {
+            properties.Add(new WdlUiProperty(
+                propertyName.ToUpperInvariant(),
+                [new WdlUiValue("Number", value.ToString("G15", CultureInfo.InvariantCulture))]));
+        }
+
+        return element with { Properties = properties.ToArray() };
+    }
+
+    private static string? UiKeywordValue(WdlUiElement element, string propertyName)
+    {
+        if (IsTextStringProperty(element, propertyName))
+        {
+            return IndexedUiTextString(element);
+        }
+
+        return FirstUiKeyword(element, propertyName);
+    }
+
+    private static string? FirstUiKeyword(WdlUiElement element, string propertyName)
+    {
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (WdlUiValue value in property.Values)
+            {
+                if (!value.Kind.Equals("Comma", StringComparison.OrdinalIgnoreCase))
+                {
+                    return value.Text;
+                }
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
+    private static WdlUiElement SetUiPropertyKeyword(WdlUiElement element, string propertyName, string? value)
+    {
+        if (IsTextStringProperty(element, propertyName))
+        {
+            return SetUiTextString(element, value);
+        }
+
+        return SetSingleUiPropertyKeyword(element, propertyName, value);
+    }
+
+    private static WdlUiElement SetSingleUiPropertyKeyword(WdlUiElement element, string propertyName, string? value)
+    {
+        var properties = new List<WdlUiProperty>();
+        bool handled = false;
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                properties.Add(property);
+                continue;
+            }
+
+            handled = true;
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                properties.Add(property with { Values = [new WdlUiValue("Identifier", value)] });
+            }
+        }
+
+        if (!handled && !string.IsNullOrWhiteSpace(value))
+        {
+            properties.Add(new WdlUiProperty(
+                propertyName.ToUpperInvariant(),
+                [new WdlUiValue("Identifier", value)]));
+        }
+
+        return element with { Properties = properties.ToArray() };
+    }
+
+    private static WdlUiElement SetUiTextString(WdlUiElement element, string? value)
+    {
+        int index = UiTextStringIndex(element);
+        var properties = new List<WdlUiProperty>();
+        bool handled = false;
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals("STRING", StringComparison.OrdinalIgnoreCase))
+            {
+                properties.Add(property);
+                continue;
+            }
+
+            if (handled)
+            {
+                continue;
+            }
+
+            handled = true;
+            List<string> names = UiKeywordValues(property.Values).ToList();
+            while (names.Count < index)
+            {
+                names.Add("NULL");
+            }
+
+            names[index - 1] = string.IsNullOrWhiteSpace(value) ? "NULL" : value;
+            properties.Add(property with { Values = UiKeywordListValues(names) });
+        }
+
+        if (!handled)
+        {
+            var names = new List<string>();
+            while (names.Count < index)
+            {
+                names.Add("NULL");
+            }
+
+            names[index - 1] = string.IsNullOrWhiteSpace(value) ? "NULL" : value;
+            properties.Add(new WdlUiProperty("STRING", UiKeywordListValues(names)));
+        }
+
+        return element with { Properties = properties.ToArray() };
+    }
+
+    private static string? IndexedUiTextString(WdlUiElement element)
+    {
+        int index = UiTextStringIndex(element);
+        foreach (WdlUiProperty property in element.Properties)
+        {
+            if (!property.Keyword.Equals("STRING", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            List<string> names = UiKeywordValues(property.Values).ToList();
+            return index <= names.Count ? names[index - 1] : null;
+        }
+
+        return null;
+    }
+
+    private static int UiTextStringIndex(WdlUiElement element)
+    {
+        int index = TryGetUiPropertyNumber(element, "INDEX", out double value)
+            ? Math.Max(1, (int)Math.Truncate(value))
+            : 1;
+        if (TryGetUiPropertyNumber(element, "STRINGS", out double maximum) && maximum > 0)
+        {
+            index = Math.Min(index, Math.Max(1, (int)Math.Truncate(maximum)));
+        }
+
+        return index;
+    }
+
+    private static bool IsTextStringProperty(WdlUiElement element, string propertyName) =>
+        element.Keyword.Equals("TEXT", StringComparison.OrdinalIgnoreCase) &&
+        propertyName.Equals("STRING", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> UiKeywordValues(IReadOnlyList<WdlUiValue> values)
+    {
+        foreach (WdlUiValue value in values)
+        {
+            if (!value.Kind.Equals("Comma", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return value.Text;
+            }
+        }
+    }
+
+    private static WdlUiValue[] UiKeywordListValues(IReadOnlyList<string> names)
+    {
+        var values = new List<WdlUiValue>();
+        foreach (string name in names)
+        {
+            if (values.Count > 0)
+            {
+                values.Add(new WdlUiValue("Comma", ","));
+            }
+
+            values.Add(new WdlUiValue("Identifier", name));
+        }
+
+        return values.ToArray();
+    }
+
+    private static double? FirstUiNumber(IReadOnlyList<WdlUiValue> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        int sign = 1;
+        int index = 0;
+        if (values.Count > 1 &&
+            values[0].Kind.Equals("Operator", StringComparison.OrdinalIgnoreCase) &&
+            (values[0].Text == "-" || values[0].Text == "+"))
+        {
+            sign = values[0].Text == "-" ? -1 : 1;
+            index = 1;
+        }
+
+        return values[index].Kind.Equals("Number", StringComparison.OrdinalIgnoreCase) &&
+               double.TryParse(values[index].Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? sign * value
+            : null;
     }
 
     private bool IsKeywordReferenceType(string name, string type) =>
@@ -693,5 +3571,216 @@ public sealed class WdlRuntime :
         return builder.Length == 0 ? "PRINT" : builder.ToString();
     }
 
-    private readonly record struct ObjectTickAction(AcknexObject Target, string ActionName);
+    private WdlPlayerSnapshot? CapturePlayerSnapshot()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return null;
+        }
+
+        Vector3 position = player.Position;
+        return new WdlPlayerSnapshot(
+            new Dictionary<string, double>(player.Skills, StringComparer.OrdinalIgnoreCase),
+            position.X,
+            position.Z,
+            position.Y,
+            player.Region);
+    }
+
+    private static WdlObjectSnapshot CaptureObjectSnapshot(AcknexObject obj)
+    {
+        string[] numberFields = obj switch
+        {
+            Region => RegionNumberFields,
+            Wall => WallNumberFields,
+            MapEntity => EntityNumberFields,
+            _ => [],
+        };
+        string[] stringFields = obj switch
+        {
+            Region => RegionStringFields,
+            Wall => WallStringFields,
+            MapEntity => EntityStringFields,
+            _ => [],
+        };
+
+        var numbers = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (string field in numberFields)
+        {
+            numbers[field] = obj[field];
+        }
+
+        var strings = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (string field in stringFields)
+        {
+            if (obj.TryGetString(field, out string? value))
+            {
+                strings[field] = value;
+            }
+        }
+
+        return new WdlObjectSnapshot(
+            new Dictionary<string, double>(obj.Skills, StringComparer.OrdinalIgnoreCase),
+            numbers,
+            strings);
+    }
+
+    private void RestoreSkills(IReadOnlyDictionary<string, double> skills)
+    {
+        _skills.Clear();
+        foreach ((string name, double value) in skills)
+        {
+            SetSkill(name, value);
+        }
+    }
+
+    private void RestoreStrings(IReadOnlyDictionary<string, string> strings)
+    {
+        foreach ((string name, string value) in strings)
+        {
+            if (_strings.TryGetValue(name, out WdlString current))
+            {
+                _strings[name] = current.WithValue(value);
+            }
+        }
+    }
+
+    private void RestoreKeywordReferences(IReadOnlyDictionary<string, string?> keywordReferences)
+    {
+        _keywordReferences.Clear();
+        foreach ((string name, string? value) in keywordReferences)
+        {
+            if (_keywordReferenceTypes.ContainsKey(name))
+            {
+                _keywordReferences[name] = value;
+            }
+        }
+    }
+
+    private void RestoreEachTickActions(List<string?> eachTickActions)
+    {
+        Array.Clear(_eachTickActions);
+        for (int i = 0; i < Math.Min(_eachTickActions.Length, eachTickActions.Count); i++)
+        {
+            _eachTickActions[i] = string.IsNullOrWhiteSpace(eachTickActions[i]) ? null : eachTickActions[i];
+        }
+    }
+
+    private void RestoreActionHooks(IReadOnlyDictionary<string, string?> actionHooks)
+    {
+        _actionHooks.Clear();
+        foreach ((string name, string? actionName) in actionHooks)
+        {
+            _actionHooks[name] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+        }
+    }
+
+    private void RestoreVertices(List<Vertex> vertices)
+    {
+        if (_level.Vertices is not IList<Vertex> current)
+        {
+            return;
+        }
+
+        for (int i = 0; i < Math.Min(current.Count, vertices.Count); i++)
+        {
+            current[i] = vertices[i];
+        }
+    }
+
+    private void RestoreLevelObjects(List<WdlObjectSnapshot> snapshots)
+    {
+        List<AcknexObject> objects = MutableLevelObjects();
+        int count = Math.Min(objects.Count, snapshots.Count);
+        for (int i = 0; i < count; i++)
+        {
+            RestoreObjectSnapshot(objects[i], snapshots[i]);
+        }
+    }
+
+    private List<AcknexObject> MutableLevelObjects() =>
+        _level.Regions
+            .Cast<AcknexObject>()
+            .Concat(_level.Walls)
+            .Concat(_level.Things)
+            .Concat(_level.Actors)
+            .ToList();
+
+    private static void RestoreObjectSnapshot(AcknexObject obj, WdlObjectSnapshot snapshot)
+    {
+        obj.ReplaceSkills(snapshot.Skills);
+        foreach ((string name, double value) in snapshot.Numbers)
+        {
+            obj[name] = value;
+        }
+
+        foreach ((string name, string? value) in snapshot.Strings)
+        {
+            obj.TrySetString(name, value);
+        }
+    }
+
+    private void RestorePlayer(WdlPlayerSnapshot? snapshot)
+    {
+        if (snapshot is null || GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        player.ReplaceSkills(snapshot.Skills);
+        player["region"] = snapshot.Region;
+        player.Position = new Vector3((float)snapshot.X, (float)snapshot.Z, (float)snapshot.Y);
+    }
+
+    private readonly record struct ActionScope(
+        bool HasMy,
+        AcknexObject? My,
+        bool HasThere,
+        AcknexObject? There,
+        AcknexObject? Target);
+
+    private sealed class ActiveAction(WdlExecutionState state, WdlWaitRequest wait, ActionScope scope)
+    {
+        public WdlExecutionState State { get; } = state;
+
+        public WdlWaitMode Mode { get; } = wait.Mode;
+
+        public ActionScope Scope { get; } = scope;
+
+        public double Remaining { get; set; } = wait.Amount;
+
+        public ActiveAction WithWait(WdlWaitRequest wait) => new(State, wait, Scope);
+    }
+
+    private sealed class ActiveInputAction(WdlExecutionState state, WdlInputRequest request, ActionScope scope)
+    {
+        public WdlExecutionState State { get; } = state;
+
+        public WdlInputRequest Request { get; } = request;
+
+        public ActionScope Scope { get; } = scope;
+    }
+
+    private sealed class ActiveFlicAction(WdlExecutionState state, WdlFlicRequest request, ActionScope scope)
+    {
+        public WdlExecutionState State { get; } = state;
+
+        public WdlFlicRequest Request { get; } = request;
+
+        public ActionScope Scope { get; } = scope;
+    }
+
+    private sealed record HitCandidate(
+        AcknexObject Target,
+        double Distance,
+        double TraceDistance,
+        double HitX = 0,
+        double HitY = 0);
+
+    private sealed class TextureAnimationState
+    {
+        public double ElapsedTicks { get; set; }
+
+        public bool WasPlaying { get; set; }
+    }
 }

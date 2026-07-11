@@ -23,6 +23,8 @@ public class WmpMapTests
         THING torch 5.0 6.0 90.0 0;#1
         #actor name xpos ypos angle region index
         ACTOR guard 7.0 8.0 180.0 0;#2
+        #way name waypoint coordinates
+        WAY patrol 1.0 2.0 3.5 4.5;#0
         #player_start
         PLAYER_START 1.0 2.0 45.0 0;#3
         """;
@@ -38,6 +40,9 @@ public class WmpMapTests
         Assert.Equal(new WmpWall("w", 0, 1, 0, -1, 0f, 0f), Assert.Single(map.Walls));
         Assert.Equal(new WmpPlacement("torch", 5f, 6f, 90f, 0), Assert.Single(map.Things));
         Assert.Equal(new WmpPlacement("guard", 7f, 8f, 180f, 0), Assert.Single(map.Actors));
+        WmpWay way = Assert.Single(map.Ways);
+        Assert.Equal("patrol", way.Name);
+        Assert.Equal([new WmpWayPoint(1f, 2f), new WmpWayPoint(3.5f, 4.5f)], way.Points);
         Assert.Equal(new WmpPlayerStart(1f, 2f, 45f, 0), map.PlayerStart);
     }
 
@@ -51,6 +56,12 @@ public class WmpMapTests
     public void Read_MissingField_Throws()
     {
         Assert.Throws<InvalidDataException>(() => WmpMap.Read("VERTEX 0.0 0.0;")); // needs 3 coords
+    }
+
+    [Fact]
+    public void Read_WayWithUnmatchedCoordinate_Throws()
+    {
+        Assert.Throws<InvalidDataException>(() => WmpMap.Read("WAY patrol 0 1 2;"));
     }
 
     /// <summary>

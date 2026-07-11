@@ -46,6 +46,17 @@ public abstract class AcknexObject
     /// <summary>Whether a dynamic skill with this name has been set.</summary>
     public bool HasSkill(string name) => _skills.ContainsKey(name);
 
+    /// <summary>Replaces the object's dynamic skills with a saved runtime snapshot.</summary>
+    public void ReplaceSkills(IReadOnlyDictionary<string, double> skills)
+    {
+        ArgumentNullException.ThrowIfNull(skills);
+        _skills.Clear();
+        foreach ((string name, double value) in skills)
+        {
+            _skills[name] = value;
+        }
+    }
+
     /// <summary>Attempts to read a keyword-valued object property, such as a texture reference.</summary>
     public virtual bool TryGetString(string name, out string? value)
     {

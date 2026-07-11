@@ -81,6 +81,15 @@ public class WdlExpressionTests
         Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
     }
 
+    [Fact]
+    public void Evaluates_DocumentedRandomFunction()
+    {
+        var context = new TestContext { NextRandomUnit = 0.25 };
+
+        Assert.Equal(2.5, Eval("RANDOM(10)", context));
+        Assert.Equal(3, Eval("RANDOM(8) + 1", context));
+    }
+
     [Theory]
     [InlineData("10 / 0")]
     [InlineData("10 % 0")]
@@ -152,12 +161,14 @@ public class WdlExpressionTests
     private static double Eval(string expression, IWdlContext context) =>
         WdlExpressionParser.Parse(expression).Evaluate(context);
 
-    private sealed class TestContext : IWdlContext, IWdlKeywordReferenceContext
+    private sealed class TestContext : IWdlContext, IWdlKeywordReferenceContext, IWdlRandomContext
     {
         private readonly Dictionary<string, double> _skills = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
 
         public Dictionary<string, AcknexObject> Objects { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public double NextRandomUnit { get; set; } = 0.5;
 
         public double GetSkill(string name) => _skills.GetValueOrDefault(name);
 
@@ -171,6 +182,13 @@ public class WdlExpressionTests
             _keywordReferences.TryGetValue(name, out value);
 
         public void SetKeywordReference(string name, string? value) => _keywordReferences[name] = value;
+
+        public double Random(double maximum) => NextRandomUnit * maximum;
+
+        public void Randomize()
+        {
+            // Not exercised by expression tests.
+        }
 
         public void CallAction(string name)
         {
