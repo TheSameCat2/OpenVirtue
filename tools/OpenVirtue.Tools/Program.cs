@@ -355,6 +355,10 @@ internal static class Cli
                 OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
                 Console.WriteLine($"{Path.GetFileName(archivePath)} -> {level.Name}");
                 Console.WriteLine(
+                    level.VideoMode is { } video
+                        ? $"  video mode: {video.Name} ({video.Width}x{video.Height})"
+                        : "  video mode: (none declared)");
+                Console.WriteLine(
                     $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
                     $"{level.Things.Count} things, {level.Actors.Count} actors");
                 Console.WriteLine($"  {level.Skills.Count} global skills, {level.Textures.Count} textures");

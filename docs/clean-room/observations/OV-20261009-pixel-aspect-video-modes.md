@@ -30,6 +30,26 @@ mouse hit testing and sprite proportions all depend on this.
 - First, record (sanitized: mode names only) which `VIDEO` mode each retail world declares:
   `ovtool level info` on the six archives. Note that SaintsX patches in 800x600, so the
   unpatched WDL is the reference.
+
+  Recorded 2026-10-09 from the unpatched retail v1.3 archives (`ovtool level info` now prints
+  the flattened `VIDEO` mode; alternatives come from a keyword-only scan of each main script's
+  `IFDEF`/`DEFINE` header, no script content copied):
+
+  | Archive | Active `VIDEO` (no `-d` define) | Alternatives selectable at the command line |
+  |---|---|---|
+  | apathy | `S640x480` | `-d LORES` → `320x200`; `-d MEDRES` → `X320x400`; `-d HIRES` → `S640x480` |
+  | HEART | `S640x480` | same three-way `HIRES`/`LORES`/`MEDRES` header |
+  | LEGALISM | `S640x480` | same |
+  | NEWAGE | `S640x480` | same |
+  | START | `S640x480` | none (single unconditional `VIDEO`) |
+  | TITLE | `S640x480` | none (single unconditional `VIDEO`) |
+
+  Consequences for this probe: the shipped default is 640x480, a 4:3 mode with square pixels,
+  so the current uniform letterbox is already correct for the default path. The 320x200 /
+  X320x400 question matters for the `-d LORES` / `-d MEDRES` launch paths and for engine
+  generality (both modes are listed in the manual, p.29). The retail scripts never reference
+  `ASPECT`; each gameplay world references `PLAYER_ARC` 3 times and `PLAYER_TILT` 17–24
+  times, so the FOV and tilt probes carry the parity weight.
 - Synthetic level: a wall face exactly 64 × 64 steps with a 64×64 checker texture at
   `SCALE_XY 1,1`, viewed head-on, `PLAYER_TILT = 0`, `ASPECT = 1`.
 - Screenshot in DOSBox-X with `aspect=false` (raw pixels); measure pixel width vs height of
