@@ -27,10 +27,11 @@ Trade-offs, follow-ups, risks.
 
 | ADR | Decision | Status |
 |-----|----------|--------|
-| [0001](0001-renderer-direct3d11-vortice.md) | Renderer: **Direct3D 11** via Vortice.Windows | accepted |
+| [0001](0001-renderer-direct3d11-vortice.md) | Renderer: **Direct3D 11** via Vortice.Windows | superseded by 0008 |
 | [0002](0002-wdl-interpreter-not-transpiler.md) | WDL **interpreter**, not transpiler | accepted |
 | [0003](0003-license-gplv3.md) | License: **GPL-3.0-or-later** | accepted |
 | [0004](0004-project-name-openvirtue.md) | Project name: **OpenVirtue** | accepted |
 | [0005](0005-clean-room-reference-only-policy.md) | **Clean-room, reference-only** use of prior art | accepted |
 | [0006](0006-engine-object-model-hybrid.md) | Engine object model: **hybrid** typed entities + dynamic skills | accepted |
 | [0007](0007-oracle-based-invariant-discovery.md) | **Oracle-based invariant discovery** for hidden runtime behavior | accepted |
+| [0008](0008-cross-platform-host-sdl3-opengl.md) | Cross-platform host: **SDL3 + OpenGL 3.3**, new `OpenVirtue.Host` layer, D3D11 kept only as migration oracle | proposed |

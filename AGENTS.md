@@ -148,12 +148,20 @@ commit game data or fixtures.
   when you make a significant architectural choice.
 - **`docs/clean-room/`** records the oracle/invariant discovery workflow. Use it before
   implementing behavior learned from the original runtime or other high-risk references.
-- **`_research/official-acknex-a3-manuals/README.md`** describes the local public A3 manual
-  corpus. Useful split markdown files include:
-  `markdown/acknex-3-reference-manual-1998/04-wmp-file-format.md`,
-  `05-the-acknex-3d-engine.md`,
-  `06-world-definition-language-introduction-keywords-files.md`, and
-  `09-wdl-actions-and-instructions.md`.
+- **`_research/README.md`** (local-only, git-ignored) maps everything under `_research/`: game
+  data, the SaintsX oracle toolkit, which oracles exist and what each is trustworthy for, and
+  what to ignore. Read it before touching anything in that folder.
+- **`_research/official-acknex-a3-manuals/README.md`** describes the manual corpus. The
+  **1998 ACKNEX Reference Manual v3.9** (`markdown/acknex-3-reference-manual-1998/`) is the
+  primary source; look keywords up in `keyword-index.md` first (561 entries → printed page →
+  chapter file), then cite `chapter-file p.N`. Useful chapters:
+  `04-wmp-file-format.md`, `05-the-acknex-3d-engine.md`,
+  `06-world-definition-language-introduction-keywords-files.md`,
+  `08-wdl-textures-walls-regions-things-actors-ways.md`, `09-wdl-actions-and-instructions.md`,
+  `11-wdl-skills-and-predefined-skills.md` (`TIME_CORR` p.117). The 2001 **A4** WDL manual
+  (`markdown/a4-wdl-tutorial-and-manual-2001/`) is secondary: a later engine generation, use
+  for concepts only and tag any fact taken from it. The separate 1998 A3 WDL tutorial is
+  not available; earlier citations of `acknex-3-wdl-tutorial-1998/...` cannot be resolved.
 - **`docs/planning/near-term-roadmap.md`** captures the current "finish the easy part,
   then measure hidden invariants" plan.
 - **`docs/recon/`** is research-phase background (dated 2026-06-25). Its proposed
