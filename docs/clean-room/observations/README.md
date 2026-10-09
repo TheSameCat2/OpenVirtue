@@ -24,4 +24,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261009-pixel-aspect-video-modes.md` — vertical scale 0.75·H/(`ASPECT`·tan(arc/2)), no
   pixel-aspect pre-stretch; every VGA mode is presented at 4:3.
 - `OV-20261009-tilt-model-shear-vs-pitch.md` — `PLAYER_TILT` is a y-shear of −tilt·H rows
-  (positive looks down); also records the screen handedness (map +y on the left when facing +x).
+  (positive looks down); also records the screen handedness (map +y on the left when facing +x;
+  implemented by ADR-0009).
+
+## SHOOT probe (2026-10-09 — proposed, carriers prepared)
+
+- `OV-20261009-shoot-mapping.md` — do `SHOOT_X`/`SHOOT_Y` aim through the same projection
+  (lateral tangent vs linear angle, signs, the tilt shear), what `HIT_DIST`/`HIT_X`/`HIT_Y`
+  report, and (by-products) sprite and wall texture orientation. Eight carriers under
+  `_research/oracle-runs/OV-20261009-shoot-mapping/` await the first launch.
