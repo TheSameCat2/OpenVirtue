@@ -148,6 +148,7 @@ Negative / risks:
 Follow-ups this ADR creates:
 - Mark ADR-0001 superseded; update `README.md` goals ("Native & modern … Direct3D") and
   `docs/recon/05`/`06` notes that assume Vortice/DirectX.
-- ADR-0009 (proposed next): oracle hosts on Linux — DOSBox-X native as primary, `WVRUN.EXE`
-  under Wine as a secondary oracle for DOS-vs-Windows runtime differences only.
+- ADR-0010 (proposed next; 0009 was taken by the render-space handedness decision): oracle
+  hosts on Linux — DOSBox-X native as primary, `WVRUN.EXE` under Wine as a secondary oracle
+  for DOS-vs-Windows runtime differences only.
 - Add `oracle prepare` `.sh` launcher output and a Linux DOSBox-X config to `ovtool`.

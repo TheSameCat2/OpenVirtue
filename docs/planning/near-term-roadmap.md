@@ -44,13 +44,16 @@ engine invariants.
      vertical scale 0.75·`SCREEN_HGT`/(`ASPECT`·tan(arc/2)) with no pixel-aspect
      pre-stretch, `PLAYER_TILT` a y-shear of −tilt·`SCREEN_HGT` rows (positive looks
      down). `OpenVirtue.Engine.Rendering.ProjectionModel` holds it; the D3D11 view
-     is yaw-only and the GL renderer (ADR-0008) must consume the same model. Remaining:
-     sky offset under tilt, `SHOOT_X/Y` mapping (assumed to share the model),
-     windows smaller than the mode, tilt beyond ±1 — and the world handedness: the
-     same screenshots show map +y on the screen left when facing +x, while the
-     D3D11 world mapping (engine Z = map y, right-handed look-at) draws it on the
-     right, i.e. mirror-imaged; the hitscan's `SHOOT_X` sign already matches the
-     original.
+     is yaw-only and the GL renderer (ADR-0008) must consume the same model. The world
+     handedness read off the same screenshots (map +y on the screen left when facing
+     +x) is implemented by ADR-0009: render z = −map y and camera yaw =
+     `PLAYER_ANGLE` + π/2 in one `RenderSpace` helper, the WMP start angle seeds
+     `PLAYER_ANGLE` (0 = +x), and engine tests push mesh/sprite output through the
+     look-at and the projection matrix to pin the side; the hitscan was already right.
+     Visual confirmation against the oracle screenshot needs a running host (Windows
+     D3D11 or the ADR-0008 GL host). Remaining probes: sky offset under tilt,
+     `SHOOT_X/Y` mapping (assumed to share the model), windows smaller than the mode,
+     tilt beyond ±1, wall texture orientation.
    - Sprite visibility/sorting fixes as needed for static scenes (static billboard
      layout is engine-side, interpolates sloped region floors for entity feet and
      shadows, and app rendering orders billboards back-to-front).

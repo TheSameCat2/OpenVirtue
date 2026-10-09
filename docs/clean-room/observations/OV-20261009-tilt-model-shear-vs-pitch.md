@@ -85,7 +85,7 @@ FOV note.
 | tilt −0.5, arc 2 (f_v 231) | step top 326 (predicted 86 + 240 = 325.9); eye line from side walls 479.4 (predicted 480); edges 0.000° over 154 rows | a shift proportional to f_v (0.5 · 231 · 0.365 = 42 px) would have put the step at 128: rejected |
 | tilt −0.5, ASPECT 2 (f_v 329.5) | step top 261 (predicted 22 + 240 = 260.3); eye line 481.2; edges 0.000° over 219 rows | shift is independent of ASPECT too |
 | all seven runs | every stripe boundary is a perfect screen column (fitted angle 0.000°, difference between left and right edges 0.000°); the floor and the alcove ceiling converge in perspective as planes do | a true pitch of atan(0.5) would have shown ≈ 8.5° between the outer edges (self-test of the script) |
-| screen handedness (tilt 0 and −0.5 runs; the far wall is asymmetric: red at map y −12..−8 … green at 8..12) | left→right the stripes read G R G R G R; the world-y fit has a negative slope: x = 319.6 − 12.2·y | **facing map +x, the map's +y side is on the screen LEFT** (right-handed, y-up map, consistent with `PLAYER_ANGLE` 0 = east and counter-clockwise angles). The hitscan's positive `SHOOT_X` (clockwise) therefore aims screen-right; the app's D3D11 world mapping (engine Z = map y with a right-handed look-at) currently puts +y on the screen right, i.e. draws the world mirror-imaged — follow-up, not part of the projection fix |
+| screen handedness (tilt 0 and −0.5 runs; the far wall is asymmetric: red at map y −12..−8 … green at 8..12) | left→right the stripes read G R G R G R; the world-y fit has a negative slope: x = 319.6 − 12.2·y | **facing map +x, the map's +y side is on the screen LEFT** (right-handed, y-up map, consistent with `PLAYER_ANGLE` 0 = east and counter-clockwise angles). The hitscan's positive `SHOOT_X` (clockwise) therefore aims screen-right; the app's D3D11 world mapping (engine Z = map y with a right-handed look-at) put +y on the screen right, i.e. drew the world mirror-imaged — app fixed in `c29aae5` / engine `0625d8b` (ADR-0009: render z = −map y, yaw = `PLAYER_ANGLE` + π/2, `WorldHandednessTests`); visual check on a running host pending |
 
 ## Conclusion
 Confirmed for patched V3.963: `PLAYER_TILT` is a **y-shear**, not a camera pitch. Vertical
@@ -118,9 +118,10 @@ Seven runs, all stripe edges vertical to the fitting precision, and every featur
 - Whether Δrow uses `SCREEN_HGT` or the mode height when the 3-D window is smaller than the
   mode was not probed; written as `SCREEN_HGT` by analogy with f_v.
 - The renderer's left-right handedness (map +y on the screen left when facing +x, read off
-  the asymmetric far wall above) is a by-product of this probe; the app's D3D11 world mapping
-  does not match it yet and needs its own change (map→engine Z sign, yaw mapping, sprite
-  sides, audio pan).
+  the asymmetric far wall above) is a by-product of this probe. Implemented 2026-10-09 by
+  ADR-0009 (`RenderSpace`: render z = −map y, yaw = `PLAYER_ANGLE` + π/2; app commit
+  `c29aae5`) with engine-level tests; the frame has not yet been diffed against
+  `S640x480-tilt-0/work/OVTLT0.PCX` (stripes G R G R G R left→right) on a running host.
 
 ## Tests To Add Or Update
 Added in `ProjectionModelTests`: `EyeLineRow_Tilt_MovesByTiltTimesWindowHeight` (240 / 0 /

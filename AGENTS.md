@@ -40,7 +40,11 @@ engine, WDL, WMP, and scheduler behavior before falling back to black-box oracle
 
 ## Commands
 
-Toolchain: .NET SDK 10.0.301. The solution uses the **`.slnx`** (XML) format, not `.sln`.
+Toolchain: .NET SDK 10.0.401 (the Arch Linux development host runs it through mise). The
+solution uses the **`.slnx`** (XML) format, not `.sln`. `Directory.Build.props` sets
+`EnableWindowsTargeting`, so the Windows-only `OpenVirtue.App` project *builds* on Linux (it
+cannot run there until ADR-0008's SDL3/OpenGL host lands); the CI-shaped pair below passes on
+both platforms.
 
 ```bash
 dotnet build OpenVirtue.slnx                      # build all (analyzers run here; warnings, not errors)
@@ -143,7 +147,11 @@ Unit tests use tiny hand-built byte vectors and run anywhere. In addition, **gua
 integration tests** validate readers against real, user-supplied `.WRS` files if they are
 present under the git-ignored `_research/` folder, and are a **no-op otherwise**
 (`TestSupport/ResearchData` locates `_research/` by walking up to `OpenVirtue.slnx`). Never
-commit game data or fixtures.
+commit game data or fixtures. Git worktrees (including the ones the Claude app creates under
+`.claude/worktrees/`) do not contain the git-ignored `_research/` tree: symlink it first
+(`ln -s <main-checkout>/_research _research`; `/_research` is ignored, so the link stays
+untracked), otherwise the guarded tests silently early-return and `ovtool`/the oracle harness
+cannot find the game data.
 
 ## Source-of-truth notes
 

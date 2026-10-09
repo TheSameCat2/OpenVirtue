@@ -116,11 +116,13 @@ What works today:
   radians, the vertical scale is three quarters of the window height over the same tangent
   (divided by `ASPECT`), `PLAYER_TILT` is a y-shear of a full window height per unit, and
   every VGA mode is presented at the 4:3 display aspect. The hitscan `SHOOT_X`/`SHOOT_Y` rays
-  use the same model.
+  use the same model. The world is drawn with the original's handedness — facing map +x, the
+  map's +y side is on the screen left, as the same screenshots show — through a single
+  map→render mapping (render z = −map y, camera yaw = `PLAYER_ANGLE` + π/2; ADR-0009), and a
+  WMP `PLAYER_START` angle of 0 faces map +x like the oracle dump. Engine tests pin this; a
+  visual check on a running host is still pending.
 
-Not yet complete: the renderer's left-right handedness (the same screenshots show map +y on
-the screen left when facing +x; the D3D11 world mapping draws it mirror-imaged), sky movement
-under tilt, exact sky scrolling and indexed-palette shading,
+Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,
 slope, stacked-region edge semantics, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
