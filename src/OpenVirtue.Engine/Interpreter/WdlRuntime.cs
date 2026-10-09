@@ -1692,11 +1692,22 @@ public sealed class WdlRuntime :
 
     private void InitializePredefinedReferences(Level level)
     {
-        if (level.PlayerStart is { } playerStart &&
-            RegionAt(playerStart.Region) is { } here)
+        if (level.PlayerStart is not { } playerStart)
+        {
+            return;
+        }
+
+        if (RegionAt(playerStart.Region) is { } here)
         {
             SetObjectReference("here", here);
         }
+
+        // The WMP start heading (degrees, counter-clockwise, 0 = map +x) is the initial
+        // PLAYER_ANGLE; the host's camera yaw is derived from the same value (RenderSpace).
+        double angle = playerStart.AngleRadians;
+        SetSkill("PLAYER_ANGLE", angle);
+        SetSkill("PLAYER_SIN", Math.Sin(angle));
+        SetSkill("PLAYER_COS", Math.Cos(angle));
     }
 
     private void InitializeEachTickActions(Level level)

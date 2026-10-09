@@ -13,7 +13,10 @@ public enum SpriteOrientation
     Ground,
 }
 
-/// <summary>A camera-facing static sprite billboard resolved from a placed THING/ACTOR.</summary>
+/// <summary>
+/// A camera-facing static sprite billboard resolved from a placed THING/ACTOR.
+/// <see cref="BasePosition"/> is in render space (<see cref="RenderSpace"/>: map y → −z).
+/// </summary>
 public readonly record struct SpriteBillboard(
     string Texture,
     Vector3 BasePosition,
@@ -32,7 +35,10 @@ public readonly record struct SpriteBillboard(
 /// </summary>
 public static class SpriteBuilder
 {
-    /// <summary>Builds all resolvable static sprite billboards in level order.</summary>
+    /// <summary>
+    /// Builds all resolvable static sprite billboards in level order. <paramref name="viewerPosition"/>
+    /// is the viewer's <em>map</em> position (x, y), used only to pick directional texture sides.
+    /// </summary>
     public static IReadOnlyList<SpriteBillboard> Build(Level level, Vector2? viewerPosition = null)
     {
         ArgumentNullException.ThrowIfNull(level);
@@ -51,7 +57,7 @@ public static class SpriteBuilder
         return billboards;
     }
 
-    /// <summary>Returns sprites ordered far-to-near from <paramref name="cameraPosition"/>.</summary>
+    /// <summary>Returns sprites ordered far-to-near from <paramref name="cameraPosition"/> (render space).</summary>
     public static IReadOnlyList<SpriteBillboard> OrderBackToFront(
         IEnumerable<SpriteBillboard> billboards,
         Vector3 cameraPosition)
@@ -140,7 +146,7 @@ public static class SpriteBuilder
             }
         }
         float baseFloor = entity["GROUND"] <= 0 ? regionFloor : 0;
-        var basePosition = new Vector3((float)entity.X, baseFloor + (float)entity.Z, (float)entity.Y);
+        Vector3 basePosition = RenderSpace.FromMap((float)entity.X, baseFloor + (float)entity.Z, (float)entity.Y);
         AddTextureLayer(level, entity, entity.Texture, viewerPosition, basePosition, regionFloor, isAttachment: false, billboards);
         AddTextureLayer(level, entity, entity.AttachTexture, viewerPosition, basePosition, regionFloor, isAttachment: true, billboards);
     }

@@ -24,7 +24,7 @@ public class SpriteBuilderTests
         SpriteBillboard sprite = Assert.Single(SpriteBuilder.Build(level));
 
         Assert.Equal("plantTex", sprite.Texture);
-        Assert.Equal(new Vector3(2, 6, 3), sprite.BasePosition);
+        Assert.Equal(new Vector3(2, 6, -3), sprite.BasePosition); // render space: z = −map y (ADR-0009)
         Assert.Equal(1.5625f, sprite.HalfWidth);
         Assert.Equal(3.125f, sprite.HalfHeight);
         Assert.Same(Assert.Single(level.Things), sprite.Source);
