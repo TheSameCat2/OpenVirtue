@@ -1,6 +1,6 @@
 # OV-20261009-projection-fov-player-arc: Horizontal field of view as a function of PLAYER_ARC
 Date: 2026-10-09
-Status: proposed
+Status: confirmed (implemented 2026-10-09 in `OpenVirtue.Engine.Rendering.ProjectionModel`)
 Observer: OpenVirtue maintainers (black-box probe)
 Implementer: OpenVirtue maintainers
 
@@ -130,16 +130,18 @@ dump proves the skills had the intended values when the frame was grabbed.
   example (p.132) implies.
 
 ## Tests To Add Or Update
-- `ProjectionModel` (engine, pure): horizontal focal length for arc 0.5/1.0/1.5/2.0 at width
-  640 → 1253.2 / 585.8 / 343.5 / 205.5 px; at width 320 → 292.9 px; horizontal FOV at 1.0 =
-  1 rad.
-- A synthetic wall-span test projecting a 16-step face at distance 48 and asserting
-  195 px wide at 640x480, arc 1.
-- Hitscan `SHOOT_X`/`SHOOT_Y` deviation derived from the same focal lengths (replacing the
-  vertical-tangent-times-aspect construction).
+Added in `tests/OpenVirtue.Engine.Tests/Rendering/ProjectionModelTests.cs`:
+- `FocalLengthX_Width640_IsHalfWidthOverTangentOfHalfArc` (arc 0.5/1.0/1.5/2.0 → 1253.2 /
+  585.8 / 343.5 / 205.5 px), `FocalLengthX_Width320_FollowsWindowWidthOnly` (292.9 px),
+  `HorizontalFieldOfView_DefaultArc_IsOneRadian`.
+- `Project_SixteenStepSquareFaceAt48_Is195By220PixelsAt640x480` (the yellow face).
+- `ShootRay_Center_FollowsTiltAndEdgesFollowHalfTangents`; the runtime hitscan tests
+  `Runtime_ShootInstruction_ShootYUsesProjectedVerticalAim` and
+  `Runtime_ShootInstruction_PositiveShootXAimsToScreenRight` now derive from the same model.
 
 ## Implementation Notes
-Replace `Camera.Projection`'s `CreatePerspectiveFieldOfView(arc, aspect)` with an
-off-axis/asymmetric projection built from f_h and f_v (next note) and the tilt shear
-(OV-20261009-tilt-model-shear-vs-pitch). The GL renderer under ADR-0008 consumes the same
-`ProjectionModel`.
+Implemented 2026-10-09: `OpenVirtue.Engine.Rendering.ProjectionModel` holds f_h, f_v (next
+note) and the tilt shear (OV-20261009-tilt-model-shear-vs-pitch); `CreateProjectionMatrix`
+carries the shear in M32, `Camera.View` is yaw-only and `LevelWindow.CurrentProjection()`
+feeds the D3D11 renderer, the sprite click test and (through `WdlRuntime`) the hitscan. The
+GL renderer under ADR-0008 must consume the same type.

@@ -83,10 +83,12 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
    rendered smoke and a set of fixed-camera screenshots are captured from it; the GL renderer
    is driven to match them (image diff with a tolerance for rasterization differences). This
    guards against *regressions during the port only*: the D3D11 renderer was never validated
-   against the original (its projection treats `PLAYER_ARC` as a vertical FOV in radians and
-   presents 320x200 with square pixels — see the OV-20261009 projection probes). Parity of the
-   renderer itself is measured against DOSBox-X screenshots, and the three projection probes
-   (FOV, pixel aspect, tilt model) are resolved **before** the GL projection is written. When
+   against the original (until 2026-10-09 its projection treated `PLAYER_ARC` as a vertical
+   FOV in radians and presented 320x200 with square pixels). Parity of the renderer itself is
+   measured against DOSBox-X screenshots; the three projection probes (FOV, pixel aspect, tilt
+   model) were resolved on 2026-10-09 (OV-20261009-*); the D3D11 renderer consumes
+   `OpenVirtue.Engine.Rendering.ProjectionModel` today and the GL renderer must consume the
+   same type. When
    the GL path matches the legacy renderer on all six archives and the title→Apathy flow
    (with the corrected projection applied to both, or the diff restricted to non-projection
    layers), the legacy project is deleted in a single commit. It is never extended.

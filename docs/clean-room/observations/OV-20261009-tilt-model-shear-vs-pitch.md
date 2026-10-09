@@ -1,6 +1,6 @@
 # OV-20261009-tilt-model-shear-vs-pitch: Is PLAYER_TILT a y-shear or a true camera pitch?
 Date: 2026-10-09
-Status: proposed
+Status: confirmed (implemented 2026-10-09: shear term in `ProjectionModel`, yaw-only camera view)
 Observer: OpenVirtue maintainers (black-box probe)
 Implementer: OpenVirtue maintainers
 
@@ -85,6 +85,7 @@ FOV note.
 | tilt −0.5, arc 2 (f_v 231) | step top 326 (predicted 86 + 240 = 325.9); eye line from side walls 479.4 (predicted 480); edges 0.000° over 154 rows | a shift proportional to f_v (0.5 · 231 · 0.365 = 42 px) would have put the step at 128: rejected |
 | tilt −0.5, ASPECT 2 (f_v 329.5) | step top 261 (predicted 22 + 240 = 260.3); eye line 481.2; edges 0.000° over 219 rows | shift is independent of ASPECT too |
 | all seven runs | every stripe boundary is a perfect screen column (fitted angle 0.000°, difference between left and right edges 0.000°); the floor and the alcove ceiling converge in perspective as planes do | a true pitch of atan(0.5) would have shown ≈ 8.5° between the outer edges (self-test of the script) |
+| screen handedness (tilt 0 and −0.5 runs; the far wall is asymmetric: red at map y −12..−8 … green at 8..12) | left→right the stripes read G R G R G R; the world-y fit has a negative slope: x = 319.6 − 12.2·y | **facing map +x, the map's +y side is on the screen LEFT** (right-handed, y-up map, consistent with `PLAYER_ANGLE` 0 = east and counter-clockwise angles). The hitscan's positive `SHOOT_X` (clockwise) therefore aims screen-right; the app's D3D11 world mapping (engine Z = map y with a right-handed look-at) currently puts +y on the screen right, i.e. draws the world mirror-imaged — follow-up, not part of the projection fix |
 
 ## Conclusion
 Confirmed for patched V3.963: `PLAYER_TILT` is a **y-shear**, not a camera pitch. Vertical
@@ -113,15 +114,20 @@ Seven runs, all stripe edges vertical to the fitting precision, and every featur
 - How the sky bitmap moves with tilt (expected: by the same Δrow, since p.37 says it is
   neither zoomed nor repeated vertically) was not probed — no SKY in the fixture.
 - Whether `SHOOT_Y` under tilt uses the same shear (a ray through screen row r has vertical
-  slope (cy − Δrow − r)/f_v) was not probed.
+  slope (SCREEN_HGT/2 − PLAYER_TILT·SCREEN_HGT − r)/f_v) was not probed.
 - Whether Δrow uses `SCREEN_HGT` or the mode height when the 3-D window is smaller than the
   mode was not probed; written as `SCREEN_HGT` by analogy with f_v.
+- The renderer's left-right handedness (map +y on the screen left when facing +x, read off
+  the asymmetric far wall above) is a by-product of this probe; the app's D3D11 world mapping
+  does not match it yet and needs its own change (map→engine Z sign, yaw mapping, sprite
+  sides, audio pan).
 
 ## Tests To Add Or Update
-- `ProjectionModel`: eye-line row for tilt 0 / 0.5 / −0.5 at 480 rows → 240 / 0 / 480;
-  the shear offset is unchanged by arc and ASPECT; projecting the two ends of a vertical
-  world edge under tilt 0.5 yields the same screen x.
-- Replace the camera pitch (`Atan(PLAYER_TILT)` view rotation) with a projection-matrix
-  y-offset; keep the view matrix yaw-only; synthetic test asserting vertical edges stay
-  vertical under tilt.
-- Hitscan: derive the vertical slope of a `SHOOT_Y` ray from the same offset.
+Added in `ProjectionModelTests`: `EyeLineRow_Tilt_MovesByTiltTimesWindowHeight` (240 / 0 /
+480 / −240), `EyeLineRow_Tilt_IsIndependentOfArcAndAspect`,
+`Project_StepTopUnderNegativeTilt_MatchesMeasuredRows` (rows 41 / 326 / 261 of the three
+negative-tilt runs), `Project_VerticalEdgeUnderTilt_StaysVertical`,
+`CreateProjectionMatrix_TiltedModel_AgreesWithProject`,
+`CreateProjectionMatrix_WithLookAtView_ScreenRightIsCrossOfForwardAndUp`. The app's view matrix is yaw-only
+(`Camera.View` along `LevelForward`) and the tilt lives in the projection matrix's shear term.
+Hitscan: `WdlRuntimeTests.Runtime_ShootInstruction_NegativeTiltRaisesCenterRayLikeShootY`.

@@ -100,8 +100,11 @@ Projects and their **strict layering** (enforced only by discipline — keep it)
     program with the WMP map it names, indexes declarations (`BMAP`→`TEXTURE`, `REGION`/`WALL`/
     `THING`/`ACTOR` type defs, `SKILL`s, `ACTION`s), and materializes typed engine objects.
   - **`Rendering/`** — `MeshBuilder`, `EarClipping`, `LevelMesh`, `RenderVertex`, `TextureLoader`:
-    turns geometry into vertex buffers and decodes PCX→RGBA `TextureImage`s. **No DirectX here**,
-    deliberately, so the engine stays testable headless.
+    turns geometry into vertex buffers and decodes PCX→RGBA `TextureImage`s. `ProjectionModel`
+    is the measured original projection (horizontal FOV = `PLAYER_ARC` radians, 2/3 vertical
+    tangent scaled by `ASPECT`, `PLAYER_TILT` as a y-shear; OV-20261009-*) that every renderer
+    and the hitscan consume; `VirtualDisplayLayout` letterboxes a VIDEO mode to its 4:3 display
+    aspect. **No DirectX here**, deliberately, so the engine stays testable headless.
 
 - **`OpenVirtue.App`** (`net10.0-windows`, WinForms `WinExe`, → Engine) — the **only place
   DirectX lives** (Vortice.Direct3D11/DXGI/D3DCompiler/Mathematics). `Program` is the entry

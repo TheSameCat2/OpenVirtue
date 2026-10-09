@@ -111,8 +111,16 @@ What works today:
   active. Playback updates `FLIC_FRAME`, resumes the invoking action on completion
   or `STOP_FLIC`, and can proceed through the keyboard-driven title/menu flow into
   Apathy in one host process.
+- **Projection parity** — the 3-D projection reproduces the original as measured black-box
+  against the DOS runtime (OV-20261009 notes): the horizontal field of view is `PLAYER_ARC`
+  radians, the vertical scale is three quarters of the window height over the same tangent
+  (divided by `ASPECT`), `PLAYER_TILT` is a y-shear of a full window height per unit, and
+  every VGA mode is presented at the 4:3 display aspect. The hitscan `SHOOT_X`/`SHOOT_Y` rays
+  use the same model.
 
-Not yet complete: exact sky scrolling and indexed-palette shading,
+Not yet complete: the renderer's left-right handedness (the same screenshots show map +y on
+the screen left when facing +x; the D3D11 world mapping draws it mirror-imaged), sky movement
+under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,
 slope, stacked-region edge semantics, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,

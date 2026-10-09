@@ -1,6 +1,6 @@
 # OV-20261009-pixel-aspect-video-modes: Pixel aspect and vertical scale per VIDEO mode
 Date: 2026-10-09
-Status: proposed
+Status: confirmed (implemented 2026-10-09 in `ProjectionModel`, `VirtualDisplayLayout`, `LevelVideoMode.DisplayAspect`)
 Observer: OpenVirtue maintainers (black-box probe)
 Implementer: OpenVirtue maintainers
 
@@ -150,10 +150,14 @@ X320x400, which follows from VGA hardware, not from the probe.
 - The ratio 2/3 (measured 0.665–0.669) is taken as exact.
 
 ## Tests To Add Or Update
-- `VirtualDisplayLayout.Create` takes the VIDEO mode's display aspect (4:3 for all five VGA
-  modes) and letterboxes to it: a 320x200 grid in a 1280x960 window fills it fully
-  (scale x 4, y 4.8); 640x480 stays uniform.
-- `ProjectionModel`: f_v for 640x480 / 320x200 / X320x240 / X320x400 at arc 1, ASPECT 1 →
-  659.0 / 274.6 / 329.5 / 549.1 px; ASPECT 0.5 and 2 at 640x480 → 1318 / 329.5 px; a
-  16-step square face at distance 48 projects to 195 × 220 px at 640x480.
-- Implement the `ASPECT` skill (default 1) in the projection and expose it in `WdlRuntime`.
+Added:
+- `VirtualDisplayLayoutTests.Create_320x200WithFourByThreeDisplay_StretchesRowsByOnePointTwo`
+  (scale x 4, y 4.8 in a 1280x960 client), `Create_X320x400WithFourByThreeDisplay_SquashesRowsToZeroPointSix`,
+  `Create_TallClientWithFourByThreeDisplay_LetterboxesToDisplayAspect`,
+  `Create_SquarePixelMode_IsUnchangedByDisplayAspect`.
+- `ProjectionModelTests.FocalLengthY_VideoModes_IsThreeQuartersHeightOverTangent` (659.0 /
+  274.6 / 329.5 / 549.1 px), `FocalLengthY_AspectSkill_DividesVerticalScale` (1318 / 329.5),
+  `Project_SixteenStepSquareFaceAt48_Is195By220PixelsAt640x480`,
+  `Project_SquareFaceAt320x200_IsShorterThanWideInFramebufferPixels`.
+- `ASPECT` is a runtime skill (default 1, range 0.1..10) consumed by the projection and the
+  hitscan: `WdlRuntimeTests.Runtime_ShootInstruction_AspectTwoWidensVerticalAim`.
