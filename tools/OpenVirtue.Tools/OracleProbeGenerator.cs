@@ -23,6 +23,9 @@ internal static class OracleProbeGenerator
         return probe switch
         {
             SchedulerProbeName => PrepareSchedulerProbe(args[1..]),
+            ProjectionProbeGenerator.FovProbeName or
+            ProjectionProbeGenerator.AspectProbeName or
+            ProjectionProbeGenerator.TiltProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };
@@ -76,6 +79,12 @@ internal static class OracleProbeGenerator
         File.WriteAllBytes(Path.Combine(workDir, "prbtick.pcx"), SolidPcx(width: 280, height: 160, paletteIndex: 46));
         File.WriteAllText(Path.Combine(fullOutputDir, "dosbox.conf"), DosboxConfig(workDir), Encoding.ASCII);
         File.WriteAllText(Path.Combine(fullOutputDir, "run-oracle.bat"), RunBatch(dosboxX), Encoding.ASCII);
+        OracleLaunchers.WriteLinux(fullOutputDir, new OracleLaunchers.Options(
+            Title: SchedulerProbeId,
+            VariantLabel: SchedulerProbeName,
+            WorkDir: workDir,
+            DosboxX: dosboxX,
+            LaunchLogRelativePath: "launches.md"));
         File.WriteAllText(Path.Combine(fullOutputDir, "README.md"), Readme(workDir, runtimeDir, dosboxX), Encoding.UTF8);
 
         int copied = 0;
@@ -97,7 +106,7 @@ internal static class OracleProbeGenerator
         Console.WriteLine($"  fixture: {Path.Combine(workDir, "TITLE.WDL")}");
         Console.WriteLine($"  map:     {Path.Combine(workDir, "TITLE.WMP")}");
         Console.WriteLine($"  archive: {Path.Combine(workDir, "TITLE.WRS")} ({packed} entries)");
-        Console.WriteLine($"  launch:  {Path.Combine(fullOutputDir, "run-oracle.bat")}");
+        Console.WriteLine($"  launch:  {Path.Combine(fullOutputDir, "run-oracle.bat")} (Windows) / {Path.Combine(fullOutputDir, "run.sh")} (Linux)");
         if (runtimeDir is not null)
         {
             Console.WriteLine($"  copied {copied} runtime/support file(s) into work/; retail WRS archives were not copied.");
@@ -172,8 +181,10 @@ internal static class OracleProbeGenerator
         }
 
         string launchDir = Path.Combine(outputDir, "patched-title-carrier-launch");
+        OracleLaunchers.ParkIfExists(launchDir);
         if (Directory.Exists(launchDir))
         {
+            // Nothing observational inside: overwrite the generated files in place.
             Directory.Delete(launchDir, recursive: true);
         }
 
@@ -787,6 +798,7 @@ internal static class OracleProbeGenerator
             Usage:
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
             """);
+        Console.WriteLine(ProjectionProbeGenerator.UsageLines);
 
         return error is null ? 0 : 2;
     }

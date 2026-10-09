@@ -15,6 +15,7 @@ dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -39,3 +40,19 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start
   one-digit suffixes such as `OVSTA0.TXT`, `OVSCH0.TXT`, and `OVTIK0.TXT`.
   This helper does not run SaintsX setup scripts or external `patch.exe`; oracle
   prep must stay noninteractive and auditable.
+- `oracle prepare projection-fov | pixel-aspect | tilt-model` — create the
+  local-only carriers for the three OV-20261009 projection probes (horizontal FOV
+  vs `PLAYER_ARC`, pixel aspect / `ASPECT` per `VIDEO` mode, `PLAYER_TILT` shear vs
+  pitch). One carrier per parameter value, each fully synthetic (generated WDL/WMP,
+  flat-color PCX textures and palette) plus the user's patched `VRUN.EXE` copied in
+  by path. Every carrier gets a POSIX `run.sh` + `dosbox-x.conf` (native Linux
+  DOSBox-X: `forcerate=60`, `aspect=false`, `output=surface`) and a `run.bat` +
+  `dosbox.conf` for Windows; `run.sh` parks previous outputs under `work/_stale/`
+  (never deletes) and appends to the probe's `launches.md`. The scheduler probe
+  also receives `run.sh`/`dosbox-x.conf` now.
+- `tools/oracle/measure_projection.py` — deterministic measurement of the
+  projection probe screenshots (own PCX decoder; numpy required, Pillow only for
+  non-PCX captures). Prints one CSV row per variant with raw pixel measurements
+  and a `status`/`flags` pair that says when an estimator was withheld.
+  `--selftest` re-renders the rooms with a pinhole model (shear, pitch, seams,
+  blobs) and checks the estimators.
