@@ -709,7 +709,9 @@ internal sealed class LevelWindow : Form
         double pan = 0,
         bool applyVerticalDistance = true)
     {
-        Vector3 offset = position - _player.Position;
+        // Emitter and player are map positions; the pan is taken against the camera's
+        // screen-right axis, which lives in render space, so convert the offset first.
+        Vector3 offset = RenderSpace.FromMap(position) - RenderSpace.FromMap(_player.Position);
         float horizontalDistance = MathF.Sqrt((offset.X * offset.X) + (offset.Z * offset.Z));
         double audibleDistance = texture?.SoundDistance ?? 100;
         if (audibleDistance <= 0 || horizontalDistance >= audibleDistance)
@@ -1399,10 +1401,12 @@ internal sealed class LevelWindow : Form
         _player = new Player(_level);
         SpawnInLargestRoom(); // fallback only for synthetic/debug maps without a PLAYER_START
         _runtime.RegisterObject("player", _player);
-        _camera.Position = _player.Position;
+        _camera.Position = RenderSpace.FromMap(_player.Position);
         if (_level.PlayerStart is { } start)
         {
-            _camera.Yaw = -start.Angle * (MathF.PI / 180f);
+            // The WMP start angle is the initial PLAYER_ANGLE (0 = map +x); the runtime seeded
+            // the skill from the same value, so the start sync below reports it unchanged.
+            _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(start.AngleRadians);
         }
 
         SyncPlayerRuntimeState();
@@ -1705,9 +1709,10 @@ internal sealed class LevelWindow : Form
     private void BuildSprites()
     {
         _sprites.Clear();
+        // Directional sides are picked in map space, so hand over the player's map (x, y).
         _sprites.AddRange(SpriteBuilder.Build(
             _level,
-            new Vector2(_camera.Position.X, _camera.Position.Z)));
+            new Vector2(_player.Position.X, _player.Position.Z)));
     }
 
     private void RenderSprites(Matrix4x4 viewProjection)
@@ -1992,7 +1997,7 @@ internal sealed class LevelWindow : Form
         UpdateRuntimeMouseMotion();
         UpdateRuntimeInputSkills(includeMouse: true);
         SyncPlayerRuntimeState();
-        _camera.Position = _player.Position;
+        _camera.Position = RenderSpace.FromMap(_player.Position);
     }
 
     private void SyncPlayerRuntimeState()
@@ -2005,7 +2010,7 @@ internal sealed class LevelWindow : Form
         Vector3 position = _player.Position;
         WdlPlayerMotion.Synchronize(_runtime, _player);
 
-        double runtimeAngle = NormalizeAngle((Math.PI * 0.5) - _camera.Yaw);
+        double runtimeAngle = RenderSpace.PlayerAngleFromYaw(_camera.Yaw);
         _runtime.SetSkill("PLAYER_ANGLE", runtimeAngle);
         _runtime.SetSkill("PLAYER_SIN", Math.Sin(runtimeAngle));
         _runtime.SetSkill("PLAYER_COS", Math.Cos(runtimeAngle));
@@ -2248,7 +2253,7 @@ internal sealed class LevelWindow : Form
 
         if (angleChanged)
         {
-            _camera.Yaw = (float)((Math.PI * 0.5) - playerAngle);
+            _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(playerAngle);
         }
 
         if (tiltChanged)
@@ -2256,7 +2261,7 @@ internal sealed class LevelWindow : Form
             _camera.Pitch = (float)Math.Atan(playerTilt);
         }
 
-        _camera.Position = _player.Position;
+        _camera.Position = RenderSpace.FromMap(_player.Position);
         SyncPlayerRuntimeState();
     }
 
@@ -2607,8 +2612,11 @@ internal sealed class LevelWindow : Form
             return;
         }
 
-        double normalizedYaw = ((_camera.Yaw / Math.Tau) % 1 + 1) % 1;
-        int side = (int)Math.Floor(normalizedYaw * Math.Max(1, texture.Sides));
+        // The panorama side is a compass selection: take it from the map heading, numbered
+        // clockwise like directional sprite sides. Which side the original anchors at angle 0
+        // is unprobed (roadmap: exact panorama stitching remains).
+        double normalizedHeading = ((-_runtime.GetSkill("PLAYER_ANGLE") / Math.Tau) % 1 + 1) % 1;
+        int side = (int)Math.Floor(normalizedHeading * Math.Max(1, texture.Sides));
         string? renderTexture = TextureAnimation.ResolveRenderTexture(texture, cycle: 1, side);
         if (renderTexture is null || !_textureViews.TryGetValue(renderTexture, out ID3D11ShaderResourceView? view))
         {
