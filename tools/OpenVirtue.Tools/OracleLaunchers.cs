@@ -19,6 +19,16 @@ internal static class OracleLaunchers
     public const string RuntimeCommand = "VRUN.EXE -NJ " + WorldName + " -RUN";
 
     /// <summary>
+    /// The autoexec body: list what DOS sees, run the runtime with its console redirected to
+    /// <c>OVCON.TXT</c> (the Genesis banner and compiler errors are otherwise only visible on
+    /// screen), then leave the emulator.
+    /// </summary>
+    public const string AutoexecBody =
+        "dir /b > OVDIR.TXT\n" +
+        RuntimeCommand + " > OVCON.TXT\n" +
+        "exit";
+
+    /// <summary>
     /// Launcher settings. <c>CompletionMarker</c> is the five-character PRINTFILE base name
     /// whose <c>&lt;name&gt;*.TXT</c> file proves the probe action ran to completion; when set,
     /// <c>run.sh</c> exits 3 if it is missing after the run.
@@ -79,8 +89,7 @@ internal static class OracleLaunchers
         [autoexec]
         mount c "{{workDir}}"
         C:
-        {{RuntimeCommand}}
-        exit
+        {{AutoexecBody}}
 
         """;
 

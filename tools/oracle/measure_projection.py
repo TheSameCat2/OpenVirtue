@@ -72,6 +72,7 @@ class Geometry:
     eye_height: float
     segments: list[tuple[int, int, str]]
     colors: dict[str, tuple[int, int, int]]
+    state_labels: dict[str, str] = field(default_factory=dict)
 
     @staticmethod
     def load(path: Path) -> "Geometry":
@@ -88,6 +89,7 @@ class Geometry:
             eye_height=float(room.get("eye_height", room.get("default_eye_height", 3))),
             segments=[(int(s["y0"]), int(s["y1"]), s["color"]) for s in g["far_wall_segments"]],
             colors={k: tuple(int(c) for c in v) for k, v in g["colors"].items()},
+            state_labels={str(k): str(v) for k, v in g.get("state_labels", {}).items()},
         )
 
 
@@ -541,7 +543,7 @@ def measure_variant(variant_dir: Path, image_override: Path | None = None) -> Re
                player_tilt=geo.player_tilt, aspect=geo.aspect, status="ok")
     work = variant_dir / "work"
     for k, v in read_state(work, geo.state_file).items():
-        result.set(**{f"state_{k}": v})
+        result.set(**{f"state_{geo.state_labels.get(k, k)}": v})
     image_path = image_override or (work / geo.screenshot)
     if not image_path.exists():
         candidates = sorted(work.glob(geo.screenshot[:5] + "*.PCX")) if work.exists() else []

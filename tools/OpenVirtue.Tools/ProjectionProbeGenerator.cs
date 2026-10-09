@@ -27,6 +27,19 @@ internal static class ProjectionProbeGenerator
     private const string TiltProbeId = "OV-20261009-tilt-model-shear-vs-pitch";
 
     private static readonly string[] DefaultFovVideos = ["S640x480"];
+
+    /// <summary>
+    /// Skills dumped to OVPRB0.TXT and the short labels used for them: the patched V3.963
+    /// compiler rejects inline string literals longer than 12 characters
+    /// ("Error(90): Filename length", observed 2026-10-09), so labels stay at 6 or fewer.
+    /// </summary>
+    private static readonly (string Skill, string Label)[] StateLabels =
+    [
+        ("PLAYER_ARC", "ARC"), ("PLAYER_TILT", "TILT"), ("PLAYER_X", "PX"), ("PLAYER_Y", "PY"),
+        ("PLAYER_Z", "PZ"), ("PLAYER_ANGLE", "ANG"), ("PLAYER_SIZE", "PSIZE"), ("FLOOR_HGT", "FLOOR"),
+        ("CEIL_HGT", "CEIL"), ("SCREEN_X", "SX"), ("SCREEN_Y", "SY"), ("SCREEN_WIDTH", "SW"),
+        ("SCREEN_HGT", "SH"), ("MOTION_BLUR", "BLUR"), ("ASPECT", "ASPECT"),
+    ];
     private static readonly string[] DefaultAspectVideos = ["S640x480", "320x200", "X320x240", "X320x400"];
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
@@ -250,9 +263,20 @@ internal static class ProjectionProbeGenerator
                 {
                     // Sign-symmetric by default: the manual gives no sign for PLAYER_TILT, and the
                     // first batch must both resolve the sign and leave an in-frame measurement.
+                    // --arcs / --aspects cross the tilts with other focal lengths, to separate a
+                    // shift proportional to SCREEN_HGT from one proportional to the vertical scale.
                     foreach (double tilt in tilts ?? [0.0, 0.5, 1.0, -0.5, -1.0])
                     {
-                        variants.Add(new Variant($"{video}-tilt-{Label(tilt)}", video, 1.0, null, tilt, Room.Tall, "ovtlt"));
+                        foreach (double arc in arcs ?? [1.0])
+                        {
+                            foreach (double? aspect in aspects?.Select(static a => (double?)a) ?? [null])
+                            {
+                                string label = $"{video}-tilt-{Label(tilt)}" +
+                                    (arc != 1.0 ? $"-arc-{Num(arc)}" : "") +
+                                    (aspect is { } a && a != 1.0 ? $"-aspect-{Num(a)}" : "");
+                                variants.Add(new Variant(label, video, arc, aspect, tilt, Room.Tall, "ovtlt"));
+                            }
+                        }
                     }
                 }
 
@@ -410,19 +434,14 @@ internal static class ProjectionProbeGenerator
 
             """);
 
-        string[] printed =
-        [
-            "PLAYER_ARC", "PLAYER_TILT", "PLAYER_X", "PLAYER_Y", "PLAYER_Z", "PLAYER_ANGLE", "PLAYER_SIZE",
-            "FLOOR_HGT", "CEIL_HGT", "SCREEN_X", "SCREEN_Y", "SCREEN_WIDTH", "SCREEN_HGT", "MOTION_BLUR",
-        ];
-        foreach (string skill in printed)
+        foreach ((string skill, string label) in StateLabels)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"    PRINT_STRING \"{skill}=\";\n    PRINT_VALUE {skill};\n    PRINT_STRING \"\\n\";\n");
-        }
+            if (skill == "ASPECT" && (variant.Aspect is not { } printedAspect || printedAspect == 1.0))
+            {
+                continue;
+            }
 
-        if (variant.Aspect is { } printedAspect && printedAspect != 1.0)
-        {
-            sb.Append("    PRINT_STRING \"ASPECT=\";\n    PRINT_VALUE ASPECT;\n    PRINT_STRING \"\\n\";\n");
+            sb.Append(CultureInfo.InvariantCulture, $"    PRINT_STRING \"{label}=\";\n    PRINT_VALUE {skill};\n    PRINT_STRING \"\\n\";\n");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $$"""
@@ -552,6 +571,8 @@ internal static class ProjectionProbeGenerator
             aspect = variant.Aspect ?? 1.0,
             screenshot = variant.ScreenshotName.ToUpperInvariant() + "0.PCX",
             state_file = "OVPRB0.TXT",
+            console_file = "OVCON.TXT",
+            state_labels = StateLabels.ToDictionary(static p => p.Label, static p => p.Skill),
             room = new
             {
                 half_width = variant.Room.HalfWidth,
@@ -636,7 +657,9 @@ internal static class ProjectionProbeGenerator
         `OVPRB0.TXT` (PRINTFILE/PRINT_VALUE), grabs `SCREENSHOT` into `<name>0.PCX`, waits 4 ticks
         and EXITs; the DOSBox-X autoexec then exits.
 
-        Expected outputs per variant: `OVSTA0.TXT` (START), `OVPRB0.TXT` (skill dump),
+        Expected outputs per variant: `OVDIR.TXT` (what DOS saw in C:), `OVCON.TXT` (the
+        runtime's console output: banner, Genesis compiler errors), `OVSTA0.TXT` (START),
+        `OVPRB0.TXT` (skill dump, short labels mapped back by geometry.json `state_labels`),
         `<screenshot>0.PCX`, `OVEND0.TXT` (END). A missing screenshot with a present END marker
         means SCREENSHOT is unusable on this runtime: fall back to DOSBox-X's capture key and
         say so in the note.
@@ -683,7 +706,7 @@ internal static class ProjectionProbeGenerator
         """
           ovtool oracle prepare projection-fov [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs 0.5,1,1.5,2] [--videos S640x480]
           ovtool oracle prepare pixel-aspect   [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--aspects 1,0.5,2] [--videos S640x480,320x200,X320x240,X320x400]
-          ovtool oracle prepare tilt-model     [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--tilts 0,0.5,1,-0.5,-1] [--videos S640x480]
+          ovtool oracle prepare tilt-model     [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--tilts 0,0.5,1,-0.5,-1] [--arcs 1] [--aspects 1] [--videos S640x480]
         """;
 
     public static int Usage(string? error = null)
