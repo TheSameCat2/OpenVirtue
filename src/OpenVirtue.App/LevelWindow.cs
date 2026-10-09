@@ -1258,12 +1258,11 @@ internal sealed class LevelWindow : Form
         point = PointerPhysicalPoint(point);
         VirtualDisplayLayout display = DisplayLayout(RenderSize());
         DisplayRectangle viewport = WorldViewport(display);
-        float aspect = viewport.Height > 0 ? Math.Max(0.01f, viewport.Width / viewport.Height) : 1f;
-        float arc = Math.Clamp((float)_runtime.GetSkill("PLAYER_ARC"), 0.2f, 2f);
-        float verticalTan = MathF.Tan(arc * 0.5f);
-        float horizontalTan = verticalTan * aspect;
+        ProjectionModel projection = CurrentProjection();
+        float pixelScaleX = viewport.Width / projection.ScreenWidth;
+        float pixelScaleY = viewport.Height / projection.ScreenHeight;
         Vector3 cameraPosition = _camera.Position;
-        Vector3 forward = Vector3.Normalize(_camera.Forward);
+        Vector3 forward = _camera.LevelForward;
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
 
@@ -1290,10 +1289,11 @@ internal sealed class LevelWindow : Form
 
             float projectedX = Vector3.Dot(toCenter, right);
             float projectedY = Vector3.Dot(toCenter, up);
-            float screenX = viewport.X + ((viewport.Width * 0.5f) * (1f + (projectedX / (distance * horizontalTan))));
-            float screenY = viewport.Y + ((viewport.Height * 0.5f) * (1f - (projectedY / (distance * verticalTan))));
-            float halfWidth = (viewport.Width * 0.5f) * (sprite.HalfWidth / (distance * horizontalTan));
-            float halfHeight = (viewport.Height * 0.5f) * (sprite.HalfHeight / (distance * verticalTan));
+            (double windowX, double windowY) = projection.Project(distance, projectedX, projectedY);
+            float screenX = viewport.X + ((float)windowX * pixelScaleX);
+            float screenY = viewport.Y + ((float)windowY * pixelScaleY);
+            float halfWidth = (float)(projection.FocalLengthX * sprite.HalfWidth / distance) * pixelScaleX;
+            float halfHeight = (float)(projection.FocalLengthY * sprite.HalfHeight / distance) * pixelScaleY;
 
             if (point.X < screenX - halfWidth ||
                 point.X > screenX + halfWidth ||
@@ -1720,7 +1720,7 @@ internal sealed class LevelWindow : Form
         // Cylindrical billboards: face the camera horizontally, stay upright.
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
-        Vector3 horizontalForward = Vector3.Normalize(new Vector3(_camera.Forward.X, 0, _camera.Forward.Z));
+        Vector3 horizontalForward = _camera.LevelForward;
 
         IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(_sprites, _camera.Position);
         for (int start = 0; start < sorted.Count;)
@@ -2099,10 +2099,10 @@ internal sealed class LevelWindow : Form
     {
         if (_hasMouseSample)
         {
-            float scale = Math.Max(0.001f, DisplayLayout(RenderSize()).Scale);
+            VirtualDisplayLayout layout = DisplayLayout(RenderSize());
             _pendingMickey += new Vector2(
-                (point.X - _lastMouseSample.X) / scale,
-                (point.Y - _lastMouseSample.Y) / scale);
+                (point.X - _lastMouseSample.X) / Math.Max(0.001f, layout.ScaleX),
+                (point.Y - _lastMouseSample.Y) / Math.Max(0.001f, layout.ScaleY));
         }
 
         _lastMouseSample = point;
@@ -2466,10 +2466,7 @@ internal sealed class LevelWindow : Form
         System.Drawing.Size renderSize = RenderSize();
         VirtualDisplayLayout display = DisplayLayout(renderSize);
         DisplayRectangle worldViewport = WorldViewport(display);
-        float aspect = worldViewport.Width / Math.Max(1, worldViewport.Height);
-        Matrix4x4 viewProjection = _camera.View * Camera.Projection(
-            aspect,
-            Math.Clamp((float)_runtime.GetSkill("PLAYER_ARC"), 0.2f, 2f));
+        Matrix4x4 viewProjection = _camera.View * CurrentProjection().CreateProjectionMatrix(1f, 200000f);
 
         _context.RSSetViewport(new Viewport(
             worldViewport.X,
@@ -2647,14 +2644,33 @@ internal sealed class LevelWindow : Form
 
     private VirtualDisplayLayout DisplayLayout(System.Drawing.Size physicalSize)
     {
-        int virtualWidth = _level.VideoMode?.Width ?? physicalSize.Width;
-        int virtualHeight = _level.VideoMode?.Height ?? physicalSize.Height;
+        if (_level.VideoMode is { } mode)
+        {
+            // Every documented VGA mode was shown on a 4:3 display; 320x200 / X320x400 frames
+            // are stretched to it (OV-20261009-pixel-aspect-video-modes).
+            return VirtualDisplayLayout.Create(
+                physicalSize.Width,
+                physicalSize.Height,
+                mode.Width,
+                mode.Height,
+                LevelVideoMode.DisplayAspect);
+        }
+
         return VirtualDisplayLayout.Create(
             physicalSize.Width,
             physicalSize.Height,
-            virtualWidth,
-            virtualHeight);
+            physicalSize.Width,
+            physicalSize.Height);
     }
+
+    /// <summary>The live projection in 3-D-window pixels (OV-20261009-* measured model).</summary>
+    private ProjectionModel CurrentProjection() =>
+        ProjectionModel.Create(
+            _runtime.GetSkill("PLAYER_ARC"),
+            _runtime.GetSkill("ASPECT"),
+            _runtime.GetSkill("PLAYER_TILT"),
+            (int)Math.Round(_runtime.GetSkill("SCREEN_WIDTH")),
+            (int)Math.Round(_runtime.GetSkill("SCREEN_HGT")));
 
     private DisplayRectangle WorldViewport(VirtualDisplayLayout display)
     {
