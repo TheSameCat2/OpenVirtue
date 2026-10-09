@@ -20,6 +20,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("PLAYER_LIGHT"));
         Assert.Equal(10, runtime.GetSkill("LIGHT_DIST"));
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
+        Assert.Equal(1, runtime.GetSkill("ASPECT"));
         Assert.Equal(1, runtime.GetSkill("SOUND_VOL"));
         Assert.Equal(1, runtime.GetSkill("MUSIC_VOL"));
         Assert.Equal(0, runtime.GetSkill("MOUSE_MODE"));
@@ -1678,9 +1679,73 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("fire"));
 
+        // OV-20261009-pixel-aspect-video-modes: SHOOT_Y = -1 aims at the top window edge, whose
+        // vertical half-tangent is (2/3)·tan(0.5) = 0.364 at the default 640x480 window, so the
+        // ray rises 1.457 over the 4-step horizontal distance: eye 3 + 1.457 = 4.457, i.e. 5.54
+        // texture rows below the sprite's top at 10 (HIT_Y 5), at distance 4·sqrt(1 + 0.364²).
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
-        Assert.InRange(runtime.GetSkill("HIT_DIST"), 4.5, 4.6);
+        Assert.InRange(runtime.GetSkill("HIT_DIST"), 4.25, 4.27);
+        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+    }
+
+    [Fact]
+    public void Runtime_ShootInstruction_AspectTwoWidensVerticalAim()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nREGION room 0 12;#0\n" +
+            "THING highTarget 9 5 0 0;#1\nPLAYER_START 5 5 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP targetMap,<target.pcx>,0,0,2,6; " +
+            "TEXTURE targetTex { BMAPS targetMap; SCALE_X 1; SCALE_Y 1; } " +
+            "THING highTarget { TEXTURE targetTex; HEIGHT 4; } " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET ASPECT,2; SET SHOOT_Y,-1; " +
+            "SET SHOOT_RANGE,20; SHOOT; }");
+        IReadOnlyDictionary<string, TextureImage> images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["targetTex"] = SolidImage(2, 6, alpha: 255),
+        };
+        var runtime = new WdlRuntime(level, hitTextures: images);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("fire"));
+
+        // ASPECT 2 halves the vertical scale (f_v 329.5 px), so the top edge sits at half-tangent
+        // (2/3)·2·tan(0.5) = 0.728: rise 2.914 over 4 steps, hit at height 5.914, 4.09 rows
+        // below the top (HIT_Y 4), distance 4·sqrt(1 + 0.728²). (ASPECT 0.5 would double f_v
+        // and the same SHOOT_Y would pass under the sprite.)
+        Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
+        Assert.InRange(runtime.GetSkill("HIT_DIST"), 4.94, 4.96);
         Assert.Equal(4, runtime.GetSkill("HIT_Y"));
+    }
+
+    [Fact]
+    public void Runtime_ShootInstruction_NegativeTiltRaisesCenterRayLikeShootY()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nREGION room 0 12;#0\n" +
+            "THING highTarget 9 5 0 0;#1\nPLAYER_START 5 5 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP targetMap,<target.pcx>,0,0,2,6; " +
+            "TEXTURE targetTex { BMAPS targetMap; SCALE_X 1; SCALE_Y 1; } " +
+            "THING highTarget { TEXTURE targetTex; HEIGHT 4; } " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET PLAYER_TILT,-0.5; " +
+            "SET SHOOT_RANGE,20; SHOOT; }");
+        IReadOnlyDictionary<string, TextureImage> images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["targetTex"] = SolidImage(2, 6, alpha: 255),
+        };
+        var runtime = new WdlRuntime(level, hitTextures: images);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("fire"));
+
+        // OV-20261009-tilt-model-shear-vs-pitch: tilt -0.5 moves the eye line to the bottom
+        // edge, so the center ray leaves through the old top edge: the same ray as SHOOT_Y = -1.
+        Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
+        Assert.InRange(runtime.GetSkill("HIT_DIST"), 4.25, 4.27);
+        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
     }
 
     [Fact]

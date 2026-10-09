@@ -1532,6 +1532,7 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("PLAYER_CLIMB", 1.5);
         EnsureSkillDefault("PLAYER_TILT", 0);
         EnsureValidSkillDefault("PLAYER_ARC", 1, value => value is >= 0.2 and <= 2);
+        EnsureValidSkillDefault("ASPECT", 1, value => value is >= 0.1 and <= 10);
         EnsureSkillDefault("PLAYER_LIGHT", 1);
         EnsureSkillDefault("LIGHT_DIST", 10);
         EnsureSkillDefault("SOUND_VOL", 1);
@@ -2591,22 +2592,21 @@ public sealed class WdlRuntime :
 
         double originX = player.Position.X;
         double originY = player.Position.Z;
-        double arc = Math.Clamp(GetSkill("PLAYER_ARC"), 0.2, 2);
-        double height = Math.Max(1, GetSkill("SCREEN_HGT"));
-        double aspect = Math.Max(0.01, GetSkill("SCREEN_WIDTH") / height);
-        double verticalTan = Math.Tan(arc * 0.5);
-        double shootX = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_X"), -1, 1) : 0;
-        double shootY = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_Y"), -1, 1) : 0;
-        double horizontalDeviation = shootX * verticalTan * aspect;
-        double pitch = Math.Atan(GetSkill("PLAYER_TILT"));
-        double screenVertical = -shootY * verticalTan;
-        double forwardHorizontal = Math.Cos(pitch) - (screenVertical * Math.Sin(pitch));
-        double rayVertical = Math.Sin(pitch) + (screenVertical * Math.Cos(pitch));
-        double horizontalMagnitude = Math.Max(
-            1e-9,
-            Math.Sqrt((forwardHorizontal * forwardHorizontal) + (horizontalDeviation * horizontalDeviation)));
+        // The SHOOT ray goes through the same projection the renderer uses (OV-20261009-*):
+        // horizontal FOV = PLAYER_ARC radians, vertical half-tangent = 2/3 · ASPECT of the
+        // horizontal one, and PLAYER_TILT a y-shear that lowers the center ray by tilt · H rows.
+        ProjectionModel projection = ProjectionModel.Create(
+            GetSkill("PLAYER_ARC"),
+            GetSkill("ASPECT"),
+            GetSkill("PLAYER_TILT"),
+            (int)Math.Round(GetSkill("SCREEN_WIDTH")),
+            (int)Math.Round(GetSkill("SCREEN_HGT")));
+        double shootX = useShootDeviation ? GetSkill("SHOOT_X") : 0;
+        double shootY = useShootDeviation ? GetSkill("SHOOT_Y") : 0;
+        (double horizontalDeviation, double rayVertical) = projection.ShootRay(shootX, shootY);
+        double horizontalMagnitude = Math.Sqrt(1 + (horizontalDeviation * horizontalDeviation));
         double verticalSlope = rayVertical / horizontalMagnitude;
-        double angle = GetSkill("PLAYER_ANGLE") - Math.Atan2(horizontalDeviation, forwardHorizontal);
+        double angle = GetSkill("PLAYER_ANGLE") - Math.Atan2(horizontalDeviation, 1);
         double dirX = Math.Cos(angle);
         double dirY = Math.Sin(angle);
         double distanceScale = Math.Sqrt(1 + (verticalSlope * verticalSlope));
