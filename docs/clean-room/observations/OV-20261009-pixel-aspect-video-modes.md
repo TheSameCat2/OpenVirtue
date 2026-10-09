@@ -1,8 +1,8 @@
 # OV-20261009-pixel-aspect-video-modes: Pixel aspect and vertical scale per VIDEO mode
 Date: 2026-10-09
 Status: proposed
-Observer: TBD
-Implementer: TBD
+Observer: OpenVirtue maintainers (black-box probe)
+Implementer: OpenVirtue maintainers
 
 ## Question
 For each `VIDEO` mode the retail worlds use, what is the ratio of a wall's rendered pixel
@@ -84,27 +84,76 @@ mouse hit testing and sprite proportions all depend on this.
   one change made if the compiler rejects SET.
 
 ## Observations
+All runs: patched V3.963 under native DOSBox-X, `face` room (eye z = 8, far wall at D = 48,
+yellow face 16 wide × 16 high), `PLAYER_ARC` 1. w = face width on the far-wall row, h = face
+height (ceiling junction to floor junction, median of five columns), both in framebuffer
+pixels; f_h/f_v = w·48/16 and h·48/16. Harness rows are in the FOV note.
+
 | Input / State | Observed Output / State | Notes |
 |---------------|-------------------------|-------|
-| S640x480, ASPECT 1, 16×16 face | w = ?, h = ? px | baseline, expect h/w = 1 if 1:1 in framebuffer pixels |
-| S640x480, ASPECT 0.5 | | direction/range of the skill |
-| S640x480, ASPECT 2 | | |
-| 320x200, ASPECT 1 | | h/w = 1 → no pre-stretch (CRT stretches); ≈ 0.83 → pre-stretched for 1.2:1 pixels |
-| X320x240, ASPECT 1 | | square-pixel 4:3 control |
-| X320x400, ASPECT 1 | | 0.6:1 pixels; h/w = 1 or ≈ 1.67 |
+| S640x480, ASPECT 1 (no SET), 16×16 face | w = 195, h = 219 px; h/w = 1.123; f_h 586, f_v 657; face rows 131..350, horizon 240.5 | not 1:1 even with square pixels |
+| S640x480, `SET ASPECT, 0.5` | w = 195, h = 441; h/w = 2.262; f_v 1323 (×2.01); rows 20..461 | ASPECT 0.5 doubles the vertical scale; horizontal unchanged. The dump reports ASPECT=0.500, so SET on the skill is accepted and takes effect |
+| S640x480, `SET ASPECT, 2` | w = 195, h = 109; h/w = 0.559; f_v 327 (×0.498); rows 186..295 | ASPECT 2 halves the vertical scale |
+| 320x200, ASPECT 1 | w = 97, h = 91; h/w = 0.938; f_h 292.5, f_v 273; rows 55..146, horizon 100.5 | lower than 1: no pre-stretch for 1.2:1 pixels |
+| X320x240, ASPECT 1 | w = 97, h = 109; h/w = 1.124; f_v 327; rows 66..175, horizon 120.5 | same ratio as 640x480 (both 4:3 square-pixel modes) |
+| X320x400, ASPECT 1 | w = 97, h = 183; h/w = 1.887; f_v 549; rows 109..292, horizon 200.5 | |
+| FOV runs at 640x480, ASPECT 1 (see FOV note) | f_v/f_h = 1.128 / 1.121 / 1.127 / 1.125 at arc 0.5 / 1.0 / 1.5 / 2.0 | the ratio does not depend on the arc |
+| `SET ASPECT` syntax | accepted by the compiler at 640x480; `PRINT_VALUE ASPECT` prints the set value | the top-level `ASPECT n;` form of p.132 was not needed and not tried |
+
+Model check (f_v = 0.75 · SCREEN_HGT / (ASPECT · tan(arc/2)); ratio = 1.5 · (H/W) / ASPECT):
+
+| Mode, ASPECT | measured f_v | model f_v | measured f_v/f_h | model ratio | display pixel aspect (4:3 CRT) | on-screen h/w of a square |
+|---|---|---|---|---|---|---|
+| 640x480, 1 | 657 | 659.0 | 1.121 | 1.125 | 1.0 | 1.12 |
+| 640x480, 0.5 | 1323 | 1318 | 2.258 | 2.25 | 1.0 | 2.25 |
+| 640x480, 2 | 327 | 329.5 | 0.558 | 0.5625 | 1.0 | 0.56 |
+| 320x200, 1 | 273 | 274.6 | 0.933 | 0.9375 | 1.2 | 1.12 |
+| X320x240, 1 | 327 | 329.5 | 1.118 | 1.125 | 1.0 | 1.12 |
+| X320x400, 1 | 549 | 549.1 | 1.877 | 1.875 | 0.6 | 1.12 |
 
 ## Conclusion
-TBD.
+Confirmed for patched V3.963:
+
+    f_v = (3/4) · SCREEN_HGT / (ASPECT · tan(PLAYER_ARC / 2))        f_h = (SCREEN_WIDTH / 2) / tan(PLAYER_ARC / 2)
+
+so a square face's height-to-width ratio in framebuffer pixels is 1.5 · (SCREEN_HGT /
+SCREEN_WIDTH) / ASPECT. The engine does **not** pre-stretch for a mode's pixel aspect; it
+scales the vertical axis to the window height only. Because the VGA modes' pixel aspects
+(1.0, 1.2, 1.0, 0.6) are exactly the 4:3-display corrections of their grids, every mode shows
+the same picture on a 4:3 display: a geometric square appears 12.5 % taller than wide at
+ASPECT 1 (the vertical half-tangent is 2/3 of the horizontal one, where 3/4 would be
+geometrically true). The `ASPECT` skill divides the vertical scale (0.5 doubles the height,
+2 halves it), consistent with the manual's split-screen example that sets 0.5 for a
+half-height window.
+
+Presentation rule for OpenVirtue: present every VGA-mode framebuffer at the display aspect
+4:3 (letterbox to 4:3, not to the virtual grid's own aspect: 320x200 and X320x400 must be
+stretched to 4:3, 640x480 and X320x240 are already 4:3), and build the 3-D projection from
+f_h and f_v above rather than from a square-pixel vertical FOV. For the six retail worlds
+(all `S640x480`, square pixels) the current uniform letterbox is already correct and only the
+projection changes: f_v/f_h must be 1.125, not 1.0. The same formulas hold for the
+`-d LORES`/`-d MEDRES` 320x200 / X320x400 paths once the frame is shown at 4:3.
 
 ## Confidence
-—
+high
+
+Three VIDEO modes and three ASPECT values; every measured f_v is within 1 % of the model and
+every h/w within 0.005. The only extrapolation is the 4:3-display claim for 320x200 and
+X320x400, which follows from VGA hardware, not from the probe.
 
 ## Open Questions
-- Does the Windows runtime (`WVRUN.EXE`) stretch 320x200 to a 4:3 window/fullscreen mode?
-- Do panels/text (`POS_X/Y` in virtual pixels) stretch with the frame? (They must — they are in
-  the same framebuffer — but confirm for the DirectX build.)
+- The Windows runtime (`WVRUN.EXE`, DirectX): whether its window or full-screen mode shows
+  320x200/X320x400 at 4:3 was not probed (Wine, secondary oracle per `_research/README.md`).
+- Panels/text (`POS_X/Y` in virtual pixels) share the framebuffer and therefore the 4:3
+  presentation; not separately verified.
+- Whether `ASPECT` also scales the sky, overlays or the automap was not probed.
+- The ratio 2/3 (measured 0.665–0.669) is taken as exact.
 
 ## Tests To Add Or Update
-- `VirtualDisplayLayout.Create` gains a pixel-aspect parameter per `VIDEO` mode; letterbox to
-  the display aspect (4:3 for 320x200/X320x400), not to the virtual grid's aspect.
-- Implement `ASPECT` in the projection; synthetic test for the head-on square face ratio.
+- `VirtualDisplayLayout.Create` takes the VIDEO mode's display aspect (4:3 for all five VGA
+  modes) and letterboxes to it: a 320x200 grid in a 1280x960 window fills it fully
+  (scale x 4, y 4.8); 640x480 stays uniform.
+- `ProjectionModel`: f_v for 640x480 / 320x200 / X320x240 / X320x400 at arc 1, ASPECT 1 →
+  659.0 / 274.6 / 329.5 / 549.1 px; ASPECT 0.5 and 2 at 640x480 → 1318 / 329.5 px; a
+  16-step square face at distance 48 projects to 195 × 220 px at 640x480.
+- Implement the `ASPECT` skill (default 1) in the projection and expose it in `WdlRuntime`.

@@ -1,8 +1,8 @@
 # OV-20261009-tilt-model-shear-vs-pitch: Is PLAYER_TILT a y-shear or a true camera pitch?
 Date: 2026-10-09
 Status: proposed
-Observer: TBD
-Implementer: TBD
+Observer: OpenVirtue maintainers (black-box probe)
+Implementer: OpenVirtue maintainers
 
 ## Question
 When `PLAYER_TILT` ≠ 0, do vertical wall edges stay vertical on screen (y-shearing: the
@@ -67,25 +67,61 @@ diverges. The GL renderer must pick one model before it is written.
   sign convention (does positive tilt look up or down).
 
 ## Observations
+All runs: patched V3.963 under native DOSBox-X, `tall` room (eye z = 8, far wall at D = 48,
+six 4-step red/green stripes, step top z = 40 i.e. 32 above the eye, alcove behind it),
+`VIDEO S640x480`. Rows are pixel-edge coordinates; "edge angle" is the fitted angle of the
+leftmost/rightmost stripe boundary over the rows it is visible in. Predictions use the FOV and
+pixel-aspect results (f_v = 0.75·480/(ASPECT·tan(arc/2)) = 659 at arc 1, 231 at arc 2, 329.5
+at ASPECT 2) and a pure y-shear of −PLAYER_TILT · SCREEN_HGT pixels. Harness rows are in the
+FOV note.
+
 | Input / State | Observed Output / State | Notes |
 |---------------|-------------------------|-------|
-| tilt 0 | | baseline: floor-junction row (≈ 332), side-wall vanishing row (eye line); step top off-frame by design |
-| tilt 0.5 | edges parallel? step-top row? | shear predicts step top at ≈ 148 (shift 0.5·f ≈ 277 px); pitch predicts converging edges and step top ≈ 171 |
-| tilt 1.0 | | shear predicts step top at ≈ 425 (shift ≈ 554 px); pitch ≈ 351 |
-| tilt −0.5 | | if positive tilt looks up: floor junction at ≈ 55, side-wall lines give the horizon (≈ −37) |
-| tilt −1.0 | | floor junction and step both off-frame under shear; records what remains visible |
+| tilt 0, arc 1, ASPECT 1 | floor junction row 350; stripes fill rows 1..350 (step top off-frame); eye line from the side walls 240.1; edge angles 0.000° / 0.000° over 349 rows | baseline: cy = 240, floor at 240 + 659·8/48 = 349.8 ✓ |
+| tilt 0.5 | floor junction 110 (moved up 240 px); eye line 0.08 (the top edge); stripes rows 1..110; edge angles 0.000° over 109 rows | **positive tilt looks down**; shift −240 px = −tilt · 480 |
+| tilt 1.0 | no far wall: the frame is floor only; dump reads TILT=1.000 | predicted floor junction −130: consistent; no clamp at 1.0 in the skill value |
+| tilt −0.5 | step top 41 (predicted 240 − 439 + 240 = 40.7); floor off-frame; alcove back wall and ceiling visible above the step; edge angles −0.000° / 0.000° over 439 rows | shift +240 px |
+| tilt −1.0 | step top 281 (predicted 280.7); edge angles 0.000° over 199 rows | shift +480 px; still no clamp |
+| tilt −0.5, arc 2 (f_v 231) | step top 326 (predicted 86 + 240 = 325.9); eye line from side walls 479.4 (predicted 480); edges 0.000° over 154 rows | a shift proportional to f_v (0.5 · 231 · 0.365 = 42 px) would have put the step at 128: rejected |
+| tilt −0.5, ASPECT 2 (f_v 329.5) | step top 261 (predicted 22 + 240 = 260.3); eye line 481.2; edges 0.000° over 219 rows | shift is independent of ASPECT too |
+| all seven runs | every stripe boundary is a perfect screen column (fitted angle 0.000°, difference between left and right edges 0.000°); the floor and the alcove ceiling converge in perspective as planes do | a true pitch of atan(0.5) would have shown ≈ 8.5° between the outer edges (self-test of the script) |
 
 ## Conclusion
-TBD.
+Confirmed for patched V3.963: `PLAYER_TILT` is a **y-shear**, not a camera pitch. Vertical
+world edges stay vertical on screen at every tilt, and the whole projected scene (eye line,
+floor and ceiling junctions, far-wall features) moves by
+
+    Δrow = −PLAYER_TILT · SCREEN_HGT
+
+pixels: the eye line sits at row SCREEN_HGT/2 − PLAYER_TILT · SCREEN_HGT, so tilt 0.5 puts it
+on the top edge and tilt −0.5 on the bottom edge, positive tilt looks down. The shift is a
+screen-space quantity: it does not change with `PLAYER_ARC` or `ASPECT` (arc 2 and ASPECT 2
+runs). In view-space terms the eye-line offset in tangent units is
+PLAYER_TILT · SCREEN_HGT / f_v = (4/3) · ASPECT · tan(PLAYER_ARC/2) · PLAYER_TILT, so the skill
+is "the tangent" only up to that factor (0.728 at the defaults). No clamping was observed at
+|tilt| = 1.
 
 ## Confidence
-—
+high
+
+Seven runs, all stripe edges vertical to the fitting precision, and every feature row within
+1 px of the shear prediction including the two runs that vary f_v. The sign is unambiguous.
 
 ## Open Questions
-- How does the sky background move with tilt (pixel shift = horizon shift?).
-- Does `SHOOT` under tilt use the same shear mapping for `SHOOT_Y`?
+- Behaviour beyond |tilt| = 1 (clamp, wrap, artifacts) was not probed; at ±1 the eye line is
+  already one full screen height away.
+- How the sky bitmap moves with tilt (expected: by the same Δrow, since p.37 says it is
+  neither zoomed nor repeated vertically) was not probed — no SKY in the fixture.
+- Whether `SHOOT_Y` under tilt uses the same shear (a ray through screen row r has vertical
+  slope (cy − Δrow − r)/f_v) was not probed.
+- Whether Δrow uses `SCREEN_HGT` or the mode height when the 3-D window is smaller than the
+  mode was not probed; written as `SCREEN_HGT` by analogy with f_v.
 
 ## Tests To Add Or Update
-- If shear: replace camera pitch with a projection-matrix y-offset (shear term) and keep the
-  view matrix yaw-only; synthetic test asserting vertical edges remain vertical under tilt.
-- If pitch: keep the model, but calibrate the tangent→angle mapping against the measured shift.
+- `ProjectionModel`: eye-line row for tilt 0 / 0.5 / −0.5 at 480 rows → 240 / 0 / 480;
+  the shear offset is unchanged by arc and ASPECT; projecting the two ends of a vertical
+  world edge under tilt 0.5 yields the same screen x.
+- Replace the camera pitch (`Atan(PLAYER_TILT)` view rotation) with a projection-matrix
+  y-offset; keep the view matrix yaw-only; synthetic test asserting vertical edges stay
+  vertical under tilt.
+- Hitscan: derive the vertical slope of a `SHOOT_Y` ray from the same offset.
