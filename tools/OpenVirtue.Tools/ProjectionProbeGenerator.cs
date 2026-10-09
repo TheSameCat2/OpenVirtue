@@ -4,27 +4,64 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
 
 /// <summary>
-/// Builds loose-file carriers for the three 2026-10-09 projection probes
+/// Builds loose-file carriers for the 2026-10-09 projection probes
 /// (<c>docs/clean-room/observations/OV-20261009-*.md</c>): one synthetic room per parameter
 /// value, screenshotted from inside the engine with the documented <c>SCREENSHOT</c>
-/// instruction after a settling <c>WAITT</c>. Everything in a carrier is generated here
-/// (WDL, WMP, flat-color PCX textures, palette); the only retail input is the user's patched
-/// <c>VRUN.EXE</c>, copied in by path.
+/// instruction after a settling <c>WAITT</c>. The <c>shoot-mapping</c> probe adds three
+/// THING targets with <c>IF_HIT</c> marker actions and fires one <c>SHOOT</c> per variant.
+/// Everything in a carrier is generated here (WDL, WMP, flat-color PCX textures, palette);
+/// the only retail input is the user's patched <c>VRUN.EXE</c>, copied in by path.
 /// </summary>
 internal static class ProjectionProbeGenerator
 {
     public const string FovProbeName = "projection-fov";
     public const string AspectProbeName = "pixel-aspect";
     public const string TiltProbeName = "tilt-model";
+    public const string ShootProbeName = "shoot-mapping";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
     private const string TiltProbeId = "OV-20261009-tilt-model-shear-vs-pitch";
+    private const string ShootProbeId = "OV-20261009-shoot-mapping";
+
+    /// <summary>
+    /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
+    /// x = <see cref="TargetDepth"/> (the far wall is at 48), centered on map y = +12 (left on
+    /// the original's screen, OV-20261009-tilt-model-shear-vs-pitch), 0 and −12. Each is
+    /// <see cref="TargetWidthSteps"/> × <see cref="TargetHeightSteps"/> steps: a 64 × 256 px
+    /// bitmap at SCALE 16 px/step (manual p.37 allows up to 1024 px; p.39 SCALE is px/step),
+    /// so HIT_X/HIT_Y resolve 1/16 step. With the eye at z = 8 the targets' vertical center is
+    /// the eye line. Predicted lateral offset for SHOOT_X ±0.5 at arc 1: 0.5·tan(0.5)·44 = 12.0
+    /// steps, dead center on a side target; a linear-angle model (tan(0.25)·44 = 11.2) differs
+    /// by 0.8 steps = 13 texels.
+    /// </summary>
+    private const int TargetDepth = 44;
+    private const int TargetOffsetY = 12;
+    private const int TargetWidthSteps = 4;
+    private const int TargetHeightSteps = 16;
+    private const int TargetScale = 16;
+    private const int TargetBitmapWidth = TargetWidthSteps * TargetScale;
+    private const int TargetBitmapHeight = TargetHeightSteps * TargetScale;
+
+    /// <summary>The three SHOOT targets (WDL keyword, marker letter, map y, IF_HIT action).</summary>
+    private static readonly (string Keyword, string Letter, int Y, string Action)[] ShootTargets =
+    [
+        ("tgt_left", "L", TargetOffsetY, "hit_left"),
+        ("tgt_center", "C", 0, "hit_center"),
+        ("tgt_right", "R", -TargetOffsetY, "hit_right"),
+    ];
+
+    /// <summary>Skills printed right after the SHOOT (to OVSHO0.TXT) and inside IF_HIT (to OVHIT0.TXT), with ≤ 6-character labels.</summary>
+    private static readonly (string Skill, string Label)[] HitLabels =
+    [
+        ("HIT_DIST", "D"), ("HIT_X", "X"), ("HIT_Y", "Y"), ("RESULT", "R"), ("TICKS", "T"),
+    ];
 
     private static readonly string[] DefaultFovVideos = ["S640x480"];
 
@@ -57,6 +94,9 @@ internal static class ProjectionProbeGenerator
         Magenta = 7,
         Floor = 8,
         Ceiling = 9,
+        TargetLeft = 10,
+        TargetRight = 11,
+        Mark = 12,
         White = 255,
     }
 
@@ -125,7 +165,10 @@ internal static class ProjectionProbeGenerator
         double? Aspect,
         double Tilt,
         Room Room,
-        string ScreenshotName);
+        string ScreenshotName,
+        double ShootX = 0,
+        double ShootY = 0,
+        bool Targets = false);
 
     private sealed record Plan(string ProbeId, string ProbeName, IReadOnlyList<Variant> Variants);
 
@@ -138,6 +181,8 @@ internal static class ProjectionProbeGenerator
         double[]? arcs = null;
         double[]? aspects = null;
         double[]? tilts = null;
+        double[]? shootX = null;
+        double[]? shootY = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -162,6 +207,12 @@ internal static class ProjectionProbeGenerator
                 case "--tilts":
                     tilts = ParseNumbers(RequireValue(args, ref i, arg));
                     break;
+                case "--shoot-x":
+                    shootX = ParseNumbers(RequireValue(args, ref i, arg));
+                    break;
+                case "--shoot-y":
+                    shootY = ParseNumbers(RequireValue(args, ref i, arg));
+                    break;
                 case "-h" or "--help":
                     return Usage();
                 default:
@@ -180,7 +231,7 @@ internal static class ProjectionProbeGenerator
             VideoSize(video);
         }
 
-        Plan plan = BuildPlan(probeName, videos, arcs, aspects, tilts);
+        Plan plan = BuildPlan(probeName, videos, arcs, aspects, tilts, shootX, shootY);
         string fullOutputDir = Path.GetFullPath(outputDir);
         Directory.CreateDirectory(fullOutputDir);
 
@@ -223,10 +274,18 @@ internal static class ProjectionProbeGenerator
         FovProbeName => FovProbeId,
         AspectProbeName => AspectProbeId,
         TiltProbeName => TiltProbeId,
+        ShootProbeName => ShootProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
-    private static Plan BuildPlan(string probeName, string[]? videos, double[]? arcs, double[]? aspects, double[]? tilts)
+    private static Plan BuildPlan(
+        string probeName,
+        string[]? videos,
+        double[]? arcs,
+        double[]? aspects,
+        double[]? tilts,
+        double[]? shootX,
+        double[]? shootY)
     {
         var variants = new List<Variant>();
         switch (probeName)
@@ -281,6 +340,33 @@ internal static class ProjectionProbeGenerator
                 }
 
                 break;
+            case ShootProbeName:
+                foreach (string video in videos ?? DefaultFovVideos)
+                {
+                    // Baseline (SHOOT 0,0, no tilt) resolves HIT_DIST/HIT_X/HIT_Y semantics; SHOOT_X ±0.5
+                    // resolves the lateral sign and tangent-vs-linear mapping (dead center on a side
+                    // target); 0.55 lands 1.2 steps off-center so HIT_X also separates a mirrored bitmap
+                    // (texel 51.5 / 12.5 tangent, 38.6 / 25.4 linear); SHOOT_Y ±0.25 the vertical sign and
+                    // scale (±0.5 would leave the 16-step room); PLAYER_TILT ±0.1 whether the center ray
+                    // follows the shear (±0.5 would miss the targets by 17 steps).
+                    variants.Add(new Variant($"{video}-center", video, 1.0, null, 0, Room.Face, "ovsht", Targets: true));
+                    foreach (double x in shootX ?? [0.5, -0.5, 0.55])
+                    {
+                        variants.Add(new Variant($"{video}-shootx-{Label(x)}", video, 1.0, null, 0, Room.Face, "ovsht", ShootX: x, Targets: true));
+                    }
+
+                    foreach (double y in shootY ?? [0.25, -0.25])
+                    {
+                        variants.Add(new Variant($"{video}-shooty-{Label(y)}", video, 1.0, null, 0, Room.Face, "ovsht", ShootY: y, Targets: true));
+                    }
+
+                    foreach (double tilt in tilts ?? [0.1, -0.1])
+                    {
+                        variants.Add(new Variant($"{video}-tilt-{Label(tilt)}", video, 1.0, null, tilt, Room.Face, "ovsht", Targets: true));
+                    }
+                }
+
+                break;
             default:
                 throw new ArgumentException($"Unknown projection probe '{probeName}'.");
         }
@@ -295,7 +381,7 @@ internal static class ProjectionProbeGenerator
 
         SyntheticPcx.Palette palette = BuildPalette();
         string wdl = Wdl(plan, variant);
-        string wmp = Wmp(variant.Room);
+        string wmp = Wmp(variant.Room, variant.Targets);
         WdlParser.Parse(wdl);
         WmpMap.Read(wmp);
 
@@ -304,7 +390,19 @@ internal static class ProjectionProbeGenerator
 
         WriteTexture(workDir, "PRBRED.PCX", Ink.Red, palette);
         WriteTexture(workDir, "PRBGRN.PCX", Ink.Green, palette);
-        WriteTexture(workDir, "PRBYEL.PCX", Ink.Yellow, palette);
+        if (variant.Targets)
+        {
+            // Asymmetric far-wall face (left half yellow, right half light blue) so the
+            // screenshot shows which texture half the engine draws toward the first wall vertex,
+            // and the half/half target bitmap (left half cyan, right half orange) for sprites.
+            WriteValidated(Path.Combine(workDir, "PRBYEL.PCX"), SyntheticPcx.HalfHalf(64, 64, (byte)Ink.Yellow, (byte)Ink.Mark, palette));
+            WriteValidated(Path.Combine(workDir, "PRBTGT.PCX"), SyntheticPcx.HalfHalf(TargetBitmapWidth, TargetBitmapHeight, (byte)Ink.TargetLeft, (byte)Ink.TargetRight, palette));
+        }
+        else
+        {
+            WriteTexture(workDir, "PRBYEL.PCX", Ink.Yellow, palette);
+        }
+
         WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
         WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
@@ -352,6 +450,9 @@ internal static class ProjectionProbeGenerator
         palette.Set((int)Ink.Magenta, 220, 40, 220);
         palette.Set((int)Ink.Floor, 120, 120, 120);
         palette.Set((int)Ink.Ceiling, 60, 60, 60);
+        palette.Set((int)Ink.TargetLeft, 40, 220, 220);
+        palette.Set((int)Ink.TargetRight, 240, 130, 40);
+        palette.Set((int)Ink.Mark, 170, 190, 255);
         palette.Set((int)Ink.White, 255, 255, 255);
         return palette;
     }
@@ -393,7 +494,7 @@ internal static class ProjectionProbeGenerator
             WALL yel_wall { TEXTURE yel_tex; }
             WALL blu_wall { TEXTURE blu_tex; }
             WALL mag_wall { TEXTURE mag_tex; }
-
+            {{(variant.Targets ? TargetDeclarationsWdl() : "")}}
             REGION room
             {
                 FLOOR_HGT 0;
@@ -426,6 +527,11 @@ internal static class ProjectionProbeGenerator
             sb.Append(CultureInfo.InvariantCulture, $"    SET ASPECT, {Num(aspect)};\n");
         }
 
+        if (variant.Targets)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"    SET SHOOT_X, {Num(variant.ShootX)};\n    SET SHOOT_Y, {Num(variant.ShootY)};\n");
+        }
+
         sb.Append("""
                 SET MOTION_BLUR, 0;
                 SET RENDER_MODE, 2;
@@ -441,12 +547,36 @@ internal static class ProjectionProbeGenerator
                 continue;
             }
 
-            sb.Append(CultureInfo.InvariantCulture, $"    PRINT_STRING \"{label}=\";\n    PRINT_VALUE {skill};\n    PRINT_STRING \"\\n\";\n");
+            AppendPrint(sb, label, skill);
+        }
+
+        if (variant.Targets)
+        {
+            foreach ((string skill, string label) in ShootStateLabels)
+            {
+                AppendPrint(sb, label, skill);
+            }
+
+            // The pre-shot marker proves the file was selected before SHOOT; the hit actions
+            // select OVHIT0.TXT, so the file is re-selected afterwards. The manual (p.88) only
+            // says PRINT_VALUE appends to an existing file; whether PRINTFILE truncates is a
+            // harness fact this ordering exposes (a lost PRE line).
+            sb.Append("""
+                    PRINTFILE "ovsho", 0;
+                    PRINT_STRING "PRE\n";
+                    SHOOT;
+                    PRINTFILE "ovsho", 0;
+
+                """);
+            foreach ((string skill, string label) in HitLabels)
+            {
+                AppendPrint(sb, "HOUT_" + label, skill);
+            }
         }
 
         sb.Append(CultureInfo.InvariantCulture, $$"""
-                SCREENSHOT "{{variant.ScreenshotName}}", 0;
                 WAITT 4;
+                SCREENSHOT "{{variant.ScreenshotName}}", 0;
                 PRINTFILE "ovend", 0;
                 PRINT_STRING "END\n";
                 EXIT;
@@ -456,6 +586,49 @@ internal static class ProjectionProbeGenerator
 
             """);
         return sb.ToString().Replace("\n", "\r\n", StringComparison.Ordinal);
+    }
+
+    private static void AppendPrint(StringBuilder sb, string label, string skill) =>
+        sb.Append(CultureInfo.InvariantCulture, $"    PRINT_STRING \"{label}=\";\n    PRINT_VALUE {skill};\n    PRINT_STRING \"\\n\";\n");
+
+    /// <summary>Extra skills dumped before the shot by the shoot-mapping probe.</summary>
+    private static readonly (string Skill, string Label)[] ShootStateLabels =
+    [
+        ("SHOOT_X", "SHX"), ("SHOOT_Y", "SHY"), ("SHOOT_RANGE", "SHRNG"), ("SHOOT_FAC", "SHFAC"), ("TICKS", "TCK"),
+    ];
+
+    /// <summary>
+    /// The SHOOT targets' bitmap, texture, THING definitions and IF_HIT actions. Each hit action
+    /// selects OVHIT0.TXT, writes the target's letter and the HIT_* skills as seen inside the hook
+    /// (whether IF_HIT sees them is undocumented; p.90 only says they are valid "after the SHOOT
+    /// instruction").
+    /// </summary>
+    private static string TargetDeclarationsWdl()
+    {
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $$"""
+
+            BMAP tgt_map,<PRBTGT.PCX>;
+            TEXTURE tgt_tex { SCALE_X {{TargetScale}}; SCALE_Y {{TargetScale}}; BMAPS tgt_map; }
+
+            """);
+        foreach ((string keyword, _, _, string action) in ShootTargets)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"THING {keyword} {{ TEXTURE tgt_tex; IF_HIT {action}; }}\n");
+        }
+
+        foreach ((_, string letter, _, string action) in ShootTargets)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"\nACTION {action}\n{{\n    PRINTFILE \"ovhit\", 0;\n    PRINT_STRING \"{letter}\\n\";\n");
+            foreach ((string skill, string label) in HitLabels)
+            {
+                AppendPrint(sb, "HIN_" + label, skill);
+            }
+
+            sb.Append("}\n");
+        }
+
+        return sb.ToString();
     }
 
     private static string AlcoveRegionWdl(Room room) =>
@@ -479,7 +652,7 @@ internal static class ProjectionProbeGenerator
     /// the far-wall segments separate <c>room</c> (left) from <c>alcove</c> (right) and the
     /// alcove is closed by its own three walls.
     /// </summary>
-    private static string Wmp(Room room)
+    private static string Wmp(Room room, bool targets = false)
     {
         var sb = new StringBuilder();
         var vertices = new List<(int X, int Y)>
@@ -540,7 +713,16 @@ internal static class ProjectionProbeGenerator
             sb.Append(CultureInfo.InvariantCulture, $"WALL blu_wall {alcoveNorth} {farEnd} 2 1 0 0;#{wall++}\r\n");
         }
 
-        sb.Append(CultureInfo.InvariantCulture, $"PLAYER_START 0 0 0 0;#{wall}\r\n");
+        int placement = wall;
+        if (targets)
+        {
+            foreach ((string keyword, _, int y, _) in ShootTargets)
+            {
+                sb.Append(CultureInfo.InvariantCulture, $"THING {keyword} {TargetDepth} {y} 0 0;#{placement++}\r\n");
+            }
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $"PLAYER_START 0 0 0 0;#{placement}\r\n");
         return sb.ToString();
     }
 
@@ -597,9 +779,112 @@ internal static class ProjectionProbeGenerator
                 ["floor"] = Rgb(palette, Ink.Floor),
                 ["ceiling"] = Rgb(palette, Ink.Ceiling),
                 ["black"] = Rgb(palette, Ink.Infinity),
+                ["target_left"] = Rgb(palette, Ink.TargetLeft),
+                ["target_right"] = Rgb(palette, Ink.TargetRight),
+                ["mark"] = Rgb(palette, Ink.Mark),
             },
+            shoot = variant.Targets ? ShootGeometry(variant, width, height) : null,
         };
         return JsonSerializer.Serialize(geometry, JsonOptions);
+    }
+
+    /// <summary>
+    /// The SHOOT fixture and its predictions under the model OpenVirtue implements (the ray
+    /// shares the renderer's projection: lateral tangent SHOOT_X·tan(arc/2) toward screen
+    /// right = map −y, vertical slope −SHOOT_Y·(2/3)·ASPECT·tan(arc/2) plus the tilt shear
+    /// −tilt·H/f_v, positive SHOOT_Y down) next to the competing readings the measurement
+    /// script distinguishes: a linear-angle lateral mapping, no shear on the center ray, the
+    /// opposite signs, a mirrored texture, and HIT_DIST along the forward axis versus along the ray.
+    /// </summary>
+    private static object ShootGeometry(Variant variant, int width, int height)
+    {
+        ProjectionModel model = ProjectionModel.Create(variant.Arc, variant.Aspect ?? 1.0, variant.Tilt, width, height);
+        (double lateralTangent, double verticalSlope) = model.ShootRay(variant.ShootX, variant.ShootY);
+        double eye = variant.Room.EyeHeight;
+        double depth = TargetDepth;
+        double hitY = -lateralTangent * depth;                 // screen right = map −y
+        double hitZ = eye + (verticalSlope * depth);
+        double linearLateral = Math.Tan(variant.ShootX * variant.Arc * 0.5) * depth;
+        double noShearSlope = -variant.ShootY * model.VerticalHalfTangent;
+        double noShearZ = eye + (noShearSlope * depth);
+
+        var targets = ShootTargets.Select(t => new
+        {
+            keyword = t.Keyword,
+            letter = t.Letter,
+            action = t.Action,
+            x = TargetDepth,
+            y = t.Y,
+            y_min = t.Y - (TargetWidthSteps / 2.0),
+            y_max = t.Y + (TargetWidthSteps / 2.0),
+            z_min = 0,
+            z_max = TargetHeightSteps,
+            bitmap = new { file = "PRBTGT.PCX", width = TargetBitmapWidth, height = TargetBitmapHeight, scale = TargetScale, left_half = "target_left", right_half = "target_right" },
+        }).ToArray();
+
+        return new
+        {
+            shoot_x = variant.ShootX,
+            shoot_y = variant.ShootY,
+            hit_file = "OVHIT0.TXT",
+            after_shot_file = "OVSHO0.TXT",
+            hit_labels = HitLabels.ToDictionary(static p => "HIN_" + p.Label, static p => p.Skill),
+            after_shot_labels = HitLabels.ToDictionary(static p => "HOUT_" + p.Label, static p => p.Skill),
+            face_bitmap = new { file = "PRBYEL.PCX", left_half = "yellow", right_half = "mark", first_vertex_y = -variant.Room.TargetWidth / 2 },
+            targets,
+            prediction = new
+            {
+                model = "shared-projection (ProjectionModel.ShootRay; OV-20261009-* FOV, aspect, tilt notes)",
+                lateral_tangent = lateralTangent,
+                vertical_slope = verticalSlope,
+                hit = new { x = depth, y = hitY, z = hitZ },
+                target = TargetAt(hitY, hitZ),
+                texel = Texel(hitY, hitZ, mirrored: false),
+                hit_dist_forward = depth,
+                hit_dist_ray = Math.Sqrt((depth * depth) + (hitY * hitY) + ((hitZ - eye) * (hitZ - eye))),
+                alternatives = new
+                {
+                    linear_angle = new { lateral = linearLateral, target = TargetAt(-linearLateral, hitZ), texel = Texel(-linearLateral, hitZ, mirrored: false) },
+                    shoot_x_sign_inverted = new { target = TargetAt(-hitY, hitZ), texel = Texel(-hitY, hitZ, mirrored: false) },
+                    shoot_y_sign_inverted = new { z = eye - (verticalSlope * depth), texel = Texel(hitY, eye - (verticalSlope * depth), mirrored: false) },
+                    no_shear = new { z = noShearZ, texel = Texel(hitY, noShearZ, mirrored: false) },
+                    texture_mirrored = new { texel = Texel(hitY, hitZ, mirrored: true) },
+                },
+            },
+        };
+    }
+
+    private static string? TargetAt(double y, double z)
+    {
+        foreach ((string keyword, _, int targetY, _) in ShootTargets)
+        {
+            if (Math.Abs(y - targetY) <= TargetWidthSteps / 2.0 && z >= 0 && z <= TargetHeightSteps)
+            {
+                return keyword;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Texture pixel (from the bitmap's upper-left corner, manual p.90) for a hit at map
+    /// (y, z) on the target containing it. Unmirrored: the bitmap's left edge is on the
+    /// original's screen left, i.e. the target's +y edge.
+    /// </summary>
+    private static object? Texel(double y, double z, bool mirrored)
+    {
+        string? keyword = TargetAt(y, z);
+        if (keyword is null)
+        {
+            return null;
+        }
+
+        int targetY = ShootTargets.Single(t => t.Keyword == keyword).Y;
+        double fromLeft = (targetY + (TargetWidthSteps / 2.0)) - y;
+        double texelX = (mirrored ? TargetWidthSteps - fromLeft : fromLeft) * TargetScale;
+        double texelY = (TargetHeightSteps - z) * TargetScale;
+        return new { x = texelX, y = texelY };
     }
 
     private static int[] Rgb(SyntheticPcx.Palette palette, Ink ink)
@@ -635,7 +920,7 @@ internal static class ProjectionProbeGenerator
         (never deletes) and appends a row to `launches.md` here.
 
         Variants:
-        {{string.Join("\n", plan.Variants.Select(v => $"- `{v.Label}`: VIDEO {v.Video}, PLAYER_ARC {Num(v.Arc)}, PLAYER_TILT {Num(v.Tilt)}, ASPECT {Num(v.Aspect ?? 1.0)}, room {(v.Room == Room.Tall ? "tall/narrow" : "face")}"))}}
+        {{string.Join("\n", plan.Variants.Select(v => $"- `{v.Label}`: VIDEO {v.Video}, PLAYER_ARC {Num(v.Arc)}, PLAYER_TILT {Num(v.Tilt)}, ASPECT {Num(v.Aspect ?? 1.0)}, room {(v.Room == Room.Tall ? "tall/narrow" : "face")}{(v.Targets ? $", SHOOT_X {Num(v.ShootX)}, SHOOT_Y {Num(v.ShootY)}" : "")}"))}}
 
         ## Fixture
 
@@ -656,7 +941,7 @@ internal static class ProjectionProbeGenerator
         `IF_START` sets the probe skills, waits 16 ticks, writes the live skill values to
         `OVPRB0.TXT` (PRINTFILE/PRINT_VALUE), grabs `SCREENSHOT` into `<name>0.PCX`, waits 4 ticks
         and EXITs; the DOSBox-X autoexec then exits.
-
+        {{(plan.ProbeName == ShootProbeName ? ShootReadme() : "")}}
         Expected outputs per variant: `OVDIR.TXT` (what DOS saw in C:), `OVCON.TXT` (the
         runtime's console output: banner, Genesis compiler errors), `OVSTA0.TXT` (START),
         `OVPRB0.TXT` (skill dump, short labels mapped back by geometry.json `state_labels`),
@@ -677,6 +962,26 @@ internal static class ProjectionProbeGenerator
         ```sh
         _research/oracle-runs/.venv/bin/python tools/oracle/measure_projection.py {{outputDir}}/[!_]*/
         ```
+        """;
+
+    private static string ShootReadme() =>
+        $"""
+
+        ### shoot-mapping
+
+        Three THINGs (`tgt_left` at map y = +{TargetOffsetY}, `tgt_center` at 0, `tgt_right` at
+        −{TargetOffsetY}) stand inside the room at x = {TargetDepth}, each {TargetWidthSteps} steps wide
+        × {TargetHeightSteps} tall (a {TargetBitmapWidth}×{TargetBitmapHeight} px bitmap at SCALE {TargetScale}
+        px/step, left half cyan, right half orange). The far-wall yellow face is left-half yellow /
+        right-half light blue so the screenshot shows wall texture orientation too. `IF_START`
+        additionally SETs `SHOOT_X`/`SHOOT_Y`, dumps them with `SHOOT_RANGE`, `SHOOT_FAC` and `TICKS`,
+        selects `OVSHO0.TXT`, writes `PRE`, fires `SHOOT`, re-selects `OVSHO0.TXT` and writes the
+        `HOUT_*` values (HIT_DIST, HIT_X, HIT_Y, RESULT, TICKS). Each target's `IF_HIT` action
+        selects `OVHIT0.TXT`, writes its letter (L/C/R) and the same five skills as `HIN_*`.
+        `geometry.json` → `shoot.prediction` holds the hit, target and texel under the shared-
+        projection model next to the competing readings (linear angle, inverted signs, no shear,
+        mirrored texture, HIT_DIST along the ray). Measure with
+        `_research/oracle-runs/.venv/bin/python tools/oracle/measure_shoot.py <probe-dir>/[!_]*/`.
         """;
 
     private static double[] ParseNumbers(string list) =>
@@ -707,6 +1012,7 @@ internal static class ProjectionProbeGenerator
           ovtool oracle prepare projection-fov [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs 0.5,1,1.5,2] [--videos S640x480]
           ovtool oracle prepare pixel-aspect   [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--aspects 1,0.5,2] [--videos S640x480,320x200,X320x240,X320x400]
           ovtool oracle prepare tilt-model     [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--tilts 0,0.5,1,-0.5,-1] [--arcs 1] [--aspects 1] [--videos S640x480]
+          ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480]
         """;
 
     public static int Usage(string? error = null)

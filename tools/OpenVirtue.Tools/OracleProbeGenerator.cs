@@ -25,7 +25,8 @@ internal static class OracleProbeGenerator
             SchedulerProbeName => PrepareSchedulerProbe(args[1..]),
             ProjectionProbeGenerator.FovProbeName or
             ProjectionProbeGenerator.AspectProbeName or
-            ProjectionProbeGenerator.TiltProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.TiltProbeName or
+            ProjectionProbeGenerator.ShootProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

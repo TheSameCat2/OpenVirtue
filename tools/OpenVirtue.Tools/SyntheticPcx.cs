@@ -106,6 +106,10 @@ internal static class SyntheticPcx
     public static byte[] Checker(int width, int height, int cell, byte a, byte b, Palette palette) =>
         Write(width, height, (x, y) => ((x / cell) + (y / cell)) % 2 == 0 ? a : b, palette);
 
+    /// <summary>Left half (x &lt; width/2) one index, right half another: an orientation marker.</summary>
+    public static byte[] HalfHalf(int width, int height, byte left, byte right, Palette palette) =>
+        Write(width, height, (x, _) => x < width / 2 ? left : right, palette);
+
     /// <summary>A 16x16 swatch holding every palette index once (used as a PALFILE carrier).</summary>
     public static byte[] Swatch(Palette palette) =>
         Write(16, 16, (x, y) => (byte)((y * 16) + x), palette);
