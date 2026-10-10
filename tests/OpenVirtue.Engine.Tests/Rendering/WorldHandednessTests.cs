@@ -113,6 +113,30 @@ public sealed class WorldHandednessTests
     }
 
     [Fact]
+    public void Wall_TextureUStartsAtTheSecondVertex_AsTheOriginalShowsFromTheLeftRegion()
+    {
+        // OV-20261009-shoot-mapping: the far-wall face bitmap (left half yellow) showed its
+        // yellow half on the screen LEFT, i.e. at the wall's second vertex (map y = +8) for the
+        // player in the wall's left region. So u = 0 at v2 and u grows toward v1.
+        Level level = LoadWithMap(
+            "VERTEX 48 -8 0;#0\nVERTEX 48 8 0;#1\nREGION room 0 16;#0\n" +
+            "WALL face 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+            "MAPFILE <m.wmp>; BMAP m,<t.pcx>,0,0,64,64; TEXTURE faceTex { BMAPS m; SCALE_X 4; SCALE_Y 4; } " +
+            "WALL face { TEXTURE faceTex; }");
+
+        MeshBatch wall = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+
+        RenderVertex atV1 = Assert.Single(wall.Vertices.Distinct(), v => v.Z == RenderSpace.ZFromMapY(-8) && v.Y == 0);
+        RenderVertex atV2 = Assert.Single(wall.Vertices.Distinct(), v => v.Z == RenderSpace.ZFromMapY(8) && v.Y == 0);
+        Assert.Equal(0f, atV2.U, 1e-6f);
+        Assert.Equal(1f, atV1.U, 1e-6f); // 16 steps × (4 px / 64 px) = one repeat
+
+        // And on screen v2 is on the left (map +y), so the bitmap's u = 0 edge is drawn on the left.
+        Matrix4x4 viewProjection = ViewProjection(level, playerAngle: 0);
+        Assert.True(ProjectColumn(new Vector3(atV2.X, 8, atV2.Z), viewProjection) < ProjectColumn(new Vector3(atV1.X, 8, atV1.Z), viewProjection));
+    }
+
+    [Fact]
     public void FloorSurface_KeepsMapTextureAxes_WhileDepthIsNegatedMapY()
     {
         // No deliberate texture flip: v still follows map y; only the position's z is negated.

@@ -2603,9 +2603,11 @@ public sealed class WdlRuntime :
 
         double originX = player.Position.X;
         double originY = player.Position.Z;
-        // The SHOOT ray goes through the same projection the renderer uses (OV-20261009-*):
-        // horizontal FOV = PLAYER_ARC radians, vertical half-tangent = 2/3 · ASPECT of the
-        // horizontal one, and PLAYER_TILT a y-shear that lowers the center ray by tilt · H rows.
+        // The SHOOT ray goes through the same projection the renderer uses (OV-20261009-*,
+        // confirmed for SHOOT_X/SHOOT_Y in OV-20261009-shoot-mapping): horizontal FOV =
+        // PLAYER_ARC radians, vertical half-tangent = 2/3 · ASPECT of the horizontal one,
+        // positive SHOOT_X right, positive SHOOT_Y up, and PLAYER_TILT a y-shear that lowers
+        // the center ray by tilt · H rows.
         ProjectionModel projection = ProjectionModel.Create(
             GetSkill("PLAYER_ARC"),
             GetSkill("ASPECT"),
@@ -2617,16 +2619,24 @@ public sealed class WdlRuntime :
         (double horizontalDeviation, double rayVertical) = projection.ShootRay(shootX, shootY);
         double horizontalMagnitude = Math.Sqrt(1 + (horizontalDeviation * horizontalDeviation));
         double verticalSlope = rayVertical / horizontalMagnitude;
-        double angle = GetSkill("PLAYER_ANGLE") - Math.Atan2(horizontalDeviation, 1);
+        double playerAngle = GetSkill("PLAYER_ANGLE");
+        double angle = playerAngle - Math.Atan2(horizontalDeviation, 1);
         double dirX = Math.Cos(angle);
         double dirY = Math.Sin(angle);
-        double distanceScale = Math.Sqrt(1 + (verticalSlope * verticalSlope));
+        // HIT_DIST is the depth of the hit along the line of sight (PLAYER_ANGLE), not the
+        // length of the deviated ray: OV-20261009-shoot-mapping read 44.000 for every shot at
+        // targets 44 steps ahead, with SHOOT_X ±0.5 (ray length 45.6), SHOOT_Y ±0.25 and
+        // PLAYER_TILT ±0.1 alike. Walls: trace distance × cos(deviation); billboards: the
+        // entity center's depth. SHOOT_RANGE is applied to the same measure (unprobed).
+        double distanceScale = 1 / horizontalMagnitude;
         HitCandidate? hit = FindClosestHit(
             originX,
             originY,
             player.Position.Y,
             dirX,
             dirY,
+            Math.Cos(playerAngle),
+            Math.Sin(playerAngle),
             verticalSlope,
             range / distanceScale,
             distanceScale,
@@ -2648,6 +2658,8 @@ public sealed class WdlRuntime :
         double eyeHeight,
         double dirX,
         double dirY,
+        double forwardX,
+        double forwardY,
         double verticalSlope,
         double horizontalRange,
         double distanceScale,
@@ -2680,6 +2692,7 @@ public sealed class WdlRuntime :
                     continue;
                 }
 
+                double depth = (dx * forwardX) + (dy * forwardY); // HIT_DIST: the billboard's depth along the line of sight
                 double signedCenter = (dx * dirY) - (dy * dirX);
                 if (hitSprites.TryGetValue(entity, out SpriteBillboard sprite))
                 {
@@ -2717,7 +2730,7 @@ public sealed class WdlRuntime :
 
                     bestEntity = Nearer(
                         bestEntity,
-                        new HitCandidate(entity, along * distanceScale, along, hitX, hitY));
+                        new HitCandidate(entity, depth, along, hitX, hitY));
                 }
                 else
                 {
@@ -2726,7 +2739,7 @@ public sealed class WdlRuntime :
                     {
                         bestEntity = Nearer(
                             bestEntity,
-                            new HitCandidate(entity, along * distanceScale, along));
+                            new HitCandidate(entity, depth, along));
                     }
                 }
             }
@@ -2827,7 +2840,9 @@ public sealed class WdlRuntime :
             1);
         double pixelsPerStepX = texture.ScaleX > 0 ? texture.ScaleX : 16;
         double pixelsPerStepY = texture.ScaleY > 0 ? texture.ScaleY : 16;
-        double hitX = Math.Floor(wall.OffsetX + (along * length * pixelsPerStepX));
+        // The bitmap's left edge sits at the wall's SECOND vertex for a viewer in its left region
+        // (OV-20261009-shoot-mapping, far-wall face), the same direction MeshBuilder maps u.
+        double hitX = Math.Floor(wall.OffsetX + ((1 - along) * length * pixelsPerStepX));
         double wallTop = WallSegmentTopAtHit(wall, along, eyeHeight);
         double hitY = Math.Floor(wall.OffsetY + ((wallTop - eyeHeight) * pixelsPerStepY));
         return new HitCandidate(wall, distance, traceDistance, hitX, hitY);

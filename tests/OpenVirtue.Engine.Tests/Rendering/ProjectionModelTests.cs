@@ -142,8 +142,12 @@ public sealed class ProjectionModelTests
         (double edgeLateral, _) = model.ShootRay(1, 0);
         Assert.Equal(Math.Tan(0.5), edgeLateral, 1e-12);
 
-        (_, double downSlope) = ProjectionModel.Default(640, 480).ShootRay(0, 1);
-        Assert.Equal(-(2.0 / 3.0) * Math.Tan(0.5), downSlope, 1e-12);
+        // OV-20261009-shoot-mapping: positive SHOOT_Y aims UP (SHOOT_Y +0.25 hit 4 steps above
+        // the eye at 44 steps; −0.25 the same amount below).
+        (_, double upSlope) = ProjectionModel.Default(640, 480).ShootRay(0, 1);
+        Assert.Equal((2.0 / 3.0) * Math.Tan(0.5), upSlope, 1e-12);
+        (_, double quarterUp) = ProjectionModel.Default(640, 480).ShootRay(0, 0.25);
+        Assert.Equal(4.0, quarterUp * 44, 0.05);
     }
 
     [Fact]

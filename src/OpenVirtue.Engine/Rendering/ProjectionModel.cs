@@ -18,6 +18,10 @@ namespace OpenVirtue.Engine.Rendering;
 /// <item>tilt: a y-shear, not a camera pitch. The whole frame moves by
 /// <c>-PLAYER_TILT · SCREEN_HGT</c> rows (positive tilt looks down), independent of arc and
 /// aspect, and vertical world edges stay vertical.</item>
+/// <item>hitscan (OV-20261009-shoot-mapping): the <c>SHOOT</c> ray goes through the same
+/// tangents — <c>SHOOT_X · tan(arc/2)</c> laterally (positive = screen right) and
+/// <c>SHOOT_Y</c> times the vertical half-tangent (positive = <em>up</em> the screen) plus
+/// the tilt shear.</item>
 /// </list>
 /// All numbers are in the 3-D window's own pixels (<c>SCREEN_WIDTH</c> × <c>SCREEN_HGT</c>);
 /// the host maps that window onto the physical display with <see cref="VirtualDisplayLayout"/>.
@@ -125,14 +129,17 @@ public readonly record struct ProjectionModel
 
     /// <summary>
     /// The ray for a <c>SHOOT</c> deviation (<c>SHOOT_X</c>/<c>SHOOT_Y</c>, −1..1 from the window
-    /// center to its edges; positive <c>SHOOT_Y</c> is down the screen) as a lateral tangent
-    /// (positive = screen right) and a vertical slope, both per unit of forward distance.
+    /// center to its edges) as a lateral tangent (positive = screen right) and a vertical slope
+    /// (positive = up), both per unit of forward distance. Measured in OV-20261009-shoot-mapping:
+    /// positive <c>SHOOT_X</c> aims right, positive <c>SHOOT_Y</c> aims <em>up</em> (+0.25 hit
+    /// 4 steps above the eye at 44 steps), and the <c>PLAYER_TILT</c> shear moves the ray with
+    /// the frame.
     /// </summary>
     public (double LateralTangent, double VerticalSlope) ShootRay(double shootX, double shootY)
     {
         double x = Math.Clamp(shootX, -1, 1);
         double y = Math.Clamp(shootY, -1, 1);
-        return (x * HorizontalHalfTangent, (-y * VerticalHalfTangent) + CenterSlope);
+        return (x * HorizontalHalfTangent, (y * VerticalHalfTangent) + CenterSlope);
     }
 
     /// <summary>
