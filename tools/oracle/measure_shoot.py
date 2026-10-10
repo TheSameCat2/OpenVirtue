@@ -139,9 +139,12 @@ def sprite_orientation(rgb: np.ndarray, colors: dict[str, list[int]], tolerance:
             else:
                 blobs.append((name, start, end, name))  # (left color, start, end, last color)
         blobs_by_row.append(blobs)
-        face = [(name, start) for name, start, _ in runs if name in ("yellow", "mark")]
+        # Ignore seam-width runs (a 1-px mark-colored sliver sits at the face's left edge in the
+        # real captures); the face halves are ~70 px wide at D = 48.
+        face = [(name, start) for name, start, end in runs if name in ("yellow", "mark") and end - start >= 4]
         if face:
-            face_left_votes[min(face, key=lambda f: f[1])[0]] = face_left_votes.get(min(face, key=lambda f: f[1])[0], 0) + 1
+            leftmost = min(face, key=lambda f: f[1])[0]
+            face_left_votes[leftmost] = face_left_votes.get(leftmost, 0) + 1
     if not blobs_by_row:
         return 0, "", "", ""
     # Majority sprite count, then the median blob centers / left colors for rows with that count.
@@ -225,11 +228,18 @@ def measure_variant(variant_dir: Path, image_override: Path | None = None) -> di
             if a is not None and b is not None and abs(a - b) > 0.0005:
                 flags.append(f"hin/hout {key} differ")
 
-    row["lateral_model"], row["lateral_delta_px"] = nearest(obs_x, {
+    lateral_candidates = {
         "shared": texel(pred, "x"),
         "linear": texel(alt.get("linear_angle"), "x"),
         "mirrored": texel(alt.get("texture_mirrored"), "x"),
-    })
+    }
+    # A dead-center hit puts the mirrored and unmirrored texels within a pixel of each other;
+    # only report "mirrored" when the two readings are actually separable.
+    if (lateral_candidates["shared"] is not None and lateral_candidates["mirrored"] is not None
+            and abs(lateral_candidates["shared"] - lateral_candidates["mirrored"]) < 4):
+        del lateral_candidates["mirrored"]
+        flags.append("mirror-unresolvable-here")
+    row["lateral_model"], row["lateral_delta_px"] = nearest(obs_x, lateral_candidates)
     row["vertical_model"], row["vertical_delta_px"] = nearest(obs_y, {
         "shared": texel(pred, "y"),
         "y-sign-inverted": texel(alt.get("shoot_y_sign_inverted"), "y"),
