@@ -15,6 +15,8 @@ dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -39,3 +41,33 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start
   one-digit suffixes such as `OVSTA0.TXT`, `OVSCH0.TXT`, and `OVTIK0.TXT`.
   This helper does not run SaintsX setup scripts or external `patch.exe`; oracle
   prep must stay noninteractive and auditable.
+- `oracle prepare projection-fov | pixel-aspect | tilt-model` — create the
+  local-only carriers for the three OV-20261009 projection probes (horizontal FOV
+  vs `PLAYER_ARC`, pixel aspect / `ASPECT` per `VIDEO` mode, `PLAYER_TILT` shear vs
+  pitch). One carrier per parameter value, each fully synthetic (generated WDL/WMP,
+  flat-color PCX textures and palette) plus the user's patched `VRUN.EXE` copied in
+  by path. Every carrier gets a POSIX `run.sh` + `dosbox-x.conf` (native Linux
+  DOSBox-X: `forcerate=60`, `aspect=false`, `output=surface`) and a `run.bat` +
+  `dosbox.conf` for Windows; `run.sh` parks previous outputs under `work/_stale/`
+  (never deletes) and appends to the probe's `launches.md`. The scheduler probe
+  also receives `run.sh`/`dosbox-x.conf` now.
+- `oracle prepare shoot-mapping` — the OV-20261009-shoot-mapping carriers: the `face`
+  room plus three THING targets (map y +12 / 0 / −12 at x = 44, 4 × 16 steps, a 64×256
+  half/half bitmap at SCALE 16 so `HIT_X`/`HIT_Y` resolve 1/16 step) with `IF_HIT`
+  marker actions, and an asymmetric far-wall face for wall texture orientation. One
+  variant per `SHOOT_X` / `SHOOT_Y` / `PLAYER_TILT` value plus a centered baseline;
+  `IF_START` fires one `SHOOT` and dumps `HIT_DIST`/`HIT_X`/`HIT_Y`/`RESULT`/`TICKS`
+  both inside the hit action (`OVHIT0.TXT`) and right after the instruction
+  (`OVSHO0.TXT`). `geometry.json` carries the predicted hit, target and texel under the
+  shared-projection model next to the competing readings.
+- `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
+  per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
+  the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the
+  screenshot) which bitmap half is drawn on the screen left of each sprite and of the
+  far-wall face.
+- `tools/oracle/measure_projection.py` — deterministic measurement of the
+  projection probe screenshots (own PCX decoder; numpy required, Pillow only for
+  non-PCX captures). Prints one CSV row per variant with raw pixel measurements
+  and a `status`/`flags` pair that says when an estimator was withheld.
+  `--selftest` re-renders the rooms with a pinhole model (shear, pitch, seams,
+  blobs) and checks the estimators.

@@ -9,6 +9,8 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Lets the Windows-only App project build (not run) on Linux hosts until ADR-0008 lands. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <!-- Don't require an XML doc comment on every public member (yet). -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>

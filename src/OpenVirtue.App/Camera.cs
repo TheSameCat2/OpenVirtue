@@ -2,41 +2,33 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using System.Numerics;
+using OpenVirtue.Engine.Rendering;
 
 namespace OpenVirtue.App;
 
-/// <summary>A simple fly camera: position + yaw/pitch, producing view and projection matrices.</summary>
+/// <summary>
+/// The player's eye: position + yaw for the view matrix, both in render space
+/// (<see cref="RenderSpace"/>: map y → −z, yaw = PLAYER_ANGLE + π/2; ADR-0009). The view is
+/// yaw-only; PLAYER_TILT is applied by <see cref="ProjectionModel"/> as a y-shear
+/// (OV-20261009-tilt-model-shear-vs-pitch), so <see cref="Pitch"/> only mirrors that skill
+/// for the input bridge and never rotates the view.
+/// </summary>
 internal sealed class Camera
 {
-    public Vector3 Position;
-    public float Yaw;   // radians, around world up
-    public float Pitch; // radians, clamped to avoid gimbal flip
+    public Vector3 Position; // render space
+    public float Yaw;   // radians, around render +Y; forward = (sin yaw, 0, cos yaw)
+    public float Pitch; // atan(PLAYER_TILT), kept for the runtime round trip only
 
-    public Vector3 Forward => new(
-        MathF.Cos(Pitch) * MathF.Sin(Yaw),
-        MathF.Sin(Pitch),
-        MathF.Cos(Pitch) * MathF.Cos(Yaw));
+    /// <summary>Horizontal line of sight.</summary>
+    public Vector3 LevelForward => RenderSpace.Forward(Yaw);
 
-    public Vector3 Right => Vector3.Normalize(Vector3.Cross(Vector3.UnitY, Forward));
+    /// <summary>
+    /// Screen-right in render space: the x-axis of <see cref="View"/> (a right-handed look-at,
+    /// so cross(forward, up), not cross(up, forward)). Sprite billboards, the click test and the
+    /// audio pan all use this so they agree with where the renderer draws things.
+    /// </summary>
+    public Vector3 Right => RenderSpace.ScreenRight(LevelForward);
 
-    public Matrix4x4 View => Matrix4x4.CreateLookAt(Position, Position + Forward, Vector3.UnitY);
-
-    public static Matrix4x4 Projection(float aspect, float arc) =>
-        Matrix4x4.CreatePerspectiveFieldOfView(
-            Math.Clamp(arc, 0.01f, MathF.PI - 0.01f),
-            aspect,
-            1f,
-            200000f);
-
-    public void MoveForward(float amount) => Position += Forward * amount;
-
-    public void MoveRight(float amount) => Position += Right * amount;
-
-    public void MoveUp(float amount) => Position += Vector3.UnitY * amount;
-
-    public void Rotate(float deltaYaw, float deltaPitch)
-    {
-        Yaw += deltaYaw;
-        Pitch = Math.Clamp(Pitch + deltaPitch, -1.5f, 1.5f);
-    }
+    /// <summary>View matrix along <see cref="LevelForward"/>; no camera pitch.</summary>
+    public Matrix4x4 View => Matrix4x4.CreateLookAt(Position, Position + LevelForward, Vector3.UnitY);
 }

@@ -10,7 +10,10 @@ namespace OpenVirtue.Engine.Rendering;
 /// Builds renderer-ready geometry from a loaded <see cref="Level"/>: wall quads, plus
 /// floor and ceiling surfaces for regions whose boundary forms a clean polygon loop
 /// (traced from their walls and triangulated by <see cref="EarClipping"/>). Output is
-/// GPU-agnostic and grouped by texture.
+/// GPU-agnostic, grouped by texture, and in render space (<see cref="RenderSpace"/>:
+/// map y becomes −z). Floor/ceiling texture coordinates follow the map axes; a wall's u runs
+/// from its second vertex toward its first, as measured in OV-20261009-shoot-mapping for a
+/// viewer in the wall's left region.
 /// </summary>
 public static class MeshBuilder
 {
@@ -90,9 +93,12 @@ public static class MeshBuilder
         float length = MathF.Sqrt((dx * dx) + (dz * dz));
         float height = ceiling - floor;
         TextureMapping mapping = TextureMappingFor(level, wall.Texture);
-        float u0 = (float)wall.OffsetX * mapping.OffsetToU;
+        // OV-20261009-shoot-mapping: viewed from the wall's left region (the room side of the
+        // retail convention), the bitmap's left half sits at the SECOND vertex, so u starts at
+        // v2 and grows toward v1; the right-region view and the OFFSET_X sense are unprobed.
+        float uAtV2 = (float)wall.OffsetX * mapping.OffsetToU;
         float v0 = (float)wall.OffsetY * mapping.OffsetToV;
-        float u1 = u0 + (length * mapping.WorldToU);
+        float uAtV1 = uAtV2 + (length * mapping.WorldToU);
         float textureV1 = v0 + (height * mapping.WorldToV);
         float ambient = WallAmbient(level, wall);
 
@@ -100,10 +106,13 @@ public static class MeshBuilder
             wall.Texture,
             AnimationSourceFor(level, wall.Texture, wall),
             alphaTest: wall["TRANSPARENT"] > 0);
-        var bottomLeft = new RenderVertex(v1.X, floor + v1.Z, v1.Y, u0, v0, ambient);
-        var bottomRight = new RenderVertex(v2.X, floor + v2.Z, v2.Y, u1, v0, ambient);
-        var topRight = new RenderVertex(v2.X, ceiling + v2.Z, v2.Y, u1, textureV1, ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling + v1.Z, v1.Y, u0, textureV1, ambient);
+        // Render depth is −map y (RenderSpace, ADR-0009); u follows the vertex order unchanged.
+        float z1 = RenderSpace.ZFromMapY(v1.Y);
+        float z2 = RenderSpace.ZFromMapY(v2.Y);
+        var bottomLeft = new RenderVertex(v1.X, floor + v1.Z, z1, uAtV1, v0, ambient);
+        var bottomRight = new RenderVertex(v2.X, floor + v2.Z, z2, uAtV2, v0, ambient);
+        var topRight = new RenderVertex(v2.X, ceiling + v2.Z, z2, uAtV2, textureV1, ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling + v1.Z, z1, uAtV1, textureV1, ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -201,7 +210,7 @@ public static class MeshBuilder
         return new RenderVertex(
             vertex.X,
             height + vertex.Z,
-            vertex.Y,
+            RenderSpace.ZFromMapY(vertex.Y),
             (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
             ambient);

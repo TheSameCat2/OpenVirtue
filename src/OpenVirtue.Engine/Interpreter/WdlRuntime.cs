@@ -1532,6 +1532,7 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("PLAYER_CLIMB", 1.5);
         EnsureSkillDefault("PLAYER_TILT", 0);
         EnsureValidSkillDefault("PLAYER_ARC", 1, value => value is >= 0.2 and <= 2);
+        EnsureValidSkillDefault("ASPECT", 1, value => value is >= 0.1 and <= 10);
         EnsureSkillDefault("PLAYER_LIGHT", 1);
         EnsureSkillDefault("LIGHT_DIST", 10);
         EnsureSkillDefault("SOUND_VOL", 1);
@@ -1691,11 +1692,22 @@ public sealed class WdlRuntime :
 
     private void InitializePredefinedReferences(Level level)
     {
-        if (level.PlayerStart is { } playerStart &&
-            RegionAt(playerStart.Region) is { } here)
+        if (level.PlayerStart is not { } playerStart)
+        {
+            return;
+        }
+
+        if (RegionAt(playerStart.Region) is { } here)
         {
             SetObjectReference("here", here);
         }
+
+        // The WMP start heading (degrees, counter-clockwise, 0 = map +x) is the initial
+        // PLAYER_ANGLE; the host's camera yaw is derived from the same value (RenderSpace).
+        double angle = playerStart.AngleRadians;
+        SetSkill("PLAYER_ANGLE", angle);
+        SetSkill("PLAYER_SIN", Math.Sin(angle));
+        SetSkill("PLAYER_COS", Math.Cos(angle));
     }
 
     private void InitializeEachTickActions(Level level)
@@ -2591,31 +2603,42 @@ public sealed class WdlRuntime :
 
         double originX = player.Position.X;
         double originY = player.Position.Z;
-        double arc = Math.Clamp(GetSkill("PLAYER_ARC"), 0.2, 2);
-        double height = Math.Max(1, GetSkill("SCREEN_HGT"));
-        double aspect = Math.Max(0.01, GetSkill("SCREEN_WIDTH") / height);
-        double verticalTan = Math.Tan(arc * 0.5);
-        double shootX = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_X"), -1, 1) : 0;
-        double shootY = useShootDeviation ? Math.Clamp(GetSkill("SHOOT_Y"), -1, 1) : 0;
-        double horizontalDeviation = shootX * verticalTan * aspect;
-        double pitch = Math.Atan(GetSkill("PLAYER_TILT"));
-        double screenVertical = -shootY * verticalTan;
-        double forwardHorizontal = Math.Cos(pitch) - (screenVertical * Math.Sin(pitch));
-        double rayVertical = Math.Sin(pitch) + (screenVertical * Math.Cos(pitch));
-        double horizontalMagnitude = Math.Max(
-            1e-9,
-            Math.Sqrt((forwardHorizontal * forwardHorizontal) + (horizontalDeviation * horizontalDeviation)));
+        // The SHOOT ray goes through the same projection the renderer uses (OV-20261009-*,
+        // confirmed for SHOOT_X/SHOOT_Y in OV-20261009-shoot-mapping): horizontal FOV =
+        // PLAYER_ARC radians, vertical half-tangent = 2/3 · ASPECT of the horizontal one,
+        // positive SHOOT_X right, positive SHOOT_Y up, and PLAYER_TILT a y-shear that lowers
+        // the center ray by tilt · H rows.
+        ProjectionModel projection = ProjectionModel.Create(
+            GetSkill("PLAYER_ARC"),
+            GetSkill("ASPECT"),
+            GetSkill("PLAYER_TILT"),
+            (int)Math.Round(GetSkill("SCREEN_WIDTH")),
+            (int)Math.Round(GetSkill("SCREEN_HGT")));
+        double shootX = useShootDeviation ? GetSkill("SHOOT_X") : 0;
+        double shootY = useShootDeviation ? GetSkill("SHOOT_Y") : 0;
+        (double horizontalDeviation, double rayVertical) = projection.ShootRay(shootX, shootY);
+        double horizontalMagnitude = Math.Sqrt(1 + (horizontalDeviation * horizontalDeviation));
         double verticalSlope = rayVertical / horizontalMagnitude;
-        double angle = GetSkill("PLAYER_ANGLE") - Math.Atan2(horizontalDeviation, forwardHorizontal);
+        double playerAngle = GetSkill("PLAYER_ANGLE");
+        double angle = playerAngle - Math.Atan2(horizontalDeviation, 1);
         double dirX = Math.Cos(angle);
         double dirY = Math.Sin(angle);
-        double distanceScale = Math.Sqrt(1 + (verticalSlope * verticalSlope));
+        // HIT_DIST is the depth of the hit along the line of sight (PLAYER_ANGLE), not the
+        // length of the deviated ray: OV-20261009-shoot-mapping read 44.000 for every shot at
+        // the billboard targets 44 steps ahead, with SHOOT_X ±0.5 (ray length 45.6), SHOOT_Y
+        // ±0.25 and PLAYER_TILT ±0.1 alike. Billboards report the entity center's depth; walls
+        // the trace distance × cos(deviation), the natural extrapolation (no wall hit was
+        // probed). SHOOT_RANGE limits the same measure (unprobed): walls through the
+        // horizontal range below, billboards through their depth.
+        double distanceScale = 1 / horizontalMagnitude;
         HitCandidate? hit = FindClosestHit(
             originX,
             originY,
             player.Position.Y,
             dirX,
             dirY,
+            Math.Cos(playerAngle),
+            Math.Sin(playerAngle),
             verticalSlope,
             range / distanceScale,
             distanceScale,
@@ -2637,6 +2660,8 @@ public sealed class WdlRuntime :
         double eyeHeight,
         double dirX,
         double dirY,
+        double forwardX,
+        double forwardY,
         double verticalSlope,
         double horizontalRange,
         double distanceScale,
@@ -2664,7 +2689,8 @@ public sealed class WdlRuntime :
                 double dx = entity.X - originX;
                 double dy = entity.Y - originY;
                 double along = (dx * dirX) + (dy * dirY);
-                if (along <= minimumDistance || along > horizontalRange)
+                double depth = (dx * forwardX) + (dy * forwardY); // HIT_DIST: the billboard's depth along the line of sight
+                if (along <= minimumDistance || depth > horizontalRange * distanceScale)
                 {
                     continue;
                 }
@@ -2706,7 +2732,7 @@ public sealed class WdlRuntime :
 
                     bestEntity = Nearer(
                         bestEntity,
-                        new HitCandidate(entity, along * distanceScale, along, hitX, hitY));
+                        new HitCandidate(entity, depth, along, hitX, hitY));
                 }
                 else
                 {
@@ -2715,7 +2741,7 @@ public sealed class WdlRuntime :
                     {
                         bestEntity = Nearer(
                             bestEntity,
-                            new HitCandidate(entity, along * distanceScale, along));
+                            new HitCandidate(entity, depth, along));
                     }
                 }
             }
@@ -2816,7 +2842,9 @@ public sealed class WdlRuntime :
             1);
         double pixelsPerStepX = texture.ScaleX > 0 ? texture.ScaleX : 16;
         double pixelsPerStepY = texture.ScaleY > 0 ? texture.ScaleY : 16;
-        double hitX = Math.Floor(wall.OffsetX + (along * length * pixelsPerStepX));
+        // The bitmap's left edge sits at the wall's SECOND vertex for a viewer in its left region
+        // (OV-20261009-shoot-mapping, far-wall face), the same direction MeshBuilder maps u.
+        double hitX = Math.Floor(wall.OffsetX + ((1 - along) * length * pixelsPerStepX));
         double wallTop = WallSegmentTopAtHit(wall, along, eyeHeight);
         double hitY = Math.Floor(wall.OffsetY + ((wallTop - eyeHeight) * pixelsPerStepY));
         return new HitCandidate(wall, distance, traceDistance, hitX, hitY);

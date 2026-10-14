@@ -7,7 +7,18 @@ using OpenVirtue.Formats.Wdl;
 namespace OpenVirtue.Engine;
 
 /// <summary>A documented A3 <c>VIDEO</c> screen mode used as the level's virtual pixel grid.</summary>
-public readonly record struct LevelVideoMode(string Name, int Width, int Height);
+public readonly record struct LevelVideoMode(string Name, int Width, int Height)
+{
+    /// <summary>
+    /// Width-to-height ratio of the display every documented VGA/SVGA mode was shown on
+    /// (4:3). The renderer draws 1:1 in framebuffer pixels and relies on the display to
+    /// stretch 320x200 and X320x400 (OV-20261009-pixel-aspect-video-modes).
+    /// </summary>
+    public static double DisplayAspect => 4.0 / 3.0;
+
+    /// <summary>Height-to-width ratio of one framebuffer pixel on that display (1.2 for 320x200, 0.6 for X320x400).</summary>
+    public double PixelAspect => (Width / (double)Math.Max(1, Height)) / DisplayAspect;
+}
 
 /// <summary>A point on a named cyclic actor path.</summary>
 public readonly record struct LevelWayPoint(double X, double Y);

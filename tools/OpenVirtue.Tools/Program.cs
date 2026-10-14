@@ -355,6 +355,10 @@ internal static class Cli
                 OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
                 Console.WriteLine($"{Path.GetFileName(archivePath)} -> {level.Name}");
                 Console.WriteLine(
+                    level.VideoMode is { } video
+                        ? $"  video mode: {video.Name} ({video.Width}x{video.Height})"
+                        : "  video mode: (none declared)");
+                Console.WriteLine(
                     $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
                     $"{level.Things.Count} things, {level.Actors.Count} actors");
                 Console.WriteLine($"  {level.Skills.Count} global skills, {level.Textures.Count} textures");
@@ -632,6 +636,8 @@ internal static class Cli
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
+              ovtool oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
+              ovtool oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
 
             Notes:
               These tools operate on game data you supply; no game data ships with

@@ -38,6 +38,27 @@ engine invariants.
      visible between regions.
    - Wall material batches preserve palette-index-0 alpha and enable cutout only
      for `FLAGS TRANSPARENT`, so an opaque wall can safely reuse the same texture.
+   - The 3-D projection is measured, not assumed (OV-20261009-projection-fov-player-arc,
+     -pixel-aspect-video-modes, -tilt-model-shear-vs-pitch; 19 DOSBox-X runs of the
+     patched DOS runtime on synthetic rooms): horizontal FOV = `PLAYER_ARC` radians,
+     vertical scale 0.75·`SCREEN_HGT`/(`ASPECT`·tan(arc/2)) with no pixel-aspect
+     pre-stretch, `PLAYER_TILT` a y-shear of −tilt·`SCREEN_HGT` rows (positive looks
+     down). `OpenVirtue.Engine.Rendering.ProjectionModel` holds it; the D3D11 view
+     is yaw-only and the GL renderer (ADR-0008) must consume the same model. The world
+     handedness read off the same screenshots (map +y on the screen left when facing
+     +x) is implemented by ADR-0009: render z = −map y and camera yaw =
+     `PLAYER_ANGLE` + π/2 in one `RenderSpace` helper, the WMP start angle seeds
+     `PLAYER_ANGLE` (0 = +x), and engine tests push mesh/sprite output through the
+     look-at and the projection matrix to pin the side; the hitscan's lateral sign was
+     already right.
+     Visual confirmation against the oracle screenshot needs a running host (Windows
+     D3D11 or the ADR-0008 GL host). The hitscan is measured as well
+     (OV-20261009-shoot-mapping, 2026-10-10): `SHOOT_X`/`SHOOT_Y` share the projection's
+     tangents with positive `SHOOT_Y` aiming up, the tilt shear acts on the ray, `HIT_DIST`
+     is the depth along the line of sight, thing bitmaps are unmirrored and a wall's
+     bitmap starts at its second vertex seen from the left region. Remaining probes: sky
+     offset under tilt, windows smaller than the mode, tilt beyond ±1, wall texture seen
+     from the right region and the `OFFSET_X` sense, `SHOOT` at other arcs/aspects.
    - Sprite visibility/sorting fixes as needed for static scenes (static billboard
      layout is engine-side, interpolates sloped region floors for entity feet and
      shadows, and app rendering orders billboards back-to-front).
@@ -121,10 +142,11 @@ and old-engine edge cases.
   skill-shifted bitmap cutouts. Text rendering now handles documented
   `CENTER_X`/`CENTER_Y`, `CONDENSED`/`NARROW`, and first-pass vertical
   `SIZE_Y`/`OFFSET_Y` clipping. Active top-level `VIDEO` modes are preserved as
-  the level's virtual pixel grid; the app letterboxes that grid into the modern
-  client area and maps the live `SCREEN_X`/`SCREEN_Y`/`SCREEN_WIDTH`/`SCREEN_HGT`
-  3D viewport, UI rendering, mouse skills, hit testing, and slider dragging
-  through the same transform.
+  the level's virtual pixel grid; the app letterboxes that grid to the mode's
+  4:3 display aspect (so 320x200 and X320x400 frames are stretched the way a
+  VGA monitor showed them, per OV-20261009-pixel-aspect-video-modes) and maps the
+  live `SCREEN_X`/`SCREEN_Y`/`SCREEN_WIDTH`/`SCREEN_HGT` 3D viewport, UI rendering,
+  mouse skills, hit testing, and slider dragging through the same transform.
   Runtime `SET`/`RULE` mutations for common UI numeric fields and flags such as
   `POS_X`, `POS_Y`, and `VISIBLE` now feed rendering and hit testing. Runtime
   keyword retargeting for UI members such as `TEXT.STRING`, `FONT`, `BMAP`, and
@@ -214,8 +236,9 @@ and old-engine edge cases.
   and mirroring, continue through transparent sprite pixels, and report sprite
   `HIT_X`/`HIT_Y` coordinates. Wall hits report texture pixels from the rendered
   wall orientation, including WDL offsets and sloped lower/upper portal spans.
-  Normalized `SHOOT_X`/`SHOOT_Y` offsets now produce a projected 3D ray using
-  the same live `PLAYER_TILT`, `PLAYER_ARC`, and window aspect as the app camera;
+  Normalized `SHOOT_X`/`SHOOT_Y` offsets now produce a projected 3D ray through
+  the measured `ProjectionModel` (the same `PLAYER_ARC`, `ASPECT`, `PLAYER_TILT`
+  and 3-D window size the renderer uses);
   `PUSH` remains centered as a separate interaction. Exact old-engine
   collision/sector details remain parity work. Level loading now preserves
   whether each skill declaration explicitly supplied `VAL`; runtime initialization

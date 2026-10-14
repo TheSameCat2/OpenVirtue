@@ -20,6 +20,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("PLAYER_LIGHT"));
         Assert.Equal(10, runtime.GetSkill("LIGHT_DIST"));
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
+        Assert.Equal(1, runtime.GetSkill("ASPECT"));
         Assert.Equal(1, runtime.GetSkill("SOUND_VOL"));
         Assert.Equal(1, runtime.GetSkill("MUSIC_VOL"));
         Assert.Equal(0, runtime.GetSkill("MOUSE_MODE"));
@@ -1667,7 +1668,7 @@ public class WdlRuntimeTests
             "MAPFILE <m.wmp>; BMAP targetMap,<target.pcx>,0,0,2,6; " +
             "TEXTURE targetTex { BMAPS targetMap; SCALE_X 1; SCALE_Y 1; } " +
             "THING highTarget { TEXTURE targetTex; HEIGHT 4; } " +
-            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET SHOOT_Y,-1; " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET SHOOT_Y,1; " +
             "SET SHOOT_RANGE,20; SHOOT; }");
         IReadOnlyDictionary<string, TextureImage> images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1678,9 +1679,76 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("fire"));
 
+        // OV-20261009-pixel-aspect-video-modes + OV-20261009-shoot-mapping: SHOOT_Y = +1 aims at
+        // the top window edge (positive is up), whose vertical half-tangent is (2/3)·tan(0.5) =
+        // 0.364 at the default 640x480 window, so the ray rises 1.457 over the 4-step horizontal
+        // distance: eye 3 + 1.457 = 4.457, i.e. 5.54 texture rows below the sprite's top at 10
+        // (HIT_Y 5). HIT_DIST is the depth along the line of sight (4), not the ray length.
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
-        Assert.InRange(runtime.GetSkill("HIT_DIST"), 4.5, 4.6);
+        Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
+        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+    }
+
+    [Fact]
+    public void Runtime_ShootInstruction_AspectTwoWidensVerticalAim()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nREGION room 0 12;#0\n" +
+            "THING highTarget 9 5 0 0;#1\nPLAYER_START 5 5 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP targetMap,<target.pcx>,0,0,2,6; " +
+            "TEXTURE targetTex { BMAPS targetMap; SCALE_X 1; SCALE_Y 1; } " +
+            "THING highTarget { TEXTURE targetTex; HEIGHT 4; } " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET ASPECT,2; SET SHOOT_Y,1; " +
+            "SET SHOOT_RANGE,20; SHOOT; }");
+        IReadOnlyDictionary<string, TextureImage> images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["targetTex"] = SolidImage(2, 6, alpha: 255),
+        };
+        var runtime = new WdlRuntime(level, hitTextures: images);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("fire"));
+
+        // ASPECT 2 halves the vertical scale (f_v 329.5 px), so the top edge sits at half-tangent
+        // (2/3)·2·tan(0.5) = 0.728: rise 2.914 over 4 steps, hit at height 5.914, 4.09 rows
+        // below the top (HIT_Y 4); HIT_DIST stays the depth 4. (ASPECT 0.5 would double f_v
+        // and the same SHOOT_Y would pass under the sprite.)
+        Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
+        Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
         Assert.Equal(4, runtime.GetSkill("HIT_Y"));
+    }
+
+    [Fact]
+    public void Runtime_ShootInstruction_NegativeTiltRaisesCenterRayLikeShootY()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nREGION room 0 12;#0\n" +
+            "THING highTarget 9 5 0 0;#1\nPLAYER_START 5 5 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP targetMap,<target.pcx>,0,0,2,6; " +
+            "TEXTURE targetTex { BMAPS targetMap; SCALE_X 1; SCALE_Y 1; } " +
+            "THING highTarget { TEXTURE targetTex; HEIGHT 4; } " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET PLAYER_ARC,1; SET PLAYER_TILT,-0.5; " +
+            "SET SHOOT_RANGE,20; SHOOT; }");
+        IReadOnlyDictionary<string, TextureImage> images = new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["targetTex"] = SolidImage(2, 6, alpha: 255),
+        };
+        var runtime = new WdlRuntime(level, hitTextures: images);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("fire"));
+
+        // OV-20261009-tilt-model-shear-vs-pitch: tilt -0.5 moves the eye line to the bottom
+        // edge, so the center ray leaves through the old top edge: the same ray as SHOOT_Y = +1
+        // (OV-20261009-shoot-mapping confirmed the shear acts on the SHOOT ray: tilt +0.1 lowered
+        // the hit 3.2 steps at 44 steps).
+        Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
+        Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
+        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
     }
 
     [Fact]
@@ -1705,7 +1773,37 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("fire"));
 
+        // OV-20261009-shoot-mapping: positive SHOOT_X hit the map −y target (R), and HIT_DIST
+        // read 44.000 for a target 44 steps ahead with the ray 12 steps aside — the depth
+        // along the line of sight, not the 45.6-step ray length (here 4, not 4.45).
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
+        Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
+        Assert.Equal(1 - (4.0 / 20.0), runtime.GetSkill("RESULT"), 6);
+    }
+
+    [Fact]
+    public void Runtime_ShootInstruction_WallHitXCountsFromTheSecondVertex()
+    {
+        // OV-20261009-shoot-mapping: the far-wall bitmap's left half appeared on the screen left,
+        // i.e. at the wall's SECOND vertex for a viewer in the wall's left region. The wall runs
+        // v1 (10, 0) → v2 (10, 10); the player at (5, 3) facing +x hits (10, 3), 7 steps from v2.
+        const string map =
+            "VERTEX 10 0 0;#0\nVERTEX 10 10 0;#1\nREGION room 0 10;#0\n" +
+            "WALL target 0 1 0 -1 0 0;#0\nPLAYER_START 5 3 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP wallMap,<wall.pcx>,0,0,64,64; " +
+            "TEXTURE wallTex { BMAPS wallMap; SCALE_X 16; SCALE_Y 16; } " +
+            "WALL target { TEXTURE wallTex; } " +
+            "ACTION fire { SET PLAYER_ANGLE,0; SET SHOOT_RANGE,20; SHOOT; }");
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("fire"));
+
+        Assert.Same(Assert.Single(level.Walls), runtime.GetObject("hit"));
+        Assert.Equal(7 * 16, runtime.GetSkill("HIT_X"));
+        Assert.Equal(5, runtime.GetSkill("HIT_DIST"), 6);
     }
 
     [Fact]

@@ -82,8 +82,9 @@ What works today:
   `IF_HIT` actions. Player shots use the live directional animation frame and
   alpha mask, continue through transparent sprite pixels, and publish sprite
   `HIT_X`/`HIT_Y`; wall hits report offset-aware texture coordinates for attached
-  decals. Normalized `SHOOT_X`/`SHOOT_Y` deviations share the app's live
-  `PLAYER_TILT`/`PLAYER_ARC` projection. Apathy's real left-input weapon path is covered by a guarded
+  decals. Normalized `SHOOT_X`/`SHOOT_Y` deviations go through the engine's measured
+  `ProjectionModel` (`PLAYER_ARC`, `ASPECT`, `PLAYER_TILT`, the 3-D window size), the same model
+  the renderer uses. Apathy's real left-input weapon path is covered by a guarded
   runtime test and rendered smoke. The app also
   renders first-pass WDL text, panels, buttons, sliders, bars, and bitmap widgets;
   visible text with `IF_KLICK` uses its live rendered glyph bounds for hit testing.
@@ -111,8 +112,23 @@ What works today:
   active. Playback updates `FLIC_FRAME`, resumes the invoking action on completion
   or `STOP_FLIC`, and can proceed through the keyboard-driven title/menu flow into
   Apathy in one host process.
+- **Projection parity** — the 3-D projection reproduces the original as measured black-box
+  against the DOS runtime (OV-20261009 notes): the horizontal field of view is `PLAYER_ARC`
+  radians, the vertical scale is three quarters of the window height over the same tangent
+  (divided by `ASPECT`), `PLAYER_TILT` is a y-shear of a full window height per unit, and
+  every VGA mode is presented at the 4:3 display aspect. The hitscan `SHOOT_X`/`SHOOT_Y` rays
+  are measured too (OV-20261009-shoot-mapping, eight runs): they go through the same tangents,
+  positive `SHOOT_X` aims right and positive `SHOOT_Y` **up**, the tilt shear moves the ray,
+  `HIT_DIST` is the hit's depth along the line of sight, `HIT_X`/`HIT_Y` count from the bitmap's
+  upper-left as drawn, and `RESULT = SHOOT_FAC · (1 − HIT_DIST / SHOOT_RANGE)`. The world is
+  drawn with the original's handedness — facing map +x, the map's +y side is on the screen left,
+  as the same screenshots show — through a single map→render mapping (render z = −map y, camera
+  yaw = `PLAYER_ANGLE` + π/2; ADR-0009), a WMP `PLAYER_START` angle of 0 faces map +x like the
+  oracle dump, thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
+  viewer in its left region. Engine tests pin all of this; a visual check on a running host is
+  still pending.
 
-Not yet complete: exact sky scrolling and indexed-palette shading,
+Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,
 slope, stacked-region edge semantics, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,

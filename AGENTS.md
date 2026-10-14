@@ -40,7 +40,12 @@ engine, WDL, WMP, and scheduler behavior before falling back to black-box oracle
 
 ## Commands
 
-Toolchain: .NET SDK 10.0.301. The solution uses the **`.slnx`** (XML) format, not `.sln`.
+Toolchain: .NET SDK 10.0.4xx (10.0.402 on the Arch Linux development host, which runs it
+through mise and is not pinned). The
+solution uses the **`.slnx`** (XML) format, not `.sln`. `Directory.Build.props` sets
+`EnableWindowsTargeting`, so the Windows-only `OpenVirtue.App` project *builds* on Linux (it
+cannot run there until ADR-0008's SDL3/OpenGL host lands); the CI-shaped pair below passes on
+both platforms.
 
 ```bash
 dotnet build OpenVirtue.slnx                      # build all (analyzers run here; warnings, not errors)
@@ -100,8 +105,11 @@ Projects and their **strict layering** (enforced only by discipline — keep it)
     program with the WMP map it names, indexes declarations (`BMAP`→`TEXTURE`, `REGION`/`WALL`/
     `THING`/`ACTOR` type defs, `SKILL`s, `ACTION`s), and materializes typed engine objects.
   - **`Rendering/`** — `MeshBuilder`, `EarClipping`, `LevelMesh`, `RenderVertex`, `TextureLoader`:
-    turns geometry into vertex buffers and decodes PCX→RGBA `TextureImage`s. **No DirectX here**,
-    deliberately, so the engine stays testable headless.
+    turns geometry into vertex buffers and decodes PCX→RGBA `TextureImage`s. `ProjectionModel`
+    is the measured original projection (horizontal FOV = `PLAYER_ARC` radians, 2/3 vertical
+    tangent scaled by `ASPECT`, `PLAYER_TILT` as a y-shear; OV-20261009-*) that every renderer
+    and the hitscan consume; `VirtualDisplayLayout` letterboxes a VIDEO mode to its 4:3 display
+    aspect. **No DirectX here**, deliberately, so the engine stays testable headless.
 
 - **`OpenVirtue.App`** (`net10.0-windows`, WinForms `WinExe`, → Engine) — the **only place
   DirectX lives** (Vortice.Direct3D11/DXGI/D3DCompiler/Mathematics). `Program` is the entry
@@ -140,7 +148,11 @@ Unit tests use tiny hand-built byte vectors and run anywhere. In addition, **gua
 integration tests** validate readers against real, user-supplied `.WRS` files if they are
 present under the git-ignored `_research/` folder, and are a **no-op otherwise**
 (`TestSupport/ResearchData` locates `_research/` by walking up to `OpenVirtue.slnx`). Never
-commit game data or fixtures.
+commit game data or fixtures. Git worktrees (including the ones the Claude app creates under
+`.claude/worktrees/`) do not contain the git-ignored `_research/` tree: symlink it first
+(`ln -s <main-checkout>/_research _research`; `/_research` is ignored, so the link stays
+untracked), otherwise the guarded tests silently early-return and `ovtool`/the oracle harness
+cannot find the game data.
 
 ## Source-of-truth notes
 
@@ -148,12 +160,20 @@ commit game data or fixtures.
   when you make a significant architectural choice.
 - **`docs/clean-room/`** records the oracle/invariant discovery workflow. Use it before
   implementing behavior learned from the original runtime or other high-risk references.
-- **`_research/official-acknex-a3-manuals/README.md`** describes the local public A3 manual
-  corpus. Useful split markdown files include:
-  `markdown/acknex-3-reference-manual-1998/04-wmp-file-format.md`,
-  `05-the-acknex-3d-engine.md`,
-  `06-world-definition-language-introduction-keywords-files.md`, and
-  `09-wdl-actions-and-instructions.md`.
+- **`_research/README.md`** (local-only, git-ignored) maps everything under `_research/`: game
+  data, the SaintsX oracle toolkit, which oracles exist and what each is trustworthy for, and
+  what to ignore. Read it before touching anything in that folder.
+- **`_research/official-acknex-a3-manuals/README.md`** describes the manual corpus. The
+  **1998 ACKNEX Reference Manual v3.9** (`markdown/acknex-3-reference-manual-1998/`) is the
+  primary source; look keywords up in `keyword-index.md` first (561 entries → printed page →
+  chapter file), then cite `chapter-file p.N`. Useful chapters:
+  `04-wmp-file-format.md`, `05-the-acknex-3d-engine.md`,
+  `06-world-definition-language-introduction-keywords-files.md`,
+  `08-wdl-textures-walls-regions-things-actors-ways.md`, `09-wdl-actions-and-instructions.md`,
+  `11-wdl-skills-and-predefined-skills.md` (`TIME_CORR` p.117). The 2001 **A4** WDL manual
+  (`markdown/a4-wdl-tutorial-and-manual-2001/`) is secondary: a later engine generation, use
+  for concepts only and tag any fact taken from it. The separate 1998 A3 WDL tutorial is
+  not available; earlier citations of `acknex-3-wdl-tutorial-1998/...` cannot be resolved.
 - **`docs/planning/near-term-roadmap.md`** captures the current "finish the easy part,
   then measure hidden invariants" plan.
 - **`docs/recon/`** is research-phase background (dated 2026-06-25). Its proposed

@@ -7,6 +7,7 @@
 # embed reference-derived code or assets).
 # ─────────────────────────────────────────────────────────────────────────────
 /_research/
+/_research
 /a3tmp/
 
 # Stray copies of original game data, anywhere in the tree
@@ -54,3 +55,6 @@ artifacts/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Python bytecode caches (tools/oracle scripts)
+__pycache__/

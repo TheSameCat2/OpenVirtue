@@ -709,7 +709,9 @@ internal sealed class LevelWindow : Form
         double pan = 0,
         bool applyVerticalDistance = true)
     {
-        Vector3 offset = position - _player.Position;
+        // Emitter and player are map positions; the pan is taken against the camera's
+        // screen-right axis, which lives in render space, so convert the offset first.
+        Vector3 offset = RenderSpace.FromMap(position) - RenderSpace.FromMap(_player.Position);
         float horizontalDistance = MathF.Sqrt((offset.X * offset.X) + (offset.Z * offset.Z));
         double audibleDistance = texture?.SoundDistance ?? 100;
         if (audibleDistance <= 0 || horizontalDistance >= audibleDistance)
@@ -1258,12 +1260,11 @@ internal sealed class LevelWindow : Form
         point = PointerPhysicalPoint(point);
         VirtualDisplayLayout display = DisplayLayout(RenderSize());
         DisplayRectangle viewport = WorldViewport(display);
-        float aspect = viewport.Height > 0 ? Math.Max(0.01f, viewport.Width / viewport.Height) : 1f;
-        float arc = Math.Clamp((float)_runtime.GetSkill("PLAYER_ARC"), 0.2f, 2f);
-        float verticalTan = MathF.Tan(arc * 0.5f);
-        float horizontalTan = verticalTan * aspect;
+        ProjectionModel projection = CurrentProjection();
+        float pixelScaleX = viewport.Width / projection.ScreenWidth;
+        float pixelScaleY = viewport.Height / projection.ScreenHeight;
         Vector3 cameraPosition = _camera.Position;
-        Vector3 forward = Vector3.Normalize(_camera.Forward);
+        Vector3 forward = _camera.LevelForward;
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
 
@@ -1290,10 +1291,11 @@ internal sealed class LevelWindow : Form
 
             float projectedX = Vector3.Dot(toCenter, right);
             float projectedY = Vector3.Dot(toCenter, up);
-            float screenX = viewport.X + ((viewport.Width * 0.5f) * (1f + (projectedX / (distance * horizontalTan))));
-            float screenY = viewport.Y + ((viewport.Height * 0.5f) * (1f - (projectedY / (distance * verticalTan))));
-            float halfWidth = (viewport.Width * 0.5f) * (sprite.HalfWidth / (distance * horizontalTan));
-            float halfHeight = (viewport.Height * 0.5f) * (sprite.HalfHeight / (distance * verticalTan));
+            (double windowX, double windowY) = projection.Project(distance, projectedX, projectedY);
+            float screenX = viewport.X + ((float)windowX * pixelScaleX);
+            float screenY = viewport.Y + ((float)windowY * pixelScaleY);
+            float halfWidth = (float)(projection.FocalLengthX * sprite.HalfWidth / distance) * pixelScaleX;
+            float halfHeight = (float)(projection.FocalLengthY * sprite.HalfHeight / distance) * pixelScaleY;
 
             if (point.X < screenX - halfWidth ||
                 point.X > screenX + halfWidth ||
@@ -1399,13 +1401,18 @@ internal sealed class LevelWindow : Form
         _player = new Player(_level);
         SpawnInLargestRoom(); // fallback only for synthetic/debug maps without a PLAYER_START
         _runtime.RegisterObject("player", _player);
-        _camera.Position = _player.Position;
-        if (_level.PlayerStart is { } start)
-        {
-            _camera.Yaw = -start.Angle * (MathF.PI / 180f);
-        }
-
+        _camera.Position = RenderSpace.FromMap(_player.Position);
+        // The runtime seeded PLAYER_ANGLE from the WMP start angle (0 = map +x), or holds 0
+        // without one; the camera adopts it so the start sync below reports it unchanged.
+        AdoptRuntimeHeading();
         SyncPlayerRuntimeState();
+    }
+
+    /// <summary>Points the camera the way the runtime's PLAYER_ANGLE / PLAYER_TILT say (ADR-0009 yaw mapping).</summary>
+    private void AdoptRuntimeHeading()
+    {
+        _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(_runtime.GetSkill("PLAYER_ANGLE"));
+        _camera.Pitch = (float)Math.Atan(_runtime.GetSkill("PLAYER_TILT"));
     }
 
     private void SpawnInLargestRoom()
@@ -1705,9 +1712,10 @@ internal sealed class LevelWindow : Form
     private void BuildSprites()
     {
         _sprites.Clear();
+        // Directional sides are picked in map space, so hand over the player's map (x, y).
         _sprites.AddRange(SpriteBuilder.Build(
             _level,
-            new Vector2(_camera.Position.X, _camera.Position.Z)));
+            new Vector2(_player.Position.X, _player.Position.Z)));
     }
 
     private void RenderSprites(Matrix4x4 viewProjection)
@@ -1720,7 +1728,7 @@ internal sealed class LevelWindow : Form
         // Cylindrical billboards: face the camera horizontally, stay upright.
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
-        Vector3 horizontalForward = Vector3.Normalize(new Vector3(_camera.Forward.X, 0, _camera.Forward.Z));
+        Vector3 horizontalForward = _camera.LevelForward;
 
         IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(_sprites, _camera.Position);
         for (int start = 0; start < sorted.Count;)
@@ -1992,7 +2000,7 @@ internal sealed class LevelWindow : Form
         UpdateRuntimeMouseMotion();
         UpdateRuntimeInputSkills(includeMouse: true);
         SyncPlayerRuntimeState();
-        _camera.Position = _player.Position;
+        _camera.Position = RenderSpace.FromMap(_player.Position);
     }
 
     private void SyncPlayerRuntimeState()
@@ -2005,7 +2013,7 @@ internal sealed class LevelWindow : Form
         Vector3 position = _player.Position;
         WdlPlayerMotion.Synchronize(_runtime, _player);
 
-        double runtimeAngle = NormalizeAngle((Math.PI * 0.5) - _camera.Yaw);
+        double runtimeAngle = RenderSpace.PlayerAngleFromYaw(_camera.Yaw);
         _runtime.SetSkill("PLAYER_ANGLE", runtimeAngle);
         _runtime.SetSkill("PLAYER_SIN", Math.Sin(runtimeAngle));
         _runtime.SetSkill("PLAYER_COS", Math.Cos(runtimeAngle));
@@ -2080,8 +2088,12 @@ internal sealed class LevelWindow : Form
         {
             double mouseSensitivity = _runtime.GetSkill("MOUSE_SENSE");
             double mouseMode = _runtime.GetSkill("MOUSE_MODE");
-            mouseRotation = WdlInputForces.MouseAxis(_frameMickey.X, mouseSensitivity, mouseMode);
-            mouseTilt = WdlInputForces.MouseAxis(-_frameMickey.Y, mouseSensitivity, mouseMode);
+            // FORCE_ROT: the cursor-left key is positive (counter-clockwise, PLAYER_ANGLE grows),
+            // so a rightward mouse motion must be negative to turn right (ADR-0009). FORCE_TILT:
+            // positive PLAYER_TILT looks down (OV-20261009-tilt-model-shear-vs-pitch), so mouse
+            // forward (negative mickey y) must be negative to look up.
+            mouseRotation = WdlInputForces.MouseAxis(-_frameMickey.X, mouseSensitivity, mouseMode);
+            mouseTilt = WdlInputForces.MouseAxis(_frameMickey.Y, mouseSensitivity, mouseMode);
         }
 
         _runtime.SetSkill("FORCE_AHEAD", sensitivity * ahead);
@@ -2091,7 +2103,7 @@ internal sealed class LevelWindow : Form
             WdlInputForces.Combine(sensitivity * Axis(Keys.Left, Keys.Right), mouseRotation));
         _runtime.SetSkill(
             "FORCE_TILT",
-            WdlInputForces.Combine(sensitivity * Axis(Keys.PageUp, Keys.PageDown), mouseTilt));
+            WdlInputForces.Combine(sensitivity * Axis(Keys.PageDown, Keys.PageUp), mouseTilt)); // PgUp looks up = negative tilt
         _runtime.SetSkill("FORCE_UP", sensitivity * vertical);
     }
 
@@ -2099,10 +2111,10 @@ internal sealed class LevelWindow : Form
     {
         if (_hasMouseSample)
         {
-            float scale = Math.Max(0.001f, DisplayLayout(RenderSize()).Scale);
+            VirtualDisplayLayout layout = DisplayLayout(RenderSize());
             _pendingMickey += new Vector2(
-                (point.X - _lastMouseSample.X) / scale,
-                (point.Y - _lastMouseSample.Y) / scale);
+                (point.X - _lastMouseSample.X) / Math.Max(0.001f, layout.ScaleX),
+                (point.Y - _lastMouseSample.Y) / Math.Max(0.001f, layout.ScaleY));
         }
 
         _lastMouseSample = point;
@@ -2248,7 +2260,7 @@ internal sealed class LevelWindow : Form
 
         if (angleChanged)
         {
-            _camera.Yaw = (float)((Math.PI * 0.5) - playerAngle);
+            _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(playerAngle);
         }
 
         if (tiltChanged)
@@ -2256,7 +2268,7 @@ internal sealed class LevelWindow : Form
             _camera.Pitch = (float)Math.Atan(playerTilt);
         }
 
-        _camera.Position = _player.Position;
+        _camera.Position = RenderSpace.FromMap(_player.Position);
         SyncPlayerRuntimeState();
     }
 
@@ -2403,6 +2415,9 @@ internal sealed class LevelWindow : Form
         }
 
         _runtime.RestoreSnapshot(snapshot);
+        // The restored PLAYER_ANGLE / PLAYER_TILT must win over the pre-load camera, which the
+        // first ApplyRuntimePlayerState after a load would otherwise sync back into the runtime.
+        AdoptRuntimeHeading();
         _handledGeometryInvalidations = _runtime.ShakeRequests.Count;
         _hasPlayerRuntimeSnapshot = false;
         StopActiveSounds();
@@ -2466,10 +2481,7 @@ internal sealed class LevelWindow : Form
         System.Drawing.Size renderSize = RenderSize();
         VirtualDisplayLayout display = DisplayLayout(renderSize);
         DisplayRectangle worldViewport = WorldViewport(display);
-        float aspect = worldViewport.Width / Math.Max(1, worldViewport.Height);
-        Matrix4x4 viewProjection = _camera.View * Camera.Projection(
-            aspect,
-            Math.Clamp((float)_runtime.GetSkill("PLAYER_ARC"), 0.2f, 2f));
+        Matrix4x4 viewProjection = _camera.View * CurrentProjection().CreateProjectionMatrix(1f, 200000f);
 
         _context.RSSetViewport(new Viewport(
             worldViewport.X,
@@ -2610,8 +2622,11 @@ internal sealed class LevelWindow : Form
             return;
         }
 
-        double normalizedYaw = ((_camera.Yaw / Math.Tau) % 1 + 1) % 1;
-        int side = (int)Math.Floor(normalizedYaw * Math.Max(1, texture.Sides));
+        // The panorama side is a compass selection: take it from the map heading, numbered
+        // clockwise like directional sprite sides. Which side the original anchors at angle 0
+        // is unprobed (roadmap: exact panorama stitching remains).
+        double normalizedHeading = ((-_runtime.GetSkill("PLAYER_ANGLE") / Math.Tau) % 1 + 1) % 1;
+        int side = (int)Math.Floor(normalizedHeading * Math.Max(1, texture.Sides));
         string? renderTexture = TextureAnimation.ResolveRenderTexture(texture, cycle: 1, side);
         if (renderTexture is null || !_textureViews.TryGetValue(renderTexture, out ID3D11ShaderResourceView? view))
         {
@@ -2647,14 +2662,33 @@ internal sealed class LevelWindow : Form
 
     private VirtualDisplayLayout DisplayLayout(System.Drawing.Size physicalSize)
     {
-        int virtualWidth = _level.VideoMode?.Width ?? physicalSize.Width;
-        int virtualHeight = _level.VideoMode?.Height ?? physicalSize.Height;
+        if (_level.VideoMode is { } mode)
+        {
+            // Every documented VGA mode was shown on a 4:3 display; 320x200 / X320x400 frames
+            // are stretched to it (OV-20261009-pixel-aspect-video-modes).
+            return VirtualDisplayLayout.Create(
+                physicalSize.Width,
+                physicalSize.Height,
+                mode.Width,
+                mode.Height,
+                LevelVideoMode.DisplayAspect);
+        }
+
         return VirtualDisplayLayout.Create(
             physicalSize.Width,
             physicalSize.Height,
-            virtualWidth,
-            virtualHeight);
+            physicalSize.Width,
+            physicalSize.Height);
     }
+
+    /// <summary>The live projection in 3-D-window pixels (OV-20261009-* measured model).</summary>
+    private ProjectionModel CurrentProjection() =>
+        ProjectionModel.Create(
+            _runtime.GetSkill("PLAYER_ARC"),
+            _runtime.GetSkill("ASPECT"),
+            _runtime.GetSkill("PLAYER_TILT"),
+            (int)Math.Round(_runtime.GetSkill("SCREEN_WIDTH")),
+            (int)Math.Round(_runtime.GetSkill("SCREEN_HGT")));
 
     private DisplayRectangle WorldViewport(VirtualDisplayLayout display)
     {
