@@ -1402,14 +1402,17 @@ internal sealed class LevelWindow : Form
         SpawnInLargestRoom(); // fallback only for synthetic/debug maps without a PLAYER_START
         _runtime.RegisterObject("player", _player);
         _camera.Position = RenderSpace.FromMap(_player.Position);
-        if (_level.PlayerStart is { } start)
-        {
-            // The WMP start angle is the initial PLAYER_ANGLE (0 = map +x); the runtime seeded
-            // the skill from the same value, so the start sync below reports it unchanged.
-            _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(start.AngleRadians);
-        }
-
+        // The runtime seeded PLAYER_ANGLE from the WMP start angle (0 = map +x), or holds 0
+        // without one; the camera adopts it so the start sync below reports it unchanged.
+        AdoptRuntimeHeading();
         SyncPlayerRuntimeState();
+    }
+
+    /// <summary>Points the camera the way the runtime's PLAYER_ANGLE / PLAYER_TILT say (ADR-0009 yaw mapping).</summary>
+    private void AdoptRuntimeHeading()
+    {
+        _camera.Yaw = (float)RenderSpace.YawFromPlayerAngle(_runtime.GetSkill("PLAYER_ANGLE"));
+        _camera.Pitch = (float)Math.Atan(_runtime.GetSkill("PLAYER_TILT"));
     }
 
     private void SpawnInLargestRoom()
@@ -2085,8 +2088,12 @@ internal sealed class LevelWindow : Form
         {
             double mouseSensitivity = _runtime.GetSkill("MOUSE_SENSE");
             double mouseMode = _runtime.GetSkill("MOUSE_MODE");
-            mouseRotation = WdlInputForces.MouseAxis(_frameMickey.X, mouseSensitivity, mouseMode);
-            mouseTilt = WdlInputForces.MouseAxis(-_frameMickey.Y, mouseSensitivity, mouseMode);
+            // FORCE_ROT: the cursor-left key is positive (counter-clockwise, PLAYER_ANGLE grows),
+            // so a rightward mouse motion must be negative to turn right (ADR-0009). FORCE_TILT:
+            // positive PLAYER_TILT looks down (OV-20261009-tilt-model-shear-vs-pitch), so mouse
+            // forward (negative mickey y) must be negative to look up.
+            mouseRotation = WdlInputForces.MouseAxis(-_frameMickey.X, mouseSensitivity, mouseMode);
+            mouseTilt = WdlInputForces.MouseAxis(_frameMickey.Y, mouseSensitivity, mouseMode);
         }
 
         _runtime.SetSkill("FORCE_AHEAD", sensitivity * ahead);
@@ -2096,7 +2103,7 @@ internal sealed class LevelWindow : Form
             WdlInputForces.Combine(sensitivity * Axis(Keys.Left, Keys.Right), mouseRotation));
         _runtime.SetSkill(
             "FORCE_TILT",
-            WdlInputForces.Combine(sensitivity * Axis(Keys.PageUp, Keys.PageDown), mouseTilt));
+            WdlInputForces.Combine(sensitivity * Axis(Keys.PageDown, Keys.PageUp), mouseTilt)); // PgUp looks up = negative tilt
         _runtime.SetSkill("FORCE_UP", sensitivity * vertical);
     }
 
@@ -2408,6 +2415,9 @@ internal sealed class LevelWindow : Form
         }
 
         _runtime.RestoreSnapshot(snapshot);
+        // The restored PLAYER_ANGLE / PLAYER_TILT must win over the pre-load camera, which the
+        // first ApplyRuntimePlayerState after a load would otherwise sync back into the runtime.
+        AdoptRuntimeHeading();
         _handledGeometryInvalidations = _runtime.ShakeRequests.Count;
         _hasPlayerRuntimeSnapshot = false;
         StopActiveSounds();
