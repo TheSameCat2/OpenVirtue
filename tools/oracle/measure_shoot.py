@@ -244,6 +244,7 @@ def measure_variant(variant_dir: Path, image_override: Path | None = None) -> di
         "shared": texel(pred, "y"),
         "y-sign-inverted": texel(alt.get("shoot_y_sign_inverted"), "y"),
         "no-shear": texel(alt.get("no_shear"), "y"),
+        "linear-vertical": texel(alt.get("linear_angle_vertical"), "y"),
     })
     row["dist_model"], row["dist_delta"] = nearest(obs_d, {
         "forward": pred.get("hit_dist_forward"),
@@ -300,6 +301,23 @@ def selftest() -> int:
         ("linear", "R", 39, 128, 44.0, "linear", "forward", "shared"),
         ("inverted", "L", 12, 128, 44.0, "mirrored", "forward", "x-sign-inverted"),
     ]
+    centered = {
+        "variant": "selftest-center", "player_tilt": 0, "state_file": "OVPRB0.TXT", "screenshot": "OVSHT0.PCX",
+        "colors": geometry["colors"],
+        "shoot": {
+            "shoot_x": 0, "shoot_y": 0, "hit_file": "OVHIT0.TXT", "after_shot_file": "OVSHO0.TXT",
+            "prediction": {
+                "target": "tgt_center", "texel": {"x": 32, "y": 128}, "hit_dist_forward": 44, "hit_dist_ray": 44,
+                "alternatives": {
+                    "linear_angle": {"target": "tgt_center", "texel": {"x": 32, "y": 128}},
+                    "shoot_x_sign_inverted": {"target": "tgt_center", "texel": {"x": 32, "y": 128}},
+                    "shoot_y_sign_inverted": {"z": 8, "texel": {"x": 32, "y": 128}},
+                    "no_shear": {"z": 8, "texel": {"x": 32, "y": 128}},
+                    "texture_mirrored": {"texel": {"x": 32, "y": 128}},
+                },
+            },
+        },
+    }
     with tempfile.TemporaryDirectory() as tmp:
         for name, letter, hx, hy, dist, want_lateral, want_dist, want_target in cases:
             vdir = Path(tmp) / name
@@ -316,13 +334,26 @@ def selftest() -> int:
             ok = got == want and row["pre_marker"] is True and abs(row["result_delta"]) < 0.002 and "no-screenshot" in row["flags"]
             print(f"{'ok ' if ok else 'FAIL'} {name}: {got}")
             failures += 0 if ok else 1
-        # Orientation reader: a synthetic frame with three cyan|orange sprites and a yellow|mark face.
+        # A dead-center hit cannot separate mirrored from unmirrored: the verdict must say so.
+        vdir = Path(tmp) / "centered"
+        (vdir / "work").mkdir(parents=True)
+        (vdir / "geometry.json").write_text(json.dumps(centered), encoding="utf-8")
+        (vdir / "work" / "OVPRB0.TXT").write_text("SHX=0\nSHY=0\nSHRNG=500.000\nSHFAC=1.000\nTCK=16.000\n", encoding="latin-1")
+        (vdir / "work" / "OVSHO0.TXT").write_text("PRE\nHOUT_D=44.000\nHOUT_X=32.832\nHOUT_Y=129.000\nHOUT_R=0.912\nHOUT_T=16.000\n", encoding="latin-1")
+        (vdir / "work" / "OVHIT0.TXT").write_text("C\nHIN_D=44.000\nHIN_X=32.832\nHIN_Y=129.000\nHIN_R=0.912\nHIN_T=16.000\n", encoding="latin-1")
+        row = measure_variant(vdir)
+        ok = row["lateral_model"] == "shared" and "mirror-unresolvable-here" in row["flags"] and row["target_match"] == "shared"
+        print(f"{'ok ' if ok else 'FAIL'} centered: lateral={row['lateral_model']} flags={row['flags']}")
+        failures += 0 if ok else 1
+        # Orientation reader: a synthetic frame with three cyan|orange sprites and a yellow|mark face,
+        # including the 1-px mark-colored sliver the real captures carry at the face's left edge.
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
         frame[:, :] = (120, 120, 120)
         for cx in (160, 320, 480):
             frame[:, cx - 26:cx] = (40, 220, 220)
             frame[:, cx:cx + 26] = (240, 130, 40)
         frame[:, 214:294] = (240, 220, 40)   # face left half, left of the center sprite
+        frame[:, 213] = (170, 190, 255)      # the seam sliver (must not count as the face's left half)
         frame[:, 346:426] = (170, 190, 255)  # face right half, right of it
         count, columns, lefts, face_left = sprite_orientation(frame, geometry["colors"])
         ok = count == 3 and lefts == "target_left/target_left/target_left" and face_left == "yellow"

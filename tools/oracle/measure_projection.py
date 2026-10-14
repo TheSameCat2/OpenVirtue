@@ -39,7 +39,7 @@ COLOR_ORDER = ["red", "green", "yellow", "blue", "magenta", "floor", "ceiling", 
 STRIPE = {"red", "green", "yellow"}
 CSV_COLUMNS = [
     "variant", "video", "player_arc", "player_tilt", "aspect", "status", "flags", "width", "height",
-    "unclassified_frac", "far_row", "edges_n", "edges_mismatch", "f_h_fit", "f_h_fit_rms", "cx_fit",
+    "unclassified_frac", "far_row", "edges_n", "edges_mismatch", "f_h_fit", "f_h_fit_signed", "f_h_fit_rms", "cx_fit",
     "f_h_spacing", "target_w", "target_h", "target_h_spread", "h_over_w", "f_h_target", "f_v_target",
     "far_floor_row", "far_top_row", "far_mid_row", "horizon_row", "horizon_left", "horizon_right",
     "horizon_cross", "edge_angle_left_deg", "edge_angle_right_deg", "edge_angle_diff_deg",
@@ -302,7 +302,11 @@ def measure(labels: np.ndarray, names: list[str], geo: Geometry, result: Result)
             result.flag("edge-mismatch")
         if len(world_edges) >= 2:
             a, b, rms = fit_line([y for y, _ in world_edges], [x for _, x in world_edges])
-            result.set(f_h_fit=abs(b) * geo.depth, f_h_fit_rms=rms, cx_fit=a)
+            # f_h_fit_signed keeps the slope's sign: negative means map +y is on the screen LEFT
+            # (x = cx + b*y with b < 0), the handedness ADR-0009 rests on. Meaningful only for a
+            # far wall whose stripe pattern is asymmetric (the tilt room); the face room is
+            # mirror-symmetric, so assign_world_y picks a direction arbitrarily there.
+            result.set(f_h_fit=abs(b) * geo.depth, f_h_fit_signed=b * geo.depth, f_h_fit_rms=rms, cx_fit=a)
         elif edges:
             result.flag("no-world-anchor")
 

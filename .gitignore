@@ -55,3 +55,6 @@ artifacts/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Python bytecode caches (tools/oracle scripts)
+__pycache__/

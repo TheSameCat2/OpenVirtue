@@ -346,23 +346,31 @@ internal static class ProjectionProbeGenerator
                     // Baseline (SHOOT 0,0, no tilt) resolves HIT_DIST/HIT_X/HIT_Y semantics; SHOOT_X ±0.5
                     // resolves the lateral sign and tangent-vs-linear mapping (dead center on a side
                     // target); 0.55 lands 1.2 steps off-center so HIT_X also separates a mirrored bitmap
-                    // (texel 51.5 / 12.5 tangent, 38.6 / 25.4 linear); SHOOT_Y ±0.25 the vertical sign and
-                    // scale (±0.5 would leave the 16-step room); PLAYER_TILT ±0.1 whether the center ray
-                    // follows the shear (±0.5 would miss the targets by 17 steps).
-                    variants.Add(new Variant($"{video}-center", video, 1.0, null, 0, Room.Face, "ovsht", Targets: true));
-                    foreach (double x in shootX ?? [0.5, -0.5, 0.55])
+                    // (texel 51.5 tangent / 12.5 mirrored / 38.6 linear); SHOOT_Y ±0.25 the vertical sign
+                    // and scale (±0.5 would leave the 16-step room); PLAYER_TILT ±0.1 whether the center
+                    // ray follows the shear (±0.5 would miss the targets by 16 steps at D = 44).
+                    // --arcs / --aspects cross every variant with other focal lengths.
+                    foreach (double arc in arcs ?? [1.0])
                     {
-                        variants.Add(new Variant($"{video}-shootx-{Label(x)}", video, 1.0, null, 0, Room.Face, "ovsht", ShootX: x, Targets: true));
-                    }
+                        foreach (double? aspect in aspects?.Select(static a => (double?)a) ?? [null])
+                        {
+                            string suffix = (arc != 1.0 ? $"-arc-{Num(arc)}" : "") + (aspect is { } a && a != 1.0 ? $"-aspect-{Num(a)}" : "");
+                            variants.Add(new Variant($"{video}-center{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", Targets: true));
+                            foreach (double x in shootX ?? [0.5, -0.5, 0.55])
+                            {
+                                variants.Add(new Variant($"{video}-shootx-{Label(x)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootX: x, Targets: true));
+                            }
 
-                    foreach (double y in shootY ?? [0.25, -0.25])
-                    {
-                        variants.Add(new Variant($"{video}-shooty-{Label(y)}", video, 1.0, null, 0, Room.Face, "ovsht", ShootY: y, Targets: true));
-                    }
+                            foreach (double y in shootY ?? [0.25, -0.25])
+                            {
+                                variants.Add(new Variant($"{video}-shooty-{Label(y)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootY: y, Targets: true));
+                            }
 
-                    foreach (double tilt in tilts ?? [0.1, -0.1])
-                    {
-                        variants.Add(new Variant($"{video}-tilt-{Label(tilt)}", video, 1.0, null, tilt, Room.Face, "ovsht", Targets: true));
+                            foreach (double tilt in tilts ?? [0.1, -0.1])
+                            {
+                                variants.Add(new Variant($"{video}-tilt-{Label(tilt)}{suffix}", video, arc, aspect, tilt, Room.Face, "ovsht", Targets: true));
+                            }
+                        }
                     }
                 }
 
@@ -754,7 +762,8 @@ internal static class ProjectionProbeGenerator
             screenshot = variant.ScreenshotName.ToUpperInvariant() + "0.PCX",
             state_file = "OVPRB0.TXT",
             console_file = "OVCON.TXT",
-            state_labels = StateLabels.ToDictionary(static p => p.Label, static p => p.Skill),
+            state_labels = (variant.Targets ? StateLabels.Concat(ShootStateLabels) : StateLabels)
+                .ToDictionary(static p => p.Label, static p => p.Skill),
             room = new
             {
                 half_width = variant.Room.HalfWidth,
@@ -791,10 +800,11 @@ internal static class ProjectionProbeGenerator
     /// <summary>
     /// The SHOOT fixture and its predictions under the model OpenVirtue implements (the ray
     /// shares the renderer's projection: lateral tangent SHOOT_X·tan(arc/2) toward screen
-    /// right = map −y, vertical slope −SHOOT_Y·(2/3)·ASPECT·tan(arc/2) plus the tilt shear
-    /// −tilt·H/f_v, positive SHOOT_Y down) next to the competing readings the measurement
-    /// script distinguishes: a linear-angle lateral mapping, no shear on the center ray, the
-    /// opposite signs, a mirrored texture, and HIT_DIST along the forward axis versus along the ray.
+    /// right = map −y, vertical slope +SHOOT_Y·(2/3)·ASPECT·tan(arc/2) plus the tilt shear
+    /// −tilt·H/f_v, positive SHOOT_Y up per OV-20261009-shoot-mapping) next to the competing
+    /// readings the measurement script distinguishes: linear-angle lateral and vertical
+    /// mappings, no shear on the center ray, the opposite signs, a mirrored texture, and
+    /// HIT_DIST along the forward axis versus along the ray.
     /// </summary>
     private static object ShootGeometry(Variant variant, int width, int height)
     {
@@ -805,8 +815,10 @@ internal static class ProjectionProbeGenerator
         double hitY = -lateralTangent * depth;                 // screen right = map −y
         double hitZ = eye + (verticalSlope * depth);
         double linearLateral = Math.Tan(variant.ShootX * variant.Arc * 0.5) * depth;
-        double noShearSlope = -variant.ShootY * model.VerticalHalfTangent;
+        double noShearSlope = verticalSlope - model.CenterSlope; // the shared ray without the tilt term
         double noShearZ = eye + (noShearSlope * depth);
+        double linearVerticalSlope = Math.Tan(variant.ShootY * Math.Atan(model.VerticalHalfTangent)) + model.CenterSlope;
+        double linearVerticalZ = eye + (linearVerticalSlope * depth);
 
         var targets = ShootTargets.Select(t => new
         {
@@ -845,6 +857,7 @@ internal static class ProjectionProbeGenerator
                 alternatives = new
                 {
                     linear_angle = new { lateral = linearLateral, target = TargetAt(-linearLateral, hitZ), texel = Texel(-linearLateral, hitZ, mirrored: false) },
+                    linear_angle_vertical = new { z = linearVerticalZ, texel = Texel(hitY, linearVerticalZ, mirrored: false) },
                     shoot_x_sign_inverted = new { target = TargetAt(-hitY, hitZ), texel = Texel(-hitY, hitZ, mirrored: false) },
                     shoot_y_sign_inverted = new { z = eye - (verticalSlope * depth), texel = Texel(hitY, eye - (verticalSlope * depth), mirrored: false) },
                     no_shear = new { z = noShearZ, texel = Texel(hitY, noShearZ, mirrored: false) },
@@ -936,7 +949,8 @@ internal static class ProjectionProbeGenerator
         for positive tilts under the shear model; negative tilts keep the floor junction. The
         palette has no
         shading RANGEs (manual p.34: no ranges = shading off) and DITHER is 0, so every rendered
-        pixel is a flat palette index. All textures are generated 64x64 solids at SCALE 4 px/step.
+        pixel is a flat palette index. All textures are generated 64x64 solids at SCALE 4 px/step
+        (except the shoot-mapping probe's half/half face and 64x256 target bitmaps, see below).
 
         `IF_START` sets the probe skills, waits 16 ticks, writes the live skill values to
         `OVPRB0.TXT` (PRINTFILE/PRINT_VALUE), grabs `SCREENSHOT` into `<name>0.PCX`, waits 4 ticks
@@ -960,7 +974,7 @@ internal static class ProjectionProbeGenerator
         ## Measure
 
         ```sh
-        _research/oracle-runs/.venv/bin/python tools/oracle/measure_projection.py {{outputDir}}/[!_]*/
+        _research/oracle-runs/.venv/bin/python tools/oracle/{{(plan.ProbeName == ShootProbeName ? "measure_shoot.py" : "measure_projection.py")}} {{outputDir}}/[!_]*/
         ```
         """;
 
