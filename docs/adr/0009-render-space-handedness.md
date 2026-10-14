@@ -15,8 +15,9 @@ gameplay vector unchanged (render z = map y). With a right-handed look-at that p
 the **screen right** when facing map +x.
 
 The original does the opposite. OV-20261009-tilt-model-shear-vs-pitch read the asymmetric
-far wall of the tilt room (red at map y −12..−8 … green at 8..12) off seven DOSBox-X
-screenshots: left→right the stripes read G R G R G R and the world-y fit is
+far wall of the tilt room (red at map y −12..−8 … green at 8..12) off the DOSBox-X
+screenshots that show it (the tilt 0 and −0.5 runs; the tilt 1.0 frame is floor only):
+left→right the stripes read G R G R G R and the world-y fit is
 `x = 319.6 − 12.2·y`. **Facing map +x, the map's +y side is on the screen left.** This is
 the natural consequence of a right-handed, y-up map (north is on the left when you face east).
 The hitscan already matched it: positive `SHOOT_X` turns clockwise, toward map −y when facing
@@ -90,10 +91,21 @@ and the runtime reported `PLAYER_ANGLE = π/2`, while the oracle dump for `PLAYE
 
 ## Consequences
 
-- The D3D11 frame now shows the world with the original's handedness; the hitscan, the click
-  test and the pan were already correct and are unchanged in behavior.
+- The D3D11 frame now shows the world with the original's handedness; the hitscan's lateral
+  sign (positive `SHOOT_X` = screen right), the click test and the pan were already correct
+  and are unchanged in behavior. (The hitscan's `SHOOT_Y` sign and `HIT_DIST` semantics were
+  corrected the next day by OV-20261009-shoot-mapping, independently of this decision.)
 - The apparent mouse-look direction changes: `PLAYER_ANGLE` increasing (counter-clockwise on
-  the map) now turns the view left, as it must; before, it slid the mirrored scene the wrong way.
+  the map) now turns the view left, as it must; before, it slid the mirrored scene the wrong
+  way. The host's input signs were retuned with it (2026-10-14): a rightward mouse motion now
+  yields a negative `FORCE_ROT` (clockwise, like the cursor-right key), and because positive
+  `PLAYER_TILT` looks down, PgUp and mouse-forward yield a negative `FORCE_TILT` (look up).
+  The retail movement script adds positive multiples of both forces to `PLAYER_VROT` /
+  `PLAYER_TILT` (sanitized keyword scan); the sign the original's keyboard driver gives
+  `FORCE_TILT` for PgUp is inferred from that, not probed.
+- The camera adopts the runtime's `PLAYER_ANGLE`/`PLAYER_TILT` at level start and after a
+  save is loaded (`AdoptRuntimeHeading`), so the skills, not a stale camera, are the source
+  of truth in both places.
 - Triangle winding of every world triangle inverts. The rasterizer runs `CullMode.None`, so
   nothing is culled; a renderer that enables back-face culling (ADR-0008's GL host) must pick
   the front face accordingly.

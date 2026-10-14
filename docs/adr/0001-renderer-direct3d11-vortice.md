@@ -1,6 +1,6 @@
 # ADR-0001: Renderer — Direct3D 11 via Vortice.Windows
 Date: 2026-06-25
-Status: superseded by [ADR-0008](0008-cross-platform-host-sdl3-opengl.md) (2026-10-09) — the project now targets Linux and Windows, so the "native Microsoft technology" rationale no longer applies.
+Status: accepted; supersession by [ADR-0008](0008-cross-platform-host-sdl3-opengl.md) proposed (2026-10-09) — the project now targets Linux and Windows, so the "native Microsoft technology" rationale no longer applies, and this record is superseded the moment ADR-0008 is accepted. The D3D11 host it describes is still the shipping renderer until then.
 
 ## Context
 OpenVirtue must render Acknex-3's 2.5D portal/sector world natively on modern

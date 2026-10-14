@@ -37,7 +37,7 @@ must not inherit it. Parity of every sprite size, wall height and distance impre
 - Original runtime: SaintsX-patched `VRUN.EXE` V3.963 (patched copy of the retail v1.3 binary).
 - Emulator/host: native Linux DOSBox-X 2026.10.01 (SDL1 build), `forcerate=60`, `aspect=false`,
   `output=surface`, `autolock=false`; carrier `work/` mounted as C:, launched as
-  `VRUN.EXE -NJ TITLE -RUN`, autoexec `exit` afterwards. Every launch is appended to the
+  `VRUN.EXE -NJ TITLE -RUN > OVCON.TXT` (after `dir /b > OVDIR.TXT`), autoexec `exit` afterwards. Every launch is appended to the
   local-only `launches.md` by the generated `run.sh`.
 - Fixture generator: `ovtool oracle prepare <probe> --runtime <VRUN-patched.EXE>` writes one
   carrier per parameter value (generated WDL, WMP, flat-color 64x64 PCX textures at SCALE 4 px/step,
@@ -143,6 +143,7 @@ Added in `tests/OpenVirtue.Engine.Tests/Rendering/ProjectionModelTests.cs`:
 ## Implementation Notes
 Implemented 2026-10-09: `OpenVirtue.Engine.Rendering.ProjectionModel` holds f_h, f_v (next
 note) and the tilt shear (OV-20261009-tilt-model-shear-vs-pitch); `CreateProjectionMatrix`
-carries the shear in M32, `Camera.View` is yaw-only and `LevelWindow.CurrentProjection()`
-feeds the D3D11 renderer, the sprite click test and (through `WdlRuntime`) the hitscan. The
-GL renderer under ADR-0008 must consume the same type.
+carries the shear in M32, `Camera.View` is yaw-only, `LevelWindow.CurrentProjection()`
+feeds the D3D11 renderer and the sprite click test, and `WdlRuntime.ShootFromPlayer` builds
+the same `ProjectionModel` from the live skills for the hitscan. The GL renderer under
+ADR-0008 must consume the same type.

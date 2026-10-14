@@ -82,8 +82,9 @@ What works today:
   `IF_HIT` actions. Player shots use the live directional animation frame and
   alpha mask, continue through transparent sprite pixels, and publish sprite
   `HIT_X`/`HIT_Y`; wall hits report offset-aware texture coordinates for attached
-  decals. Normalized `SHOOT_X`/`SHOOT_Y` deviations share the app's live
-  `PLAYER_TILT`/`PLAYER_ARC` projection. Apathy's real left-input weapon path is covered by a guarded
+  decals. Normalized `SHOOT_X`/`SHOOT_Y` deviations go through the engine's measured
+  `ProjectionModel` (`PLAYER_ARC`, `ASPECT`, `PLAYER_TILT`, the 3-D window size), the same model
+  the renderer uses. Apathy's real left-input weapon path is covered by a guarded
   runtime test and rendered smoke. The app also
   renders first-pass WDL text, panels, buttons, sliders, bars, and bitmap widgets;
   visible text with `IF_KLICK` uses its live rendered glyph bounds for hit testing.

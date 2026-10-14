@@ -92,14 +92,14 @@ not).
   | `center` | 0 | 0 | 0 | C, (0, 8) | (32, 128) | HIT_DIST along the ray = along forward = 44 |
   | `shootx-0.5` | +0.5 | 0 | 0 | R, (−12.02, 8) | (32.3, 128) | linear angle: (−11.24, 8) → texel x 19.8; sign inverted: L; HIT_DIST ray 45.6 vs forward 44 |
   | `shootx-neg0.5` | −0.5 | 0 | 0 | L, (+12.02, 8) | (31.7, 128) | linear: texel x 44.2; sign inverted: R |
-  | `shootx-0.55` | +0.55 | 0 | 0 | R, (−13.22, 8) | (51.5, 128) | linear 38.6; mirrored bitmap 12.5; linear + mirrored 25.4; HIT_DIST ray 45.9 |
+  | `shootx-0.55` | +0.55 | 0 | 0 | R, (−13.22, 8) | (51.5, 128) | linear 38.6; mirrored bitmap 12.5; HIT_DIST ray 45.9 |
   | `shooty-0.25` | 0 | +0.25 | 0 | C, (0, 3.99) | (32, 192.1) | SHOOT_Y sign inverted: z 12.0 → texel y 63.9; HIT_DIST ray 44.18 |
   | `shooty-neg0.25` | 0 | −0.25 | 0 | C, (0, 12.01) | (32, 63.9) | inverted: 192.1 |
   | `tilt-0.1` | 0 | 0 | +0.1 | C, (0, 4.80) | (32, 179.3) | no shear on the ray: (0, 8) → 128; shear sign inverted: 76.7; HIT_DIST ray 44.12 |
   | `tilt-neg0.1` | 0 | 0 | −0.1 | C, (0, 11.20) | (32, 76.7) | no shear: 128; inverted: 179.3 |
 
   `SHOOT_Y ±0.5` would leave the 16-step room (8 steps at D = 44) and `PLAYER_TILT ±0.5` would
-  miss the targets by 17 steps; the chosen values keep every reading on a target.
+  miss the targets by 16 steps at D = 44; the chosen values keep every reading on a target.
 - Measurement: `tools/oracle/measure_shoot.py <probe-dir>/[!_]*/` (one CSV row per variant:
   the letter, raw `HIN_*`/`HOUT_*`, whether `PRE` survived the second `PRINTFILE`, the nearest
   model for lateral / vertical / HIT_DIST, the `RESULT` check, and from the screenshot the
@@ -124,7 +124,7 @@ above; "Δ" = observed − predicted in texels (1 texel = 1/16 step = 0.83 px on
 | `shootx-0.55` | R; 44.000; HIT_X 51.193; HIT_Y 129.000 | pred (51.5, 128): Δx −0.34; linear 38.6, mirrored 12.5, both rejected; ray length 45.9 rejected |
 | `shooty-0.25` | C; 44.000; HIT_X 32.832; **HIT_Y 64.000** | pred (32, 192.1) **rejected**; the sign-inverted reading (63.9) fits with Δy +0.1: **positive SHOOT_Y aims UP** (hit 4.0 steps above the eye); ray length 44.18 rejected |
 | `shooty-neg0.25` | C; 44.000; HIT_X 32.832; **HIT_Y 193.000** | pred (32, 63.9) rejected; sign-inverted 192.1 fits (Δy +0.9): 4.0 steps below the eye |
-| `tilt-0.1` | C; 44.000; HIT_X 32.832; HIT_Y 180.000 | pred (32, 179.3): Δy +0.7; the ray dropped 4.75 steps = the frame shear (no-shear reading 128 rejected); positive tilt looks down, as in the tilt note |
+| `tilt-0.1` | C; 44.000; HIT_X 32.832; HIT_Y 180.000 | pred (32, 179.3): Δy +0.7; the ray dropped 3.25 steps to z = 4.75 (frame-shear model 3.20; no-shear reading 128 rejected); positive tilt looks down, as in the tilt note |
 | `tilt-neg0.1` | C; 44.000; HIT_X 32.832; HIT_Y 77.000 | pred (32, 76.7): Δy +0.3 |
 | all eight: `HIT_DIST` | 44.000 | the targets' depth along the line of sight, whatever the lateral/vertical deviation |
 | all eight: `HIT_X` / `HIT_Y` form | `HIT_X` carries fractions (32.832, 33.176, 51.193 …), `HIT_Y` is always an integer | `HIT_Y` looks rounded to a texel row; `HIT_X` is not |
@@ -148,11 +148,18 @@ Confirmed for patched V3.963, `PLAYER_ARC` 1, `ASPECT` 1, `S640x480`:
    it the same amount.
 4. **`HIT_DIST` is the depth of the hit along the line of sight** (`PLAYER_ANGLE` direction),
    not the length of the deviated ray: 44.000 in all eight runs, including the shots whose ray
-   is 45.6–45.9 steps long. `RESULT = SHOOT_FAC · (1 − HIT_DIST / SHOOT_RANGE)`.
+   is 45.6–45.9 steps long. All eight hits were billboards standing at the same depth, so
+   "depth of the hit point", "depth of the thing's position" and "distance to the sprite
+   plane" coincide here; the wall rule OpenVirtue uses (trace distance × cos deviation) is
+   the natural extrapolation, not an observation. `RESULT = SHOOT_FAC · (1 − HIT_DIST / SHOOT_RANGE)`.
 5. **`HIT_X`/`HIT_Y` count from the bitmap's upper-left corner as drawn**: `HIT_X` from the
    sprite's screen-left edge (the off-center shot read 51.2, where a mirrored bitmap would read
-   12.5), fractional; `HIT_Y` from the top, integer. Both are valid inside `IF_HIT`, which runs
-   within the `SHOOT` instruction.
+   12.5), fractional; `HIT_Y` from the top (manual p.90), integer. Because the targets are
+   centered on the eye line, the data alone fix the triple (`HIT_Y` origin, `SHOOT_Y` sign,
+   shear sign) only up to a joint flip: a bottom origin with positive `SHOOT_Y` down and a
+   ray shear opposite to the frame reproduces the same five `HIT_Y` values. The top origin
+   is taken from p.90 and the frame-following shear from the tilt note, which pins the rest.
+   Both skills are valid inside `IF_HIT`, which runs within the `SHOOT` instruction.
 6. Harness: `HIT_*` carry a small positive bias at a dead-center hit (+0.8 texel in x, +1 texel
    in y), consistent with the ray passing about half a pixel right of and below the model's
    center (cf. the 319.5/240.5 centers measured in the FOV note) and `HIT_Y` rounding; this
@@ -163,12 +170,24 @@ Confirmed for patched V3.963, `PLAYER_ARC` 1, `ASPECT` 1, `S640x480`:
    wall's left side).
 
 ## Confidence
-high for 1–6: eight runs, every reading within one texel of the shared-projection model with
-the corrected `SHOOT_Y` sign, competing models rejected by an order of magnitude more, and
-`HIT_DIST` resolved at three decimals. medium for 7's wall orientation: one wall, viewed
-from its left region only.
+high for 1, 3, 4 (billboards), 5 and 6: eight runs, every reading within one texel of the
+shared-projection model with the corrected `SHOOT_Y` sign; the linear lateral mapping is
+rejected by ≥ 11 texels, the vertical sign and the no-shear reading by ≥ 51 texels, and
+`HIT_DIST` is resolved at three decimals. medium for 2's vertical *magnitude*: a linear-angle
+vertical mapping (`SHOOT_Y · atan` of the half-tangent) would read texel 66.4 / 189.6 against
+the tangent model's 63.9 / 192.1 and the observed 64 / 193, a margin of only 2–3 texels with
+a known +0.5..1 texel bias in play. medium for 7's wall orientation: one wall, viewed from its
+left region only.
 
 ## Open Questions
+- `HIT_DIST` for a wall hit, in particular a wall oblique to the line of sight (depth of the
+  hit point vs. ray length vs. perpendicular distance). One variant settles it: `SHOOT_X` 1.0
+  at arc 1 passes the right target and hits the side wall at y = −24, x ≈ 43.9, where the
+  candidates read 43.9 / 50.0 / 24.
+- The vertical magnitude at a larger margin: `SHOOT_Y ±0.45` separates the tangent (7.21
+  steps) from a linear angle (6.97) by ≈ 4 texels while staying on the 16-step target; and a
+  target not centered on the eye line (e.g. 12 steps tall) fixes the `HIT_Y` origin
+  independently of the `SHOOT_Y` sign.
 - Wall texture orientation seen from the wall's right region (does the engine flip per side so
   it reads left→right from both sides, or keep u = 0 at v2?), and the sense of `OFFSET_X`
   relative to u. One two-sided fixture would answer both.

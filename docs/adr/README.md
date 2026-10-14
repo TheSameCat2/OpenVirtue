@@ -27,7 +27,7 @@ Trade-offs, follow-ups, risks.
 
 | ADR | Decision | Status |
 |-----|----------|--------|
-| [0001](0001-renderer-direct3d11-vortice.md) | Renderer: **Direct3D 11** via Vortice.Windows | superseded by 0008 |
+| [0001](0001-renderer-direct3d11-vortice.md) | Renderer: **Direct3D 11** via Vortice.Windows | accepted (supersession by 0008 proposed) |
 | [0002](0002-wdl-interpreter-not-transpiler.md) | WDL **interpreter**, not transpiler | accepted |
 | [0003](0003-license-gplv3.md) | License: **GPL-3.0-or-later** | accepted |
 | [0004](0004-project-name-openvirtue.md) | Project name: **OpenVirtue** | accepted |

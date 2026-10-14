@@ -57,7 +57,7 @@ mouse hit testing and sprite proportions all depend on this.
   times, so the FOV and tilt probes carry the parity weight.
 - Emulator/host: native Linux DOSBox-X 2026.10.01 (SDL1 build), `forcerate=60`, `aspect=false`,
   `output=surface`, `autolock=false`; carrier `work/` mounted as C:, launched as
-  `VRUN.EXE -NJ TITLE -RUN`, autoexec `exit` afterwards. Every launch is appended to the
+  `VRUN.EXE -NJ TITLE -RUN > OVCON.TXT` (after `dir /b > OVDIR.TXT`), autoexec `exit` afterwards. Every launch is appended to the
   local-only `launches.md` by the generated `run.sh`.
 - Fixture generator: `ovtool oracle prepare <probe> --runtime <VRUN-patched.EXE>` writes one
   carrier per parameter value (generated WDL, WMP, flat-color 64x64 PCX textures at SCALE 4 px/step,

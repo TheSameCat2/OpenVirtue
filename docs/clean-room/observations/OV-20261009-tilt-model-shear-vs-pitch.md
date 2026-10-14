@@ -32,7 +32,7 @@ diverges. The GL renderer must pick one model before it is written.
 ## Setup
 - Emulator/host: native Linux DOSBox-X 2026.10.01 (SDL1 build), `forcerate=60`, `aspect=false`,
   `output=surface`, `autolock=false`; carrier `work/` mounted as C:, launched as
-  `VRUN.EXE -NJ TITLE -RUN`, autoexec `exit` afterwards. Every launch is appended to the
+  `VRUN.EXE -NJ TITLE -RUN > OVCON.TXT` (after `dir /b > OVDIR.TXT`), autoexec `exit` afterwards. Every launch is appended to the
   local-only `launches.md` by the generated `run.sh`.
 - Fixture generator: `ovtool oracle prepare <probe> --runtime <VRUN-patched.EXE>` writes one
   carrier per parameter value (generated WDL, WMP, flat-color 64x64 PCX textures at SCALE 4 px/step,
@@ -118,6 +118,10 @@ Seven runs, all stripe edges vertical to the fitting precision, and every featur
   hit ∓3.25 steps at 44 steps, model 3.20), and positive `SHOOT_Y` aims up.
 - Whether Δrow uses `SCREEN_HGT` or the mode height when the 3-D window is smaller than the
   mode was not probed; written as `SCREEN_HGT` by analogy with f_v.
+- The sign the original's keyboard/mouse driver gives `FORCE_TILT` for PgUp / mouse-forward
+  was not probed. The host makes them negative (look up) because positive tilt looks down and
+  the retail movement script adds a positive multiple of `FORCE_TILT` to `PLAYER_TILT`
+  (sanitized keyword scan); the same inference gives cursor-left a positive `FORCE_ROT`.
 - The renderer's left-right handedness (map +y on the screen left when facing +x, read off
   the asymmetric far wall above) is a by-product of this probe. Implemented 2026-10-09 by
   ADR-0009 (`RenderSpace`: render z = −map y, yaw = `PLAYER_ANGLE` + π/2; app commit

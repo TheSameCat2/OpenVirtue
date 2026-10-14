@@ -49,7 +49,8 @@ engine invariants.
      +x) is implemented by ADR-0009: render z = −map y and camera yaw =
      `PLAYER_ANGLE` + π/2 in one `RenderSpace` helper, the WMP start angle seeds
      `PLAYER_ANGLE` (0 = +x), and engine tests push mesh/sprite output through the
-     look-at and the projection matrix to pin the side; the hitscan was already right.
+     look-at and the projection matrix to pin the side; the hitscan's lateral sign was
+     already right.
      Visual confirmation against the oracle screenshot needs a running host (Windows
      D3D11 or the ADR-0008 GL host). The hitscan is measured as well
      (OV-20261009-shoot-mapping, 2026-10-10): `SHOOT_X`/`SHOOT_Y` share the projection's

@@ -40,7 +40,8 @@ engine, WDL, WMP, and scheduler behavior before falling back to black-box oracle
 
 ## Commands
 
-Toolchain: .NET SDK 10.0.401 (the Arch Linux development host runs it through mise). The
+Toolchain: .NET SDK 10.0.4xx (10.0.402 on the Arch Linux development host, which runs it
+through mise and is not pinned). The
 solution uses the **`.slnx`** (XML) format, not `.sln`. `Directory.Build.props` sets
 `EnableWindowsTargeting`, so the Windows-only `OpenVirtue.App` project *builds* on Linux (it
 cannot run there until ADR-0008's SDL3/OpenGL host lands); the CI-shaped pair below passes on
