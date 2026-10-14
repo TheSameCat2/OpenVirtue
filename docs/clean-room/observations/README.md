@@ -27,9 +27,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   (positive looks down); also records the screen handedness (map +y on the left when facing +x;
   implemented by ADR-0009).
 
-## SHOOT probe (2026-10-09 — proposed, carriers prepared)
+## SHOOT probe (2026-10-10 — confirmed and implemented)
 
-- `OV-20261009-shoot-mapping.md` — do `SHOOT_X`/`SHOOT_Y` aim through the same projection
-  (lateral tangent vs linear angle, signs, the tilt shear), what `HIT_DIST`/`HIT_X`/`HIT_Y`
-  report, and (by-products) sprite and wall texture orientation. Eight carriers under
-  `_research/oracle-runs/OV-20261009-shoot-mapping/` await the first launch.
+- `OV-20261009-shoot-mapping.md` — `SHOOT_X`/`SHOOT_Y` aim through the same projection
+  (lateral tangent, positive `SHOOT_X` right, positive `SHOOT_Y` **up**, the tilt shear on the
+  ray), `HIT_DIST` is the hit's depth along the line of sight, `HIT_X`/`HIT_Y` count from the
+  bitmap's upper-left as drawn and are valid inside `IF_HIT`, `RESULT` follows the manual's
+  formula; thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
+  viewer in its left region. Eight DOSBox-X runs; implemented in `ProjectionModel.ShootRay`,
+  the `WdlRuntime` hitscan and `MeshBuilder`.

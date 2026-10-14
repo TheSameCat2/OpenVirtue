@@ -51,9 +51,13 @@ engine invariants.
      `PLAYER_ANGLE` (0 = +x), and engine tests push mesh/sprite output through the
      look-at and the projection matrix to pin the side; the hitscan was already right.
      Visual confirmation against the oracle screenshot needs a running host (Windows
-     D3D11 or the ADR-0008 GL host). Remaining probes: sky offset under tilt,
-     `SHOOT_X/Y` mapping (assumed to share the model), windows smaller than the mode,
-     tilt beyond ±1, wall texture orientation.
+     D3D11 or the ADR-0008 GL host). The hitscan is measured as well
+     (OV-20261009-shoot-mapping, 2026-10-10): `SHOOT_X`/`SHOOT_Y` share the projection's
+     tangents with positive `SHOOT_Y` aiming up, the tilt shear acts on the ray, `HIT_DIST`
+     is the depth along the line of sight, thing bitmaps are unmirrored and a wall's
+     bitmap starts at its second vertex seen from the left region. Remaining probes: sky
+     offset under tilt, windows smaller than the mode, tilt beyond ±1, wall texture seen
+     from the right region and the `OFFSET_X` sense, `SHOOT` at other arcs/aspects.
    - Sprite visibility/sorting fixes as needed for static scenes (static billboard
      layout is engine-side, interpolates sloped region floors for entity feet and
      shadows, and app rendering orders billboards back-to-front).

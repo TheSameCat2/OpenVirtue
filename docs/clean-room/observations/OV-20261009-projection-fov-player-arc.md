@@ -122,9 +122,10 @@ dump proves the skills had the intended values when the frame was grabbed.
   (319, 240); the difference is 0.5 px and does not affect the focal length.
 - The ratio tan(v/2)/tan(h/2) measured 0.665–0.669; 2/3 is assumed exact (see the
   pixel-aspect note).
-- `SHOOT_X`/`SHOOT_Y` are documented as deviations "from the center of the 3-D window within
-  0..1"; whether they map through the same tangents (x → atan(SHOOT_X · tan(arc/2))) was not
-  probed. OpenVirtue derives hitscan from the same model until a SHOOT probe says otherwise.
+- ~~`SHOOT_X`/`SHOOT_Y` … whether they map through the same tangents~~ — resolved 2026-10-10
+  by OV-20261009-shoot-mapping: lateral tangent `SHOOT_X · tan(arc/2)` (a linear angle is
+  rejected by 12–13 texels), positive `SHOOT_X` right, positive `SHOOT_Y` up with the
+  vertical half-tangent; `HIT_DIST` is the depth along the line of sight.
 - A 3-D window smaller than the mode (`SCREEN_WIDTH`/`SCREEN_HGT` below the maximum) was not
   probed; the formulas are written in terms of the window size as the manual's split-screen
   example (p.132) implies.

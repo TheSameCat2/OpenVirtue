@@ -59,10 +59,14 @@ and the runtime reported `PLAYER_ANGLE = π/2`, while the oracle dump for `PLAYE
    original's screen right, so billboards, the click test, the audio pan and
    `ProjectionModel.Project` need no mirroring and keep agreeing with each other.
 
-5. **Texture coordinates are not flipped.** `u`/`v` follow the map axes exactly as before;
-   only the position's z changes sign. The original's wall texture orientation is unprobed
-   (listed as an optional item of the SHOOT probe batch); adding a deliberate flip now would
-   be a guess.
+5. **Texture coordinates are not flipped by this decision.** `u`/`v` follow the map axes
+   exactly as before; only the position's z changes sign. The original's wall texture
+   orientation was unprobed when this was written; adding a deliberate flip then would have
+   been a guess. *Addendum 2026-10-10 (OV-20261009-shoot-mapping):* thing bitmaps are drawn
+   unmirrored (left half on the screen left), as the renderer already did; a wall viewed from
+   its left region shows the bitmap's left half at the wall's **second** vertex, so
+   `MeshBuilder` now puts u = 0 at v2 growing toward v1 and the wall `HIT_X` counts from v2
+   (engine commit `2a817da`). The right-region view and the `OFFSET_X` sense stay open.
 
 6. The sky panorama side is selected from `PLAYER_ANGLE` (a compass quantity), numbered
    clockwise like directional sprite sides, instead of from the render yaw. Which side the

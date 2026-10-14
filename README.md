@@ -116,11 +116,16 @@ What works today:
   radians, the vertical scale is three quarters of the window height over the same tangent
   (divided by `ASPECT`), `PLAYER_TILT` is a y-shear of a full window height per unit, and
   every VGA mode is presented at the 4:3 display aspect. The hitscan `SHOOT_X`/`SHOOT_Y` rays
-  use the same model. The world is drawn with the original's handedness — facing map +x, the
-  map's +y side is on the screen left, as the same screenshots show — through a single
-  map→render mapping (render z = −map y, camera yaw = `PLAYER_ANGLE` + π/2; ADR-0009), and a
-  WMP `PLAYER_START` angle of 0 faces map +x like the oracle dump. Engine tests pin this; a
-  visual check on a running host is still pending.
+  are measured too (OV-20261009-shoot-mapping, eight runs): they go through the same tangents,
+  positive `SHOOT_X` aims right and positive `SHOOT_Y` **up**, the tilt shear moves the ray,
+  `HIT_DIST` is the hit's depth along the line of sight, `HIT_X`/`HIT_Y` count from the bitmap's
+  upper-left as drawn, and `RESULT = SHOOT_FAC · (1 − HIT_DIST / SHOOT_RANGE)`. The world is
+  drawn with the original's handedness — facing map +x, the map's +y side is on the screen left,
+  as the same screenshots show — through a single map→render mapping (render z = −map y, camera
+  yaw = `PLAYER_ANGLE` + π/2; ADR-0009), a WMP `PLAYER_START` angle of 0 faces map +x like the
+  oracle dump, thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
+  viewer in its left region. Engine tests pin all of this; a visual check on a running host is
+  still pending.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,

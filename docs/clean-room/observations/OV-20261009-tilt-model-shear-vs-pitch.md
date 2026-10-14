@@ -113,8 +113,9 @@ Seven runs, all stripe edges vertical to the fitting precision, and every featur
   already one full screen height away.
 - How the sky bitmap moves with tilt (expected: by the same Δrow, since p.37 says it is
   neither zoomed nor repeated vertically) was not probed — no SKY in the fixture.
-- Whether `SHOOT_Y` under tilt uses the same shear (a ray through screen row r has vertical
-  slope (SCREEN_HGT/2 − PLAYER_TILT·SCREEN_HGT − r)/f_v) was not probed.
+- ~~Whether `SHOOT_Y` under tilt uses the same shear~~ — resolved 2026-10-10 by
+  OV-20261009-shoot-mapping: the `SHOOT_Y = 0` ray moves with the frame (tilt ±0.1 moved the
+  hit ∓3.25 steps at 44 steps, model 3.20), and positive `SHOOT_Y` aims up.
 - Whether Δrow uses `SCREEN_HGT` or the mode height when the 3-D window is smaller than the
   mode was not probed; written as `SCREEN_HGT` by analogy with f_v.
 - The renderer's left-right handedness (map +y on the screen left when facing +x, read off
