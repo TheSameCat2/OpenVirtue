@@ -2625,9 +2625,11 @@ public sealed class WdlRuntime :
         double dirY = Math.Sin(angle);
         // HIT_DIST is the depth of the hit along the line of sight (PLAYER_ANGLE), not the
         // length of the deviated ray: OV-20261009-shoot-mapping read 44.000 for every shot at
-        // targets 44 steps ahead, with SHOOT_X ±0.5 (ray length 45.6), SHOOT_Y ±0.25 and
-        // PLAYER_TILT ±0.1 alike. Walls: trace distance × cos(deviation); billboards: the
-        // entity center's depth. SHOOT_RANGE is applied to the same measure (unprobed).
+        // the billboard targets 44 steps ahead, with SHOOT_X ±0.5 (ray length 45.6), SHOOT_Y
+        // ±0.25 and PLAYER_TILT ±0.1 alike. Billboards report the entity center's depth; walls
+        // the trace distance × cos(deviation), the natural extrapolation (no wall hit was
+        // probed). SHOOT_RANGE limits the same measure (unprobed): walls through the
+        // horizontal range below, billboards through their depth.
         double distanceScale = 1 / horizontalMagnitude;
         HitCandidate? hit = FindClosestHit(
             originX,
@@ -2687,12 +2689,12 @@ public sealed class WdlRuntime :
                 double dx = entity.X - originX;
                 double dy = entity.Y - originY;
                 double along = (dx * dirX) + (dy * dirY);
-                if (along <= minimumDistance || along > horizontalRange)
+                double depth = (dx * forwardX) + (dy * forwardY); // HIT_DIST: the billboard's depth along the line of sight
+                if (along <= minimumDistance || depth > horizontalRange * distanceScale)
                 {
                     continue;
                 }
 
-                double depth = (dx * forwardX) + (dy * forwardY); // HIT_DIST: the billboard's depth along the line of sight
                 double signedCenter = (dx * dirY) - (dy * dirX);
                 if (hitSprites.TryGetValue(entity, out SpriteBillboard sprite))
                 {

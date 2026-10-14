@@ -56,7 +56,7 @@ public sealed class WorldHandednessTests
     }
 
     [Fact]
-    public void FarWallStripes_ReadInDescendingMapYFromLeftToRight()
+    public void FarWallStripes_FacingPlusX_ReadInDescendingMapYLeftToRight()
     {
         // The tilt probe's far wall at D = 48: segment edges at map y = 12, 8, 4, 0, −4, −8, −12
         // appeared left→right in that order (world-y fit x = 319.6 − 12.2·y).

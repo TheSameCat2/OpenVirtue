@@ -32,7 +32,7 @@ public sealed class RenderSpaceTests
     [InlineData(Math.PI * 0.5, 0.0, 0.0, -1.0)]      // north = map +y = render −z
     [InlineData(Math.PI, -1.0, 0.0, 0.0)]
     [InlineData(Math.PI * 1.5, 0.0, 0.0, 1.0)]
-    public void ForwardFromPlayerAngle_FollowsTheMapHeading(double angle, float x, float y, float z)
+    public void ForwardFromPlayerAngle_CardinalHeadings_FollowTheMap(double angle, float x, float y, float z)
     {
         Vector3 forward = RenderSpace.ForwardFromPlayerAngle(angle);
 
@@ -83,7 +83,7 @@ public sealed class RenderSpaceTests
     }
 
     [Fact]
-    public void ScreenRight_IsTheLookAtViewsXAxis()
+    public void ScreenRight_RightHandedLookAt_IsTheViewsXAxis()
     {
         // Matrix4x4.CreateLookAt is right-handed: its x-axis is cross(forward, up).
         Vector3 forward = RenderSpace.ForwardFromPlayerAngle(0.8);
