@@ -16,6 +16,7 @@ namespace OpenVirtue.App.Tests;
 /// DOSBox-X frame. Facing map +x, the stripes read green, red, green, red, green, red from
 /// left to right, and the floor is at the bottom of the frame.
 /// </summary>
+[Collection(GlTestGroup.Name)]
 public sealed class Tilt0FrameTests
 {
     private const int Width = 640;
@@ -31,7 +32,7 @@ public sealed class Tilt0FrameTests
     [Fact]
     public void Tilt0_FarWall_ReadsGreenRedFromTheLeftAndFloorAtTheBottom()
     {
-        if (!TryOpenGl(out SdlPlatform? platform, out GlRenderBackend? graphics, out string? error) ||
+        if (!GlContext.TryOpen(Width, Height, "OpenVirtue tilt-0", out SdlPlatform? platform, out GlRenderBackend? graphics, out string? error) ||
             platform is null ||
             graphics is null)
         {
@@ -169,54 +170,6 @@ public sealed class Tilt0FrameTests
 
     private static int ScaleColumn(int column, int width) =>
         (int)Math.Round(column * (Width / (double)width));
-
-    private static bool TryOpenGl(out SdlPlatform? platform, out GlRenderBackend? graphics, out string? error)
-    {
-        if (TryOpen(out platform, out graphics, out error))
-        {
-            return true;
-        }
-
-        string? first = error;
-        string? previousDriver = Environment.GetEnvironmentVariable("SDL_VIDEODRIVER");
-        Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", "offscreen");
-        try
-        {
-            if (TryOpen(out platform, out graphics, out error))
-            {
-                return true;
-            }
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", previousDriver);
-        }
-
-        error = string.IsNullOrEmpty(error) ? first : $"{first}; offscreen: {error}";
-        return false;
-    }
-
-    private static bool TryOpen(out SdlPlatform? platform, out GlRenderBackend? graphics, out string? error)
-    {
-        graphics = null;
-        if (!SdlPlatform.TryCreate(Width, Height, "OpenVirtue tilt-0", hidden: true, out platform, out error) ||
-            platform is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            graphics = new GlRenderBackend(SdlPlatform.GetProcAddress, platform.Swap, platform.Width, platform.Height);
-            return true;
-        }
-        catch
-        {
-            platform.Dispose();
-            platform = null;
-            throw;
-        }
-    }
 
     private static TextureImage Solid(byte r, byte g, byte b) => new(1, 1, [r, g, b, 255]);
 
