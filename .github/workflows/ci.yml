@@ -13,10 +13,12 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build & test
-    # Windows is required: OpenVirtue.App targets net10.0-windows with WinForms,
-    # which cannot be built on Linux/macOS runners.
-    runs-on: windows-latest
+    name: Build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -40,7 +42,18 @@ jobs:
       - name: Build
         run: dotnet build OpenVirtue.slnx --configuration Release --no-restore -warnaserror
 
+      # llvmpipe under Xvfb lets the tilt-0 GL frame check run on the Linux runner.
+      # The test skips with a message when no context can be created.
+      - name: Install a software GL context
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri
+
       # Unit tests use hand-built byte vectors and run anywhere. The guarded
       # integration tests against real game data are a no-op here (no _research/).
-      - name: Test
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
         run: dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal
