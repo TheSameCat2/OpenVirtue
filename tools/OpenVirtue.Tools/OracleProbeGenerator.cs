@@ -27,7 +27,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.AspectProbeName or
             ProjectionProbeGenerator.TiltProbeName or
             ProjectionProbeGenerator.ShootProbeName or
-            ProjectionProbeGenerator.BranchProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.BranchProbeName or
+            ProjectionProbeGenerator.EachSecProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

@@ -45,3 +45,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `IF`/`WHILE`. The branching action's caller resumes as it would for the action itself, and
   chains do not nest (1000 without a `WAIT`). A `NULL` synonym target is a no-op, and an
   undeclared name is a compile error. Eleven DOSBox-X runs; implemented in `WdlInterpreter`.
+
+## EACH_SEC probe (2026-10-15 — confirmed and implemented)
+
+- `OV-20261015-each-sec-cadence.md` — the undocumented global `EACH_SEC` slots that the retail
+  title and levels use for their timeouts. There are 16 slots (slot 17 is a compile error). All
+  share the runtime's second and run, again every second, in the frame where `SECS` goes up,
+  just before the global `EACH_TICK` slots. `SECS` is a whole-second count. A waiting slot action
+  goes on while the next second starts another. Nine DOSBox-X runs; implemented in `WdlRuntime`.
+  Open: whether the slots run during a FLIC.
