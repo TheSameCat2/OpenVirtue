@@ -18,6 +18,7 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -67,6 +68,12 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare branch-semantics [
   `EACH_TICK`, plus `CALL` controls). The `face` room only boots the world; the case's
   actions write trace tokens to `OVBRN0.TXT` in execution order, and `case.json` lists the
   trace each reading of `BRANCH` predicts. No measurement script: read the traces.
+- `oracle prepare each-sec-cadence` — the OV-20261015-each-sec-cadence carriers, built from
+  `EachSecProbeCases.cs` on the same trace scaffold (`TraceProbeCase.cs`): cadence, phase
+  (armed off the second boundary), order against `EACH_TICK`, slots 16 and 17, and `WAITT`
+  inside an `EACH_SEC` action. Every line in `OVSEC0.TXT` is a token followed by `TICKS`
+  (and `SECS`); at `forcerate=60` equal `TICKS` mean the same frame. `case.json` lists the
+  trace each reading predicts. No measurement script: read the traces.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the

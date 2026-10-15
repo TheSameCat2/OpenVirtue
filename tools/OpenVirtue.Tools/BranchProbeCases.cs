@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
-using System.Text;
+using static TraceProbeWdl;
 
 /// <summary>
 /// The control-flow cases of the <c>branch-semantics</c> probe
@@ -17,21 +17,9 @@ internal static class BranchProbeCases
     /// <summary>The PRINTFILE base name of the trace file (written as OVBRN0.TXT).</summary>
     public const string TraceFile = "ovbrn";
 
-    /// <summary>
-    /// One probe case. <c>Declarations</c> go before <c>probe_start</c>; <c>Run</c> is inserted
-    /// into <c>probe_start</c> after the trace file is selected and <c>BEGIN</c> written.
-    /// <c>Predictions</c> map a reading of BRANCH to the trace it would produce.
-    /// </summary>
-    public sealed record Case(
-        string Label,
-        string Question,
-        string Declarations,
-        string Run,
-        IReadOnlyDictionary<string, string> Predictions);
-
-    public static readonly IReadOnlyList<Case> All =
+    public static readonly IReadOnlyList<TraceProbeCase> All =
     [
-        new(
+        new TraceProbeCase(
             "fallthrough",
             "Does the statement after BRANCH run, and does the action that CALLed the branching action resume?",
             Action("br_tgt", P("T1")) +
@@ -41,14 +29,14 @@ internal static class BranchProbeCases
                 ("tail jump, CALLer resumes", "E1 T1 RET"),
                 ("returns like CALL", "E1 T1 E2 RET"),
                 ("ends the whole call chain", "E1 T1"))),
-        new(
+        new TraceProbeCase(
             "call-control",
             "Control: the same fixture with CALL instead of BRANCH (manual p.79).",
             Action("br_tgt", P("T1")) +
             Action("br_src", P("E1") + "    CALL br_tgt;\n" + P("E2")),
             "    CALL br_src;\n" + P("RET"),
             Predict(("documented CALL", "E1 T1 E2 RET"))),
-        new(
+        new TraceProbeCase(
             "wait",
             "With a WAITT inside the BRANCHed-to action, does the branching action resume at the WAIT, and does its CALLer?",
             Action("br_tgt", P("T1") + "    WAITT 2;\n" + P("T2")) +
@@ -57,14 +45,14 @@ internal static class BranchProbeCases
             Predict(
                 ("tail jump, CALLer resumes at the WAIT", "E1 T1 RET T2 LATE"),
                 ("returns like CALL", "E1 T1 E2 RET T2 LATE"))),
-        new(
+        new TraceProbeCase(
             "wait-control",
             "Control: the wait fixture with CALL instead of BRANCH (manual p.80: the CALLer goes on during the WAIT).",
             Action("br_tgt", P("T1") + "    WAITT 2;\n" + P("T2")) +
             Action("br_src", P("E1") + "    CALL br_tgt;\n" + P("E2")),
             "    CALL br_src;\n" + P("RET") + "    WAITT 8;\n" + P("LATE"),
             Predict(("documented CALL", "E1 T1 E2 RET T2 LATE"))),
-        new(
+        new TraceProbeCase(
             "synonym",
             "Does BRANCH through an ACTION synonym (SET at run time, as the title menu does) behave like a direct name?",
             "SYNONYM br_syn { TYPE ACTION; }\n" +
@@ -74,7 +62,7 @@ internal static class BranchProbeCases
             Predict(
                 ("tail jump", "E1 T1 RET"),
                 ("returns like CALL", "E1 T1 E2 RET"))),
-        new(
+        new TraceProbeCase(
             "blocks",
             "Does BRANCH inside an IF block leave the action, and inside a WHILE leave the loop?",
             "SKILL br_z { VAL 0; }\nSKILL br_n { VAL 0; }\n" +
@@ -86,7 +74,7 @@ internal static class BranchProbeCases
             Predict(
                 ("tail jump", "E1 T1 RET L1 W T2 RET2"),
                 ("returns like CALL", "E1 T1 E2 E3 RET L1 W T2 W2 W T2 W2 W T2 W2 L2 RET2"))),
-        new(
+        new TraceProbeCase(
             "legacy-if",
             "The title menu's shape: an IF_EQUAL chain whose first BRANCH target changes the compared skill.",
             "SKILL br_pos { VAL 1; }\n" +
@@ -97,7 +85,7 @@ internal static class BranchProbeCases
             Predict(
                 ("tail jump", "T1 RET"),
                 ("returns like CALL", "T1 T4 E2 RET"))),
-        new(
+        new TraceProbeCase(
             "depth",
             "Can an action BRANCH to itself 1000 times without a WAIT (no nesting limit), or does the runtime stop or fail?",
             "SKILL br_n { VAL 0; }\n" +
@@ -106,7 +94,7 @@ internal static class BranchProbeCases
             Predict(
                 ("unbounded tail jump", "RET N=1000"),
                 ("nesting limit", "RET N=<limit>, or no END marker if the runtime fails"))),
-        new(
+        new TraceProbeCase(
             "unresolved-null",
             "BRANCH through an ACTION synonym set to NULL: does the action go on, or end?",
             "SYNONYM br_syn { TYPE ACTION; }\n" +
@@ -115,7 +103,7 @@ internal static class BranchProbeCases
             Predict(
                 ("BRANCH ends the action regardless", "E1 RET"),
                 ("an empty BRANCH is skipped", "E1 E2 RET"))),
-        new(
+        new TraceProbeCase(
             "unresolved-name",
             "BRANCH to a name that is declared nowhere: compile error (see OVCON.TXT) or run-time behavior?",
             Action("br_src", P("E1") + "    BRANCH br_none;\n" + P("E2")),
@@ -124,7 +112,7 @@ internal static class BranchProbeCases
                 ("compile error", "no OVBRN0.TXT; Genesis error in OVCON.TXT"),
                 ("BRANCH ends the action", "E1 RET"),
                 ("skipped", "E1 E2 RET"))),
-        new(
+        new TraceProbeCase(
             "each-tick",
             "Does BRANCH from an EACH_TICK action behave the same (the action clears its own slot first)?",
             Action("br_tgt", P("T1")) +
@@ -135,13 +123,14 @@ internal static class BranchProbeCases
                 ("returns like CALL", "K1 T1 K2 RET"))),
     ];
 
-    /// <summary>The trace instruction for one token: <c>PRINT_STRING "TOKEN\n";</c> (labels stay ≤ 12 characters).</summary>
-    private static string P(string token, int indent = 4) =>
-        new string(' ', indent) + $"PRINT_STRING \"{token}\\n\";\n";
-
-    private static string Action(string name, string body) =>
-        new StringBuilder().Append("ACTION ").Append(name).Append("\n{\n").Append(body).Append("}\n").ToString();
-
-    private static Dictionary<string, string> Predict(params (string Reading, string Trace)[] predictions) =>
-        predictions.ToDictionary(static p => p.Reading, static p => p.Trace);
+    /// <summary>The probe as the generator consumes it.</summary>
+    public static readonly TraceProbeSet Set = new(
+        "branch-semantics",
+        TraceFile,
+        "ovbrs",
+        "After the skill dump, `IF_START` selects the trace file, writes `BEGIN` and runs the variant's case.\n" +
+        "The case's actions write short trace tokens (one per line), so the token order shows which statements\n" +
+        "ran. There is no measurement script: read the trace, compare it with `case.json` → `predictions`, and\n" +
+        "check `OVCON.TXT` for compile errors. The screenshot is incidental.",
+        All);
 }
