@@ -207,6 +207,29 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_CapturesInitialEachSecActions()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["test.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0.0 10.0;#0\nPLAYER_START 1 2 45 0;#1",
+        };
+        string main =
+            "MAPFILE <test.wmp>; EACH_TICK tick; " +
+            "EACH_SEC first, NULL, second, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, ignored;";
+
+        Level level = LevelLoader.LoadCore("test.wdl", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(16, level.EachSecActions.Count);
+        Assert.Equal("first", level.EachSecActions[0]);
+        Assert.Null(level.EachSecActions[1]);
+        Assert.Equal("second", level.EachSecActions[2]);
+        Assert.Equal("a16", level.EachSecActions[15]);
+        Assert.DoesNotContain("ignored", level.EachSecActions);
+        Assert.Equal("tick", level.EachTickActions[0]);
+        Assert.DoesNotContain("first", level.EachTickActions);
+    }
+
+    [Fact]
     public void LoadCore_CapturesGlobalActionHooks()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

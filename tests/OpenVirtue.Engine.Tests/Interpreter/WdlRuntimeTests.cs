@@ -2268,7 +2268,7 @@ public class WdlRuntimeTests
         Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
         Assert.Equal(1.0, runtime.GetSkill("TIME_FAC"), 9);
         Assert.Equal(1.0, runtime.GetSkill("TICKS"), 9);
-        Assert.Equal(1.0 / 16, runtime.GetSkill("SECS"), 9);
+        Assert.Equal(0, runtime.GetSkill("SECS")); // whole seconds only (OV-20261015-each-sec-cadence)
     }
 
     [Fact]
@@ -2285,13 +2285,13 @@ public class WdlRuntimeTests
         Assert.Equal(0.5, runtime.GetSkill("TIME_CORR"), 9);
         Assert.Equal(2.0, runtime.GetSkill("TIME_FAC"), 9);
         Assert.Equal(0.5, runtime.GetSkill("TICKS"), 9);
-        Assert.Equal(1.0 / 32, runtime.GetSkill("SECS"), 9);
-        Assert.Equal(205 + (1.0 / 32), runtime.GetSkill("observed"), 9);
+        Assert.Equal(0, runtime.GetSkill("SECS"));
+        Assert.Equal(205, runtime.GetSkill("observed"), 9);
 
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(1.5, runtime.GetSkill("TICKS"), 9);
-        Assert.Equal((1.0 / 32) + (1.0 / 16), runtime.GetSkill("SECS"), 9);
+        Assert.Equal(0, runtime.GetSkill("SECS"));
     }
 
     [Fact]

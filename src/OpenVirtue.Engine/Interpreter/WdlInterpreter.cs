@@ -909,7 +909,7 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
-        if (TryExecuteEachTickSet(item.Header, comma))
+        if (TryExecuteSchedulerSlotSet(item.Header, comma))
         {
             return;
         }
@@ -1564,9 +1564,9 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
     }
 
-    private bool TryExecuteEachTickSet(IReadOnlyList<WdlToken> header, int comma)
+    private bool TryExecuteSchedulerSlotSet(IReadOnlyList<WdlToken> header, int comma)
     {
-        if (!IsEachTickTarget(header, comma, out int slot))
+        if (!IsSchedulerSlotTarget(header, comma, out bool eachSec, out int slot))
         {
             return false;
         }
@@ -1584,7 +1584,15 @@ public sealed class WdlInterpreter(IWdlContext context)
                 : header[comma + 1].Text;
         }
 
-        scheduler.SetEachTickAction(slot, actionName);
+        if (eachSec)
+        {
+            scheduler.SetEachSecAction(slot, actionName);
+        }
+        else
+        {
+            scheduler.SetEachTickAction(slot, actionName);
+        }
+
         return true;
     }
 
@@ -1726,16 +1734,26 @@ public sealed class WdlInterpreter(IWdlContext context)
         return false;
     }
 
-    private static bool IsEachTickTarget(IReadOnlyList<WdlToken> header, int comma, out int slot)
+    /// <summary>
+    /// Recognises a global scheduler slot target, <c>EACH_TICK.n</c> or <c>EACH_SEC.n</c>, in either
+    /// token shape the lexer produces (one <c>.n</c> number token, or <c>.</c> then <c>n</c>).
+    /// </summary>
+    private static bool IsSchedulerSlotTarget(IReadOnlyList<WdlToken> header, int comma, out bool eachSec, out int slot)
     {
         slot = 0;
+        eachSec = false;
         if (comma <= 0 || header.Count == 0)
         {
             return false;
         }
 
-        if (header[0] is not { Kind: WdlTokenKind.Identifier, Text: var schedulerName } ||
-            !schedulerName.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+        if (header[0] is not { Kind: WdlTokenKind.Identifier, Text: var schedulerName })
+        {
+            return false;
+        }
+
+        eachSec = schedulerName.Equals("EACH_SEC", StringComparison.OrdinalIgnoreCase);
+        if (!eachSec && !schedulerName.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

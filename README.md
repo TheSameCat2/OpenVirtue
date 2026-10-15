@@ -132,8 +132,11 @@ What works today:
   (`RetailSmokeTests`): logo FLC, splash, menu and keyboard handoff into Apathy at its declared
   start region, and a drawn frame from all six retail archives. New Game goes through the
   difficulty menu, now that `BRANCH` is the tail jump measured against the DOS runtime
-  (OV-20261015-branch-tail-jump). One known gap remains in that flow: `EACH_SEC` timers do
-  not run, so the title does not advance without a key.
+  (OV-20261015-branch-tail-jump). The 16 global `EACH_SEC` slots, which the manuals never
+  document, are measured too (OV-20261015-each-sec-cadence): they all run once per engine second
+  (16 ticks) when the whole-second `SECS` count goes up, just before the global `EACH_TICK` slots.
+  The title now leaves the logo on its own about 12 s after the FLC, and `HEART`, `LEGALISM` and
+  `NEWAGE` finish their three-second fade-in and draw their HUD, crosshair and weapon.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,

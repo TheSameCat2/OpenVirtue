@@ -16,7 +16,18 @@ public sealed record WdlRuntimeSnapshot(
     Dictionary<string, string?> ActionHooks,
     List<Vertex> Vertices,
     List<WdlObjectSnapshot> LevelObjects,
-    WdlPlayerSnapshot? Player);
+    WdlPlayerSnapshot? Player)
+{
+    /// <summary>The global <c>EACH_SEC</c> slots; <c>null</c> in snapshots written before they existed.</summary>
+    public List<string?>? EachSecActions { get; init; }
+
+    /// <summary>
+    /// The elapsed part of the runtime's current second (when <c>SECS</c> next goes up and the
+    /// <c>EACH_SEC</c> slots run), so a restored countdown keeps its phase; <c>null</c> in snapshots
+    /// written before it existed.
+    /// </summary>
+    public double? SecondFraction { get; init; }
+}
 
 /// <summary>A saved runtime object state for a region, wall, thing, or actor.</summary>
 public sealed record WdlObjectSnapshot(
