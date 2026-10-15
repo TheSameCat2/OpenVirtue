@@ -17,6 +17,7 @@ dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -60,6 +61,12 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [out
   both inside the hit action (`OVHIT0.TXT`) and right after the instruction
   (`OVSHO0.TXT`). `geometry.json` carries the predicted hit, target and texel under the
   shared-projection model next to the competing readings.
+- `oracle prepare branch-semantics` — the OV-20261015-branch-tail-jump carriers: one per
+  control-flow case in `BranchProbeCases.cs` (fall-through, `WAIT` in the target, synonym,
+  `NULL` synonym, undeclared name, `IF`/`WHILE`, the menu's `IF_EQUAL` chain, depth,
+  `EACH_TICK`, plus `CALL` controls). The `face` room only boots the world; the case's
+  actions write trace tokens to `OVBRN0.TXT` in execution order, and `case.json` lists the
+  trace each reading of `BRANCH` predicts. No measurement script: read the traces.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the

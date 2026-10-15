@@ -37,3 +37,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   formula; thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
   viewer in its left region. Eight DOSBox-X runs; implemented in `ProjectionModel.ShootRay`,
   the `WdlRuntime` hitscan and `MeshBuilder`.
+
+## BRANCH probe (2026-10-15 — confirmed and implemented)
+
+- `OV-20261015-branch-tail-jump.md` — `BRANCH` is a tail jump: the target runs in place of the
+  current action and nothing after the `BRANCH` runs, not even the rest of an enclosing
+  `IF`/`WHILE`. The branching action's caller resumes as it would for the action itself, and
+  chains do not nest (1000 without a `WAIT`). A `NULL` synonym target is a no-op, and an
+  undeclared name is a compile error. Eleven DOSBox-X runs; implemented in `WdlInterpreter`.

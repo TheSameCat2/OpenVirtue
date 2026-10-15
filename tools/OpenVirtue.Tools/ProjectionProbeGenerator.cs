@@ -24,11 +24,13 @@ internal static class ProjectionProbeGenerator
     public const string AspectProbeName = "pixel-aspect";
     public const string TiltProbeName = "tilt-model";
     public const string ShootProbeName = "shoot-mapping";
+    public const string BranchProbeName = "branch-semantics";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
     private const string TiltProbeId = "OV-20261009-tilt-model-shear-vs-pitch";
     private const string ShootProbeId = "OV-20261009-shoot-mapping";
+    private const string BranchProbeId = "OV-20261015-branch-tail-jump";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -168,7 +170,8 @@ internal static class ProjectionProbeGenerator
         string ScreenshotName,
         double ShootX = 0,
         double ShootY = 0,
-        bool Targets = false);
+        bool Targets = false,
+        BranchProbeCases.Case? Branch = null);
 
     private sealed record Plan(string ProbeId, string ProbeName, IReadOnlyList<Variant> Variants);
 
@@ -275,6 +278,7 @@ internal static class ProjectionProbeGenerator
         AspectProbeName => AspectProbeId,
         TiltProbeName => TiltProbeId,
         ShootProbeName => ShootProbeId,
+        BranchProbeName => BranchProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -375,6 +379,14 @@ internal static class ProjectionProbeGenerator
                 }
 
                 break;
+            case BranchProbeName:
+                // Pure control flow: the room only gives the runtime a valid world to boot.
+                foreach (BranchProbeCases.Case branchCase in BranchProbeCases.All)
+                {
+                    variants.Add(new Variant(branchCase.Label, "S640x480", 1.0, null, 0, Room.Face, "ovbrs", Branch: branchCase));
+                }
+
+                break;
             default:
                 throw new ArgumentException($"Unknown projection probe '{probeName}'.");
         }
@@ -422,7 +434,10 @@ internal static class ProjectionProbeGenerator
             File.Copy(runtimePath, Path.Combine(workDir, "VRUN.EXE"), overwrite: true);
         }
 
-        File.WriteAllText(Path.Combine(variantDir, "geometry.json"), GeometryJson(variant, palette), Utf8NoBom);
+        File.WriteAllText(
+            Path.Combine(variantDir, variant.Branch is null ? "geometry.json" : "case.json"),
+            variant.Branch is { } branchCase ? BranchCaseJson(branchCase) : GeometryJson(variant, palette),
+            Utf8NoBom);
         OracleLaunchers.Write(variantDir, new OracleLaunchers.Options(
             Title: $"{plan.ProbeId} {variant.Label}",
             VariantLabel: $"{plan.ProbeName}/{variant.Label}",
@@ -519,6 +534,7 @@ internal static class ProjectionProbeGenerator
                 CLIP_DIST 0;
             }
             {{(variant.Room.HasAlcove ? AlcoveRegionWdl(variant.Room) : "")}}
+            {{variant.Branch?.Declarations ?? ""}}
             ACTION probe_start
             {
                 PRINTFILE "ovsta", 0;
@@ -580,6 +596,12 @@ internal static class ProjectionProbeGenerator
             {
                 AppendPrint(sb, "HOUT_" + label, skill);
             }
+        }
+
+        if (variant.Branch is { } branchCase)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"    PRINTFILE \"{BranchProbeCases.TraceFile}\", 0;\n    PRINT_STRING \"BEGIN\\n\";\n");
+            sb.Append(branchCase.Run);
         }
 
         sb.Append(CultureInfo.InvariantCulture, $$"""
@@ -867,6 +889,18 @@ internal static class ProjectionProbeGenerator
         };
     }
 
+    private static string BranchCaseJson(BranchProbeCases.Case branchCase) =>
+        JsonSerializer.Serialize(
+            new
+            {
+                variant = branchCase.Label,
+                question = branchCase.Question,
+                trace_file = BranchProbeCases.TraceFile.ToUpperInvariant() + "0.TXT",
+                console_file = "OVCON.TXT",
+                predictions = branchCase.Predictions,
+            },
+            JsonOptions);
+
     private static string? TargetAt(double y, double z)
     {
         foreach ((string keyword, _, int targetY, _) in ShootTargets)
@@ -955,7 +989,7 @@ internal static class ProjectionProbeGenerator
         `IF_START` sets the probe skills, waits 16 ticks, writes the live skill values to
         `OVPRB0.TXT` (PRINTFILE/PRINT_VALUE), grabs `SCREENSHOT` into `<name>0.PCX`, waits 4 ticks
         and EXITs; the DOSBox-X autoexec then exits.
-        {{(plan.ProbeName == ShootProbeName ? ShootReadme() : "")}}
+        {{(plan.ProbeName == ShootProbeName ? ShootReadme() : "")}}{{(plan.ProbeName == BranchProbeName ? BranchReadme() : "")}}
         Expected outputs per variant: `OVDIR.TXT` (what DOS saw in C:), `OVCON.TXT` (the
         runtime's console output: banner, Genesis compiler errors), `OVSTA0.TXT` (START),
         `OVPRB0.TXT` (skill dump, short labels mapped back by geometry.json `state_labels`),
@@ -974,9 +1008,37 @@ internal static class ProjectionProbeGenerator
         ## Measure
 
         ```sh
-        _research/oracle-runs/.venv/bin/python tools/oracle/{{(plan.ProbeName == ShootProbeName ? "measure_shoot.py" : "measure_projection.py")}} {{outputDir}}/[!_]*/
+        {{(plan.ProbeName == BranchProbeName
+            ? $"for d in {outputDir}/[!_]*/; do echo \"== $d\"; cat \"$d/work/OVBRN0.TXT\"; done"
+            : $"_research/oracle-runs/.venv/bin/python tools/oracle/{(plan.ProbeName == ShootProbeName ? "measure_shoot.py" : "measure_projection.py")} {outputDir}/[!_]*/")}}
         ```
         """;
+
+    private static string BranchReadme()
+    {
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $"""
+
+            ### branch-semantics
+
+            After the skill dump, `IF_START` selects `{BranchProbeCases.TraceFile.ToUpperInvariant()}0.TXT`, writes `BEGIN`
+            and runs the variant's case. The case's actions write short trace tokens (one per line),
+            so the token order shows which statements ran. There is no measurement script: read the
+            trace, compare it with `case.json` → `predictions`, and check `OVCON.TXT` for compile
+            errors. The screenshot is incidental.
+
+            """);
+        foreach (BranchProbeCases.Case branchCase in BranchProbeCases.All)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"- `{branchCase.Label}`: {branchCase.Question}\n");
+            foreach ((string reading, string trace) in branchCase.Predictions)
+            {
+                sb.Append(CultureInfo.InvariantCulture, $"  - {reading}: `{trace}`\n");
+            }
+        }
+
+        return sb.ToString();
+    }
 
     private static string ShootReadme() =>
         $"""
@@ -1027,6 +1089,7 @@ internal static class ProjectionProbeGenerator
           ovtool oracle prepare pixel-aspect   [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--aspects 1,0.5,2] [--videos S640x480,320x200,X320x240,X320x400]
           ovtool oracle prepare tilt-model     [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--tilts 0,0.5,1,-0.5,-1] [--arcs 1] [--aspects 1] [--videos S640x480]
           ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480]
+          ovtool oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
         """;
 
     public static int Usage(string? error = null)
