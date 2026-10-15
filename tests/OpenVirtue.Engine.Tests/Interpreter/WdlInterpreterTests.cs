@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Diagnostics.CodeAnalysis;
 using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Formats.Wdl;
@@ -119,13 +120,65 @@ public class WdlInterpreterTests
     }
 
     [Fact]
-    public void Branch_InvokesNamedAction()
+    public void Branch_WithoutActionResolver_InvokesTargetAndEndsAction()
     {
         var context = new TestContext();
 
-        new WdlInterpreter(context).Execute(WdlParser.Parse("BRANCH openDoor;"));
+        new WdlInterpreter(context).Execute(WdlParser.Parse("BRANCH openDoor; SET x, 1;"));
 
         Assert.Equal("openDoor", Assert.Single(context.Calls));
+        Assert.Equal(0, context.GetSkill("x"));
+    }
+
+    // OV-20261015-branch-tail-jump: BRANCH runs the target in place of the current action.
+    [Fact]
+    public void Branch_WithActionResolver_ContinuesWithTargetBodyOnly()
+    {
+        var context = new ResolvingContext();
+        context.AddAction("inner", "SET y, 7;");
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("SET x, 1; BRANCH inner; SET x, 2;"));
+
+        Assert.Equal(1, context.GetSkill("x"));
+        Assert.Equal(7, context.GetSkill("y"));
+    }
+
+    [Fact]
+    public void Branch_UnresolvedTarget_IsSkipped()
+    {
+        var context = new ResolvingContext();
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse("BRANCH missing; SET x, 2;"));
+
+        Assert.Equal(2, context.GetSkill("x"));
+    }
+
+    [Fact]
+    public void Branch_InsideWhile_LeavesLoopAndAction()
+    {
+        var context = new ResolvingContext();
+        context.AddAction("inner", "RULE hits += 1;");
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse(
+            "WHILE (n < 3) { RULE n += 1; BRANCH inner; RULE after += 1; } SET done, 1;"));
+
+        Assert.Equal(1, context.GetSkill("n"));
+        Assert.Equal(1, context.GetSkill("hits"));
+        Assert.Equal(0, context.GetSkill("after"));
+        Assert.Equal(0, context.GetSkill("done"));
+    }
+
+    [Fact]
+    public void Branch_ChainedThroughTargets_RunsEachBodyInTurn()
+    {
+        var context = new ResolvingContext();
+        context.AddAction("second", "RULE trace = trace * 10 + 2; BRANCH third; RULE trace = trace * 10 + 9;");
+        context.AddAction("third", "RULE trace = trace * 10 + 3;");
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse(
+            "RULE trace = 1; BRANCH second; RULE trace = trace * 10 + 9;"));
+
+        Assert.Equal(123, context.GetSkill("trace"));
     }
 
     [Fact]
@@ -358,6 +411,30 @@ public class WdlInterpreterTests
         var context = new TestContext();
         new WdlInterpreter(context).Execute(WdlParser.Parse(statements));
         return context;
+    }
+
+    private sealed class ResolvingContext : IWdlContext, IWdlActionResolver
+    {
+        private readonly Dictionary<string, double> _skills = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, WdlBlock> _actions = new(StringComparer.OrdinalIgnoreCase);
+
+        public void AddAction(string name, string body) => _actions[name] = new WdlBlock(WdlParser.Parse(body).Items);
+
+        public double GetSkill(string name) => _skills.GetValueOrDefault(name);
+
+        public void SetSkill(string name, double value) => _skills[name] = value;
+
+        public AcknexObject? GetObject(string name) => null;
+
+        public void CallAction(string name)
+        {
+            if (_actions.TryGetValue(name, out WdlBlock? body))
+            {
+                new WdlInterpreter(this).Execute(body);
+            }
+        }
+
+        public bool TryGetAction(string name, [NotNullWhen(true)] out WdlBlock? body) => _actions.TryGetValue(name, out body);
     }
 
     private sealed class TestContext : IWdlContext, IWdlRandomContext, IWdlSkillBoundsContext

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Diagnostics.CodeAnalysis;
+using OpenVirtue.Formats.Wdl;
+
 namespace OpenVirtue.Engine.Interpreter;
 
 /// <summary>
@@ -24,6 +27,19 @@ public interface IWdlContext
     /// keyword is an action name (or an as-yet-unmodelled instruction) chain into another script.
     /// </summary>
     void CallAction(string name);
+}
+
+/// <summary>
+/// Optional surface that resolves an action name to its body, so <c>BRANCH</c> can replace the
+/// running action in place (OV-20261015-branch-tail-jump) instead of nesting a call.
+/// </summary>
+public interface IWdlActionResolver
+{
+    /// <summary>
+    /// Resolves <paramref name="name"/>, following <c>ACTION</c> synonyms, to an action body.
+    /// </summary>
+    /// <returns><c>false</c> when the name, or the synonym it goes through, names no action.</returns>
+    bool TryGetAction(string name, [NotNullWhen(true)] out WdlBlock? body);
 }
 
 /// <summary>

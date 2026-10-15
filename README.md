@@ -130,9 +130,10 @@ What works today:
   viewer in its left region. Engine tests pin all of this. The tilt-0 frame was checked on the
   GL host on 2026-10-15. The retail title→Apathy smoke passed on the GL host the same day
   (`RetailSmokeTests`): logo FLC, splash, menu and keyboard handoff into Apathy at its declared
-  start region, and a drawn frame from all six retail archives. Two known gaps remain in that
-  flow: New Game skips the difficulty menu because `BRANCH` still returns like `CALL`, and
-  `EACH_SEC` timers do not run, so the title does not advance without a key.
+  start region, and a drawn frame from all six retail archives. New Game goes through the
+  difficulty menu, now that `BRANCH` is the tail jump measured against the DOS runtime
+  (OV-20261015-branch-tail-jump). One known gap remains in that flow: `EACH_SEC` timers do
+  not run, so the title does not advance without a key.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,

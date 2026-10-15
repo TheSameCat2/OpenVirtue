@@ -26,22 +26,7 @@ public sealed class WdlInterpreter(IWdlContext context)
     public void Execute(WdlBlock block)
     {
         ArgumentNullException.ThrowIfNull(block);
-        try
-        {
-            ExecuteItems(block.Items);
-        }
-        catch (EndActionException)
-        {
-            // END terminates the current action.
-        }
-        catch (GotoException)
-        {
-            // An unresolved GOTO leaves the current action; valid targets are handled by ExecuteItems.
-        }
-        catch (LoopControlException)
-        {
-            // BREAK/CONTINUE outside a WHILE terminate the current action.
-        }
+        ExecuteAction(block.Items);
     }
 
     /// <summary>Creates resumable execution state for a WDL action block.</summary>
@@ -144,21 +129,43 @@ public sealed class WdlInterpreter(IWdlContext context)
     public void Execute(WdlDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
-        try
+        ExecuteAction(document.Items);
+    }
+
+    private void ExecuteAction(IReadOnlyList<WdlItem> items)
+    {
+        IReadOnlyList<WdlItem>? current = items;
+        int jumps = 0;
+        while (current is not null)
         {
-            ExecuteItems(document.Items);
-        }
-        catch (EndActionException)
-        {
-            // END terminates the current action/document execution.
-        }
-        catch (GotoException)
-        {
-            // An unresolved GOTO leaves the current action/document execution.
-        }
-        catch (LoopControlException)
-        {
-            // BREAK/CONTINUE outside a WHILE terminate the current action/document execution.
+            IReadOnlyList<WdlItem> running = current;
+            current = null;
+            try
+            {
+                ExecuteItems(running);
+            }
+            catch (BranchException jump)
+            {
+                // BRANCH continues the same action with the target's body (OV-20261015-branch-tail-jump).
+                if (++jumps > MaxStatementSteps)
+                {
+                    throw new WdlExpressionException("WDL action exceeded the statement execution limit.");
+                }
+
+                current = jump.Target.Items;
+            }
+            catch (EndActionException)
+            {
+                // END terminates the current action.
+            }
+            catch (GotoException)
+            {
+                // An unresolved GOTO leaves the current action; valid targets are handled by ExecuteItems.
+            }
+            catch (LoopControlException)
+            {
+                // BREAK/CONTINUE outside a WHILE terminate the current action.
+            }
         }
     }
 
@@ -354,8 +361,17 @@ public sealed class WdlInterpreter(IWdlContext context)
                     case "CONTINUE":
                         throw new ContinueLoopException();
                     case "CALL":
-                    case "BRANCH":
                         ExecuteCall(item);
+                        break;
+                    case "BRANCH":
+                        switch (ResolveBranch(item, out WdlBlock? branchTarget))
+                        {
+                            case BranchOutcome.Jump when branchTarget is not null:
+                                throw new BranchException(branchTarget);
+                            case BranchOutcome.Ended:
+                                throw new EndActionException();
+                        }
+
                         break;
                     case "NEXT_MY":
                         ExecuteNextObject("my", WdlObjectIterationMode.SameName);
@@ -579,9 +595,26 @@ public sealed class WdlInterpreter(IWdlContext context)
             case "CONTINUE":
                 throw new ContinueLoopException();
             case "CALL":
-            case "BRANCH":
                 ExecuteCall(item);
                 frame.Index++;
+                break;
+            case "BRANCH":
+                switch (ResolveBranch(item, out WdlBlock? branchTarget))
+                {
+                    case BranchOutcome.Jump when branchTarget is not null:
+                        // The target replaces this action in the same state, so a WAIT in it
+                        // suspends the action a CALLer is already waiting on, and chains never nest.
+                        state.Frames.Clear();
+                        state.Frames.Push(WdlExecutionFrame.Block(branchTarget.Items));
+                        break;
+                    case BranchOutcome.Ended:
+                        state.Frames.Clear();
+                        break;
+                    default:
+                        frame.Index++;
+                        break;
+                }
+
                 break;
             case "NEXT_MY":
                 ExecuteNextObject("my", WdlObjectIterationMode.SameName);
@@ -1063,6 +1096,30 @@ public sealed class WdlInterpreter(IWdlContext context)
         {
             context.CallAction(item.Header[0].Text);
         }
+    }
+
+    /// <summary>
+    /// Resolves a <c>BRANCH</c> (OV-20261015-branch-tail-jump): a tail jump that runs the target
+    /// in place of the current action. A target that resolves to no action (a <c>NULL</c>
+    /// synonym) is skipped and the action goes on. A context without an
+    /// <see cref="IWdlActionResolver"/> can only nest the target, so the action ends after it.
+    /// </summary>
+    private BranchOutcome ResolveBranch(WdlItem item, out WdlBlock? target)
+    {
+        target = null;
+        if (item.Header.Count == 0 || item.Header[0].Kind != WdlTokenKind.Identifier)
+        {
+            return BranchOutcome.Skip;
+        }
+
+        string name = item.Header[0].Text;
+        if (context is IWdlActionResolver resolver)
+        {
+            return resolver.TryGetAction(name, out target) ? BranchOutcome.Jump : BranchOutcome.Skip;
+        }
+
+        context.CallAction(name);
+        return BranchOutcome.Ended;
     }
 
     private static void ExecuteGoto(WdlItem item)
@@ -1560,6 +1617,8 @@ public sealed class WdlInterpreter(IWdlContext context)
             header[0].Kind != WdlTokenKind.Identifier ||
             comma + 2 != header.Count ||
             header[comma + 1].Kind != WdlTokenKind.Identifier ||
+            // A keyword-valued synonym (ACTION, STRING …) takes NULL as a keyword, not an object.
+            (context is IWdlKeywordReferenceContext keywords && keywords.IsKeywordReference(header[0].Text)) ||
             !TryResolveObjectReference(header[comma + 1].Text, out AcknexObject? value))
         {
             return false;
@@ -2016,8 +2075,20 @@ public sealed class WdlInterpreter(IWdlContext context)
         return slice;
     }
 
+    private enum BranchOutcome
+    {
+        Skip,
+        Jump,
+        Ended,
+    }
+
     private sealed class EndActionException : Exception
     {
+    }
+
+    private sealed class BranchException(WdlBlock target) : Exception
+    {
+        public WdlBlock Target => target;
     }
 
     private sealed class GotoException(string label) : Exception

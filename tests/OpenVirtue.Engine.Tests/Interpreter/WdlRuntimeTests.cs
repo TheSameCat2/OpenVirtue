@@ -295,8 +295,9 @@ public class WdlRuntimeTests
         Assert.Equal(8, runtime.GetSkill("x"));
     }
 
+    // OV-20261015-branch-tail-jump: BRANCH is a tail jump; nothing after it in the branching action runs.
     [Fact]
-    public void Runtime_BranchInstruction_DispatchesNamedAction()
+    public void Runtime_BranchInstruction_SkipsRestOfBranchingAction()
     {
         Level level = Load(
             "MAPFILE <m.wmp>; SKILL x { VAL 0; } ACTION outer { BRANCH inner; SET x, x + 1; } ACTION inner { SET x, 7; }");
@@ -304,7 +305,137 @@ public class WdlRuntimeTests
 
         runtime.RunAction("outer");
 
-        Assert.Equal(8, runtime.GetSkill("x"));
+        Assert.Equal(7, runtime.GetSkill("x"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_CallerOfBranchingActionResumes()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; } " +
+            "ACTION src { RULE trace = trace * 10 + 1; BRANCH tgt; RULE trace = trace * 10 + 2; } " +
+            "ACTION start { CALL src; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+
+        Assert.Equal(139, runtime.GetSkill("trace"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_WaitInTarget_ResumesCallerAndFinishesTargetLater()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; WAIT 1; RULE trace = trace * 10 + 4; } " +
+            "ACTION src { RULE trace = trace * 10 + 1; BRANCH tgt; RULE trace = trace * 10 + 2; } " +
+            "ACTION start { CALL src; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+        Assert.Equal(139, runtime.GetSkill("trace"));
+        Assert.Equal(1, runtime.WaitingActionCount);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1394, runtime.GetSkill("trace"));
+        Assert.Equal(0, runtime.WaitingActionCount);
+    }
+
+    [Fact]
+    public void Runtime_Branch_ThroughAssignedActionSynonym_JumpsToTarget()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } SYNONYM selected { TYPE ACTION; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; } " +
+            "ACTION src { RULE trace = trace * 10 + 1; BRANCH selected; RULE trace = trace * 10 + 2; } " +
+            "ACTION start { SET selected, tgt; CALL src; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+
+        Assert.Equal(139, runtime.GetSkill("trace"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_ThroughNullActionSynonym_IsSkipped()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } SYNONYM selected { TYPE ACTION; DEFAULT tgt; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; } " +
+            "ACTION src { RULE trace = trace * 10 + 1; BRANCH selected; RULE trace = trace * 10 + 2; } " +
+            "ACTION start { SET selected, NULL; CALL src; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+
+        Assert.Equal(129, runtime.GetSkill("trace"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_InsideIfAndWhile_LeavesBlockLoopAndAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } SKILL z { VAL 0; } SKILL n { VAL 0; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; } " +
+            "ACTION src { IF (z == 0) { BRANCH tgt; RULE trace = trace * 10 + 2; } RULE trace = trace * 10 + 5; } " +
+            "ACTION loop { WHILE (n < 3) { RULE n += 1; BRANCH tgt; RULE trace = trace * 10 + 6; } RULE trace = trace * 10 + 7; } " +
+            "ACTION start { CALL src; CALL loop; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+
+        Assert.Equal(339, runtime.GetSkill("trace"));
+        Assert.Equal(1, runtime.GetSkill("n"));
+    }
+
+    // The title menu's shape (issue #7): the first target moves the compared skill, and the
+    // IF_EQUAL chain must not be re-entered, or New Game would also run the fourth entry.
+    [Fact]
+    public void Runtime_Branch_LegacyIfEqualChain_DoesNotReenterAfterTargetChangesSkill()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } SKILL pos { VAL 1; } " +
+            "ACTION first { RULE trace = trace * 10 + 1; SET pos, 4; } " +
+            "ACTION fourth { RULE trace = trace * 10 + 4; } " +
+            "ACTION menu { IF_EQUAL pos, 1; BRANCH first; IF_EQUAL pos, 4; BRANCH fourth; RULE trace = trace * 10 + 2; } " +
+            "ACTION start { CALL menu; RULE trace = trace * 10 + 9; }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("start");
+
+        Assert.Equal(19, runtime.GetSkill("trace"));
+        Assert.Equal(4, runtime.GetSkill("pos"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_ThousandChainedBranches_DoNotNest()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } " +
+            "ACTION loop { RULE n += 1; IF (n < 1000) { BRANCH loop; } }");
+        var runtime = new WdlRuntime(level);
+
+        runtime.RunAction("loop");
+
+        Assert.Equal(1000, runtime.GetSkill("n"));
+    }
+
+    [Fact]
+    public void Runtime_Branch_FromEachTickAction_SkipsRestOfTickAction()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL trace { VAL 0; } " +
+            "ACTION tgt { RULE trace = trace * 10 + 3; } " +
+            "ACTION tick { SET EACH_TICK.1, NULL; RULE trace = trace * 10 + 1; BRANCH tgt; RULE trace = trace * 10 + 2; } " +
+            "ACTION boot { SET EACH_TICK.1, tick; } " +
+            "IF_START boot;");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunStartup());
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(13, runtime.GetSkill("trace"));
     }
 
     [Fact]
