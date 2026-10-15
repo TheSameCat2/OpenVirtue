@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
@@ -18,6 +19,7 @@ namespace OpenVirtue.Engine.Interpreter;
 /// </summary>
 public sealed class WdlRuntime :
     IWdlContext,
+    IWdlActionResolver,
     IWdlSchedulerContext,
     IWdlActionHookContext,
     IWdlObjectGroupContext,
@@ -1339,6 +1341,13 @@ public sealed class WdlRuntime :
 
     /// <inheritdoc/>
     public void CallAction(string name) => Run(name);
+
+    /// <inheritdoc/>
+    public bool TryGetAction(string name, [NotNullWhen(true)] out WdlBlock? body)
+    {
+        body = null;
+        return ResolveActionName(name) is { } actionName && _actions.TryGetValue(actionName, out body);
+    }
 
     private void RegisterLevelObjects(Level level)
     {

@@ -83,28 +83,24 @@ public sealed partial class RetailSmokeTests
             Assert.Equal(1, host.Runtime.GetSkill("menu_pos"));
             Assert.Equal(UiNumber(host, "menu1_txt", "POS_Y"), UiNumber(host, "arrowOvly", "POS_Y"));
 
-            // New Game opens the difficulty menu (menu_exec BRANCHes to diff_menu), and Enter there
-            // starts at the preselected difficulty (keepArrowPos 4). While BRANCH returns like CALL, menu_exec runs on
-            // with the new menu_pos and the first Enter already starts the game; the log says which.
+            // New Game opens the difficulty menu (menu_exec BRANCHes to diff_menu, a tail jump per
+            // OV-20261015-branch-tail-jump, so the IF_EQUAL chain does not go on with the new
+            // menu_pos), and Enter there starts at the preselected difficulty (keepArrowPos 4).
             session.Press(HostKey.Enter);
             session.RunUntil(
                 "the difficulty menu is up or Apathy is loaded",
                 () => host.Runtime.GetSkill("menu_pos") == 4 || WorldName(host) == "APATHY");
-            if (WorldName(host) != "APATHY")
-            {
-                session.Run(30);
-                session.Capture("title-4-difficulty");
-                session.Press(HostKey.Enter);
-            }
-            else
-            {
-                _output.WriteLine("New Game skipped the difficulty menu and loaded Apathy directly.");
-            }
+            Assert.NotEqual("APATHY", WorldName(host));
+            session.Run(30);
+            session.Capture("title-4-difficulty");
+            Assert.NotEqual("APATHY", WorldName(host));
+            session.Press(HostKey.Enter);
 
             session.RunUntil("Apathy is loaded", () => WorldName(host) == "APATHY");
             session.Run(180);
             session.Capture("apathy-start");
             _output.WriteLine($"difficulty {host.Runtime.GetSkill("gameDifficulty")}");
+            Assert.Equal(3, host.Runtime.GetSkill("gameDifficulty"));
 
             WrsArchive archive = WrsArchive.ReadFile(Path.Combine(gameDir, "APATHY.WRS"));
             Level apathy = LevelLoader.Load(archive, "APATHY.WDL");

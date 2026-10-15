@@ -165,9 +165,11 @@ and old-engine edge cases.
   `TIME_CORR`/`FRICTION`/`INERTIA` velocity update; old-engine creep
   suppression and oscillation edge cases still need oracle calibration. `ADD`
   now increments numeric skill/object-member targets, and `ADDT` applies the
-  same increment scaled by `TIME_CORR`. `BRANCH` now performs first-pass action
-  dispatch through the same resolver as `CALL`; exact old-engine return/wait
-  semantics still need oracle calibration. `SKIP` now advances past a numeric
+  same increment scaled by `TIME_CORR`. `BRANCH` is a tail jump measured against
+  the DOS runtime (OV-20261015-branch-tail-jump, eleven runs): the target runs in place
+  of the current action, nothing after the `BRANCH` runs (not even the rest of an enclosing
+  `IF`/`WHILE`), the branching action's caller resumes as it would for the action itself,
+  chains do not nest, and a `NULL` synonym target is skipped. `SKIP` now advances past a numeric
   count of following statements. `IF_MIN` now tests whether a bounded skill is
   currently at its declared `MIN`; exact old-engine comparison tolerance remains
   parity work.
@@ -368,12 +370,11 @@ and old-engine edge cases.
   - Reading a `PANEL`/`TEXT`/`OVERLAY` member in an expression (`menu1_txt.POS_Y`)
     returned 0, so the menu arrow sat at the top of the screen. Fixed: member
     expressions now read UI elements the way `SET` writes them.
-  - New Game skips the difficulty menu and starts at difficulty 3. `menu_exec`
-    `BRANCH`es to `diff_menu`; because `BRANCH` returns like `CALL`, `menu_exec`
-    continues with the new `menu_pos` (4) and runs `menu4_act` (`set_diff3`). The
-    retail scripts only make sense if `BRANCH` does not return, but the 1998 manual
-    has no definition text for it (its index points to p.79, which documents only
-    `CALL` and `GOTO`), so the change waits for an oracle note (ADR-0007).
+  - New Game skipped the difficulty menu and started at difficulty 3, because `BRANCH`
+    returned like `CALL` and `menu_exec`'s `IF_EQUAL` chain went on with the new
+    `menu_pos`. Fixed (issue #7): `BRANCH` is a tail jump (OV-20261015-branch-tail-jump);
+    the smoke now requires the difficulty menu after the first Enter and difficulty 3
+    after the second.
   - `EACH_SEC` is not implemented (it is not in the 1998 manual either), so the
     title's 12 s logo and 4 s splash timeouts never fire; only a key advances.
   - `PLAY_FLICFILE` holds its action until the flic ends, so `IF_ANYKEY` is armed
