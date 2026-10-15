@@ -6,8 +6,8 @@ It is intentionally repo-specific: follow it together with the user's current re
 ## What this is
 
 OpenVirtue is a **clean-room reimplementation of the Acknex-3 (3D GameStudio A3) engine
-runtime**, aiming to run the 1999 FPS *Saints of Virtue* natively on modern Windows in
-C#/.NET 10 with a Direct3D 11 renderer. It follows the **OpenMW model**: the engine ships
+runtime**, aiming to run the 1999 FPS *Saints of Virtue* natively on modern Linux and
+Windows in C#/.NET 10 with an SDL3 window and an OpenGL 3.3 renderer (ADR-0008). It follows the **OpenMW model**: the engine ships
 *only its own code* and reads the user's own legally-obtained game data (`*.WRS` files) at
 runtime. No original game assets, scripts, or executables are distributed.
 
@@ -42,9 +42,9 @@ engine, WDL, WMP, and scheduler behavior before falling back to black-box oracle
 
 Toolchain: .NET SDK 10.0.4xx (10.0.402 on the Arch Linux development host, which runs it
 through mise and is not pinned). The
-solution uses the **`.slnx`** (XML) format, not `.sln`. `Directory.Build.props` sets
-`EnableWindowsTargeting`, so the Windows-only `OpenVirtue.App` project *builds* on Linux (it
-cannot run there until ADR-0008's SDL3/OpenGL host lands); the CI-shaped pair below passes on
+solution uses the **`.slnx`** (XML) format, not `.sln`. `OpenVirtue.App` is `net10.0` and
+runs on Linux. The legacy Direct3D 11 project sets `EnableWindowsTargeting` itself and
+compiles as an empty library on non-Windows hosts. The CI-shaped pair below passes on
 both platforms.
 
 ```bash
@@ -53,9 +53,9 @@ dotnet test  OpenVirtue.slnx                      # run all tests (xUnit)
 dotnet test  tests/OpenVirtue.Formats.Tests       # run one test project
 dotnet test --filter "FullyQualifiedName~WrsArchiveTests"   # run one class/test by name
 
-# Run the game (Windows; point at one of YOUR OWN .WRS files):
+# Run the viewer (point at one of YOUR OWN .WRS files):
 dotnet run --project src/OpenVirtue.App -- path/to/apathy.wrs [MAIN.WDL]
-#   Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, drag left-mouse to look.
+#   Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, move the mouse to look.
 
 # Inspect game files with the `ovtool` CLI:
 dotnet run --project tools/OpenVirtue.Tools -- wrs list    <archive.wrs>
@@ -64,7 +64,10 @@ dotnet run --project tools/OpenVirtue.Tools -- level info  <archive.wrs>   # als
 ```
 
 There is no separate lint step — .NET analyzers (`AnalysisLevel=latest-recommended`) run as
-part of the build. CI runs restore, `dotnet build -warnaserror`, and `dotnet test` on Windows.
+part of the build. CI runs restore, `dotnet build -warnaserror`, and `dotnet test` on
+`ubuntu-latest` and `windows-latest`. The Linux job installs Xvfb and llvmpipe, and the
+Windows job downloads Mesa llvmpipe and sets `SDL_OPENGL_LIBRARY`, so the tilt-0 GL
+frame check runs on both. That test skips with a message when no GL context exists.
 
 For PR-readiness checks, prefer the CI-shaped local build:
 
@@ -79,8 +82,8 @@ The pipeline turns a user's archive into a rendered level:
 
 ```
 WRS archive ──► WDL (preprocess/flatten INCLUDE+IFDEF) ─┐
-            └─► WMP (text map: geometry + placements) ──┴─► Level ──► TextureLoader ──► LevelWindow
-                                                          (typed objects   (PCX→RGBA)   (Direct3D 11)
+            └─► WMP (text map: geometry + placements) ──┴─► Level ──► TextureLoader ──► RuntimeHost ──► GL
+                                                          (typed objects   (PCX→RGBA)   (frame loop)   (OpenGL 3.3)
                                                            + texture catalog)
 ```
 
@@ -109,13 +112,20 @@ Projects and their **strict layering** (enforced only by discipline — keep it)
     is the measured original projection (horizontal FOV = `PLAYER_ARC` radians, 2/3 vertical
     tangent scaled by `ASPECT`, `PLAYER_TILT` as a y-shear; OV-20261009-*) that every renderer
     and the hitscan consume; `VirtualDisplayLayout` letterboxes a VIDEO mode to its 4:3 display
-    aspect. **No DirectX here**, deliberately, so the engine stays testable headless.
+    aspect. **No graphics API here**, deliberately, so the engine stays testable headless.
 
-- **`OpenVirtue.App`** (`net10.0-windows`, WinForms `WinExe`, → Engine) — the **only place
-  DirectX lives** (Vortice.Direct3D11/DXGI/D3DCompiler/Mathematics). `Program` is the entry
-  point; `LevelWindow` is the D3D11 host (swap chain, depth buffer, inline HLSL shader,
-  sprite billboards, alpha-test color-key cutout) with a first-person debug player driving
-  the camera.
+- **`OpenVirtue.Host`** (`net10.0`, → Engine, **no native dependencies**) — `RuntimeHost`
+  owns the frame order, input skills, WDL host requests, the eight-voice `AudioMixer`, and
+  PNG screenshots. Window, audio device, and GL sit behind `IPlatformWindow`, `IInputSource`,
+  `IAudioSink`, and `IRenderBackend`, so the loop is tested with fakes.
+
+- **`OpenVirtue.App`** (`net10.0` Exe, → Host) — SDL3 window, input, and audio
+  (`Platform/Sdl*`) and the OpenGL 3.3 renderer (`Rendering/Gl*`). `Program` is the entry
+  point. The mouse is absolute: the cursor hides over the window and is not grabbed.
+
+- **`src/legacy/OpenVirtue.App.D3D11`** — the previous WinForms / Direct3D 11 viewer. It
+  builds as a WinExe on Windows and as an empty library elsewhere. It is not extended, and
+  it is deleted only after the GL host has replaced it.
 
 - **`OpenVirtue.Tools`** (`net10.0`, → Formats + Engine) — the `ovtool` CLI inspector.
 
@@ -179,7 +189,7 @@ cannot find the game data.
 - **`docs/recon/`** is research-phase background (dated 2026-06-25). Its proposed
   architecture predates the code and **does not match the current layout** (there is no
   separate `OpenVirtue.Wdl`/`Rendering`/`Platform` project; the WDL interpreter lives in
-  `Engine`, rendering is split between `Engine.Rendering` and `App`). The strategy doc's
+  `Engine`, the frame loop in `Host`, and SDL/GL in `App`). The strategy doc's
   milestone table is annotated with current progress, but the **code is the source of truth**
   for structure.
 - The root [`README.md`](README.md) is current: its **Current status** section is the

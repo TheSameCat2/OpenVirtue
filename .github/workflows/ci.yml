@@ -13,10 +13,12 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build & test
-    # Windows is required: OpenVirtue.App targets net10.0-windows with WinForms,
-    # which cannot be built on Linux/macOS runners.
-    runs-on: windows-latest
+    name: Build & test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -40,7 +42,42 @@ jobs:
       - name: Build
         run: dotnet build OpenVirtue.slnx --configuration Release --no-restore -warnaserror
 
+      # llvmpipe under Xvfb lets the tilt-0 GL frame check run on the Linux runner.
+      # The test skips with a message when no context can be created.
+      - name: Install a software GL context
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1 libgl1-mesa-dri
+
+      # windows-latest only ships the Microsoft OpenGL 1.1 rasterizer. SDL still
+      # returns that context when wglCreateContextAttribsARB is missing, and the
+      # tilt-0 test then dies loading glGenVertexArrays. opengl32.dll is a Known
+      # DLL, so a copy beside the test host is ignored; SDL_OPENGL_LIBRARY selects
+      # this Mesa llvmpipe build by full path. Pin the release: the archive name
+      # is the contract.
+      - name: Install Mesa llvmpipe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = '26.2.5'
+          $dest = Join-Path $env:RUNNER_TEMP 'mesa-llvmpipe'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $archive = Join-Path $env:RUNNER_TEMP "mesa-llvmpipe-x64-$version.7z"
+          $url = "https://github.com/mmozeiko/build-mesa/releases/download/$version/mesa-llvmpipe-x64-$version.7z"
+          curl.exe --fail --silent --show-error --location --output $archive $url
+          $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue)?.Source
+          if (-not $sevenZip) { $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe" }
+          & $sevenZip x $archive "-o$dest" opengl32.dll -y
+          $dll = Join-Path $dest 'opengl32.dll'
+          if (-not (Test-Path $dll)) { throw "Mesa opengl32.dll was not extracted to $dll" }
+          "SDL_OPENGL_LIBRARY=$dll" >> $env:GITHUB_ENV
+          Write-Host "SDL_OPENGL_LIBRARY=$dll"
+
       # Unit tests use hand-built byte vectors and run anywhere. The guarded
       # integration tests against real game data are a no-op here (no _research/).
-      - name: Test
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
         run: dotnet test OpenVirtue.slnx --configuration Release --no-build --verbosity normal

@@ -4,8 +4,8 @@
 
 A clean-room, open-source reimplementation of the **Acknex-3 (3D GameStudio A3)**
 engine runtime, with the goal of running the 1999 Christian FPS **Saints of
-Virtue** natively on modern Windows — and, once parity is reached, improving its
-graphics using native technologies (Direct3D).
+Virtue** natively on modern Linux and Windows — and, once parity is reached, improving its
+graphics.
 
 This project follows the **OpenMW / engine-remake model**: we ship *only* our own
 code. The end user supplies their own legally obtained copy of the original game,
@@ -13,7 +13,7 @@ whose data files our engine reads at runtime. **No original game assets, scripts
 or executables are distributed with this project.**
 
 > Status: **early implementation.** The asset pipeline (WRS/PCX/WDL/WMP/WAV) works
-> and a textured level renders in a Direct3D 11 window with billboard sprites; the
+> and a textured level renders in an OpenGL 3.3 window with billboard sprites; the
 > WDL interpreter boots/ticks in the viewer, and first-person movement has a first
 > playable debug slice. The actual game simulation is still being built. See
 > [Current status](#current-status) for the milestone breakdown, and
@@ -32,8 +32,8 @@ or executables are distributed with this project.**
 
 1. **Parity first.** Faithfully reproduce Acknex-3 runtime behavior so the
    retail game plays correctly, end to end.
-2. **Native & modern.** Written in **C#/.NET 10**, rendering through **Direct3D**
-   (via Vortice.Windows), following modern Windows game-dev practice.
+2. **Native & modern.** Written in **C#/.NET 10**, rendering through **OpenGL 3.3**
+   with an SDL3 window, on Linux and Windows (ADR-0008).
 3. **Enhance later.** Once parity is verified, optionally raise rendering quality
    (higher resolution, filtering, true 3D lighting) behind toggles.
 4. **Preservation & appreciation.** Credit the original authors prominently; this
@@ -52,7 +52,7 @@ What works today:
   WMP map into a typed object model (regions, walls, things, actors, skills, actions,
   textures). Guarded local-only tests cover all six retail archives through level
   loading, inspection mesh generation, texture decode, and runtime boot/tick.
-- **Direct3D 11 renderer** — a windowed viewer draws textured walls and ear-clipped
+- **OpenGL 3.3 renderer** — an SDL3 windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). It recognizes WDL
   `FLAGS SKY` textures as a camera-selected textured background, renders open
@@ -63,7 +63,9 @@ What works today:
   The camera is driven by the WDL-visible player with radius-aware wall, portal,
   and entity collision. Floor/ceiling queries interpolate WMP vertex heights so
   authored slopes feed vertical collision, WDL height/slope skills, and the
-  rendered feet/shadows of things and actors.
+  rendered feet/shadows of things and actors. The tilt-0 synthetic room matches the
+  DOSBox-X capture `OVTLT0.PCX` (stripes G R G R G R, floor at the bottom). The previous
+  Direct3D 11 viewer remains in `src/legacy/` and builds on Windows only.
 - **WDL interpreter — foundation** — a full expression evaluator (arithmetic,
   comparison, logical `&&`/`||`, bitwise integer operators, modulo, documented
   single-argument math functions, member access, and A3-style arithmetic aborts)
@@ -95,7 +97,7 @@ What works today:
   `IF_MSTOP`, and hides the native cursor over the custom pointer surface. In
   mouse modes 0/1, bounded `MOUSE_SENSE`-scaled deltas feed the retail movement
   action through `FORCE_ROT`/`FORCE_TILT`; mode 2 remains cursor-only.
-  An eight-voice NAudio host plays overlapping retail WAV effects with immediate
+  An eight-voice software mixer feeding an SDL3 audio stream plays overlapping retail WAV effects with immediate
   `CHANNEL`/`CHANNEL_0..7` state, global and per-sound volume, numeric stereo pan,
   and first-pass object-relative `SDIST`/`SVDIST` attenuation. Texture `SOUND`,
   `SVOL`, `SCYCLES`, and `SLOOP` metadata is retained; grounded movement triggers
@@ -125,8 +127,9 @@ What works today:
   as the same screenshots show — through a single map→render mapping (render z = −map y, camera
   yaw = `PLAYER_ANGLE` + π/2; ADR-0009), a WMP `PLAYER_START` angle of 0 faces map +x like the
   oracle dump, thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
-  viewer in its left region. Engine tests pin all of this; a visual check on a running host is
-  still pending.
+  viewer in its left region. Engine tests pin all of this. The tilt-0 frame was checked on the
+  GL host on 2026-10-15. The retail title→Apathy rendered smoke, previously run on the D3D11
+  host, has not been repeated on the GL host.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,
@@ -152,7 +155,7 @@ and where each piece sits. The immediate work plan is tracked in
 | `docs/adr/` | Architecture Decision Records (created as we make design choices). |
 | `docs/clean-room/` | Oracle/invariant discovery protocol and sanitized observation notes. |
 | `docs/planning/` | Current near-term work plan. |
-| `src/` | Engine source: `OpenVirtue.Formats` (asset readers), `OpenVirtue.Engine` (world model, WDL interpreter, geometry), `OpenVirtue.App` (Direct3D 11 viewer). |
+| `src/` | Engine source: `OpenVirtue.Formats` (asset readers), `OpenVirtue.Engine` (world model, WDL interpreter, geometry), `OpenVirtue.Host` (frame loop), `OpenVirtue.App` (SDL3 + OpenGL viewer). |
 | `tools/` | Local asset-inspection / extraction helpers (not redistributed game data). |
 | `tests/` | Automated tests. |
 | `_research/` | **Git-ignored.** Local-only copies of the game, the SaintsX fan patch, and third-party reference code — for study only, never committed or shipped. |

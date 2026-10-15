@@ -1,6 +1,6 @@
 # ADR-0008: Cross-platform host — SDL3 + OpenGL 3.3, superseding Direct3D 11
 Date: 2026-10-09
-Status: proposed (supersedes ADR-0001 on acceptance)
+Status: accepted (2026-10-15). Supersedes [ADR-0001](0001-renderer-direct3d11-vortice.md).
 
 ## Context
 
@@ -22,7 +22,7 @@ WinForms or P/Invoke outside `App`). Every platform binding lives in one file,
   input, control) and the player-state bridge;
 - `System.Drawing` for PNG screenshots.
 
-`OpenVirtue.App` targets `net10.0-windows`; CI runs on `windows-latest` only.
+`OpenVirtue.App` targeted `net10.0-windows`, and CI ran on `windows-latest` only.
 
 What the renderer needs is modest and fixed by the parity goal: textured quads with a depth
 buffer, alpha-test cutout for palette index 0, **indexed-palette shading** (the original is
@@ -49,6 +49,13 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
    philosophy. This is the main reason a hardware renderer is kept rather than switching to
    a software rasterizer: it gives the same lookups *and* keeps the enhancement path open.
 
+   The first GL frame does not implement that LUT yet. It uploads point-sampled RGBA (nearest,
+   not the linear filter the D3D11 host used), discards fragments with alpha below 0.5 when
+   the material asks for an index-0 cutout, and multiplies by `saturate(PLAYER_LIGHT + ambient)`.
+   That is the shading model the projection check was read against. Indexed-palette shading
+   stays this decision. The tilt-0 frame matches with this shading, so the LUT is the next
+   renderer change. Changing both at once would have made a stripe mismatch unreadable.
+
 4. **Audio: our own eight-voice software mixer feeding an SDL3 audio stream**
    (`SDL_OpenAudioDeviceStream`, float32). The host already computes per-voice volume/pan;
    the original was eight-channel software mixing, so owning the mix is the parity-correct
@@ -62,14 +69,13 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
    ```
    OpenVirtue.Formats   (net10.0)  unchanged
    OpenVirtue.Engine    (net10.0)  unchanged
-   OpenVirtue.Host      (net10.0, → Engine)   NEW, no native deps, unit-testable
-       RuntimeHost        services IWdl*Context requests; owns the frame loop ordering
-       PlayerBridge       debug player ⇄ PLAYER_* skills
+   OpenVirtue.Host      (net10.0, → Engine)   no native deps, unit-testable
+       RuntimeHost        frame loop, IWdl*Context requests, player ⇄ PLAYER_* skills
        AudioMixer         8 voices → float buffer (pure C#)
-       SaveStore / PrintDirectory / PngWriter
+       PngWriter          screenshots (saves and the print directory live on RuntimeHost)
        Abstractions:  IPlatformWindow, IInputSource, IAudioSink, IRenderBackend
    OpenVirtue.App       (net10.0, Exe, → Host)  SDL3 + GL implementations + Program
-       Platform/Sdl*      window, events, relative mouse, audio device
+       Platform/Sdl*      window, events, absolute mouse (cursor hidden, not grabbed), audio
        Rendering/Gl*      renderer, texture cache, world/sprite/UI/sky/FLIC batches, GLSL
    OpenVirtue.Tools     (net10.0)  unchanged; `oracle prepare` also emits .sh launchers
    ```
@@ -77,26 +83,39 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
    `Host` carries the logic that is currently interleaved with D3D calls and must be
    testable with fakes; `App` becomes thin. `net10.0-windows` and WinForms disappear.
 
-7. **Migration uses the old renderer as a regression oracle.** The D3D11 `LevelWindow` moves
-   unchanged into a Windows-only `src/legacy/OpenVirtue.App.D3D11` project (built only on
-   Windows via an MSBuild condition, excluded from the Linux solution filter). The retail
-   rendered smoke and a set of fixed-camera screenshots are captured from it; the GL renderer
-   is driven to match them (image diff with a tolerance for rasterization differences). This
-   guards against *regressions during the port only*: the D3D11 renderer was never validated
-   against the original (until 2026-10-09 its projection treated `PLAYER_ARC` as a vertical
-   FOV in radians and presented 320x200 with square pixels). Parity of the renderer itself is
-   measured against DOSBox-X screenshots; the three projection probes (FOV, pixel aspect, tilt
-   model) were resolved on 2026-10-09 (OV-20261009-*); the D3D11 renderer consumes
-   `OpenVirtue.Engine.Rendering.ProjectionModel` today and the GL renderer must consume the
-   same type. When
-   the GL path matches the legacy renderer on all six archives and the title→Apathy flow
-   (with the corrected projection applied to both, or the diff restricted to non-projection
-   layers), the legacy project is deleted in a single commit. It is never extended.
+7. **The visual oracle is the original runtime, not the D3D11 host.** There is no Windows
+   machine for this port, so capturing retail smoke and fixed-camera screenshots from the
+   D3D11 build cannot gate it. "Pixels match D3D11" is not the test: that renderer was not
+   validated against the original until the projection fix, and it still cannot run here.
+
+   The D3D11 `LevelWindow` stays, unchanged, in `src/legacy/OpenVirtue.App.D3D11`. An MSBuild
+   `IsOSPlatform('windows')` condition builds it as a WinExe on Windows and as an empty
+   `net10.0` library elsewhere, so the solution builds on Linux without a global
+   `EnableWindowsTargeting`. It is never extended. It is deleted only after the GL host has
+   replaced it.
+
+   The check that accepts this ADR is a frame from the GL host against the existing DOSBox-X
+   capture
+   `_research/oracle-runs/OV-20261009-tilt-model-shear-vs-pitch/S640x480-tilt-0/work/OVTLT0.PCX`
+   (640×480, facing map +x, far wall G R G R G R left to right, world-y fit
+   `x = 319.6 − 12.2·y`). On 2026-10-15 the GL host (Mesa, 640×480) produced stripe edges at
+   columns 0, 174, 222, 271, 320, 369, 418, 466 against the capture's 0, 173, 222, 271, 320,
+   368, 417, 466 — within 2 pixels — with the floor at the bottom of the frame. The test is
+   `Tilt0FrameTests`. It skips with a message when no GL context can be created. A shader
+   failure after a context exists is a failure.
+
+   Indexed-palette shading (decision 3), exact sky scrolling, and the unprobed sky-under-tilt
+   question stay open parity items. The sky side at angle 0 keeps the previous host's heading
+   formula and is still unprobed. The GL renderer consumes `ProjectionModel` and `RenderSpace`
+   from the engine; a frame that disagrees with the capture is fixed in the host's use of
+   those types, not by retuning the model.
 
 8. **CI** becomes a matrix of `ubuntu-latest` and `windows-latest`: restore, build
-   `-warnaserror`, test. Golden-image tests run where a GL context can be created
-   (`SDL_VIDEODRIVER=offscreen` or Xvfb + llvmpipe on Linux) and skip with a clear message
-   otherwise, mirroring how the guarded real-data tests already behave.
+   `-warnaserror`, test. Golden-image tests run on a software GL context: Xvfb plus the
+   distro llvmpipe on Linux, and a pinned Mesa llvmpipe `opengl32.dll` on Windows
+   (`SDL_OPENGL_LIBRARY`, because `opengl32.dll` is a Known DLL and the runner's
+   Microsoft rasterizer is OpenGL 1.1). They skip with a clear message when no context
+   can be created, mirroring how the guarded real-data tests already behave.
 
 ## Alternatives considered
 
@@ -126,10 +145,12 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
 ## Consequences
 
 Positive:
-- Linux and Windows from one code path and one CI matrix; no Windows-only TFM anywhere.
-- The god class is split into testable pieces; `Host` logic (request servicing, frame
-  ordering, mixer) gets unit tests it cannot have today.
-- Palette-indexed shading becomes a first-class renderer design, closing a listed parity gap.
+- Linux and Windows from one shipping code path and one CI matrix. The legacy D3D11 project
+  is the only Windows TFM, and only when the build is actually running on Windows.
+- The god class is split. `Host` request servicing, frame order, and the mixer have unit tests
+  with fakes.
+- Palette-indexed shading stays the renderer design. The first frame uses point-sampled RGBA
+  so the projection check stays readable; the LUT is the next change.
 - Oracle work moves to native Linux DOSBox-X with no change of oracle (see `_research/README.md`).
 
 Negative / risks:
@@ -139,15 +160,16 @@ Negative / risks:
   version and upgrade deliberately.
 - Silk.NET 3.0 is still unreleased; staying on 2.x is fine, but the eventual move is a
   (mechanical) breaking change.
-- Relative-mouse mode and high-DPI behave differently on Wayland vs X11 vs Win32; input
-  calibration (`MICKEY_X/Y`, `MOUSE_SENSE`) must be re-verified per platform against the
-  oracle, not assumed from the Windows build.
+- The host does not grab the pointer and does not request a high-DPI framebuffer, so window
+  pixels and the GL framebuffer stay 1:1. Mickeys are the motion event's relative deltas.
+  If a platform reports those in a different scale, calibrate against the oracle.
 - macOS is not a target; OpenGL is deprecated there. If it ever becomes one, SDL_GPU or a
   Metal-capable path is the answer, recorded in a new ADR.
 
 Follow-ups this ADR creates:
-- Mark ADR-0001 superseded; update `README.md` goals ("Native & modern … Direct3D") and
-  `docs/recon/05`/`06` notes that assume Vortice/DirectX.
+- Done at acceptance: ADR-0001 is marked superseded, and `README.md`, `AGENTS.md`,
+  `src/README.md`, and CI describe the SDL/GL host. `docs/recon/05` and `06` still mention
+  Vortice; they are research-phase notes, and this ADR is the source of truth.
 - ADR-0010 (proposed next; 0009 was taken by the render-space handedness decision): oracle
   hosts on Linux — DOSBox-X native as primary, `WVRUN.EXE` under Wine as a secondary oracle
   for DOS-vs-Windows runtime differences only.

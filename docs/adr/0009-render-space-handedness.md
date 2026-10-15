@@ -107,8 +107,7 @@ and the runtime reported `PLAYER_ANGLE = π/2`, while the oracle dump for `PLAYE
   save is loaded (`AdoptRuntimeHeading`), so the skills, not a stale camera, are the source
   of truth in both places.
 - Triangle winding of every world triangle inverts. The rasterizer runs `CullMode.None`, so
-  nothing is culled; a renderer that enables back-face culling (ADR-0008's GL host) must pick
-  the front face accordingly.
+  nothing is culled. The GL host disables face culling for the same reason.
 - The GL renderer (ADR-0008) consumes `RenderSpace` and `ProjectionModel` from the engine;
   it must not introduce a second mapping.
 - Engine-level tests pin the handedness without a GPU: `RenderSpaceTests`,
@@ -119,6 +118,8 @@ and the runtime reported `PLAYER_ANGLE = π/2`, while the oracle dump for `PLAYE
   must stay green.
 - Visual confirmation against the oracle screenshot
   (`_research/oracle-runs/OV-20261009-tilt-model-shear-vs-pitch/S640x480-tilt-0/work/OVTLT0.PCX`,
-  stripes G R G R G R left→right) needs a running host: Windows for the D3D11 build, or the
-  ADR-0008 GL host once it exists. Not done on the Linux development machine.
+  stripes G R G R G R left→right) was done on the Linux development machine on 2026-10-15.
+  `Tilt0FrameTests` drew the room with the GL host at 640×480. The far-wall edges landed at
+  columns 0, 174, 222, 271, 320, 369, 418, 466, within one pixel of the capture, and the floor
+  was at the bottom of the frame. The math in this ADR was not retuned.
 - The Linux oracle-host ADR that ADR-0008 reserved as "0009" becomes ADR-0010.

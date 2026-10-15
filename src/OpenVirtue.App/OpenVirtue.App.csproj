@@ -1,23 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenVirtue.Engine\OpenVirtue.Engine.csproj" />
+    <ProjectReference Include="..\OpenVirtue.Host\OpenVirtue.Host.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NAudio" Version="2.3.0" />
-    <PackageReference Include="Vortice.D3DCompiler" Version="3.8.3" />
-    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
-    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
-    <PackageReference Include="Vortice.Mathematics" Version="2.1.1" />
+    <PackageReference Include="ppy.SDL3-CS" Version="2026.1002.1" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
   </ItemGroup>
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- App entry point is hand-written; don't require XML docs here. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

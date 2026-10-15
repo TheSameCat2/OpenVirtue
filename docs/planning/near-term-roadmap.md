@@ -51,8 +51,9 @@ engine invariants.
      `PLAYER_ANGLE` (0 = +x), and engine tests push mesh/sprite output through the
      look-at and the projection matrix to pin the side; the hitscan's lateral sign was
      already right.
-     Visual confirmation against the oracle screenshot needs a running host (Windows
-     D3D11 or the ADR-0008 GL host). The hitscan is measured as well
+     Visual confirmation of that frame was done on the GL host on 2026-10-15
+     (`Tilt0FrameTests`, stripe edges within 1 px of `OVTLT0.PCX`, floor at the bottom).
+     The hitscan is measured as well
      (OV-20261009-shoot-mapping, 2026-10-10): `SHOOT_X`/`SHOOT_Y` share the projection's
      tangents with positive `SHOOT_Y` aiming up, the tilt shear acts on the ray, `HIT_DIST`
      is the depth along the line of sight, thing bitmaps are unmirrored and a wall's
@@ -175,7 +176,7 @@ and old-engine edge cases.
   produce host-level runtime sound requests. The runtime reserves the documented
   eight channels synchronously, exposes `CHANNEL`/`CHANNEL_0..7`, applies the
   documented `SOUND_VOL` default, and releases channels on host completion or
-  `STOP_SOUND`. The NAudio host resolves WAV data from the current WRS archive,
+  `STOP_SOUND`. The host resolves WAV data from the current WRS archive,
   supports overlapping voices and numeric balance, and applies first-pass
   object-relative pan plus linear `SDIST`/`SVDIST` attenuation. Texture `SOUND`,
   `SVOL`, `SCYCLES`, and `SLOOP` are retained; grounded movement now triggers floor
@@ -353,9 +354,9 @@ and old-engine edge cases.
   `FORCE_ROT`/`FORCE_TILT`, so the retail movement action owns mouse-look inertia;
   mode 2 remains decoupled for menu cursor movement. The first-pass 16-dot analog
   scale remains oracle-calibration work.
-  A rendered smoke verified the retail title
+  A rendered smoke on the previous D3D11 host verified the retail title
   FLC, title splash, menu, and keyboard handoff from `TITLE.WRS` to Apathy in one
-  app process.
+  app process. That smoke has not been repeated on the GL host.
 
 ## Track 2: Discover Hidden Invariants Cleanly
 
