@@ -65,8 +65,9 @@ dotnet run --project tools/OpenVirtue.Tools -- level info  <archive.wrs>   # als
 
 There is no separate lint step — .NET analyzers (`AnalysisLevel=latest-recommended`) run as
 part of the build. CI runs restore, `dotnet build -warnaserror`, and `dotnet test` on
-`ubuntu-latest` and `windows-latest`. The Linux job installs Xvfb and llvmpipe so the
-tilt-0 GL frame check runs; that test skips with a message when no GL context exists.
+`ubuntu-latest` and `windows-latest`. The Linux job installs Xvfb and llvmpipe, and the
+Windows job downloads Mesa llvmpipe and sets `SDL_OPENGL_LIBRARY`, so the tilt-0 GL
+frame check runs on both. That test skips with a message when no GL context exists.
 
 For PR-readiness checks, prefer the CI-shaped local build:
 

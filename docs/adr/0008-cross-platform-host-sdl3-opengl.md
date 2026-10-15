@@ -111,9 +111,11 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
    those types, not by retuning the model.
 
 8. **CI** becomes a matrix of `ubuntu-latest` and `windows-latest`: restore, build
-   `-warnaserror`, test. Golden-image tests run where a GL context can be created
-   (`SDL_VIDEODRIVER=offscreen` or Xvfb + llvmpipe on Linux) and skip with a clear message
-   otherwise, mirroring how the guarded real-data tests already behave.
+   `-warnaserror`, test. Golden-image tests run on a software GL context: Xvfb plus the
+   distro llvmpipe on Linux, and a pinned Mesa llvmpipe `opengl32.dll` on Windows
+   (`SDL_OPENGL_LIBRARY`, because `opengl32.dll` is a Known DLL and the runner's
+   Microsoft rasterizer is OpenGL 1.1). They skip with a clear message when no context
+   can be created, mirroring how the guarded real-data tests already behave.
 
 ## Alternatives considered
 
