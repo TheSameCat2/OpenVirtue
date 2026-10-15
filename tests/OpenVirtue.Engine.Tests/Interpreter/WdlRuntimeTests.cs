@@ -106,6 +106,27 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ReadUiMember_ReturnsTextPositionAndVisibility()
+    {
+        Level level = Load(
+            """
+            MAPFILE <m.wmp>;
+            STRING line, "New Game";
+            SKILL pos { VAL 1; }
+            SKILL arrowY { VAL 0; }
+            SKILL shown { VAL 0; }
+            TEXT item1 { POS_Y 3; STRING line; FLAGS VISIBLE; }
+            ACTION placeArrow { SET item1.POS_Y, 102; IF (pos == 1) { SET arrowY, item1.POS_Y; } SET shown, item1.VISIBLE + 1; }
+            """);
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("placeArrow"));
+
+        Assert.Equal(102, runtime.GetSkill("arrowY"));
+        Assert.Equal(2, runtime.GetSkill("shown"));
+    }
+
+    [Fact]
     public void Runtime_SetUiMember_ResolvesPanelSynonymAndCanClearVisible()
     {
         Level level = Load(

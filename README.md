@@ -128,8 +128,11 @@ What works today:
   yaw = `PLAYER_ANGLE` + π/2; ADR-0009), a WMP `PLAYER_START` angle of 0 faces map +x like the
   oracle dump, thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
   viewer in its left region. Engine tests pin all of this. The tilt-0 frame was checked on the
-  GL host on 2026-10-15. The retail title→Apathy rendered smoke, previously run on the D3D11
-  host, has not been repeated on the GL host.
+  GL host on 2026-10-15. The retail title→Apathy smoke passed on the GL host the same day
+  (`RetailSmokeTests`): logo FLC, splash, menu and keyboard handoff into Apathy at its declared
+  start region, and a drawn frame from all six retail archives. Two known gaps remain in that
+  flow: New Game skips the difficulty menu because `BRANCH` still returns like `CALL`, and
+  `EACH_SEC` timers do not run, so the title does not advance without a key.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, exact player collision,

@@ -356,7 +356,33 @@ and old-engine edge cases.
   scale remains oracle-calibration work.
   A rendered smoke on the previous D3D11 host verified the retail title
   FLC, title splash, menu, and keyboard handoff from `TITLE.WRS` to Apathy in one
-  app process. That smoke has not been repeated on the GL host.
+  app process. The same smoke passed on the GL host on 2026-10-15
+  (`tests/OpenVirtue.App.Tests/RetailSmokeTests`, guarded on `_research/` and a GL
+  context; frames go to `ov-retail-smoke/` in the temp folder). It drives the real
+  SDL/GL host with scripted keys: the logo FLC plays, Space shows the splash, Space
+  shows the menu with the arrow on New Game, and Enter loads Apathy, which draws the
+  amphitheater, instruction text, sprites and HUD with the player in the declared
+  start region (479 `amphiStage`). `START`, `TITLE`, `APATHY`, `HEART`, `LEGALISM`
+  and `NEWAGE` each open directly and draw a frame (`START` hands off to the title).
+  What failed or differs:
+  - Reading a `PANEL`/`TEXT`/`OVERLAY` member in an expression (`menu1_txt.POS_Y`)
+    returned 0, so the menu arrow sat at the top of the screen. Fixed: member
+    expressions now read UI elements the way `SET` writes them.
+  - New Game skips the difficulty menu and starts at difficulty 3. `menu_exec`
+    `BRANCH`es to `diff_menu`; because `BRANCH` returns like `CALL`, `menu_exec`
+    continues with the new `menu_pos` (4) and runs `menu4_act` (`set_diff3`). The
+    retail scripts only make sense if `BRANCH` does not return, but the 1998 manual
+    has no definition text for it (its index points to p.79, which documents only
+    `CALL` and `GOTO`), so the change waits for an oracle note (ADR-0007).
+  - `EACH_SEC` is not implemented (it is not in the 1998 manual either), so the
+    title's 12 s logo and 4 s splash timeouts never fire; only a key advances.
+  - `PLAY_FLICFILE` holds its action until the flic ends, so `IF_ANYKEY` is armed
+    only after the logo FLC finishes and a key during it does nothing. Whether the
+    original lets a key cut the logo short is open.
+  - Opened directly, `HEART`, `LEGALISM` and `NEWAGE` draw the world but no HUD,
+    crosshair or weapon, while Apathy opened the same way draws all three; not yet
+    investigated. `HEART` (about 10 FPS) and `LEGALISM` (about 19 FPS) also run well
+    below Apathy (about 33 FPS) on the development host.
 
 ## Track 2: Discover Hidden Invariants Cleanly
 

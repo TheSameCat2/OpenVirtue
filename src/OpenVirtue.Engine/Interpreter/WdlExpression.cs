@@ -107,8 +107,16 @@ public sealed class MemberExpression(string objectName, string property) : WdlEx
     public string ObjectName => objectName;
     public string Property => property;
 
-    public override double Evaluate(IWdlContext context) =>
-        context.GetObject(objectName) is { } obj ? obj[property] : 0;
+    public override double Evaluate(IWdlContext context)
+    {
+        if (context.GetObject(objectName) is { } obj)
+        {
+            return obj[property];
+        }
+
+        // PANEL / TEXT / OVERLAY members (POS_Y, VISIBLE, ...) read the same way SET writes them.
+        return context is IWdlUiContext ui && ui.TryGetUiNumber(objectName, property, out double value) ? value : 0;
+    }
 
     public override bool TryEvaluateKeyword(IWdlContext context, out string? value)
     {
