@@ -406,6 +406,21 @@ public class WdlInterpreterTests
         Assert.Equal(2, context.GetSkill("b")); // reached despite the unparseable middle statement
     }
 
+    [Fact]
+    public void Set_SchedulerSlotTargets_ReachTheMatchingSchedulerSlot()
+    {
+        var context = new SchedulerContext();
+
+        new WdlInterpreter(context).Execute(WdlParser.Parse(
+            "SET EACH_SEC.2, waitFor; SET EACH_SEC.2, NULL; SET EACH_TICK.3, tick; " +
+            "SET EACH_SEC.17, ignored; SET EACH_SEC.16, last;"));
+
+        Assert.Equal(
+            [("EACH_SEC", 2, "waitFor"), ("EACH_SEC", 2, null), ("EACH_TICK", 3, "tick"), ("EACH_SEC", 16, "last")],
+            context.Assignments);
+        Assert.Empty(context.Skills);
+    }
+
     private static TestContext Run(string statements)
     {
         var context = new TestContext();
@@ -435,6 +450,27 @@ public class WdlInterpreterTests
         }
 
         public bool TryGetAction(string name, [NotNullWhen(true)] out WdlBlock? body) => _actions.TryGetValue(name, out body);
+    }
+
+    private sealed class SchedulerContext : IWdlContext, IWdlSchedulerContext
+    {
+        public Dictionary<string, double> Skills { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public List<(string Keyword, int Slot, string? Action)> Assignments { get; } = [];
+
+        public double GetSkill(string name) => Skills.GetValueOrDefault(name);
+
+        public void SetSkill(string name, double value) => Skills[name] = value;
+
+        public AcknexObject? GetObject(string name) => null;
+
+        public void CallAction(string name)
+        {
+        }
+
+        public void SetEachTickAction(int slot, string? actionName) => Assignments.Add(("EACH_TICK", slot, actionName));
+
+        public void SetEachSecAction(int slot, string? actionName) => Assignments.Add(("EACH_SEC", slot, actionName));
     }
 
     private sealed class TestContext : IWdlContext, IWdlRandomContext, IWdlSkillBoundsContext

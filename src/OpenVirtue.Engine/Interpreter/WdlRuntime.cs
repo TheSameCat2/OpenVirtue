@@ -44,6 +44,14 @@ public sealed class WdlRuntime :
 {
     private const int MaxCallDepth = 64;
     private const int EachTickSlotCount = 16;
+    private const int EachSecSlotCount = 16;
+
+    /// <summary>
+    /// Whether global <c>EACH_SEC</c> slots keep running while a FLIC plays, as the 16 global
+    /// <c>EACH_TICK</c> slots do (manual p.82). Not measured (OV-20261015-each-sec-cadence open
+    /// question); <c>SECS</c> keeps counting either way.
+    /// </summary>
+    private static bool EachSecRunsDuringFlic => true;
     private static readonly string[] RegionNumberFields =
     [
         "FLOOR_HGT",
@@ -132,6 +140,10 @@ public sealed class WdlRuntime :
     private readonly List<Region> _regions = [];
     private readonly List<AcknexObject> _levelObjects = [];
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
+    private readonly string?[] _eachSecActions = new string?[EachSecSlotCount];
+
+    /// <summary>The elapsed part of the runtime's current second, from 0 up to (not including) 1.</summary>
+    private double _secondFraction;
     private readonly Dictionary<string, string?> _actionHooks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<ActiveAction> _waitingActions = [];
     private readonly IReadOnlyDictionary<string, WdlBlock> _actions;
@@ -184,6 +196,7 @@ public sealed class WdlRuntime :
         InitializePredefinedReferences(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
+        InitializeEachSecActions(level);
         InitializeActionHooks(level);
         RefreshEntityVisibilityFlags();
         InitializeAnimationCycles();
@@ -278,6 +291,9 @@ public sealed class WdlRuntime :
     /// <summary>How many global <c>EACH_TICK</c> scheduler slots are currently occupied.</summary>
     public int ActiveEachTickActionCount => _eachTickActions.Count(actionName => actionName is not null);
 
+    /// <summary>How many global <c>EACH_SEC</c> scheduler slots are currently occupied.</summary>
+    public int ActiveEachSecActionCount => _eachSecActions.Count(actionName => actionName is not null);
+
     /// <summary>How many occupied global scheduler slots directly reference player input and velocity skills.</summary>
     public int ActivePlayerMovementActionCount => _eachTickActions.Count(IsPlayerMovementAction);
 
@@ -330,7 +346,11 @@ public sealed class WdlRuntime :
             new Dictionary<string, string?>(_actionHooks, StringComparer.OrdinalIgnoreCase),
             _level.Vertices.ToList(),
             MutableLevelObjects().Select(CaptureObjectSnapshot).ToList(),
-            CapturePlayerSnapshot());
+            CapturePlayerSnapshot())
+        {
+            EachSecActions = _eachSecActions.ToList(),
+            SecondFraction = _secondFraction,
+        };
 
     /// <summary>Restores a state previously captured with <see cref="CaptureSnapshot"/>.</summary>
     public void RestoreSnapshot(WdlRuntimeSnapshot snapshot)
@@ -345,6 +365,7 @@ public sealed class WdlRuntime :
         RestoreStrings(snapshot.Strings);
         RestoreKeywordReferences(snapshot.KeywordReferences);
         RestoreEachTickActions(snapshot.EachTickActions);
+        RestoreEachSecActions(snapshot.EachSecActions, snapshot.SecondFraction);
         RestoreActionHooks(snapshot.ActionHooks);
         RestoreVertices(snapshot.Vertices);
         RestoreLevelObjects(snapshot.LevelObjects);
@@ -1211,6 +1232,33 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    public void SetEachSecAction(int slot, string? actionName)
+    {
+        if (slot is < 1 or > EachSecSlotCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(slot), "EACH_SEC slots are numbered 1 through 16.");
+        }
+
+        // All slots share the runtime's second: arming a slot does not restart it, so the first run
+        // comes when SECS next goes up (OV-20261015-each-sec-cadence).
+        _eachSecActions[slot - 1] = string.IsNullOrWhiteSpace(actionName) ? null : actionName;
+    }
+
+    /// <summary>Reads back the action in a global <c>EACH_TICK</c> slot, or <c>null</c> when it is clear.</summary>
+    /// <param name="slot">The one-based scheduler slot, from 1 through 16.</param>
+    public string? GetEachTickAction(int slot) =>
+        slot is < 1 or > EachTickSlotCount
+            ? throw new ArgumentOutOfRangeException(nameof(slot), "EACH_TICK slots are numbered 1 through 16.")
+            : _eachTickActions[slot - 1];
+
+    /// <summary>Reads back the action in a global <c>EACH_SEC</c> slot, or <c>null</c> when it is clear.</summary>
+    /// <param name="slot">The one-based scheduler slot, from 1 through 16.</param>
+    public string? GetEachSecAction(int slot) =>
+        slot is < 1 or > EachSecSlotCount
+            ? throw new ArgumentOutOfRangeException(nameof(slot), "EACH_SEC slots are numbered 1 through 16.")
+            : _eachSecActions[slot - 1];
+
+    /// <inheritdoc/>
     public bool IsActionHook(string name) => IsActionHookName(name);
 
     /// <inheritdoc/>
@@ -1282,6 +1330,12 @@ public sealed class WdlRuntime :
         DispatchProximityEvents();
         AdvanceAnimationCycles(timeCorrection);
         AdvanceActorTargets(timeCorrection);
+        ResetGlobalSchedulerDiagnostics();
+        if (AdvanceSecond(deltaSeconds))
+        {
+            DispatchGlobalEachSecActions();
+        }
+
         DispatchGlobalEachTickActions();
 
         foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
@@ -1300,6 +1354,12 @@ public sealed class WdlRuntime :
     public double TickFlic(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        ResetGlobalSchedulerDiagnostics();
+        if (AdvanceSecond(deltaSeconds) && EachSecRunsDuringFlic)
+        {
+            DispatchGlobalEachSecActions();
+        }
+
         DispatchGlobalEachTickActions();
         return timeCorrection;
     }
@@ -1310,11 +1370,33 @@ public sealed class WdlRuntime :
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
         _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
-        _skills[Timing.SecondsSkill] = GetSkill(Timing.SecondsSkill) + Timing.EffectiveFrameSeconds(deltaSeconds);
         return timeCorrection;
     }
 
-    private void DispatchGlobalEachTickActions()
+    /// <summary>
+    /// Advances the runtime's second by the frame's capped duration, the same time that feeds
+    /// <c>TICKS</c>, so one second is 16 ticks. When the second completes, <c>SECS</c> goes up by
+    /// one: the original keeps it a whole number of seconds and raises it after the frame's resumed
+    /// <c>WAIT</c> actions, right before the <c>EACH_SEC</c> slots (OV-20261015-each-sec-cadence).
+    /// A frame counts at most one second (<see cref="Timing.MaxFrameSeconds"/>), so a stall never
+    /// causes a burst of catch-up seconds.
+    /// </summary>
+    /// <returns><c>true</c> if a second completed during this frame.</returns>
+    private bool AdvanceSecond(double deltaSeconds)
+    {
+        _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds);
+        if (_secondFraction < 1)
+        {
+            return false;
+        }
+
+        _secondFraction = Math.Min(_secondFraction - 1, Math.BitDecrement(1.0));
+        _skills[Timing.SecondsSkill] = GetSkill(Timing.SecondsSkill) + 1;
+        return true;
+    }
+
+    /// <summary>Clears the per-frame counters that describe the global scheduler actions' work.</summary>
+    private void ResetGlobalSchedulerDiagnostics()
     {
         LastTickPlayerVelocityWriteCount = 0;
         LastTickGlobalStatementCount = 0;
@@ -1322,6 +1404,10 @@ public sealed class WdlRuntime :
         LastTickUnsupportedExpressionCount = 0;
         LastTickTrueConditionCount = 0;
         LastTickFalseConditionCount = 0;
+    }
+
+    private void DispatchGlobalEachTickActions()
+    {
         _dispatchingGlobalEachTick = true;
         try
         {
@@ -1336,6 +1422,32 @@ public sealed class WdlRuntime :
         finally
         {
             _dispatchingGlobalEachTick = false;
+        }
+    }
+
+    /// <summary>
+    /// Runs every occupied global <c>EACH_SEC</c> slot once, in slot order, in a frame where the
+    /// runtime's second completed. The original runs them just before the global <c>EACH_TICK</c>
+    /// slots of that frame, and an action may <c>WAIT</c>: each second then starts another instance
+    /// while earlier ones go on waiting (OV-20261015-each-sec-cadence).
+    /// </summary>
+    private void DispatchGlobalEachSecActions()
+    {
+        bool wasDispatching = _dispatchingGlobalEachTick;
+        _dispatchingGlobalEachTick = true;
+        try
+        {
+            for (int i = 0; i < _eachSecActions.Length; i++)
+            {
+                if (_eachSecActions[i] is { } actionName)
+                {
+                    Run(actionName);
+                }
+            }
+        }
+        finally
+        {
+            _dispatchingGlobalEachTick = wasDispatching;
         }
     }
 
@@ -1725,6 +1837,15 @@ public sealed class WdlRuntime :
         for (int i = 0; i < count; i++)
         {
             _eachTickActions[i] = string.IsNullOrWhiteSpace(level.EachTickActions[i]) ? null : level.EachTickActions[i];
+        }
+    }
+
+    private void InitializeEachSecActions(Level level)
+    {
+        int count = Math.Min(_eachSecActions.Length, level.EachSecActions.Count);
+        for (int i = 0; i < count; i++)
+        {
+            _eachSecActions[i] = string.IsNullOrWhiteSpace(level.EachSecActions[i]) ? null : level.EachSecActions[i];
         }
     }
 
@@ -3701,6 +3822,17 @@ public sealed class WdlRuntime :
         {
             _eachTickActions[i] = string.IsNullOrWhiteSpace(eachTickActions[i]) ? null : eachTickActions[i];
         }
+    }
+
+    private void RestoreEachSecActions(List<string?>? eachSecActions, double? secondFraction)
+    {
+        Array.Clear(_eachSecActions);
+        for (int i = 0; i < Math.Min(_eachSecActions.Length, eachSecActions?.Count ?? 0); i++)
+        {
+            _eachSecActions[i] = string.IsNullOrWhiteSpace(eachSecActions![i]) ? null : eachSecActions[i];
+        }
+
+        _secondFraction = Math.Clamp(secondFraction ?? 0, 0, Math.BitDecrement(1.0));
     }
 
     private void RestoreActionHooks(IReadOnlyDictionary<string, string?> actionHooks)

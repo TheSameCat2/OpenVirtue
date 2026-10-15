@@ -67,12 +67,21 @@ public sealed partial class RetailSmokeTests
             session.Run(30);
             session.Capture("title-1-logo-flc");
 
-            // PLAY_FLICFILE holds showLogoScreen until the flic ends, so IF_ANYKEY is armed only then.
+            // PLAY_FLICFILE holds showLogoScreen until the flic ends, so IF_ANYKEY and the logo's
+            // 12-second EACH_SEC.1 countdown are armed only then, in the same action.
             session.RunUntil("the logo FLC has finished", () => Hook(host, "IF_ANYKEY") == "advanceToTitle");
-            session.Press(HostKey.Space);
+            double armedSecs = host.Runtime.GetSkill("SECS");
+            _output.WriteLine($"logo timeout armed: SECS {armedSecs:F2}, waitVal {host.Runtime.GetSkill("waitVal")}, EACH_SEC.1 {host.Runtime.GetEachSecAction(1)}");
+            Assert.Equal(12, host.Runtime.GetSkill("waitVal"));
+            Assert.Equal("waitForLogoScreen", host.Runtime.GetEachSecAction(1));
+
+            // No key: the countdown runs out and BRANCHes to the splash on its own (issue #8).
             session.RunUntil(
-                "the title splash is up",
+                "the title splash is up without a key",
                 () => Hook(host, "IF_ANYKEY") == "advanceToMenu" && UiNumber(host, "titleScreenPanel", "VISIBLE") == 1);
+            double advancedSecs = host.Runtime.GetSkill("SECS");
+            _output.WriteLine($"logo timed out after {advancedSecs - armedSecs:F2} engine seconds, waitVal {host.Runtime.GetSkill("waitVal")}");
+            Assert.InRange(advancedSecs - armedSecs, 10, 14);
             session.Run(60);
             session.Capture("title-2-splash");
 

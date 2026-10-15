@@ -54,6 +54,15 @@ public interface IWdlSchedulerContext
     /// <param name="slot">The one-based scheduler slot, from 1 through 16.</param>
     /// <param name="actionName">The action to run each tick, or <c>null</c> to clear the slot.</param>
     void SetEachTickAction(int slot, string? actionName);
+
+    /// <summary>
+    /// Assigns or clears one of the 16 global <c>EACH_SEC</c> slots, which run once per engine
+    /// second (16 ticks). The 1998 manual does not document <c>EACH_SEC</c>; see
+    /// <c>docs/clean-room/observations/OV-20261015-each-sec-cadence.md</c>.
+    /// </summary>
+    /// <param name="slot">The one-based scheduler slot, from 1 through 16.</param>
+    /// <param name="actionName">The action to run each second, or <c>null</c> to clear the slot.</param>
+    void SetEachSecAction(int slot, string? actionName);
 }
 
 /// <summary>

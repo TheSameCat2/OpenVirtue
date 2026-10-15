@@ -262,7 +262,14 @@ and old-engine edge cases.
   confirms that the four gameplay worlds use a matching global declaration set.
   An end-to-end natural gameplay transition still needs validation, and `MAP`
   preservation semantics plus complete score compatibility remain parity work.
-- Scheduler and hook reassignment semantics: global `EACH_TICK` slots,
+- Scheduler and hook reassignment semantics: global `EACH_TICK` slots, the 16
+  global `EACH_SEC` slots (issue #8, OV-20261015-each-sec-cadence:
+  `SET EACH_SEC.n, action|NULL` and top-level `EACH_SEC a, b;`; all slots share the
+  runtime's second, 16 ticks of the same capped frame time as `TICKS`, and run in the
+  frame where the whole-second `SECS` count goes up, just before the global `EACH_TICK`
+  slots; a waiting slot action keeps going while the next second starts another; slots
+  reset on level change and are part of the harness snapshot; whether they run during
+  a FLIC is still unmeasured),
   object/region/wall `EACH_TICK` fields, object/region/wall `EACH_CYCLE`
   fields, and frequent `IF_*` runtime `SET` targets now update live runtime
   state. The app dispatches first-pass global keyboard/mouse hooks for
@@ -361,7 +368,8 @@ and old-engine edge cases.
   app process. The same smoke passed on the GL host on 2026-10-15
   (`tests/OpenVirtue.App.Tests/RetailSmokeTests`, guarded on `_research/` and a GL
   context; frames go to `ov-retail-smoke/` in the temp folder). It drives the real
-  SDL/GL host with scripted keys: the logo FLC plays, Space shows the splash, Space
+  SDL/GL host with scripted keys: the logo FLC plays, the logo times out to the
+  splash on its own (no key, 10–14 engine seconds after its countdown is armed), Space
   shows the menu with the arrow on New Game, and Enter loads Apathy, which draws the
   amphitheater, instruction text, sprites and HUD with the player in the declared
   start region (479 `amphiStage`). `START`, `TITLE`, `APATHY`, `HEART`, `LEGALISM`
@@ -375,15 +383,23 @@ and old-engine edge cases.
     `menu_pos`. Fixed (issue #7): `BRANCH` is a tail jump (OV-20261015-branch-tail-jump);
     the smoke now requires the difficulty menu after the first Enter and difficulty 3
     after the second.
-  - `EACH_SEC` is not implemented (it is not in the 1998 manual either), so the
-    title's 12 s logo and 4 s splash timeouts never fire; only a key advances.
+  - `EACH_SEC` was not implemented (it is not in the 1998 manual either), so the
+    title's 12 s logo and 4 s splash timeouts never fired; only a key advanced. Fixed
+    (issue #8): the 16 global `EACH_SEC` slots run once per engine second as measured
+    in OV-20261015-each-sec-cadence (shared second boundary, before `EACH_TICK`,
+    `SECS` a whole-second count); the smoke now waits for the logo timeout. Whether
+    the slots run during a FLIC is still unmeasured; the title arms its countdown
+    after the logo FLC, so it does not depend on it.
   - `PLAY_FLICFILE` holds its action until the flic ends, so `IF_ANYKEY` is armed
     only after the logo FLC finishes and a key during it does nothing. Whether the
     original lets a key cut the logo short is open.
-  - Opened directly, `HEART`, `LEGALISM` and `NEWAGE` draw the world but no HUD,
-    crosshair or weapon, while Apathy opened the same way draws all three; not yet
-    investigated. `HEART` (about 10 FPS) and `LEGALISM` (about 19 FPS) also run well
-    below Apathy (about 33 FPS) on the development host.
+  - Opened directly, `HEART`, `LEGALISM` and `NEWAGE` drew the world but no HUD,
+    crosshair or weapon, while Apathy opened the same way drew all three. Cause: their
+    start action shows the control panel and runs the game initialization from a
+    three-second `EACH_SEC` countdown. Fixed with issue #8; all three draw the HUD,
+    crosshair and weapon about 3 s after opening (checked on the GL host 2026-10-15),
+    and a guarded engine test pins it. `HEART` (about 10 FPS) and `LEGALISM` (about
+    19 FPS) still run well below Apathy (about 33 FPS) on the development host.
 
 ## Track 2: Discover Hidden Invariants Cleanly
 

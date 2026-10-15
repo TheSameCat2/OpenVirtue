@@ -267,9 +267,9 @@ public static class WdlCoverageAnalyzer
             return;
         }
 
-        if (IsEachTickSetTarget(item.Header, comma))
+        if (IsSchedulerSlotSetTarget(item.Header, comma))
         {
-            Increment(report.SchedulerReassignments, "EACH_TICK");
+            Increment(report.SchedulerReassignments, item.Header[0].Text.ToUpperInvariant());
         }
     }
 
@@ -297,11 +297,12 @@ public static class WdlCoverageAnalyzer
         }
     }
 
-    private static bool IsEachTickSetTarget(IReadOnlyList<WdlToken> header, int comma)
+    private static bool IsSchedulerSlotSetTarget(IReadOnlyList<WdlToken> header, int comma)
     {
         if (header.Count == 0 ||
             header[0].Kind != WdlTokenKind.Identifier ||
-            !header[0].Text.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            !(header[0].Text.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase) ||
+              header[0].Text.Equals("EACH_SEC", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
@@ -316,6 +317,7 @@ public static class WdlCoverageAnalyzer
 
     private static bool IsSchedulerKeyword(string keyword) =>
         keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase) ||
+        keyword.Equals("EACH_SEC", StringComparison.OrdinalIgnoreCase) ||
         keyword.Equals("EACH_CYCLE", StringComparison.OrdinalIgnoreCase);
 
     private static int IndexOfKind(IReadOnlyList<WdlToken> tokens, WdlTokenKind kind)
@@ -364,7 +366,7 @@ public sealed class WdlCoverageReport
     /// <summary>IF_* hook reassignment targets found in ACTION-body SET statements.</summary>
     public Dictionary<string, int> ActionHookReassignments { get; } = new(Ci);
 
-    /// <summary>EACH_TICK/EACH_CYCLE declarations in top-level or object/type declaration surfaces.</summary>
+    /// <summary>EACH_TICK/EACH_SEC/EACH_CYCLE declarations in top-level or object/type declaration surfaces.</summary>
     public Dictionary<string, int> SchedulerDeclarations { get; } = new(Ci);
 
     /// <summary>Scheduler reassignment targets found in ACTION-body SET statements.</summary>

@@ -20,6 +20,13 @@ internal static class ResearchData
         "TITLE.WRS",
     };
 
+    // Case-insensitive so the upper-case retail names (HEART.WRS …) match on Linux as well.
+    private static readonly EnumerationOptions AnyCaseRecursive = new()
+    {
+        MatchCasing = MatchCasing.CaseInsensitive,
+        RecurseSubdirectories = true,
+    };
+
     public static string? Directory
     {
         get
@@ -43,7 +50,7 @@ internal static class ResearchData
         return root is null
             ? []
             : System.IO.Directory
-                .EnumerateFiles(root, "*.wrs", SearchOption.AllDirectories)
+                .EnumerateFiles(root, "*.wrs", AnyCaseRecursive)
                 .Where(static p => p.EndsWith(".wrs", StringComparison.OrdinalIgnoreCase))
                 .Where(static p => RetailArchiveNames.Contains(Path.GetFileName(p)))
                 .Where(static p => !IsLocalArtifact(p))

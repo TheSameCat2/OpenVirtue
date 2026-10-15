@@ -112,7 +112,8 @@ public static class LevelLoader
             GatherStrings(program), GatherSynonyms(program), GatherSearchPaths(program),
             GatherSounds(program), GatherPalettes(program), GatherUiElements(program), BuildBitmaps(declarations),
             BuildTextures(declarations), declarations.Actions,
-            GatherEachTickActions(program), GatherActionHooks(program), FindActionName(program, "IF_START"));
+            GatherSchedulerSlotActions(program, "EACH_TICK"), GatherActionHooks(program), FindActionName(program, "IF_START"),
+            GatherSchedulerSlotActions(program, "EACH_SEC"));
     }
 
     private static LevelVideoMode? FindVideoMode(WdlProgram program)
@@ -298,12 +299,16 @@ public static class LevelLoader
         return null;
     }
 
-    private static string?[] GatherEachTickActions(WdlProgram program)
+    /// <summary>
+    /// Collects a top-level global scheduler list (<c>EACH_TICK a, NULL, b;</c> or the same with
+    /// <c>EACH_SEC</c>) into its 16 slots, in order.
+    /// </summary>
+    private static string?[] GatherSchedulerSlotActions(WdlProgram program, string keyword)
     {
         string?[] actions = new string?[16];
         foreach (WdlItem item in program.Items)
         {
-            if (!item.Keyword.Equals("EACH_TICK", StringComparison.OrdinalIgnoreCase))
+            if (!item.Keyword.Equals(keyword, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

@@ -68,6 +68,29 @@ public class WdlCoverageAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_CountsEachSecDeclarationsAndReassignmentsApartFromEachTick()
+    {
+        const string source =
+            """
+            EACH_SEC timer;
+            EACH_TICK tick;
+            ACTION boot
+            {
+                SET EACH_SEC.3, timer;
+                SET EACH_SEC.3, NULL;
+                SET EACH_TICK.1, tick;
+            }
+            """;
+
+        WdlCoverageReport report = Analyze(source);
+
+        Assert.Equal(1, report.SchedulerDeclarations["EACH_SEC"]);
+        Assert.Equal(1, report.SchedulerDeclarations["EACH_TICK"]);
+        Assert.Equal(2, report.SchedulerReassignments["EACH_SEC"]);
+        Assert.Equal(1, report.SchedulerReassignments["EACH_TICK"]);
+    }
+
+    [Fact]
     public void Analyze_ClassifiesKnownImplementedStatementsAndUnknownStatements()
     {
         const string source =
