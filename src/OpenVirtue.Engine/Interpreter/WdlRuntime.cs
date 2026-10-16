@@ -260,6 +260,14 @@ public sealed class WdlRuntime :
     /// <summary>Full-screen flic playback requests emitted by WDL flic instructions.</summary>
     public IReadOnlyList<WdlFlicRequest> FlicRequests => _flicRequests;
 
+    /// <summary>
+    /// Set by the host: whether a <c>PLAY_FLICFILE</c> file exists. When it returns <c>false</c>,
+    /// the request is still recorded but <c>FLIC_FRAME</c> keeps its value, because the original
+    /// skips a missing file and its action goes on (OV-20261015-flic-scheduler-detail). When it is
+    /// not set, every file counts as present.
+    /// </summary>
+    public Func<string, bool>? FlicFileExists { get; set; }
+
     /// <summary>Screenshot requests emitted by WDL <c>SCREENSHOT</c> instructions.</summary>
     public IReadOnlyList<WdlScreenshotRequest> ScreenshotRequests => _screenshotRequests;
 
@@ -930,12 +938,17 @@ public sealed class WdlRuntime :
     /// Records a host request to play a flic. The calling action goes on at once, and
     /// <c>FLIC_FRAME</c> reads 1 (the first frame is on screen) for the rest of it; the host
     /// keeps <c>FLIC_FRAME</c> at the frame on screen and sets it to 0 when the flic ends, is
-    /// stopped, or cannot be played (OV-20261015-flic-play-blocking).
+    /// stopped, or cannot be played (OV-20261015-flic-play-blocking). A new flic replaces one that
+    /// is playing. For a file that <see cref="FlicFileExists"/> says is missing, <c>FLIC_FRAME</c>
+    /// keeps its value: 0, or the frame of the flic still playing (OV-20261015-flic-scheduler-detail).
     /// </summary>
     public void BeginFlicFile(string fileName)
     {
         _flicRequests.Add(new WdlFlicRequest(++_nextFlicRequestId, fileName, Streamed: true, StopsBefore: StopFlicCount));
-        SetSkill(FlicFrameSkill, 1);
+        if (FlicFileExists?.Invoke(fileName) ?? true)
+        {
+            SetSkill(FlicFrameSkill, 1);
+        }
     }
 
     /// <summary>
@@ -1300,13 +1313,14 @@ public sealed class WdlRuntime :
     /// Advances the runtime by one frame lasting <paramref name="deltaSeconds"/>, refreshing the
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
+    /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
     /// </summary>
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
         RefreshEntityVisibilityFlags();
-        ResumeWaitingActions(timeCorrection);
+        ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
         AdvanceAnimationCycles(timeCorrection);
@@ -1325,19 +1339,23 @@ public sealed class WdlRuntime :
             RunForActionTarget(target, actionName);
         }
 
+        CountDownWaitingActions(timeCorrection);
         return timeCorrection;
     }
 
     /// <summary>
-    /// Advances timing and the scheduler while host FLIC playback pauses world movement,
-    /// animation, proximity, and object scheduler processing (manual p.82). Waiting actions
-    /// resume, then the global <c>EACH_SEC</c> slots (once per second) and <c>EACH_TICK</c> slots
-    /// run, in the same order as <see cref="Tick"/> (OV-20261015-flic-play-blocking).
+    /// One scheduler cycle while a flic plays. The original runs one cycle per flic frame, with
+    /// <c>TIME_CORR</c> the frame delay in 64 ms units (<see cref="Timing.FlicCycleSeconds"/>). Player
+    /// and actor movement, animation cycles, region and proximity events, and the object and region
+    /// <c>EACH_TICK</c>/<c>EACH_CYCLE</c> actions are paused (manual p.82,
+    /// OV-20261015-flic-scheduler-detail). Waiting actions resume, then the global <c>EACH_SEC</c>
+    /// slots (once per second) and <c>EACH_TICK</c> slots run, in the same order as
+    /// <see cref="Tick"/> (OV-20261015-flic-play-blocking), and the waits count the cycle down.
     /// </summary>
     public double TickFlic(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
-        ResumeWaitingActions(timeCorrection);
+        ResumeWaitingActions();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(deltaSeconds))
         {
@@ -1345,6 +1363,7 @@ public sealed class WdlRuntime :
         }
 
         DispatchGlobalEachTickActions();
+        CountDownWaitingActions(timeCorrection);
         return timeCorrection;
     }
 
@@ -1682,7 +1701,13 @@ public sealed class WdlRuntime :
         }
     }
 
-    private void ResumeWaitingActions(double timeCorrection)
+    /// <summary>
+    /// Resumes, in arming order, the waiting actions whose count has dropped below 1. With
+    /// <see cref="CountDownWaitingActions"/> at the end of the frame, <c>WAIT n</c> resumes n frames
+    /// after the frame it was armed in, and <c>WAITT n</c> in the first frame where the time counted
+    /// from the start of its arming frame exceeds n − 1 ticks (OV-20261015-flic-scheduler-detail).
+    /// </summary>
+    private void ResumeWaitingActions()
     {
         int initialCount = _waitingActions.Count;
         for (int processed = 0; processed < initialCount; processed++)
@@ -1690,14 +1715,7 @@ public sealed class WdlRuntime :
             ActiveAction action = _waitingActions[0];
             _waitingActions.RemoveAt(0);
 
-            if (IsInactiveEntity(action.Scope.Target))
-            {
-                _waitingActions.Add(action);
-                continue;
-            }
-
-            action.Remaining -= action.Mode == WdlWaitMode.FrameCycles ? 1 : timeCorrection;
-            if (action.Remaining > 0)
+            if (IsInactiveEntity(action.Scope.Target) || action.Remaining >= 1)
             {
                 _waitingActions.Add(action);
                 continue;
@@ -1705,6 +1723,23 @@ public sealed class WdlRuntime :
 
             WdlExecutionResult result = ContinueWithScope(action);
             StoreSuspendedAction(action.State, result, action.Scope);
+        }
+    }
+
+    /// <summary>
+    /// Counts every waiting action down by the frame that is ending: one frame cycle for
+    /// <c>WAIT</c>, the frame's <c>TIME_CORR</c> for <c>WAITT</c>. It runs last in the frame, so an
+    /// action armed during the frame (or by a hook or a host call before it) counts that frame too
+    /// (OV-20261015-flic-scheduler-detail). Actions of inactive entities do not count down.
+    /// </summary>
+    private void CountDownWaitingActions(double timeCorrection)
+    {
+        foreach (ActiveAction action in _waitingActions)
+        {
+            if (!IsInactiveEntity(action.Scope.Target))
+            {
+                action.Remaining -= action.Mode == WdlWaitMode.FrameCycles ? 1 : timeCorrection;
+            }
         }
     }
 

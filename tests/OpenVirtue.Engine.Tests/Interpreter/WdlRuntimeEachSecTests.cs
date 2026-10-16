@@ -45,10 +45,11 @@ public class WdlRuntimeEachSecTests
     {
         // The probe's phase trace: in the frame where the second completes, an action resuming from
         // WAITT still reads the old SECS, and the EACH_SEC action that runs later in that frame
-        // reads the new one; an EACH_TICK action after it reads the new one too.
+        // reads the new one; an EACH_TICK action after it reads the new one too. Armed before the
+        // first frame, the WAITT 15 counts frames 1-15 and resumes in frame 16.
         WdlRuntime runtime = Start(
             "SKILL resumed_secs { VAL -1; } SKILL sec_secs { VAL -1; } SKILL tick_secs { VAL -1; } " +
-            "ACTION boot { SET EACH_SEC.1, sec; WAITT 16; SET resumed_secs, SECS; } " +
+            "ACTION boot { SET EACH_SEC.1, sec; WAITT 15; SET resumed_secs, SECS; } " +
             "ACTION sec { SET sec_secs, SECS; SET EACH_SEC.1, NULL; SET EACH_TICK.1, tick; } " +
             "ACTION tick { SET tick_secs, SECS; SET EACH_TICK.1, NULL; } " +
             "IF_START boot;");
