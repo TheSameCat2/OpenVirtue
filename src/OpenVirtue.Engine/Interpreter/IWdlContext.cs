@@ -285,8 +285,12 @@ public interface IWdlHitContext
     void Explode(AcknexObject source);
 }
 
-/// <summary>A host-facing request to play a full-screen flic animation.</summary>
-public readonly record struct WdlFlicRequest(int Id, string FileName, bool Streamed);
+/// <summary>
+/// A host-facing request to play a full-screen flic animation. <c>StopsBefore</c> is the
+/// runtime's <c>STOP_FLIC</c> count when the request was made, so a host that drains both lists
+/// once per frame applies a <c>STOP_FLIC</c> and a later <c>PLAY_FLICFILE</c> in script order.
+/// </summary>
+public readonly record struct WdlFlicRequest(int Id, string FileName, bool Streamed, int StopsBefore);
 
 /// <summary>A host-facing request to capture a screenshot.</summary>
 public readonly record struct WdlScreenshotRequest(string BaseName, int Number);
@@ -297,8 +301,12 @@ public interface IWdlPresentationContext
     /// <summary>Requests a short diagnostic beep.</summary>
     void Beep();
 
-    /// <summary>Begins playback of an explicit flic file and returns its host request.</summary>
-    bool BeginFlicFile(string fileName, out WdlFlicRequest request);
+    /// <summary>
+    /// Begins playback of an explicit flic file. The calling action goes on with its next
+    /// instruction; the flic plays while the scheduler and key hooks keep running
+    /// (OV-20261015-flic-play-blocking).
+    /// </summary>
+    void BeginFlicFile(string fileName);
 
     /// <summary>Requests stopping the currently playing flic.</summary>
     void StopFlic();

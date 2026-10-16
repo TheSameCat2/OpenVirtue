@@ -562,14 +562,12 @@ internal sealed class LevelWindow : Form
         if (string.IsNullOrWhiteSpace(fileName))
         {
             _lastPresentationStatus = "flic request ignored";
-            _runtime.CompleteFlic(request.Id);
             return;
         }
 
         if (!TryGetArchiveBytes(fileName, out byte[] bytes))
         {
             _lastPresentationStatus = $"flic {fileName} missing";
-            _runtime.CompleteFlic(request.Id);
             return;
         }
 
@@ -581,11 +579,6 @@ internal sealed class LevelWindow : Form
                 throw new InvalidDataException("FLIC contains no display frames.");
             }
 
-            if (_activeFlic is { } replaced)
-            {
-                _runtime.CompleteFlic(replaced.Request.Id);
-            }
-
             ClearFlicPlayback();
             _activeFlic = new FlicPlayback(request, fileName, animation);
             _runtime.SetSkill("FLIC_FRAME", 0);
@@ -594,7 +587,6 @@ internal sealed class LevelWindow : Form
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or OverflowException)
         {
             _lastPresentationStatus = $"flic {fileName} invalid";
-            _runtime.CompleteFlic(request.Id);
         }
     }
 
@@ -607,10 +599,8 @@ internal sealed class LevelWindow : Form
             playback.ElapsedSeconds -= frameSeconds;
             if (playback.FrameIndex + 1 >= playback.Animation.Frames.Count)
             {
-                int requestId = playback.Request.Id;
                 ClearFlicPlayback();
                 _lastPresentationStatus = $"flic {playback.FileName} complete";
-                _runtime.CompleteFlic(requestId);
                 return;
             }
 

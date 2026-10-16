@@ -505,7 +505,10 @@ public sealed class WdlInterpreter(IWdlContext context)
                 frame.Index++;
                 break;
             case "PLAY_FLICFILE":
-                return ExecutePlayFlicFile(item, frame);
+                // The action does not wait for the flic (OV-20261015-flic-play-blocking).
+                ExecutePlayFlicFile(item);
+                frame.Index++;
+                break;
             case "STOP_FLIC":
                 ExecuteStopFlic();
                 frame.Index++;
@@ -747,7 +750,7 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         frame.Index++;
-        return new WdlExecutionResult(WdlExecutionStatus.InputWaiting, wait: null, input: request);
+        return new WdlExecutionResult(WdlExecutionStatus.InputWaiting, Wait: null, Input: request);
     }
 
     private static bool TryJumpToLabel(WdlExecutionState state, string label)
@@ -1440,25 +1443,8 @@ public sealed class WdlInterpreter(IWdlContext context)
         if (context is IWdlPresentationContext presentation &&
             TryEvaluateResourceName(item.Header, 0, item.Header.Count, out string fileName, out _))
         {
-            presentation.BeginFlicFile(fileName, out _);
+            presentation.BeginFlicFile(fileName);
         }
-    }
-
-    private WdlExecutionResult? ExecutePlayFlicFile(WdlItem item, WdlExecutionFrame frame)
-    {
-        frame.Index++;
-        if (context is IWdlPresentationContext presentation &&
-            TryEvaluateResourceName(item.Header, 0, item.Header.Count, out string fileName, out _) &&
-            presentation.BeginFlicFile(fileName, out WdlFlicRequest request))
-        {
-            return new WdlExecutionResult(
-                WdlExecutionStatus.FlicWaiting,
-                Wait: null,
-                Input: null,
-                Flic: request);
-        }
-
-        return null;
     }
 
     private void ExecuteStopFlic()

@@ -221,14 +221,19 @@ and old-engine edge cases.
   serialization remains. The app also supplies a runtime print directory, so
   retail `PRINTFILE`/`PRINT_VALUE`/`PRINT_STRING` output lands under
   `openvirtue-prints` beside the user's archive.
-  `PLAY_FLICFILE` now suspends its invoking action behind an identified host
-  request and resumes on completion or `STOP_FLIC`. The clean-room FLI/FLC reader
+  `PLAY_FLICFILE` records an identified host request and its action goes on at
+  once, as measured in OV-20261015-flic-play-blocking (issue #9): during the flic
+  the global `EACH_TICK` and `EACH_SEC` slots and `WAITT` actions keep running and
+  key hooks fire, `STOP_FLIC` ends the flic before the next frame, and
+  `FLIC_FRAME` is the 1-based frame on screen (1 right after the instruction) and 0
+  when no flic plays. A `STOP_FLIC` and a later `PLAY_FLICFILE` in one frame are
+  applied in script order. The clean-room FLI/FLC reader
   decodes palette, copy, black, byte-run, line-compressed, and word-delta chunks;
-  the app presents decoded frames at their authored delay, updates `FLIC_FRAME`,
-  pauses world/object simulation while retaining global `EACH_TICK`, and ignores
-  the optional trailing ring frame. Unsupported or invalid files complete
-  immediately. Exact old-engine frame numbering and audio synchronization remain
-  oracle-calibration work.
+  the app presents decoded frames at their authored delay,
+  pauses world/object simulation, and ignores
+  the optional trailing ring frame. Unsupported or invalid files play
+  nothing. The exact `WAITT` rate during a flic, object scheduler behavior during a
+  flic, and audio synchronization remain oracle-calibration work.
   `SHOOT` and `PUSH` now perform first-pass 2D player/object line-of-sight
   interactions, update documented `HIT_DIST`, `RESULT`, and `SHOOT_ANGLE`
   skills, and dispatch `IF_HIT` for player shots. Hitscan and actor visibility
@@ -268,8 +273,8 @@ and old-engine edge cases.
   runtime's second, 16 ticks of the same capped frame time as `TICKS`, and run in the
   frame where the whole-second `SECS` count goes up, just before the global `EACH_TICK`
   slots; a waiting slot action keeps going while the next second starts another; slots
-  reset on level change and are part of the harness snapshot; whether they run during
-  a FLIC is still unmeasured),
+  reset on level change and are part of the harness snapshot; they also run during a
+  FLIC, OV-20261015-flic-play-blocking),
   object/region/wall `EACH_TICK` fields, object/region/wall `EACH_CYCLE`
   fields, and frequent `IF_*` runtime `SET` targets now update live runtime
   state. The app dispatches first-pass global keyboard/mouse hooks for
@@ -387,12 +392,13 @@ and old-engine edge cases.
     title's 12 s logo and 4 s splash timeouts never fired; only a key advanced. Fixed
     (issue #8): the 16 global `EACH_SEC` slots run once per engine second as measured
     in OV-20261015-each-sec-cadence (shared second boundary, before `EACH_TICK`,
-    `SECS` a whole-second count); the smoke now waits for the logo timeout. Whether
-    the slots run during a FLIC is still unmeasured; the title arms its countdown
-    after the logo FLC, so it does not depend on it.
-  - `PLAY_FLICFILE` holds its action until the flic ends, so `IF_ANYKEY` is armed
-    only after the logo FLC finishes and a key during it does nothing. Whether the
-    original lets a key cut the logo short is open.
+    `SECS` a whole-second count). The slots also run during a FLIC
+    (OV-20261015-flic-play-blocking); the smoke now waits for the splash's 4 s timeout.
+  - `PLAY_FLICFILE` held its action until the flic ended, so the logo music started
+    after the animation, `IF_ANYKEY` was armed only after the logo FLC finished and a
+    key during it did nothing. Fixed (issue #9): the original goes on past the
+    instruction and a key stops the flic (OV-20261015-flic-play-blocking); the smoke
+    presses Space while the logo plays and the splash comes up on the next frame.
   - Opened directly, `HEART`, `LEGALISM` and `NEWAGE` drew the world but no HUD,
     crosshair or weapon, while Apathy opened the same way drew all three. Cause: their
     start action shows the control panel and runs the game initialization from a

@@ -713,9 +713,12 @@ public class WdlRuntimeTests
     [Fact]
     public void Runtime_FlicInstructions_RecordPlaybackAndStopRequests()
     {
+        // PLAY_FLICFILE does not hold its action, and FLIC_FRAME reads 1 right after it
+        // (OV-20261015-flic-play-blocking).
         Level level = Load(
-            "MAPFILE <m.wmp>; SKILL after { VAL 0; } " +
-            "ACTION show { PLAY_FLICFILE <INTRO.FLC>; SET after,1; } ACTION stop { STOP_FLIC; }");
+            "MAPFILE <m.wmp>; SKILL after { VAL 0; } SKILL frameAfter { VAL -1; } " +
+            "ACTION show { PLAY_FLICFILE <INTRO.FLC>; SET after,1; SET frameAfter, FLIC_FRAME; } " +
+            "ACTION stop { STOP_FLIC; }");
         var runtime = new WdlRuntime(level);
 
         Assert.True(runtime.RunAction("show"));
@@ -724,15 +727,53 @@ public class WdlRuntimeTests
         Assert.True(request.Id > 0);
         Assert.Equal("INTRO.FLC", request.FileName);
         Assert.True(request.Streamed);
-        Assert.Equal(1, runtime.FlicWaitingActionCount);
-        Assert.Equal(0, runtime.GetSkill("after"));
+        Assert.Equal(0, request.StopsBefore);
+        Assert.Equal(1, runtime.GetSkill("after"));
+        Assert.Equal(1, runtime.GetSkill("frameAfter"));
+        Assert.Equal(0, runtime.WaitingActionCount);
 
         Assert.True(runtime.RunAction("stop"));
 
         Assert.Equal(1, runtime.StopFlicCount);
-        Assert.Equal(0, runtime.FlicWaitingActionCount);
-        Assert.Equal(1, runtime.GetSkill("after"));
-        Assert.False(runtime.CompleteFlic(request.Id));
+    }
+
+    [Fact]
+    public void Runtime_PlayFlicFileThenStopInOneAction_RecordsTheStopCountBeforeTheNextFlic()
+    {
+        Level level = Load(
+            "MAPFILE <m.wmp>; ACTION chain { PLAY_FLICFILE <A.FLC>; STOP_FLIC; PLAY_FLICFILE <B.FLC>; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("chain"));
+
+        Assert.Collection(
+            runtime.FlicRequests,
+            first => Assert.Equal(0, first.StopsBefore),
+            second => Assert.Equal(1, second.StopsBefore));
+        Assert.Equal(1, runtime.StopFlicCount);
+    }
+
+    [Fact]
+    public void Runtime_KeyHookArmedAfterPlayFlicFile_CanStopTheFlic()
+    {
+        // The retail title's logo order: the hook is armed after PLAY_FLICFILE in the same action,
+        // so a key during the flic runs it, and its STOP_FLIC ends the flic
+        // (OV-20261015-flic-play-blocking).
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL skipped { VAL 0; } " +
+            "ACTION logo { PLAY_FLICFILE <LOGO.FLC>; SET IF_ANYKEY, skip; } " +
+            "ACTION skip { STOP_FLIC; SET IF_ANYKEY, NULL; SET skipped, 1; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("logo"));
+        Assert.Equal("skip", runtime.ActionHooks["IF_ANYKEY"]);
+
+        runtime.TickFlic(1.0 / 16);
+        Assert.True(runtime.TriggerActionHook("IF_ANYKEY"));
+
+        Assert.Equal(1, runtime.StopFlicCount);
+        Assert.Equal(1, runtime.GetSkill("skipped"));
+        Assert.False(runtime.ActionHooks.TryGetValue("IF_ANYKEY", out string? hook) && hook is not null);
     }
 
     [Fact]
@@ -754,6 +795,28 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("globalTicks"));
         Assert.Equal(0, runtime.GetSkill("objectTicks"));
         Assert.Equal(1, runtime.GetSkill("TICKS"));
+    }
+
+    [Fact]
+    public void TickFlic_ResumesWaitingActions()
+    {
+        // A WAITT started before PLAY_FLICFILE resumes while the flic plays
+        // (OV-20261015-flic-play-blocking).
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL waited { VAL 0; } " +
+            "ACTION waiter { WAITT 2; SET waited, 1; } " +
+            "ACTION logo { CALL waiter; PLAY_FLICFILE <LOGO.FLC>; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("logo"));
+        Assert.Equal(1, runtime.WaitingActionCount);
+
+        runtime.TickFlic(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("waited"));
+        runtime.TickFlic(1.0 / 16);
+
+        Assert.Equal(1, runtime.GetSkill("waited"));
+        Assert.Equal(0, runtime.WaitingActionCount);
     }
 
     [Fact]
