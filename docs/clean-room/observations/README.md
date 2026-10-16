@@ -63,3 +63,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   frame. `FLIC_FRAME` is the 1-based frame on screen and 0 when no flic plays. The scripted Space
   came from DOSBox-X `AUTOTYPE`. Six DOSBox-X runs on a synthetic FLC; implemented in
   `WdlInterpreter`, `WdlRuntime` and `RuntimeHost`.
+- `OV-20261015-flic-scheduler-detail.md` — the flic runs one scheduler cycle per flic frame, with
+  `TIME_CORR` the frame delay over 64 ms (1.09375 at 70 ms). `WAIT n` resumes n cycles after its
+  arming cycle. `WAITT n` counts its arming cycle's `TIME_CORR` too and resumes once more than
+  n − 1 ticks are counted, in world frames as well. During the flic, player and actor movement,
+  animation, object and region actions and region and proximity events are paused, and mouse
+  hooks fire. A second `PLAY_FLICFILE` replaces the playing flic. A missing file is skipped
+  (`FLIC_FRAME` unchanged); requested during a flic, it faults this runtime. Mouse clicks came
+  from an X11 helper (`tools/oracle/x11_click.py`). Fifteen DOSBox-X runs; implemented in
+  `WdlRuntime`, `Timing` and `RuntimeHost`.

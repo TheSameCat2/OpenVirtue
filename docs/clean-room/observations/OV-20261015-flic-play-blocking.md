@@ -118,6 +118,10 @@ and `key-control` shows the key path works without a flic. medium for the exact 
 a flic (one sample, 24 ticks for a `WAITT 32`).
 
 ## Open Questions
+Answered by OV-20261015-flic-scheduler-detail, except `PLAY_FLIC` with a `FLIC` object and an
+invalid file. There, the 24.2-tick `WAITT 32` came from its 2-frames-per-second arming frame,
+which counts toward the wait.
+
 - How `WAITT` counts during flic frames: the one sample ran faster than `TICKS`. `WAIT` (frame
   cycles) during a flic was not probed.
 - Object `EACH_TICK`/`EACH_CYCLE` actions, region and proximity events, and actor movement during a
@@ -144,6 +148,8 @@ and it sets `FLIC_FRAME` to 1 when it records the request. `WdlRuntime.TickFlic`
 waiting actions before the second and the global slots, in the same order as `Tick`, and runs the
 `EACH_SEC` slots unconditionally. Key hooks already fired during a flic in `RuntimeHost`. The host
 sets `FLIC_FRAME` to the 1-based frame number while it plays and to 0 when the flic ends, is
-stopped, or cannot be played. OpenVirtue runs the global slots once per host frame during a flic,
-not once per flic frame. `WAITT` counts `TICKS` during a flic, because the faster rate seen here
-rests on a single sample.
+stopped, or cannot be played. The rest of this paragraph is superseded by
+OV-20261015-flic-scheduler-detail, which measured one scheduler cycle per flic frame and the
+`WAITT` count. It used to read: OpenVirtue runs the global slots once per host frame during a
+flic, not once per flic frame. `WAITT` counts `TICKS` during a flic, because the faster rate
+seen here rests on a single sample.
