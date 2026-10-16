@@ -26,6 +26,7 @@ internal static class ProjectionProbeGenerator
     public const string ShootProbeName = "shoot-mapping";
     public const string BranchProbeName = "branch-semantics";
     public const string EachSecProbeName = "each-sec-cadence";
+    public const string FlicProbeName = "flic-play";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -33,6 +34,7 @@ internal static class ProjectionProbeGenerator
     private const string ShootProbeId = "OV-20261009-shoot-mapping";
     private const string BranchProbeId = "OV-20261015-branch-tail-jump";
     private const string EachSecProbeId = "OV-20261015-each-sec-cadence";
+    private const string FlicProbeId = "OV-20261015-flic-play-blocking";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -282,6 +284,7 @@ internal static class ProjectionProbeGenerator
         ShootProbeName => ShootProbeId,
         BranchProbeName => BranchProbeId,
         EachSecProbeName => EachSecProbeId,
+        FlicProbeName => FlicProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -384,6 +387,7 @@ internal static class ProjectionProbeGenerator
                 break;
             case BranchProbeName:
             case EachSecProbeName:
+            case FlicProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -402,6 +406,7 @@ internal static class ProjectionProbeGenerator
     {
         BranchProbeName => BranchProbeCases.Set,
         EachSecProbeName => EachSecProbeCases.Set,
+        FlicProbeName => FlicProbeCases.Set,
         _ => null,
     };
 
@@ -440,6 +445,13 @@ internal static class ProjectionProbeGenerator
         WriteTexture(workDir, "PRBCEL.PCX", Ink.Ceiling, palette);
         WriteValidated(Path.Combine(workDir, "PRBPAL.PCX"), SyntheticPcx.Swatch(palette));
 
+        if (plan.ProbeName == FlicProbeName)
+        {
+            File.WriteAllBytes(
+                Path.Combine(workDir, FlicProbeCases.FlicFile),
+                SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
+        }
+
         if (runtimePath is not null)
         {
             File.Copy(runtimePath, Path.Combine(workDir, "VRUN.EXE"), overwrite: true);
@@ -454,7 +466,8 @@ internal static class ProjectionProbeGenerator
             VariantLabel: $"{plan.ProbeName}/{variant.Label}",
             WorkDir: workDir,
             DosboxX: dosboxX,
-            CompletionMarker: "OVEND"));
+            CompletionMarker: "OVEND",
+            Autotype: variant.Trace?.Autotype));
     }
 
     private static void WriteTexture(string workDir, string name, Ink ink, SyntheticPcx.Palette palette) =>
@@ -908,6 +921,7 @@ internal static class ProjectionProbeGenerator
                 question = traceCase.Question,
                 trace_file = set.TraceFileName,
                 console_file = "OVCON.TXT",
+                autotype = traceCase.Autotype,
                 predictions = traceCase.Predictions,
             },
             JsonOptions);
@@ -1099,6 +1113,7 @@ internal static class ProjectionProbeGenerator
           ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480]
           ovtool oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
           ovtool oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+          ovtool oracle prepare flic-play [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
         """;
 
     public static int Usage(string? error = null)

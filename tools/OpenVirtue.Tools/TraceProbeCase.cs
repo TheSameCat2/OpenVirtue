@@ -10,14 +10,17 @@ using System.Text;
 /// OV-20261009-shoot-mapping), so the token order shows which statements ran and when.
 /// <c>Declarations</c> go before <c>probe_start</c>; <c>Run</c> is inserted into <c>probe_start</c>
 /// after the trace file is selected and <c>BEGIN</c> written. <c>Predictions</c> map each reading
-/// under test to the trace it would produce, written down before the run.
+/// under test to the trace it would produce, written down before the run. <c>Autotype</c>, when
+/// set, is the argument list of a DOSBox-X <c>AUTOTYPE</c> line run before the runtime (scripted
+/// key presses, e.g. <c>-w 15 space</c>).
 /// </summary>
 internal sealed record TraceProbeCase(
     string Label,
     string Question,
     string Declarations,
     string Run,
-    IReadOnlyDictionary<string, string> Predictions);
+    IReadOnlyDictionary<string, string> Predictions,
+    string? Autotype = null);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as

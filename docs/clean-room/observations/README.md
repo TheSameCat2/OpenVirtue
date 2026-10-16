@@ -53,4 +53,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   share the runtime's second and run, again every second, in the frame where `SECS` goes up,
   just before the global `EACH_TICK` slots. `SECS` is a whole-second count. A waiting slot action
   goes on while the next second starts another. Nine DOSBox-X runs; implemented in `WdlRuntime`.
-  Open: whether the slots run during a FLIC.
+  They also run during a FLIC (OV-20261015-flic-play-blocking).
+
+## FLIC probe (2026-10-15 — confirmed and implemented)
+
+- `OV-20261015-flic-play-blocking.md` — `PLAY_FLICFILE` starts the flic and the action goes on
+  in the same frame. During the flic the global `EACH_TICK` and `EACH_SEC` slots and `WAITT`
+  actions keep running, and key hooks fire. `STOP_FLIC` from a hook ends the flic by the next
+  frame. `FLIC_FRAME` is the 1-based frame on screen and 0 when no flic plays. The scripted Space
+  came from DOSBox-X `AUTOTYPE`. Six DOSBox-X runs on a synthetic FLC; implemented in
+  `WdlInterpreter`, `WdlRuntime` and `RuntimeHost`.

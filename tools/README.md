@@ -19,6 +19,7 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pix
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare flic-play [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -74,6 +75,15 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare each-sec-cadence [
   inside an `EACH_SEC` action. Every line in `OVSEC0.TXT` is a token followed by `TICKS`
   (and `SECS`); at `forcerate=60` equal `TICKS` mean the same frame. `case.json` lists the
   trace each reading predicts. No measurement script: read the traces.
+- `oracle prepare flic-play` — the OV-20261015-flic-play-blocking carriers (issue #9), built
+  from `FlicProbeCases.cs` on the same trace scaffold. Every carrier holds `PRBFLC.FLC`, a
+  synthetic 30-second FLC written by `SyntheticFlic.cs` (a line sweeping down a solid screen),
+  and plays it with `PLAY_FLICFILE`. The cases ask whether the action goes on past the
+  instruction, whether `WAITT`, `EACH_TICK` and `EACH_SEC` run during the flic, and whether a
+  key fires `IF_ANYKEY` and `STOP_FLIC` ends the flic. The key cases press Space through a
+  DOSBox-X `AUTOTYPE` line in the autoexec (`TraceProbeCase.Autotype`); `key-control` checks
+  that the scripted key reaches the runtime at all. Every line in `OVFLC0.TXT` is a token
+  followed by `FLIC_FRAME` and `TICKS`.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the
