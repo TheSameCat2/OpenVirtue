@@ -110,10 +110,11 @@ What works today:
   declarations of predefined engine skills receive their documented defaults
   without overriding intentional zero initializers.
   The retail title sequence now decodes and plays its full-screen FLC at the
-  authored cadence while world simulation pauses and global `EACH_TICK` remains
-  active. Playback updates `FLIC_FRAME`, resumes the invoking action on completion
-  or `STOP_FLIC`, and can proceed through the keyboard-driven title/menu flow into
-  Apathy in one host process.
+  authored cadence while world simulation pauses. As measured against the DOS
+  runtime (OV-20261015-flic-play-blocking), the action that starts the flic goes on
+  at once, the global scheduler and waiting actions keep running, a key during the
+  logo stops it, and `FLIC_FRAME` counts the frame on screen. The title proceeds
+  through the keyboard-driven title/menu flow into Apathy in one host process.
 - **Projection parity** — the 3-D projection reproduces the original as measured black-box
   against the DOS runtime (OV-20261009 notes): the horizontal field of view is `PLAYER_ARC`
   radians, the vertical scale is three quarters of the window height over the same tangent
@@ -135,7 +136,7 @@ What works today:
   (OV-20261015-branch-tail-jump). The 16 global `EACH_SEC` slots, which the manuals never
   document, are measured too (OV-20261015-each-sec-cadence): they all run once per engine second
   (16 ticks) when the whole-second `SECS` count goes up, just before the global `EACH_TICK` slots.
-  The title now leaves the logo on its own about 12 s after the FLC, and `HEART`, `LEGALISM` and
+  The title's logo and splash time out on their own, and `HEART`, `LEGALISM` and
   `NEWAGE` finish their three-second fade-in and draw their HUD, crosshair and weapon.
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,

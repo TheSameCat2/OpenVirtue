@@ -150,8 +150,7 @@ public class WdlRuntimeEachSecTests
     [Fact]
     public void TickFlic_KeepsEachSecRunningLikeTheGlobalEachTickSlots()
     {
-        // Not measured (OV-20261015-each-sec-cadence open question): the manual (p.82) keeps the
-        // global EACH_TICK slots running during a FLIC, and EACH_SEC is assumed to do the same.
+        // The EACH_SEC slots run once per second during a FLIC (OV-20261015-flic-play-blocking).
         WdlRuntime runtime = Start(
             "SKILL n { VAL 0; } ACTION boot { SET EACH_SEC.1, sec; } ACTION sec { RULE n += 1; } IF_START boot;");
 

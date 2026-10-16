@@ -538,21 +538,35 @@ public sealed partial class RuntimeHost
             _audio.PlayBeep();
         }
 
+        // PLAY_FLICFILE does not hold its action and STOP_FLIC ends the flic before the next
+        // frame (OV-20261015-flic-play-blocking). Stops and plays are applied in script order.
         while (_handledFlicRequests < _runtime.FlicRequests.Count)
         {
-            HandleFlicRequest(_runtime.FlicRequests[_handledFlicRequests++]);
+            WdlFlicRequest request = _runtime.FlicRequests[_handledFlicRequests++];
+            HandleStopFlicRequests(request.StopsBefore);
+            HandleFlicRequest(request);
         }
 
-        while (_handledStopFlicRequests < _runtime.StopFlicCount)
-        {
-            _handledStopFlicRequests++;
-            _activeFlic = null;
-            _lastPresentationStatus = "flic stopped";
-        }
+        HandleStopFlicRequests(_runtime.StopFlicCount);
 
         while (_handledScreenshotRequests < _runtime.ScreenshotRequests.Count)
         {
             _pendingScreenshots.Add(_runtime.ScreenshotRequests[_handledScreenshotRequests++]);
+        }
+    }
+
+    private void HandleStopFlicRequests(int stopCount)
+    {
+        while (_handledStopFlicRequests < stopCount)
+        {
+            _handledStopFlicRequests++;
+            if (_activeFlic is not null)
+            {
+                _activeFlic = null;
+                _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 0);
+            }
+
+            _lastPresentationStatus = "flic stopped";
         }
     }
 
@@ -562,14 +576,14 @@ public sealed partial class RuntimeHost
         if (string.IsNullOrWhiteSpace(fileName))
         {
             _lastPresentationStatus = "flic request ignored";
-            _runtime.CompleteFlic(request.Id);
+            EndUnplayableFlic();
             return;
         }
 
         if (!TryGetArchiveBytes(fileName, out byte[] bytes))
         {
             _lastPresentationStatus = $"flic {fileName} missing";
-            _runtime.CompleteFlic(request.Id);
+            EndUnplayableFlic();
             return;
         }
 
@@ -581,19 +595,27 @@ public sealed partial class RuntimeHost
                 throw new InvalidDataException("FLIC contains no display frames.");
             }
 
-            if (_activeFlic is { } replaced)
-            {
-                _runtime.CompleteFlic(replaced.Request.Id);
-            }
-
+            // A new flic replaces one that is still playing.
             _activeFlic = new FlicPlayback(request, fileName, animation);
-            _runtime.SetSkill("FLIC_FRAME", 0);
+            _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 1);
             _lastPresentationStatus = $"flic {fileName} 1/{animation.Frames.Count}";
         }
         catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or OverflowException)
         {
             _lastPresentationStatus = $"flic {fileName} invalid";
-            _runtime.CompleteFlic(request.Id);
+            EndUnplayableFlic();
+        }
+    }
+
+    /// <summary>
+    /// A flic that cannot be played leaves nothing on screen: any flic still playing goes on, and
+    /// otherwise <c>FLIC_FRAME</c> (set to 1 by the request) goes back to 0.
+    /// </summary>
+    private void EndUnplayableFlic()
+    {
+        if (_activeFlic is null)
+        {
+            _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 0);
         }
     }
 
@@ -606,16 +628,14 @@ public sealed partial class RuntimeHost
             playback.ElapsedSeconds -= frameSeconds;
             if (playback.FrameIndex + 1 >= playback.Animation.Frames.Count)
             {
-                int requestId = playback.Request.Id;
-                string fileName = playback.FileName;
                 _activeFlic = null;
-                _lastPresentationStatus = $"flic {fileName} complete";
-                _runtime.CompleteFlic(requestId);
+                _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 0);
+                _lastPresentationStatus = $"flic {playback.FileName} complete";
                 return;
             }
 
             playback.FrameIndex++;
-            _runtime.SetSkill("FLIC_FRAME", playback.FrameIndex);
+            _runtime.SetSkill(WdlRuntime.FlicFrameSkill, playback.FrameIndex + 1);
             _lastPresentationStatus = $"flic {playback.FileName} {playback.FrameIndex + 1}/{playback.Animation.Frames.Count}";
         }
     }

@@ -46,12 +46,9 @@ public sealed class WdlRuntime :
     private const int EachTickSlotCount = 16;
     private const int EachSecSlotCount = 16;
 
-    /// <summary>
-    /// Whether global <c>EACH_SEC</c> slots keep running while a FLIC plays, as the 16 global
-    /// <c>EACH_TICK</c> slots do (manual p.82). Not measured (OV-20261015-each-sec-cadence open
-    /// question); <c>SECS</c> keeps counting either way.
-    /// </summary>
-    private static bool EachSecRunsDuringFlic => true;
+    /// <summary>The skill holding the 1-based number of the flic frame on screen, 0 when none plays.</summary>
+    public const string FlicFrameSkill = "FLIC_FRAME";
+
     private static readonly string[] RegionNumberFields =
     [
         "FLOOR_HGT",
@@ -132,7 +129,6 @@ public sealed class WdlRuntime :
     private readonly List<WdlPersistenceRequest> _persistenceRequests = [];
     private readonly List<WdlInputRequest> _inputRequests = [];
     private readonly Dictionary<int, ActiveInputAction> _inputActions = [];
-    private readonly Dictionary<int, ActiveFlicAction> _flicActions = [];
     private Random _random = new();
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
@@ -281,9 +277,6 @@ public sealed class WdlRuntime :
 
     /// <summary>How many times WDL requested that the current flic be stopped.</summary>
     public int StopFlicCount { get; private set; }
-
-    /// <summary>How many actions are suspended until host flic playback completes.</summary>
-    public int FlicWaitingActionCount => _flicActions.Count;
 
     /// <summary>How many actions are currently suspended by <c>WAIT</c> or <c>WAITT</c>.</summary>
     public int WaitingActionCount => _waitingActions.Count;
@@ -933,36 +926,24 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public void Beep() => BeepCount++;
 
-    /// <inheritdoc/>
-    public bool BeginFlicFile(string fileName, out WdlFlicRequest request)
+    /// <summary>
+    /// Records a host request to play a flic. The calling action goes on at once, and
+    /// <c>FLIC_FRAME</c> reads 1 (the first frame is on screen) for the rest of it; the host
+    /// keeps <c>FLIC_FRAME</c> at the frame on screen and sets it to 0 when the flic ends, is
+    /// stopped, or cannot be played (OV-20261015-flic-play-blocking).
+    /// </summary>
+    public void BeginFlicFile(string fileName)
     {
-        request = new WdlFlicRequest(++_nextFlicRequestId, fileName, Streamed: true);
-        _flicRequests.Add(request);
-        return true;
+        _flicRequests.Add(new WdlFlicRequest(++_nextFlicRequestId, fileName, Streamed: true, StopsBefore: StopFlicCount));
+        SetSkill(FlicFrameSkill, 1);
     }
 
-    /// <inheritdoc/>
-    public void StopFlic()
-    {
-        StopFlicCount++;
-        foreach (int requestId in _flicActions.Keys.ToArray())
-        {
-            CompleteFlic(requestId);
-        }
-    }
-
-    /// <summary>Completes host flic playback and resumes its invoking WDL action.</summary>
-    public bool CompleteFlic(int requestId)
-    {
-        if (!_flicActions.Remove(requestId, out ActiveFlicAction? action))
-        {
-            return false;
-        }
-
-        WdlExecutionResult result = ContinueWithScope(action.State, action.Scope);
-        StoreSuspendedAction(action.State, result, action.Scope);
-        return true;
-    }
+    /// <summary>
+    /// Records a host request to stop the flic. The host ends it before the next frame; within
+    /// the calling action <c>FLIC_FRAME</c> still reads the frame on screen
+    /// (OV-20261015-flic-play-blocking).
+    /// </summary>
+    public void StopFlic() => StopFlicCount++;
 
     /// <inheritdoc/>
     public void Screenshot(string baseName, int number) =>
@@ -1348,14 +1329,17 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Advances timing and global scheduler actions while host FLIC playback pauses
-    /// normal world movement, animation, proximity, and object scheduler processing.
+    /// Advances timing and the scheduler while host FLIC playback pauses world movement,
+    /// animation, proximity, and object scheduler processing (manual p.82). Waiting actions
+    /// resume, then the global <c>EACH_SEC</c> slots (once per second) and <c>EACH_TICK</c> slots
+    /// run, in the same order as <see cref="Tick"/> (OV-20261015-flic-play-blocking).
     /// </summary>
     public double TickFlic(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        ResumeWaitingActions(timeCorrection);
         ResetGlobalSchedulerDiagnostics();
-        if (AdvanceSecond(deltaSeconds) && EachSecRunsDuringFlic)
+        if (AdvanceSecond(deltaSeconds))
         {
             DispatchGlobalEachSecActions();
         }
@@ -1752,9 +1736,6 @@ public sealed class WdlRuntime :
                 break;
             case { Status: WdlExecutionStatus.InputWaiting, Input: { } input }:
                 _inputActions[input.Id] = new ActiveInputAction(state, input, scope);
-                break;
-            case { Status: WdlExecutionStatus.FlicWaiting, Flic: { } flic }:
-                _flicActions[flic.Id] = new ActiveFlicAction(state, flic, scope);
                 break;
         }
     }
@@ -3926,15 +3907,6 @@ public sealed class WdlRuntime :
         public WdlExecutionState State { get; } = state;
 
         public WdlInputRequest Request { get; } = request;
-
-        public ActionScope Scope { get; } = scope;
-    }
-
-    private sealed class ActiveFlicAction(WdlExecutionState state, WdlFlicRequest request, ActionScope scope)
-    {
-        public WdlExecutionState State { get; } = state;
-
-        public WdlFlicRequest Request { get; } = request;
 
         public ActionScope Scope { get; } = scope;
     }

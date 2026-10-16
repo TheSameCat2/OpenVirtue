@@ -29,25 +29,16 @@ public enum WdlExecutionStatus
 
     /// <summary>The action suspended while waiting for host text input.</summary>
     InputWaiting,
-
-    /// <summary>The action suspended while a host flic animation is active.</summary>
-    FlicWaiting,
 }
 
 /// <summary>The result of advancing a resumable WDL action.</summary>
 public readonly record struct WdlExecutionResult(
     WdlExecutionStatus Status,
     WdlWaitRequest? Wait,
-    WdlInputRequest? Input,
-    WdlFlicRequest? Flic)
+    WdlInputRequest? Input)
 {
     public WdlExecutionResult(WdlExecutionStatus status, WdlWaitRequest? wait)
-        : this(status, wait, Input: null, Flic: null)
-    {
-    }
-
-    public WdlExecutionResult(WdlExecutionStatus status, WdlWaitRequest? wait, WdlInputRequest? input)
-        : this(status, wait, input, Flic: null)
+        : this(status, wait, Input: null)
     {
     }
 }

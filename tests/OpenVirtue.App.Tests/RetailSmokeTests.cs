@@ -67,26 +67,31 @@ public sealed partial class RetailSmokeTests
             session.Run(30);
             session.Capture("title-1-logo-flc");
 
-            // PLAY_FLICFILE holds showLogoScreen until the flic ends, so IF_ANYKEY and the logo's
-            // 12-second EACH_SEC.1 countdown are armed only then, in the same action.
-            session.RunUntil("the logo FLC has finished", () => Hook(host, "IF_ANYKEY") == "advanceToTitle");
-            double armedSecs = host.Runtime.GetSkill("SECS");
-            _output.WriteLine($"logo timeout armed: SECS {armedSecs:F2}, waitVal {host.Runtime.GetSkill("waitVal")}, EACH_SEC.1 {host.Runtime.GetEachSecAction(1)}");
-            Assert.Equal(12, host.Runtime.GetSkill("waitVal"));
+            // PLAY_FLICFILE does not hold showLogoScreen (OV-20261015-flic-play-blocking), so the
+            // rest of the action has run while the logo plays: IF_ANYKEY and the 12-second
+            // EACH_SEC.1 countdown are armed, and a key cuts the logo short.
+            double flicFrame = host.Runtime.GetSkill("FLIC_FRAME");
+            _output.WriteLine($"logo playing: FLIC_FRAME {flicFrame}, waitVal {host.Runtime.GetSkill("waitVal")}, EACH_SEC.1 {host.Runtime.GetEachSecAction(1)}");
+            Assert.True(flicFrame >= 1, "the logo FLC should still be playing");
+            Assert.Equal("advanceToTitle", Hook(host, "IF_ANYKEY"));
             Assert.Equal("waitForLogoScreen", host.Runtime.GetEachSecAction(1));
 
-            // No key: the countdown runs out and BRANCHes to the splash on its own (issue #8).
+            session.Press(HostKey.Space);
             session.RunUntil(
-                "the title splash is up without a key",
+                "the title splash is up after a key during the logo",
                 () => Hook(host, "IF_ANYKEY") == "advanceToMenu" && UiNumber(host, "titleScreenPanel", "VISIBLE") == 1);
-            double advancedSecs = host.Runtime.GetSkill("SECS");
-            _output.WriteLine($"logo timed out after {advancedSecs - armedSecs:F2} engine seconds, waitVal {host.Runtime.GetSkill("waitVal")}");
-            Assert.InRange(advancedSecs - armedSecs, 10, 14);
-            session.Run(60);
+            Assert.Equal(0, host.Runtime.GetSkill("FLIC_FRAME"));
+            double splashSecs = host.Runtime.GetSkill("SECS");
+            Assert.Equal("waitForTitleScreen", host.Runtime.GetEachSecAction(1));
+            session.Run(30);
             session.Capture("title-2-splash");
 
-            session.Press(HostKey.Space);
-            session.RunUntil("the title menu is up", () => host.Runtime.GetSkill("inTitle") == 1);
+            // No key at the splash: its 4-second EACH_SEC.1 countdown runs out and BRANCHes to
+            // the menu on its own (issue #8).
+            session.RunUntil("the title menu is up without a key", () => host.Runtime.GetSkill("inTitle") == 1);
+            double menuSecs = host.Runtime.GetSkill("SECS");
+            _output.WriteLine($"splash timed out after {menuSecs - splashSecs:F2} engine seconds");
+            Assert.InRange(menuSecs - splashSecs, 3, 6);
             session.Run(60);
             session.Capture("title-3-menu");
             Assert.Equal(1, host.Runtime.GetSkill("menu_pos"));
