@@ -52,6 +52,15 @@ public static class Timing
         return correction > 0 ? 1 / correction : 0;
     }
 
+    /// <summary>
+    /// The frame duration to pass for one scheduler cycle during a flic whose frames last
+    /// <paramref name="frameDelayMilliseconds"/>. The original counts the delay in 64 ms units, so
+    /// <c>TIME_CORR</c> reads 1.09375 for a 70 ms flic and 0.625 for a 40 ms one, about 2 % short of
+    /// the 62.5 ms tick (OV-20261015-flic-scheduler-detail).
+    /// </summary>
+    public static double FlicCycleSeconds(double frameDelayMilliseconds) =>
+        Math.Max(0, frameDelayMilliseconds) / 64.0 / TicksPerSecond;
+
     /// <summary>The frame duration after applying the same cap used for timing skills.</summary>
     public static double EffectiveFrameSeconds(double deltaSeconds) =>
         deltaSeconds > 0 ? Math.Min(deltaSeconds, MaxFrameSeconds) : 0;

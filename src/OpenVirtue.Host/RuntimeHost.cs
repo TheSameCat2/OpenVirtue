@@ -338,7 +338,10 @@ public sealed partial class RuntimeHost : IDisposable
         _textureImages = textures;
         _uiImages = uiImages;
         _fontImages = fontImages;
-        _runtime = new WdlRuntime(level, RuntimePrintDirectory(), textures);
+        _runtime = new WdlRuntime(level, RuntimePrintDirectory(), textures)
+        {
+            FlicFileExists = HasArchiveEntry,
+        };
         _clearColor = ChooseBackgroundColor();
         _booted = false;
         _geometryReady = false;
@@ -385,16 +388,8 @@ public sealed partial class RuntimeHost : IDisposable
         _frameClock.Restart();
         WdlRuntime tickRuntime = _runtime;
         Player tickPlayer = _player;
-        FlicPlayback? tickFlic = _activeFlic;
-        if (tickFlic is not null)
+        if (_activeFlic is { } tickFlic && !RunFlicCycles(tickRuntime, tickFlic))
         {
-            _lastTimeCorrection = tickRuntime.TickFlic(_lastFrameSeconds);
-            HandleRuntimeHostRequests();
-            if (ReferenceEquals(_runtime, tickRuntime) && ReferenceEquals(_activeFlic, tickFlic))
-            {
-                AdvanceFlic(tickFlic, _lastFrameSeconds);
-            }
-
             UpdateStatusAtInterval();
             return;
         }

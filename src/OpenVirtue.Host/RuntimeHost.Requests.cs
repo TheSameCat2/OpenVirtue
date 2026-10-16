@@ -222,6 +222,14 @@ public sealed partial class RuntimeHost
         return true;
     }
 
+    private bool HasArchiveEntry(string fileName)
+    {
+        string normalized = Path.GetFileName(fileName);
+        return _archive is not null &&
+               normalized.Length > 0 &&
+               _archive.Entries.Any(entry => entry.Name.Equals(normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
     private bool TryGetArchiveBytes(string fileName, out byte[] bytes)
     {
         bytes = [];
@@ -609,35 +617,63 @@ public sealed partial class RuntimeHost
 
     /// <summary>
     /// A flic that cannot be played leaves nothing on screen: any flic still playing goes on, and
-    /// otherwise <c>FLIC_FRAME</c> (set to 1 by the request) goes back to 0.
+    /// <c>FLIC_FRAME</c> reads its frame, or 0 when none plays. The original skips a missing file
+    /// alone and faults when one is requested while a flic plays (OV-20261015-flic-scheduler-detail);
+    /// OpenVirtue keeps the playing flic.
     /// </summary>
-    private void EndUnplayableFlic()
-    {
-        if (_activeFlic is null)
-        {
-            _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 0);
-        }
-    }
+    private void EndUnplayableFlic() =>
+        _runtime.SetSkill(WdlRuntime.FlicFrameSkill, _activeFlic is { } playing ? playing.FrameIndex + 1 : 0);
 
-    private void AdvanceFlic(FlicPlayback playback, double deltaSeconds)
+    /// <summary>The most flic cycles one host frame catches up on; the rest of a stall is dropped.</summary>
+    private const int MaxFlicCyclesPerFrame = 4;
+
+    /// <summary>
+    /// Runs the scheduler cycles of the flic frames that are due. The original runs one cycle per
+    /// flic frame: cycle k shows frame k with <c>FLIC_FRAME</c> k, and its <c>TIME_CORR</c> is the
+    /// frame delay in 64 ms units (OV-20261015-flic-scheduler-detail). The first cycle comes in the
+    /// next host frame after <c>PLAY_FLICFILE</c>, and cycle k is due k − 1 frame delays after the
+    /// request, so a host frame may run none. The cycle due after the last frame is a world frame.
+    /// </summary>
+    /// <returns><c>true</c> if the flic ran out in this host frame, so the world frame runs now.</returns>
+    private bool RunFlicCycles(WdlRuntime tickRuntime, FlicPlayback playback)
     {
-        playback.ElapsedSeconds += Math.Max(0, deltaSeconds);
         double frameSeconds = Math.Max(0.001, playback.Animation.FrameDelay.TotalSeconds);
-        while (playback.ElapsedSeconds >= frameSeconds)
+        double cycleSeconds = Timing.FlicCycleSeconds(playback.Animation.FrameDelay.TotalMilliseconds);
+        playback.ElapsedSeconds += Math.Max(0, _lastFrameSeconds);
+        for (int ran = 0; ran < MaxFlicCyclesPerFrame; ran++)
         {
-            playback.ElapsedSeconds -= frameSeconds;
-            if (playback.FrameIndex + 1 >= playback.Animation.Frames.Count)
+            if (playback.CyclesRun > 0)
+            {
+                if (playback.ElapsedSeconds < frameSeconds)
+                {
+                    return false;
+                }
+
+                playback.ElapsedSeconds -= frameSeconds;
+            }
+
+            if (playback.CyclesRun >= playback.Animation.Frames.Count)
             {
                 _activeFlic = null;
                 _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 0);
                 _lastPresentationStatus = $"flic {playback.FileName} complete";
-                return;
+                return true;
             }
 
-            playback.FrameIndex++;
-            _runtime.SetSkill(WdlRuntime.FlicFrameSkill, playback.FrameIndex + 1);
+            playback.FrameIndex = playback.CyclesRun++;
+            tickRuntime.SetSkill(WdlRuntime.FlicFrameSkill, playback.FrameIndex + 1);
             _lastPresentationStatus = $"flic {playback.FileName} {playback.FrameIndex + 1}/{playback.Animation.Frames.Count}";
+            _lastTimeCorrection = tickRuntime.TickFlic(cycleSeconds);
+            HandleRuntimeHostRequests();
+            if (!ReferenceEquals(_runtime, tickRuntime) || !ReferenceEquals(_activeFlic, playback))
+            {
+                // STOP_FLIC, a new flic or a level change: the world or the new flic starts next frame.
+                return false;
+            }
         }
+
+        playback.ElapsedSeconds = Math.Min(playback.ElapsedSeconds, frameSeconds);
+        return false;
     }
 
     private void HandleRuntimeInputRequests()
@@ -816,8 +852,13 @@ public sealed partial class RuntimeHost
 
         public FlicAnimation Animation { get; } = animation;
 
+        /// <summary>The 0-based frame on screen.</summary>
         public int FrameIndex { get; set; }
 
+        /// <summary>The flic's scheduler cycles so far; cycle k shows frame k.</summary>
+        public int CyclesRun { get; set; }
+
+        /// <summary>Host time since the last cycle.</summary>
         public double ElapsedSeconds { get; set; }
     }
 }

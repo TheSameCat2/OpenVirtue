@@ -337,6 +337,9 @@ public class WdlRuntimeTests
         Assert.Equal(139, runtime.GetSkill("trace"));
         Assert.Equal(1, runtime.WaitingActionCount);
 
+        // The WAIT 1 counts the frame it was armed before and resumes in the next one.
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(139, runtime.GetSkill("trace"));
         runtime.Tick(1.0 / 16);
         Assert.Equal(1394, runtime.GetSkill("trace"));
         Assert.Equal(0, runtime.WaitingActionCount);
@@ -812,6 +815,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.WaitingActionCount);
 
         runtime.TickFlic(1.0 / 16);
+        runtime.TickFlic(1.0 / 16);
         Assert.Equal(0, runtime.GetSkill("waited"));
         runtime.TickFlic(1.0 / 16);
 
@@ -999,6 +1003,9 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("order"));
         Assert.Equal(1, runtime.WaitingActionCount);
 
+        // Armed before the first frame, the WAIT counts frames 1 and 2 and resumes in frame 3
+        // (OV-20261015-flic-scheduler-detail).
+        runtime.Tick(1.0 / 16);
         runtime.Tick(1.0 / 16);
         Assert.Equal(1, runtime.GetSkill("order"));
         Assert.Equal(1, runtime.WaitingActionCount);
@@ -1054,6 +1061,10 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("x"));
         Assert.Equal(0, runtime.GetSkill("done"));
 
+        // The first WAIT 1 was armed before frame 1, so it resumes in frame 2; each later one
+        // is armed in a frame and resumes in the next.
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("x"));
         runtime.Tick(1.0 / 16);
         Assert.Equal(2, runtime.GetSkill("x"));
         Assert.Equal(0, runtime.GetSkill("done"));
@@ -1083,6 +1094,8 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.WaitingActionCount);
 
         runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("delayed"));
+        runtime.Tick(1.0 / 16);
         Assert.Equal(1, runtime.GetSkill("delayed"));
         Assert.Equal(0, runtime.WaitingActionCount);
     }
@@ -1106,6 +1119,8 @@ public class WdlRuntimeTests
         Assert.Same(previousMy, runtime.GetObject("my"));
         Assert.Equal(5, pickup.X);
 
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(5, pickup.X);
         runtime.Tick(1.0 / 16);
         Assert.Equal(9, pickup.X);
         Assert.Same(previousMy, runtime.GetObject("my"));
@@ -1139,6 +1154,11 @@ public class WdlRuntimeTests
         Assert.True(runtime.RunAction("show"));
         Assert.Equal(0, pickup["INVISIBLE"]);
         Assert.Equal(1, pickup["VISIBLE"]);
+
+        // While its target was invisible the WAIT did not count down; it counts the first
+        // visible frame and resumes in the next.
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("resumed"));
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(1, runtime.GetSkill("resumed"));

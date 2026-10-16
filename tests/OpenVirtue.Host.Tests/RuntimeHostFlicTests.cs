@@ -12,7 +12,9 @@ namespace OpenVirtue.Host.Tests;
 /// <summary>
 /// Flic playback in the host, as measured in OV-20261015-flic-play-blocking: the action that
 /// calls <c>PLAY_FLICFILE</c> goes on, a key during the flic runs its hook, <c>STOP_FLIC</c> ends
-/// the flic, and <c>FLIC_FRAME</c> is the 1-based frame on screen and 0 when none plays.
+/// the flic, and <c>FLIC_FRAME</c> is the 1-based frame on screen and 0 when none plays; and in
+/// OV-20261015-flic-scheduler-detail: one scheduler cycle runs per flic frame, with <c>TIME_CORR</c>
+/// the frame delay in 64 ms units, and a missing file leaves <c>FLIC_FRAME</c> and a playing flic alone.
 /// </summary>
 public sealed class RuntimeHostFlicTests : IDisposable
 {
@@ -79,6 +81,87 @@ public sealed class RuntimeHostFlicTests : IDisposable
     }
 
     [Fact]
+    public void Frame_DuringFlic_RunsOneSchedulerCyclePerFlicFrame()
+    {
+        // A 640 ms frame delay is 10 ticks in 64 ms units. Two quick host frames show frame 1 and
+        // run its one cycle; the second frame is not due yet.
+        const string main = """
+            VIDEO S640x480;
+            MAPFILE <m.wmp>;
+            BMAP m,<t.pcx>,0,0,1,1;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            SKILL cycles { VAL 0; }
+            ACTION start { PLAY_FLICFILE <A.FLC>; SET EACH_TICK.1, count; }
+            ACTION count { RULE cycles += 1; }
+            IF_START start;
+            """;
+        using RuntimeHost host = Open(frameDelayMs: 640, out _, out FakeRender render, main);
+        host.Boot();
+        double ticks = host.Runtime.GetSkill("TICKS");
+
+        host.Frame(present: false);
+        host.Frame(present: false);
+
+        Assert.True(DrewFlic(render));
+        Assert.Equal(1, host.Runtime.GetSkill("cycles"));
+        Assert.Equal(1, host.Runtime.GetSkill("FLIC_FRAME"));
+        Assert.Equal(10, host.Runtime.GetSkill("TIME_CORR"), 9);
+        Assert.Equal(ticks + 10, host.Runtime.GetSkill("TICKS"), 9);
+    }
+
+    [Fact]
+    public void Boot_PlayFlicFileOfMissingFile_KeepsFlicFrameAtZeroAndDrawsTheWorld()
+    {
+        const string main = """
+            VIDEO S640x480;
+            MAPFILE <m.wmp>;
+            BMAP m,<t.pcx>,0,0,1,1;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            SKILL seen { VAL -1; }
+            SKILL after { VAL 0; }
+            ACTION start { PLAY_FLICFILE <NONE.FLC>; SET seen, FLIC_FRAME; SET after, 1; }
+            IF_START start;
+            """;
+        using RuntimeHost host = Open(frameDelayMs: 10_000, out _, out FakeRender render, main);
+        host.Boot();
+        host.Frame(present: false);
+
+        Assert.Equal(0, host.Runtime.GetSkill("seen"));
+        Assert.Equal(1, host.Runtime.GetSkill("after"));
+        Assert.Equal(0, host.Runtime.GetSkill("FLIC_FRAME"));
+        Assert.False(DrewFlic(render));
+    }
+
+    [Fact]
+    public void Frame_PlayFlicFileOfMissingFileDuringFlic_KeepsThePlayingFlic()
+    {
+        const string main = """
+            VIDEO S640x480;
+            MAPFILE <m.wmp>;
+            BMAP m,<t.pcx>,0,0,1,1;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            SKILL seen { VAL -1; }
+            ACTION start { PLAY_FLICFILE <A.FLC>; SET IF_ANYKEY, missing; }
+            ACTION missing { PLAY_FLICFILE <NONE.FLC>; SET seen, FLIC_FRAME; SET IF_ANYKEY, NULL; }
+            IF_START start;
+            """;
+        using RuntimeHost host = Open(frameDelayMs: 10_000, out FakeInput input, out FakeRender render, main);
+        host.Boot();
+        host.Frame(present: false);
+
+        input.PressedKeys.Add(HostKey.Space);
+        host.Frame(present: false);
+        input.PressedKeys.Clear();
+
+        Assert.Equal(1, host.Runtime.GetSkill("seen"));
+        Assert.Equal(1, host.Runtime.GetSkill("FLIC_FRAME"));
+        Assert.True(DrewFlic(render));
+    }
+
+    [Fact]
     public void Frame_FlicRunsOut_FlicFrameGoesBackToZeroAndTheWorldIsDrawn()
     {
         using RuntimeHost host = Open(frameDelayMs: 1, out _, out FakeRender render);
@@ -100,14 +183,14 @@ public sealed class RuntimeHostFlicTests : IDisposable
         }
     }
 
-    private RuntimeHost Open(int frameDelayMs, out FakeInput input, out FakeRender render)
+    private RuntimeHost Open(int frameDelayMs, out FakeInput input, out FakeRender render, string main = Main)
     {
         Directory.CreateDirectory(_directory);
         string archive = Path.Combine(_directory, "TITLE.WRS");
         WrsArchive.WriteFile(
             archive,
             [
-                new WrsFile("TITLE.WDL", Encoding.ASCII.GetBytes(Main)),
+                new WrsFile("TITLE.WDL", Encoding.ASCII.GetBytes(main)),
                 new WrsFile("m.wmp", Encoding.ASCII.GetBytes(Map)),
                 new WrsFile("A.FLC", TinyFlc(frameDelayMs)),
             ]);
