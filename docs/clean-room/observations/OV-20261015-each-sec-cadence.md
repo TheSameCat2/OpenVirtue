@@ -129,11 +129,9 @@ and 0 ticks before the boundary). medium for 4: three identical launches, but at
 each trace holds only one frame where both lists ran.
 
 ## Open Questions
-- The flic case: the title arms its countdown *after* `PLAY_FLICFILE` in the same action. In
-  OpenVirtue that instruction holds the action until the flic ends, so the question does not
-  affect the title there. Whether the original's `PLAY_FLICFILE` blocks the action is itself open
-  (roadmap); a stopwatch run of the retail title (splash 12 s after the logo starts, or 12 s after
-  it ends) would answer both. There is no synthetic FLC generator, so no synthetic case exists.
+- The flic case is answered by OV-20261015-flic-play-blocking: the slots run once per second
+  during a flic, and `PLAY_FLICFILE` does not hold its action, so the title's countdown starts
+  with the logo.
 - Whether `TICKS` and `SECS` come from one clock. In the first `cadence` launch a second spanned
   16.5 ticks (15.125 → 31.625 → 48.156); in the later launches exactly 16. OpenVirtue derives both
   from the same capped frame time, so one second is always 16 ticks there. A run at another
@@ -166,8 +164,8 @@ Implemented 2026-10-15 (issue #8). `WdlRuntime` keeps 16 `EACH_SEC` slots next t
 `SECS` goes up by one and every occupied `EACH_SEC` slot runs in order; then the global
 `EACH_TICK` slots run. A frame counts at most one second, so a stall never causes a burst of runs.
 A slot action that waits suspends like any action, and the slot starts another instance a second
-later. `TickFlic` keeps `SECS` counting and, until the flic question is answered, runs the slots too
-(`EachSecRunsDuringFlic`). `SET EACH_SEC.n` outside 1–16 is ignored at run time (the original
+later. `TickFlic` keeps `SECS` counting and runs the slots too, as measured later by
+OV-20261015-flic-play-blocking. `SET EACH_SEC.n` outside 1–16 is ignored at run time (the original
 rejects it at compile time, so valid scripts never contain one). A top-level
 `EACH_SEC a, NULL, b;` fills slots in order, like `EACH_TICK`. The slots and the phase of the
 second are part of the harness snapshot, and a new level starts with its own declared slots.

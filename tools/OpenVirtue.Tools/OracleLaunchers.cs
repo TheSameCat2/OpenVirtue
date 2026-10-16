@@ -19,19 +19,22 @@ internal static class OracleLaunchers
     public const string RuntimeCommand = "VRUN.EXE -NJ " + WorldName + " -RUN";
 
     /// <summary>
-    /// The autoexec body: list what DOS sees, run the runtime with its console redirected to
-    /// <c>OVCON.TXT</c> (the Genesis banner and compiler errors are otherwise only visible on
-    /// screen), then leave the emulator.
+    /// The autoexec body: list what DOS sees, optionally queue scripted key presses with DOSBox-X
+    /// <c>AUTOTYPE</c> (it returns at once and types on its own timer, so it goes before the
+    /// runtime), run the runtime with its console redirected to <c>OVCON.TXT</c> (the Genesis
+    /// banner and compiler errors are otherwise only visible on screen), then leave the emulator.
     /// </summary>
-    public const string AutoexecBody =
+    public static string AutoexecBody(string? autotype = null) =>
         "dir /b > OVDIR.TXT\n" +
+        (string.IsNullOrWhiteSpace(autotype) ? "" : "AUTOTYPE " + autotype + "\n") +
         RuntimeCommand + " > OVCON.TXT\n" +
         "exit";
 
     /// <summary>
     /// Launcher settings. <c>CompletionMarker</c> is the five-character PRINTFILE base name
     /// whose <c>&lt;name&gt;*.TXT</c> file proves the probe action ran to completion; when set,
-    /// <c>run.sh</c> exits 3 if it is missing after the run.
+    /// <c>run.sh</c> exits 3 if it is missing after the run. <c>Autotype</c>, when set, is the
+    /// argument list of an <c>AUTOTYPE</c> line in the autoexec (scripted key presses).
     /// </summary>
     public sealed record Options(
         string Title,
@@ -39,7 +42,8 @@ internal static class OracleLaunchers
         string WorkDir,
         string? DosboxX,
         string LaunchLogRelativePath = "../launches.md",
-        string? CompletionMarker = null);
+        string? CompletionMarker = null,
+        string? Autotype = null);
 
     /// <summary>Writes both the Linux (<c>run.sh</c>, <c>dosbox-x.conf</c>) and Windows (<c>run.bat</c>, <c>dosbox.conf</c>) launchers.</summary>
     public static void Write(string variantDir, Options options)
@@ -52,7 +56,7 @@ internal static class OracleLaunchers
     {
         Directory.CreateDirectory(variantDir);
         string workDir = Path.GetFullPath(options.WorkDir);
-        File.WriteAllText(Path.Combine(variantDir, "dosbox-x.conf"), DosboxConfig(options.Title, workDir), Encoding.ASCII);
+        File.WriteAllText(Path.Combine(variantDir, "dosbox-x.conf"), DosboxConfig(options.Title, workDir, options.Autotype), Encoding.ASCII);
         string runSh = Path.Combine(variantDir, "run.sh");
         File.WriteAllText(runSh, RunShell(options), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         TryMarkExecutable(runSh);
@@ -62,11 +66,11 @@ internal static class OracleLaunchers
     {
         Directory.CreateDirectory(variantDir);
         string workDir = Path.GetFullPath(options.WorkDir);
-        File.WriteAllText(Path.Combine(variantDir, "dosbox.conf"), DosboxConfig(options.Title, workDir), Encoding.ASCII);
+        File.WriteAllText(Path.Combine(variantDir, "dosbox.conf"), DosboxConfig(options.Title, workDir, options.Autotype), Encoding.ASCII);
         File.WriteAllText(Path.Combine(variantDir, "run.bat"), RunBatch(options.DosboxX, "dosbox.conf"), Encoding.ASCII);
     }
 
-    public static string DosboxConfig(string title, string workDir) =>
+    public static string DosboxConfig(string title, string workDir, string? autotype = null) =>
         $$"""
         [sdl]
         autolock=false
@@ -89,7 +93,7 @@ internal static class OracleLaunchers
         [autoexec]
         mount c "{{workDir}}"
         C:
-        {{AutoexecBody}}
+        {{AutoexecBody(autotype)}}
 
         """;
 
@@ -105,7 +109,9 @@ internal static class OracleLaunchers
     private static string RunShell(Options options)
     {
         string exe = string.IsNullOrWhiteSpace(options.DosboxX) ? "dosbox-x" : Path.GetFullPath(options.DosboxX);
-        string command = RuntimeCommand;
+        string command = string.IsNullOrWhiteSpace(options.Autotype)
+            ? RuntimeCommand
+            : $"AUTOTYPE {options.Autotype}; {RuntimeCommand}";
         string completionCheck = options.CompletionMarker is { } marker
             ? $$"""
               if [ "$RC" -eq 0 ] && [ -z "$(ls "$WORK"/{{marker.ToUpperInvariant()}}*.TXT 2>/dev/null)" ]; then
