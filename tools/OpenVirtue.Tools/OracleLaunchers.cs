@@ -35,6 +35,8 @@ internal static class OracleLaunchers
     /// whose <c>&lt;name&gt;*.TXT</c> file proves the probe action ran to completion; when set,
     /// <c>run.sh</c> exits 3 if it is missing after the run. <c>Autotype</c>, when set, is the
     /// argument list of an <c>AUTOTYPE</c> line in the autoexec (scripted key presses).
+    /// <c>ClickAfterSeconds</c>, when set, makes <c>run.sh</c> start <see cref="ClickHelperName"/>
+    /// next to it, which sends one left click to the DOSBox-X window that many seconds after launch.
     /// </summary>
     public sealed record Options(
         string Title,
@@ -43,7 +45,17 @@ internal static class OracleLaunchers
         string? DosboxX,
         string LaunchLogRelativePath = "../launches.md",
         string? CompletionMarker = null,
-        string? Autotype = null);
+        string? Autotype = null,
+        double? ClickAfterSeconds = null);
+
+    /// <summary>The host-side click helper's file name in a variant directory.</summary>
+    public const string ClickHelperName = "x11_click.py";
+
+    /// <summary>The click helper as shipped next to <c>ovtool</c> (copied from <c>tools/oracle/</c> at build time).</summary>
+    public static string ClickHelperSource() =>
+        Path.Combine(AppContext.BaseDirectory, "oracle", ClickHelperName) is var path && File.Exists(path)
+            ? path
+            : throw new FileNotFoundException("The click helper was not copied next to ovtool.", path);
 
     /// <summary>Writes both the Linux (<c>run.sh</c>, <c>dosbox-x.conf</c>) and Windows (<c>run.bat</c>, <c>dosbox.conf</c>) launchers.</summary>
     public static void Write(string variantDir, Options options)
@@ -112,6 +124,20 @@ internal static class OracleLaunchers
         string command = string.IsNullOrWhiteSpace(options.Autotype)
             ? RuntimeCommand
             : $"AUTOTYPE {options.Autotype}; {RuntimeCommand}";
+        string clickAfter = options.ClickAfterSeconds is { } seconds
+            ? seconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+            : "";
+        if (clickAfter.Length > 0)
+        {
+            command += $"; host left click at {clickAfter} s";
+        }
+
+        string clickStart = clickAfter.Length > 0
+            ? $$"""
+              python3 -I "$DIR/{{ClickHelperName}}" --title "{{options.Title}}" --after {{clickAfter}} >"$DIR/click-$STAMP.log" 2>&1 &
+              CLICK_PID=$!
+              """
+            : "CLICK_PID=\"\"";
         string completionCheck = options.CompletionMarker is { } marker
             ? $$"""
               if [ "$RC" -eq 0 ] && [ -z "$(ls "$WORK"/{{marker.ToUpperInvariant()}}*.TXT 2>/dev/null)" ]; then
@@ -136,8 +162,13 @@ internal static class OracleLaunchers
           mv "$f" "$WORK/_stale/$STAMP/"
         done
         START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        {{clickStart}}
         timeout -k 10 "${OV_TIMEOUT:-120}" "${DOSBOX_X:-{{exe}}}" -conf "$DIR/dosbox-x.conf" -nogui -nomenu -nopromptfolder >"$DIR/dosbox-x-$STAMP.log" 2>&1
         RC=$?
+        if [ -n "$CLICK_PID" ]; then
+          kill "$CLICK_PID" 2>/dev/null
+          wait "$CLICK_PID" 2>/dev/null
+        fi
         {{completionCheck}}
         OUT="$(cd "$WORK" && ls OV*.PCX OV*.TXT 2>/dev/null | tr '\n' ' ')"
         if [ ! -f "$LOG" ]; then

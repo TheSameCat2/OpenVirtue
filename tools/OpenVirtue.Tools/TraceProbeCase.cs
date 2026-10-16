@@ -12,7 +12,10 @@ using System.Text;
 /// after the trace file is selected and <c>BEGIN</c> written. <c>Predictions</c> map each reading
 /// under test to the trace it would produce, written down before the run. <c>Autotype</c>, when
 /// set, is the argument list of a DOSBox-X <c>AUTOTYPE</c> line run before the runtime (scripted
-/// key presses, e.g. <c>-w 15 space</c>).
+/// key presses, e.g. <c>-w 15 space</c>). <c>Map</c>, when set, adds objects and a second region to
+/// the carrier's room. <c>ClickAfterSeconds</c>, when set, makes <c>run.sh</c> send one left
+/// mouse click to the DOSBox-X window that many seconds after launch (DOSBox-X <c>AUTOTYPE</c> only
+/// presses keys).
 /// </summary>
 internal sealed record TraceProbeCase(
     string Label,
@@ -20,7 +23,22 @@ internal sealed record TraceProbeCase(
     string Declarations,
     string Run,
     IReadOnlyDictionary<string, string> Predictions,
-    string? Autotype = null);
+    string? Autotype = null,
+    TraceProbeMap? Map = null,
+    double? ClickAfterSeconds = null);
+
+/// <summary>
+/// Additions to a trace carrier's room. <c>RoomBody</c> goes into the <c>room</c> region's WDL
+/// definition (e.g. an <c>EACH_TICK</c> action). <c>PadBody</c>, when set, adds <c>pad</c>: a
+/// second region with the room's heights, an 8 × 8 square island at x −12…−4, y 12…20 behind and
+/// left of the player, bounded by invisible passable walls; the string goes into its WDL
+/// definition. <c>Placements</c> are WMP <c>THING</c>/<c>ACTOR</c> lines (region 0 is
+/// <c>room</c>, the pad is region 2).
+/// </summary>
+internal sealed record TraceProbeMap(
+    string RoomBody = "",
+    string? PadBody = null,
+    IReadOnlyList<string>? Placements = null);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as

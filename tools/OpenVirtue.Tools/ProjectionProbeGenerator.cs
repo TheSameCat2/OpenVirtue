@@ -27,6 +27,7 @@ internal static class ProjectionProbeGenerator
     public const string BranchProbeName = "branch-semantics";
     public const string EachSecProbeName = "each-sec-cadence";
     public const string FlicProbeName = "flic-play";
+    public const string FlicDetailProbeName = "flic-detail";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -35,6 +36,7 @@ internal static class ProjectionProbeGenerator
     private const string BranchProbeId = "OV-20261015-branch-tail-jump";
     private const string EachSecProbeId = "OV-20261015-each-sec-cadence";
     private const string FlicProbeId = "OV-20261015-flic-play-blocking";
+    private const string FlicDetailProbeId = "OV-20261015-flic-scheduler-detail";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -285,6 +287,7 @@ internal static class ProjectionProbeGenerator
         BranchProbeName => BranchProbeId,
         EachSecProbeName => EachSecProbeId,
         FlicProbeName => FlicProbeId,
+        FlicDetailProbeName => FlicDetailProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -388,6 +391,7 @@ internal static class ProjectionProbeGenerator
             case BranchProbeName:
             case EachSecProbeName:
             case FlicProbeName:
+            case FlicDetailProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -407,6 +411,7 @@ internal static class ProjectionProbeGenerator
         BranchProbeName => BranchProbeCases.Set,
         EachSecProbeName => EachSecProbeCases.Set,
         FlicProbeName => FlicProbeCases.Set,
+        FlicDetailProbeName => FlicDetailProbeCases.Set,
         _ => null,
     };
 
@@ -417,7 +422,7 @@ internal static class ProjectionProbeGenerator
 
         SyntheticPcx.Palette palette = BuildPalette();
         string wdl = Wdl(plan, variant);
-        string wmp = Wmp(variant.Room, variant.Targets);
+        string wmp = Wmp(variant.Room, variant.Targets, variant.Trace?.Map);
         WdlParser.Parse(wdl);
         WmpMap.Read(wmp);
 
@@ -445,11 +450,26 @@ internal static class ProjectionProbeGenerator
         WriteTexture(workDir, "PRBCEL.PCX", Ink.Ceiling, palette);
         WriteValidated(Path.Combine(workDir, "PRBPAL.PCX"), SyntheticPcx.Swatch(palette));
 
-        if (plan.ProbeName == FlicProbeName)
+        if (plan.ProbeName is FlicProbeName or FlicDetailProbeName)
         {
             File.WriteAllBytes(
                 Path.Combine(workDir, FlicProbeCases.FlicFile),
                 SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
+        }
+
+        if (plan.ProbeName == FlicDetailProbeName)
+        {
+            File.WriteAllBytes(
+                Path.Combine(workDir, FlicDetailProbeCases.SecondFlicFile),
+                SyntheticFlic.WriteValidated(FlicDetailProbeCases.SecondFlicFrames, FlicProbeCases.FlicSpeedMs, alternate: true));
+            File.WriteAllBytes(
+                Path.Combine(workDir, FlicDetailProbeCases.FastFlicFile),
+                SyntheticFlic.WriteValidated(FlicDetailProbeCases.FastFlicFrames, FlicDetailProbeCases.FastFlicSpeedMs));
+        }
+
+        if (variant.Trace?.ClickAfterSeconds is not null)
+        {
+            File.Copy(OracleLaunchers.ClickHelperSource(), Path.Combine(variantDir, OracleLaunchers.ClickHelperName), overwrite: true);
         }
 
         if (runtimePath is not null)
@@ -467,7 +487,8 @@ internal static class ProjectionProbeGenerator
             WorkDir: workDir,
             DosboxX: dosboxX,
             CompletionMarker: "OVEND",
-            Autotype: variant.Trace?.Autotype));
+            Autotype: variant.Trace?.Autotype,
+            ClickAfterSeconds: variant.Trace?.ClickAfterSeconds));
     }
 
     private static void WriteTexture(string workDir, string name, Ink ink, SyntheticPcx.Palette palette) =>
@@ -548,7 +569,9 @@ internal static class ProjectionProbeGenerator
                 CEIL_HGT {{variant.Room.CeilingHeight}};
                 FLOOR_TEX flr_tex;
                 CEIL_TEX cel_tex;
+                {{variant.Trace?.Map?.RoomBody ?? ""}}
             }
+            {{(variant.Trace?.Map?.PadBody is { } padBody ? PadRegionWdl(variant.Room, padBody) : "")}}
             REGION solid
             {
                 FLOOR_HGT {{variant.Room.CeilingHeight}};
@@ -685,6 +708,24 @@ internal static class ProjectionProbeGenerator
         return sb.ToString();
     }
 
+    /// <summary>The pad island's region and its invisible, passable boundary wall (see <see cref="TraceProbeMap"/>).</summary>
+    private static string PadRegionWdl(Room room, string body) =>
+        $$"""
+        WALL pad_wall { TEXTURE red_tex; FLAGS INVISIBLE, PASSABLE; }
+        REGION pad
+        {
+            FLOOR_HGT 0;
+            CEIL_HGT {{room.CeilingHeight}};
+            FLOOR_TEX flr_tex;
+            CEIL_TEX cel_tex;
+            {{body}}
+        }
+
+        """;
+
+    /// <summary>The pad island's corners, counter-clockwise in a y-up frame so the pad is on the left of every wall.</summary>
+    private static readonly (int X, int Y)[] PadCorners = [(-12, 12), (-4, 12), (-4, 20), (-12, 20)];
+
     private static string AlcoveRegionWdl(Room room) =>
         $$"""
         REGION alcove
@@ -706,8 +747,13 @@ internal static class ProjectionProbeGenerator
     /// the far-wall segments separate <c>room</c> (left) from <c>alcove</c> (right) and the
     /// alcove is closed by its own three walls.
     /// </summary>
-    private static string Wmp(Room room, bool targets = false)
+    private static string Wmp(Room room, bool targets = false, TraceProbeMap? map = null)
     {
+        if (map?.PadBody is not null && room.HasAlcove)
+        {
+            throw new InvalidOperationException("The pad island assumes region 2 is free; the alcove room uses it.");
+        }
+
         var sb = new StringBuilder();
         var vertices = new List<(int X, int Y)>
         {
@@ -732,6 +778,12 @@ internal static class ProjectionProbeGenerator
             vertices.Add((room.Depth + room.AlcoveDepth, room.HalfWidth));
         }
 
+        int padFirst = vertices.Count;
+        if (map?.PadBody is not null)
+        {
+            vertices.AddRange(PadCorners);
+        }
+
         for (int i = 0; i < vertices.Count; i++)
         {
             sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} 0;#{i}\r\n");
@@ -742,6 +794,10 @@ internal static class ProjectionProbeGenerator
         if (room.HasAlcove)
         {
             sb.Append(CultureInfo.InvariantCulture, $"REGION alcove {room.StepHeight} {room.CeilingHeight};#2\r\n");
+        }
+        else if (map?.PadBody is not null)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"REGION pad 0 {room.CeilingHeight};#2\r\n");
         }
 
         int wall = 0;
@@ -767,7 +823,22 @@ internal static class ProjectionProbeGenerator
             sb.Append(CultureInfo.InvariantCulture, $"WALL blu_wall {alcoveNorth} {farEnd} 2 1 0 0;#{wall++}\r\n");
         }
 
+        if (map?.PadBody is not null)
+        {
+            for (int k = 0; k < PadCorners.Length; k++)
+            {
+                int from = padFirst + k;
+                int to = padFirst + ((k + 1) % PadCorners.Length);
+                sb.Append(CultureInfo.InvariantCulture, $"WALL pad_wall {from} {to} 2 0 0 0;#{wall++}\r\n");
+            }
+        }
+
         int placement = wall;
+        foreach (string line in map?.Placements ?? [])
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"{line};#{placement++}\r\n");
+        }
+
         if (targets)
         {
             foreach ((string keyword, _, int y, _) in ShootTargets)
@@ -1113,7 +1184,7 @@ internal static class ProjectionProbeGenerator
           ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480]
           ovtool oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
           ovtool oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
-          ovtool oracle prepare flic-play [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+          ovtool oracle prepare flic-play|flic-detail [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
         """;
 
     public static int Usage(string? error = null)

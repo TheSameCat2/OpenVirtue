@@ -31,16 +31,17 @@ internal static class SyntheticFlic
 
     /// <summary>
     /// Writes an FLC of <paramref name="frames"/> displayed frames (plus the ring frame) at
-    /// <paramref name="speedMs"/> milliseconds per frame.
+    /// <paramref name="speedMs"/> milliseconds per frame. An <paramref name="alternate"/> flic has a
+    /// dark red background and a white sweep, so a screenshot tells it from the default one.
     /// </summary>
-    public static byte[] Write(int frames, int speedMs)
+    public static byte[] Write(int frames, int speedMs, bool alternate = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(frames, 2);
         ArgumentOutOfRangeException.ThrowIfLessThan(speedMs, 1);
 
         var frameRecords = new List<byte[]>(frames + 1)
         {
-            Frame(Color256(), ByteRunFill(Background)),
+            Frame(Color256(alternate), ByteRunFill(Background)),
         };
         for (int k = 1; k < frames; k++)
         {
@@ -76,9 +77,9 @@ internal static class SyntheticFlic
     }
 
     /// <summary>Writes the FLC and checks that the engine's own reader decodes it as intended.</summary>
-    public static byte[] WriteValidated(int frames, int speedMs)
+    public static byte[] WriteValidated(int frames, int speedMs, bool alternate = false)
     {
-        byte[] data = Write(frames, speedMs);
+        byte[] data = Write(frames, speedMs, alternate);
         FlicAnimation animation = FlicAnimation.Read(data);
         if (animation.Width != Width || animation.Height != Height || animation.Frames.Count != frames
             || animation.FrameDelay != TimeSpan.FromMilliseconds(speedMs))
@@ -117,8 +118,11 @@ internal static class SyntheticFlic
         return chunk;
     }
 
-    /// <summary>One packet of 256 colours: black, a dark blue background, a yellow sweep, then a grey ramp.</summary>
-    private static byte[] Color256()
+    /// <summary>
+    /// One packet of 256 colours: black, a dark blue background, a yellow sweep, then a grey ramp
+    /// (alternate: a dark red background and a white sweep).
+    /// </summary>
+    private static byte[] Color256(bool alternate)
     {
         byte[] payload = new byte[4 + (256 * 3)];
         BinaryPrimitives.WriteUInt16LittleEndian(payload, 1); // one packet, skip 0, count 0 = 256
@@ -129,8 +133,16 @@ internal static class SyntheticFlic
         }
 
         rgb[0] = rgb[1] = rgb[2] = 0;
-        rgb[3] = 0x10; rgb[4] = 0x20; rgb[5] = 0x80;
-        rgb[6] = 0xF0; rgb[7] = 0xE0; rgb[8] = 0x20;
+        if (alternate)
+        {
+            rgb[3] = 0x80; rgb[4] = 0x10; rgb[5] = 0x10;
+            rgb[6] = 0xFF; rgb[7] = 0xFF; rgb[8] = 0xFF;
+        }
+        else
+        {
+            rgb[3] = 0x10; rgb[4] = 0x20; rgb[5] = 0x80;
+            rgb[6] = 0xF0; rgb[7] = 0xE0; rgb[8] = 0x20;
+        }
         return Chunk(Color256Chunk, payload);
     }
 
