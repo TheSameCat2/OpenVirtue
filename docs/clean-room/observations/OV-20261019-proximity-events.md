@@ -121,8 +121,8 @@ placements. medium for the contact reading, which rests on one case.
   flic-detail `near-control` the player was beamed 4 steps from a 16-step THING (`DIST` 6,
   `IF_FAR` set): `IF_NEAR` fired once, the player was pushed out to |dx| + |dy| = 9.2, and
   `IF_FAR` never fired, against rule 1. OpenVirtue has no contact rule yet.
-- Walls: the manual measures a wall's `DIST` to its nearest vertex (p.51). Not probed; OpenVirtue
-  keeps the distance to the wall segment.
+- Walls: the manual measures a wall's `DIST` to its nearest vertex (p.51). Answered by
+  OV-20261019-wall-distance: |dx| + |dy| to the nearer vertex.
 - Order in the cycle: `LOCATE` events ran after the global `EACH_TICK` slot in the same cycle,
   and walking events after the sampler too. OpenVirtue dispatches them before the slot, and moves
   the player after the WDL cycle, so a walk's events come one cycle later than in the original.
@@ -144,8 +144,8 @@ placements. medium for the contact reading, which rests on one case.
   opposite order from rule 4 and were reversed.
 
 ## Implementation Notes
-`WdlRuntime.TryProximityDistance` uses |dx| + |dy| for things and actors; walls keep the segment
-distance. The edge-triggered dispatch in `WdlRuntime.DispatchProximityEvents` already matched rule
+`WdlRuntime.TryProximityDistance` uses |dx| + |dy| for things and actors. Walls kept the segment
+distance until OV-20261019-wall-distance. The edge-triggered dispatch in `WdlRuntime.DispatchProximityEvents` already matched rule
 1. `LevelCollisionWorld.CrossPortal` takes the region on the side of the wall that the mover
 crosses onto (`RegionOnSide`) instead of the wall's other region, so a stale region after a beam
 behaves as in the original. Rules 3 and 5 already held: the host applies `PLAYER_X/PLAYER_Y`
@@ -153,7 +153,7 @@ writes without touching the player's region, and `LOCATE` sets it, which the nex
 `DispatchPlayerRegionEvents` reports.
 
 `MY.DISTANCE` (added after the first implementation) is a skill of every thing and actor that
-`WdlRuntime.RefreshEntityDistances` sets to the same |dx| + |dy|. The probe only read it inside
+`WdlRuntime.RefreshDistances` sets to the same |dx| + |dy|. The probe only read it inside
 `IF_NEAR`/`IF_FAR`, so these choices are OpenVirtue's own:
 - It is refreshed twice per cycle: at the start, before resumed `WAIT` actions, and again after
   the actors move, before the global and object `EACH_TICK` actions. The `DIST` test also stores
@@ -162,5 +162,5 @@ writes without touching the player's region, and `LOCATE` sets it, which the nex
   proximity hook. The manual only promises it within the player's `CLIP_DIST` (p.69).
 - Flic cycles (`TickFlic`) do not refresh it: player and actor movement are paused there.
 - A script write to it lasts until the next refresh.
-- Walls have no `DISTANCE` yet. The manual measures it to the nearest vertex (p.51), but
-  neither its metric nor the wall `DIST` test has been probed.
+- Walls got `DISTANCE` later, from OV-20261019-wall-distance (|dx| + |dy| to the nearer
+  vertex, refreshed once at the start of the cycle).

@@ -31,7 +31,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.EachSecProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             ProjectionProbeGenerator.FlicProbeName or
             ProjectionProbeGenerator.FlicDetailProbeName or
-            ProjectionProbeGenerator.ProximityProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.ProximityProbeName or
+            ProjectionProbeGenerator.WallDistanceProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };
