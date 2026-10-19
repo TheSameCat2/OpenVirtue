@@ -36,7 +36,8 @@ internal sealed record TraceProbeCase(
 /// <c>room</c>, the pad is region 2). <c>Walls</c> are free-standing walls inside the room, with
 /// <c>room</c> on both sides; their WALL keywords are defined in the case's declarations.
 /// <c>PadWall</c>, when set, replaces the pad's invisible passable boundary wall with that WALL
-/// keyword (defined in the case's declarations), and <c>PadFloor</c> raises the pad's floor.
+/// keyword (defined in the case's declarations), <c>PadFloor</c> raises (or lowers) the pad's
+/// floor and <c>PadCeiling</c>, when set, replaces its ceiling height.
 /// </summary>
 internal sealed record TraceProbeMap(
     string RoomBody = "",
@@ -44,7 +45,8 @@ internal sealed record TraceProbeMap(
     IReadOnlyList<string>? Placements = null,
     IReadOnlyList<TraceProbeWall>? Walls = null,
     string? PadWall = null,
-    int PadFloor = 0);
+    int PadFloor = 0,
+    int? PadCeiling = null);
 
 /// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
 internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);

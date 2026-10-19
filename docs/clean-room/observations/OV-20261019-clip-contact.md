@@ -153,7 +153,8 @@ an inactive object). The contact runs had only 4 pushing cycles at 8 ticks per c
   above theirs, and onto a floor at the ceiling, from a floor-0 room with the default
   `PLAYER_CLIMB` (1.5, p.110). OpenVirtue blocks steps above 1.5 and regions with less than 3
   steps of headroom. What blocks a region change in the original, and whether contact with such
-  a border fires `IF_NEAR`, is not measured.
+  a border fires `IF_NEAR`, is not measured. Answered by OV-20261019-border-climb: those pad walls
+  were `PASSABLE`, which skips the height test.
 - When the original refreshes a thing's `MY.DISTANCE` (65535.999 before the first refresh) is not
   measured. OpenVirtue computes it every cycle.
 - Actor movement, `EACH_CYCLE` and the `DIST` test of walls outside `CLIP_DIST`, and walls between
