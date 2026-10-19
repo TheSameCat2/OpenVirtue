@@ -152,8 +152,14 @@ Confirmed for patched V3.963:
    this runtime then faults (a crash in the original, not behavior to reproduce).
 
 Two side observations from the controls: beaming the player with `SET PLAYER_X/PLAYER_Y` does not
-fire `IF_ENTER`, while walking does. And `IF_NEAR` runs in every cycle the player is within
-`DIST`, not once.
+fire `IF_ENTER`, while walking does. And `IF_NEAR` ran in every cycle while the actor pushed the
+player.
+
+Addendum (2026-10-19): OV-20261019-proximity-events probed both. A beam keeps the player's region
+until a wall crossing or `LOCATE`. `IF_NEAR` fires once per crossing of `DIST`, measured as
+|dx| + |dy|, and does not repeat while the player stays within it. The 307 runs in `world-control`
+came from contact: that actor's `DIST` (6) was below its contact distance (about 9.2), and the hook
+ran in every cycle it pushed the player.
 
 ## Confidence
 high for rules 1–5: each case matches one predicted reading, every flic case has a control, and the
@@ -166,8 +172,8 @@ speeds). medium for rule 6 during a flic, because the trace after the fault was 
 - A fractional `WAIT` (`WAIT 1.5`): the rule above assumes it resumes once the count is below 1.
 - Whether a wait armed by a key or mouse hook counts that cycle: the hooks run early in the cycle
   (`LEFT` printed the same `fd_n` as resumed actions), so OpenVirtue counts it.
-- Whether `IF_NEAR` repeating every cycle within `DIST` matches OpenVirtue's proximity dispatch
-  (not checked here).
+- Whether `IF_NEAR` repeating every cycle within `DIST` matches OpenVirtue's proximity dispatch:
+  answered by OV-20261019-proximity-events (it does not repeat; the repeat here was contact).
 
 ## Tests To Add Or Update
 - `WdlRuntimeWaitCountTests` (new): `WAITT` at 0.25-tick frames resumes once more than n − 1 ticks
