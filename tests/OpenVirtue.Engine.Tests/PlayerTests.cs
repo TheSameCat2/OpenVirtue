@@ -9,11 +9,12 @@ namespace OpenVirtue.Engine.Tests;
 public class PlayerTests
 {
     // Region 0 (a) borders region 1 (b, a portal) along y=0, and region 2 (solid, no headroom)
-    // along x=0. Player spawns in region 0 at (5, -5).
+    // along x=0. Player spawns in region 0 at (5, -5). The first region of a WMP wall is left of
+    // v1→v2 (y-up), so the portal runs from (10, 0) to (0, 0).
     private const string Map =
         "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 0 -20 0;#2\n" +
         "REGION a 0 20;#0\nREGION b 0 20;#1\nREGION solid 0 0;#2\n" +
-        "WALL portal 0 1 0 1 0 0;#0\nWALL solidw 0 2 0 2 0 0;#1\n" +
+        "WALL portal 1 0 0 1 0 0;#0\nWALL solidw 0 2 0 2 0 0;#1\n" +
         "PLAYER_START 5 -5 0 0;#3";
 
     [Fact]
@@ -26,6 +27,29 @@ public class PlayerTests
 
         Assert.Equal(1, player.Region);
         Assert.Equal(5f, player.Position.Z, 3);
+    }
+
+    [Fact]
+    public void MoveHorizontal_AfterBeamWithoutLocate_KeepsStaleRegionUntilCrossingOntoTheOtherSide()
+    {
+        // A room (0) with a pad island (1) at x 10…20, y 10…20; both outlines counter-clockwise,
+        // so each region is left of its walls (OV-20261019-proximity-events, region-beam-walk).
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 40 0 0;#1\nVERTEX 40 40 0;#2\nVERTEX 0 40 0;#3\n" +
+            "VERTEX 10 10 0;#4\nVERTEX 20 10 0;#5\nVERTEX 20 20 0;#6\nVERTEX 10 20 0;#7\n" +
+            "REGION room 0 20;#0\nREGION pad 0 20;#1\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL p 4 5 1 0 0 0;#4\nWALL p 5 6 1 0 0 0;#5\nWALL p 6 7 1 0 0 0;#6\nWALL p 7 4 1 0 0 0;#7\n" +
+            "PLAYER_START 5 5 0 0;#8";
+        var player = new Player(Load(map));
+        player.MoveTo(0, 15, 15); // beamed onto the pad, region still the room
+
+        player.MoveHorizontal(8, 0); // out across x = 20, onto the room's side
+        Assert.Equal(0, player.Region);
+
+        player.MoveHorizontal(-8, 0); // back across x = 20, onto the pad's side
+        Assert.Equal(1, player.Region);
+        Assert.Equal(15f, player.Position.X, 3);
     }
 
     [Fact]

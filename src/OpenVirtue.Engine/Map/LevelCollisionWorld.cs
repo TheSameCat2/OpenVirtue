@@ -186,19 +186,23 @@ public sealed class LevelCollisionWorld
         foreach (int wallIndex in walls)
         {
             Wall wall = _level.Walls[wallIndex];
-            int other = OtherRegion(wall, region);
-            if (other == region ||
-                other < 0 ||
-                !canCross(wall, region, other) ||
-                !Vertex(wall.Vertex1, out Vector2 a) ||
-                !Vertex(wall.Vertex2, out Vector2 b) ||
+            if (!Vertex(wall.Vertex1, out Vector2 a) ||
+                !Vertex(wall.Vertex2, out Vector2 b))
+            {
+                continue;
+            }
+
+            int entered = RegionOnSide(wall, region, a, b, to);
+            if (entered == region ||
+                entered < 0 ||
+                !canCross(wall, region, entered) ||
                 !CrossesPortal(from, to, a, b))
             {
                 continue;
             }
 
             crossedWallIndex = wallIndex;
-            return other;
+            return entered;
         }
 
         return region;
@@ -206,6 +210,23 @@ public sealed class LevelCollisionWorld
 
     private static int OtherRegion(Wall wall, int region) =>
         wall.LeftRegion == region ? wall.RightRegion : wall.LeftRegion;
+
+    /// <summary>
+    /// The region on the side of the wall that <paramref name="point"/> lies on: the WMP's first
+    /// region is left of v1→v2 (y-up), the second right of it. Crossing a wall enters that region,
+    /// not simply the wall's other region, so a mover whose region went stale (a beam without
+    /// LOCATE) keeps it when it crosses onto the stale region's side
+    /// (OV-20261019-proximity-events, case region-beam-walk).
+    /// </summary>
+    private static int RegionOnSide(Wall wall, int region, Vector2 a, Vector2 b, Vector2 point)
+    {
+        Vector2 edge = b - a;
+        Vector2 offset = point - a;
+        float cross = (edge.X * offset.Y) - (edge.Y * offset.X);
+        return cross > 0 ? wall.LeftRegion
+            : cross < 0 ? wall.RightRegion
+            : OtherRegion(wall, region);
+    }
 
     private void Index(int region, int wallIndex)
     {

@@ -2884,6 +2884,44 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_PlayerProximity_ComparesDistWithSumOfAxisDistancesAndFiresOncePerCrossing()
+    {
+        // OV-20261019-proximity-events: DIST is compared with |dx| + |dy| (MY.DISTANCE), IF_NEAR
+        // runs once on the way in and IF_FAR once on the way out, whatever moves the player.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
+            "REGION room 0 10;#0\nTHING post 5 5 0 0;#1\nPLAYER_START 1 1 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL near_count { VAL 0; } SKILL far_count { VAL 0; } " +
+            "THING post { DIST 4; IF_NEAR post_near; IF_FAR post_far; } " +
+            "ACTION post_near { RULE near_count += 1; } " +
+            "ACTION post_far { RULE far_count += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(0, 7.5f, 7.5f); // 3.54 straight-line, 5 by axes
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 7, 6.5f); // 3.5 by axes
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        player.MoveTo(0, 8.5f, 5); // moving, still within DIST
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+
+        player.MoveTo(0, 7.5f, 7.5f);
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(1, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
     public void Tick_PlayerProximity_TriggersWallNearFromSegmentDistance()
     {
         const string map =

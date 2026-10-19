@@ -12,7 +12,7 @@ public sealed class WdlPlayerMotionTests
     private const string Map =
         "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 0 -20 0;#2\n" +
         "REGION a 0 20;#0\nREGION b 0 20;#1\nREGION solid 0 0;#2\n" +
-        "WALL portal 0 1 0 1 0 0;#0\nWALL solidw 0 2 0 2 0 0;#1\n" +
+        "WALL portal 1 0 0 1 0 0;#0\nWALL solidw 0 2 0 2 0 0;#1\n" +
         "PLAYER_START 5 -5 0 0;#3";
 
     [Fact]

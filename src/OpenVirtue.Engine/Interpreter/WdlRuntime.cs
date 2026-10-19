@@ -1877,6 +1877,12 @@ public sealed class WdlRuntime :
         name.StartsWith("IF_", StringComparison.OrdinalIgnoreCase) &&
         !name.Equals("IF_START", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Fires <c>IF_LEAVE</c>/<c>IF_ENTER</c> when the player's region changed since the last cycle.
+    /// Only movement across a wall and <c>LOCATE</c> change it. A write to <c>PLAYER_X/PLAYER_Y</c>
+    /// leaves the region (and <c>HERE</c>) as it was, so a beam fires nothing
+    /// (OV-20261019-proximity-events).
+    /// </summary>
     private void DispatchPlayerRegionEvents()
     {
         if (GetObject("player") is not Player player ||
@@ -1907,6 +1913,12 @@ public sealed class WdlRuntime :
         TriggerObjectActionHook(currentRegion, "IF_ENTER");
     }
 
+    /// <summary>
+    /// Fires <c>IF_NEAR</c> once when the player comes within an object's <c>DIST</c> and
+    /// <c>IF_FAR</c> once when they leave it. Checked every cycle from the current positions, so
+    /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
+    /// the hook (OV-20261019-proximity-events).
+    /// </summary>
     private void DispatchProximityEvents()
     {
         if (GetObject("player") is not Player player)
@@ -1965,7 +1977,7 @@ public sealed class WdlRuntime :
         }
 
         if (!TargetCanSeePlayerRegion(target, player.Region) ||
-            !TryDistanceFromPoint(player.Position.X, player.Position.Z, target, out double distance))
+            !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
         {
             isNear = false;
             return true;
@@ -1973,6 +1985,22 @@ public sealed class WdlRuntime :
 
         isNear = distance <= threshold;
         return true;
+    }
+
+    /// <summary>
+    /// The distance a <c>DIST</c> border is compared with. For things and actors it is
+    /// |dx| + |dy| between the player and the object's center, the value <c>MY.DISTANCE</c> reads
+    /// in the original (OV-20261019-proximity-events). Walls keep the segment distance (not probed).
+    /// </summary>
+    private bool TryProximityDistance(double x, double y, AcknexObject target, out double distance)
+    {
+        if (target is MapEntity entity)
+        {
+            distance = Math.Abs(entity.X - x) + Math.Abs(entity.Y - y);
+            return true;
+        }
+
+        return TryDistanceFromPoint(x, y, target, out distance);
     }
 
     private static bool TargetCanSeePlayerRegion(AcknexObject target, int playerRegion) =>
