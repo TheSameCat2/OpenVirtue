@@ -14,9 +14,10 @@ public static class LevelTopology
     public static int? LocateRegion(Level level, double x, double y)
     {
         ArgumentNullException.ThrowIfNull(level);
+        RegionSurfaceCache cache = SurfaceCache(level);
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            List<int>? loop = TraceRegionLoop(level, regionIndex);
+            List<int>? loop = cache.Loop(regionIndex);
             if (loop is not null && ContainsPoint(level, loop, x, y))
             {
                 return regionIndex;
@@ -34,20 +35,14 @@ public static class LevelTopology
     {
         ArgumentNullException.ThrowIfNull(level);
         offset = 0;
-        List<int>? loop = TraceRegionLoop(level, regionIndex);
+        RegionSurfaceCache cache = SurfaceCache(level);
+        List<int>? loop = cache.Loop(regionIndex);
         if (loop is null)
         {
             return false;
         }
 
-        var footprint = new Vector2[loop.Count];
-        for (int i = 0; i < loop.Count; i++)
-        {
-            Vertex vertex = level.Vertices[loop[i]];
-            footprint[i] = new Vector2(vertex.X, vertex.Y);
-        }
-
-        IReadOnlyList<int> triangles = EarClipping.Triangulate(footprint);
+        IReadOnlyList<int> triangles = cache.Triangles(regionIndex, loop);
         return TryGetSurfaceHeightOffset(level, loop, triangles, x, y, out offset);
     }
 
@@ -215,6 +210,74 @@ public static class LevelTopology
         weightB = (((c.Y - a.Y) * (x - c.X)) + ((a.X - c.X) * (y - c.Y))) / denominator;
         weightC = 1 - weightA - weightB;
         return weightA >= -Epsilon && weightB >= -Epsilon && weightC >= -Epsilon;
+    }
+
+    private static RegionSurfaceCache SurfaceCache(Level level) =>
+        level.SurfaceCache ??= new RegionSurfaceCache(level);
+
+    /// <summary>
+    /// Region loops and floor triangulations of one level, so per-frame and per-tick queries do
+    /// not rescan every wall. A loop depends only on which walls bound a region, and that never
+    /// changes after load. A triangulation also depends on vertex x/y, which SHIFT and ROTATE
+    /// move, so each lookup compares the cached footprint with the live vertices and
+    /// triangulates again when one has moved. Vertex heights are always read live.
+    /// </summary>
+    internal sealed class RegionSurfaceCache(Level level)
+    {
+        private readonly bool[] _traced = new bool[level.Regions.Count];
+        private readonly List<int>?[] _loops = new List<int>?[level.Regions.Count];
+        private readonly Vector2[]?[] _footprints = new Vector2[]?[level.Regions.Count];
+        private readonly IReadOnlyList<int>?[] _triangles = new IReadOnlyList<int>?[level.Regions.Count];
+
+        /// <summary>The traced loop, shared between callers; callers do not modify it.</summary>
+        public List<int>? Loop(int regionIndex)
+        {
+            if ((uint)regionIndex >= (uint)_loops.Length)
+            {
+                return TraceRegionLoop(level, regionIndex);
+            }
+
+            if (!_traced[regionIndex])
+            {
+                _loops[regionIndex] = TraceRegionLoop(level, regionIndex);
+                _traced[regionIndex] = true;
+            }
+
+            return _loops[regionIndex];
+        }
+
+        public IReadOnlyList<int> Triangles(int regionIndex, List<int> loop)
+        {
+            Vector2[]? footprint = _footprints[regionIndex];
+            if (footprint is null || !MatchesVertices(footprint, loop))
+            {
+                footprint = new Vector2[loop.Count];
+                for (int i = 0; i < loop.Count; i++)
+                {
+                    Vertex vertex = level.Vertices[loop[i]];
+                    footprint[i] = new Vector2(vertex.X, vertex.Y);
+                }
+
+                _footprints[regionIndex] = footprint;
+                _triangles[regionIndex] = EarClipping.Triangulate(footprint);
+            }
+
+            return _triangles[regionIndex]!;
+        }
+
+        private bool MatchesVertices(Vector2[] footprint, List<int> loop)
+        {
+            for (int i = 0; i < footprint.Length; i++)
+            {
+                Vertex vertex = level.Vertices[loop[i]];
+                if (footprint[i].X != vertex.X || footprint[i].Y != vertex.Y)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     private static void Connect(Dictionary<int, List<int>> adjacency, int from, int to)

@@ -404,8 +404,30 @@ and old-engine edge cases.
     start action shows the control panel and runs the game initialization from a
     three-second `EACH_SEC` countdown. Fixed with issue #8; all three draw the HUD,
     crosshair and weapon about 3 s after opening (checked on the GL host 2026-10-15),
-    and a guarded engine test pins it. `HEART` (about 10 FPS) and `LEGALISM` (about
-    19 FPS) still run well below Apathy (about 33 FPS) on the development host.
+    and a guarded engine test pins it.
+  - `HEART` (about 10 FPS) and `LEGALISM` (about 19 FPS) ran well below Apathy (about
+    33 FPS) on the development host on 2026-10-15. Fixed (issue #11). The renderer is
+    hardware GL (Mesa 4.6 on an Intel Arc B390), not llvmpipe; the smoke now logs
+    `GL_RENDERER`. A profile showed that the sprite rebuild cost most of each frame: for
+    every thing and actor it traced the region's wall loop over all walls and ear-clipped
+    the floor again, only to read the slope height. `LevelTopology` now keeps each
+    region's loop and triangulation per level. The loop is fixed after load; the
+    triangulation is checked against the live vertex x/y on every lookup and redone when
+    `SHIFT` or `ROTATE` has moved one. The texture-sound scan also rules out emitters
+    without a looping sound texture before placing them. The smoke logs each archive's
+    mean frame time over frames 61–120 without asserting it. On 2026-10-19, main before
+    the fix and after the fix (uncapped host frame rate, paced rate in brackets):
+
+    | archive | before | after |
+    |---|---|---|
+    | APATHY | 16.7 ms, 60 FPS | 9–11 ms, 93–111 FPS (64) |
+    | HEART | 36.8 ms, 27 FPS | 8.5 ms, 118 FPS (64) |
+    | LEGALISM | 20.6 ms, 48 FPS | 11.3–11.6 ms, 86–89 FPS (63) |
+    | NEWAGE | 16.8 ms, 59 FPS | 10.8–12.5 ms, 80–93 FPS (63) |
+
+    `TIME_CORR` stays at about 0.25 in every archive. What is left: the WDL tick
+    (about 3.5 ms in HEART), about 950 GL draw calls (about 2.5 ms; uploading the world
+    once did not help, the cost is the call count) and texture sounds (under 1 ms).
 
 ## Track 2: Discover Hidden Invariants Cleanly
 
