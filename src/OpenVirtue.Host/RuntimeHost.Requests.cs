@@ -222,6 +222,13 @@ public sealed partial class RuntimeHost
         return true;
     }
 
+    private static string? EmitterTextureName(AcknexObject emitter) => emitter switch
+    {
+        MapEntity entity => entity.Texture,
+        Wall wall => wall.Texture,
+        _ => null,
+    };
+
     private bool HasArchiveEntry(string fileName)
     {
         string normalized = Path.GetFileName(fileName);
@@ -454,9 +461,13 @@ public sealed partial class RuntimeHost
 
     private void AddSpatialLoopCandidate(AcknexObject emitter, List<SpatialLoopCandidate> candidates)
     {
-        if (!TrySoundEmitter(emitter, out Vector3 position, out LevelTexture? texture) ||
-            texture is not { IsSoundLoop: true } spatialTexture ||
-            string.IsNullOrWhiteSpace(spatialTexture.SoundName))
+        // Most emitters have no looping sound texture, so the texture is checked before the
+        // emitter is placed (which reads its skills).
+        if (EmitterTextureName(emitter) is not { } textureName ||
+            !_level.Textures.TryGetValue(textureName, out LevelTexture spatialTexture) ||
+            !spatialTexture.IsSoundLoop ||
+            string.IsNullOrWhiteSpace(spatialTexture.SoundName) ||
+            !TrySoundEmitter(emitter, out Vector3 position, out _))
         {
             return;
         }

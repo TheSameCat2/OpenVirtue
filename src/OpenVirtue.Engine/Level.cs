@@ -157,4 +157,7 @@ public sealed class Level
 
     /// <summary>The action named by <c>IF_START</c> — the level's startup script, if any.</summary>
     public string? StartupAction { get; }
+
+    /// <summary>Per-region boundary loops and floor triangulations, built on first use by <see cref="LevelTopology"/>.</summary>
+    internal LevelTopology.RegionSurfaceCache? SurfaceCache { get; set; }
 }
