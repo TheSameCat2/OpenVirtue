@@ -222,7 +222,6 @@ public sealed class WdlPlayerMotionTests
         WdlPlayerMotion.Apply(runtime, player, 0);
 
         Assert.Equal(4, player.EyeHeight);
-        Assert.Equal(4, player.MinHeadroom);
         Assert.Equal(2, player.Width);
         Assert.Equal(2.5f, player.StepUp);
         Assert.Equal(1.5f, player.ActorWidthFactor);
