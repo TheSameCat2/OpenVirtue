@@ -46,6 +46,9 @@ public sealed class WdlRuntime :
     private const int EachTickSlotCount = 16;
     private const int EachSecSlotCount = 16;
 
+    /// <summary>The thing and actor skill holding the player's approximate distance (manual p.69).</summary>
+    private const string DistanceSkill = "DISTANCE";
+
     /// <summary>The skill holding the 1-based number of the flic frame on screen, 0 when none plays.</summary>
     public const string FlicFrameSkill = "FLIC_FRAME";
 
@@ -1314,17 +1317,21 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
+    /// The things' and actors' <c>DISTANCE</c> is refreshed before the resumed actions and again
+    /// after the actors move (see <see cref="RefreshEntityDistances"/>).
     /// </summary>
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
         RefreshEntityVisibilityFlags();
+        RefreshEntityDistances();
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
         AdvanceAnimationCycles(timeCorrection);
         AdvanceActorTargets(timeCorrection);
+        RefreshEntityDistances();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(deltaSeconds))
         {
@@ -1983,8 +1990,38 @@ public sealed class WdlRuntime :
             return true;
         }
 
+        if (target is MapEntity entity)
+        {
+            entity[DistanceSkill] = distance;
+        }
+
         isNear = distance <= threshold;
         return true;
+    }
+
+    /// <summary>
+    /// Sets every thing's and actor's <c>DISTANCE</c> to |dx| + |dy| between the player and its
+    /// center, the value the <c>DIST</c> test compares with (OV-20261019-proximity-events). The
+    /// manual calls it approximate and only valid within the player's <c>CLIP_DIST</c> (p.69);
+    /// OpenVirtue computes it for every object. When the original refreshes it is not measured:
+    /// OpenVirtue does it at the start of the cycle and again after the actors move, so resumed
+    /// <c>WAIT</c> actions and the <c>EACH_TICK</c> actions read the current positions, and the
+    /// <c>DIST</c> test stores the value it compared, which its <c>IF_NEAR</c>/<c>IF_FAR</c> action reads.
+    /// </summary>
+    private void RefreshEntityDistances()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        {
+            if (TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance))
+            {
+                entity[DistanceSkill] = distance;
+            }
+        }
     }
 
     /// <summary>

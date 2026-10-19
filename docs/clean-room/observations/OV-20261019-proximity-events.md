@@ -126,13 +126,17 @@ placements. medium for the contact reading, which rests on one case.
 - Order in the cycle: `LOCATE` events ran after the global `EACH_TICK` slot in the same cycle,
   and walking events after the sampler too. OpenVirtue dispatches them before the slot, and moves
   the player after the WDL cycle, so a walk's events come one cycle later than in the original.
-- `MY.DISTANCE` itself is not implemented in OpenVirtue (scripts read 0).
+- When the original refreshes `MY.DISTANCE` within a cycle, and what it reads outside the
+  player's `CLIP_DIST` (p.69) or in another region. Not probed (see Implementation Notes).
 - Whether `DIST` is compared with `<=` or `<` (no sample at exactly 10).
 
 ## Tests To Add Or Update
 - `WdlRuntimeTests.Tick_PlayerProximity_ComparesDistWithSumOfAxisDistancesAndFiresOncePerCrossing`:
   3.54 steps straight-line but 5 by axes is not within `DIST` 4; `IF_NEAR` fires once and does
   not repeat while the player moves within `DIST`; `IF_FAR` fires once.
+- `WdlRuntimeTests.Tick_PlayerProximity_NearAndFarActionsReadDistanceAsSumOfAxisDistances` and
+  `WdlRuntimeTests.Tick_EachTickActions_ReadDistanceFromCurrentPlayerAndMovedActorPositions`:
+  `MY.DISTANCE` inside `IF_NEAR`, `IF_FAR` and `EACH_TICK` actions.
 - `PlayerTests.MoveHorizontal_AfterBeamWithoutLocate_KeepsStaleRegionUntilCrossingOntoTheOtherSide`.
 - `RuntimeHostRegionEventTests`: a beam keeps `PLAYER_REGION` and fires nothing; `LOCATE` then
   fires `IF_LEAVE` and `IF_ENTER` once.
@@ -147,3 +151,16 @@ crosses onto (`RegionOnSide`) instead of the wall's other region, so a stale reg
 behaves as in the original. Rules 3 and 5 already held: the host applies `PLAYER_X/PLAYER_Y`
 writes without touching the player's region, and `LOCATE` sets it, which the next cycle's
 `DispatchPlayerRegionEvents` reports.
+
+`MY.DISTANCE` (added after the first implementation) is a skill of every thing and actor that
+`WdlRuntime.RefreshEntityDistances` sets to the same |dx| + |dy|. The probe only read it inside
+`IF_NEAR`/`IF_FAR`, so these choices are OpenVirtue's own:
+- It is refreshed twice per cycle: at the start, before resumed `WAIT` actions, and again after
+  the actors move, before the global and object `EACH_TICK` actions. The `DIST` test also stores
+  the value it compared, so an `IF_NEAR`/`IF_FAR` action reads exactly the distance that fired it.
+- It is computed for every thing and actor, in any region and at any range, with or without a
+  proximity hook. The manual only promises it within the player's `CLIP_DIST` (p.69).
+- Flic cycles (`TickFlic`) do not refresh it: player and actor movement are paused there.
+- A script write to it lasts until the next refresh.
+- Walls have no `DISTANCE` yet. The manual measures it to the nearest vertex (p.51), but
+  neither its metric nor the wall `DIST` test has been probed.

@@ -2922,6 +2922,66 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_PlayerProximity_NearAndFarActionsReadDistanceAsSumOfAxisDistances()
+    {
+        // OV-20261019-proximity-events: MY.DISTANCE reads |dx| + |dy|, the value DIST is compared with.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
+            "REGION room 0 10;#0\nTHING post 5 5 0 0;#1\nPLAYER_START 1 1 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL near_dist { VAL -1; } SKILL far_dist { VAL -1; } " +
+            "THING post { DIST 4; IF_NEAR post_near; IF_FAR post_far; } " +
+            "ACTION post_near { RULE near_dist = my.DISTANCE; } " +
+            "ACTION post_far { RULE far_dist = my.DISTANCE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(0, 7, 6.5f);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3.5, runtime.GetSkill("near_dist"), 6);
+        Assert.Equal(-1, runtime.GetSkill("far_dist"));
+
+        player.MoveTo(0, 0.5f, 9);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(8.5, runtime.GetSkill("far_dist"), 6);
+    }
+
+    [Fact]
+    public void Tick_EachTickActions_ReadDistanceFromCurrentPlayerAndMovedActorPositions()
+    {
+        // MY.DISTANCE is refreshed every cycle, and again after the actors move, for every thing
+        // and actor whether or not it has a proximity hook.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
+            "REGION room 0 10;#0\nTHING post 5 5 0 0;#1\nACTOR runner 10 5 0 0;#2\n" +
+            "PLAYER_START 1 1 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL post_dist { VAL -1; } SKILL runner_dist { VAL -1; } " +
+            "THING post { EACH_TICK post_tick; } " +
+            "ACTOR runner { TARGET MOVE; SPEED 2; EACH_TICK runner_tick; } " +
+            "ACTION post_tick { RULE post_dist = my.DISTANCE; } " +
+            "ACTION runner_tick { RULE runner_dist = my.DISTANCE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        Actor runner = Assert.Single(level.Actors);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(8, runtime.GetSkill("post_dist"), 6);
+        Assert.Equal(12, runner.X, 6);
+        Assert.Equal(15, runtime.GetSkill("runner_dist"), 6);
+
+        player.MoveTo(0, 7, 6.5f);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3.5, runtime.GetSkill("post_dist"), 6);
+        Assert.Equal(14 - 7 + 1.5, runtime.GetSkill("runner_dist"), 6);
+    }
+
+    [Fact]
     public void Tick_PlayerProximity_TriggersWallNearFromSegmentDistance()
     {
         const string map =
