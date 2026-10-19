@@ -30,6 +30,25 @@ public class PlayerTests
     }
 
     [Fact]
+    public void TakeTouchedWalls_ReportsWallsPassedAndPushedAgainstButNotBeams()
+    {
+        // OV-20261019-wall-pass-clip: a wall's IF_NEAR fires when the player's movement passes
+        // through it or pushes against it; a beam touches nothing.
+        Level level = Load();
+        var player = new Player(level);
+
+        player.MoveHorizontal(-6, 0); // into the solid region's wall at x = 0
+        Assert.Equal([level.Walls[1]], player.TakeTouchedWalls());
+        Assert.Empty(player.TakeTouchedWalls());
+
+        player.MoveHorizontal(0, 10); // through the portal at y = 0
+        Assert.Equal([level.Walls[0]], player.TakeTouchedWalls());
+
+        player.MoveTo(0, 5, -5); // a beam back across the portal
+        Assert.Empty(player.TakeTouchedWalls());
+    }
+
+    [Fact]
     public void MoveHorizontal_AfterBeamWithoutLocate_KeepsStaleRegionUntilCrossingOntoTheOtherSide()
     {
         // A room (0) with a pad island (1) at x 10…20, y 10…20; both outlines counter-clockwise,

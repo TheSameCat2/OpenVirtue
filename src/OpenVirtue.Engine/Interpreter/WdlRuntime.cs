@@ -1342,6 +1342,11 @@ public sealed class WdlRuntime :
 
         foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
         {
+            if (!IsWithinClipDistance(target))
+            {
+                continue;
+            }
+
             PrepareActorTickSkills(target);
             RunForActionTarget(target, actionName);
         }
@@ -1659,6 +1664,8 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("MOUSE_Y", 0);
         EnsureSkillDefault("MOUSE_ANGLE", 0);
         EnsureSkillDefault("PLAYER_WIDTH", 1.2);
+        EnsureSkillDefault("THING_DIST", 1);
+        EnsureSkillDefault("ACTOR_DIST", 1);
         EnsureSkillDefault("PLAYER_SIZE", 3);
         EnsureSkillDefault("PLAYER_CLIMB", 1.5);
         EnsureSkillDefault("PLAYER_TILT", 0);
@@ -1924,7 +1931,10 @@ public sealed class WdlRuntime :
     /// Fires <c>IF_NEAR</c> once when the player comes within an object's <c>DIST</c> and
     /// <c>IF_FAR</c> once when they leave it. Checked every cycle from the current positions, so
     /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
-    /// the hook (OV-20261019-proximity-events).
+    /// the hook (OV-20261019-proximity-events). A wall's <c>IF_NEAR</c> also fires in every cycle
+    /// after the player's movement passed through the wall or pushed against it, unless the player
+    /// is within its <c>DIST</c>. This leaves the <c>DIST</c> state alone, so no <c>IF_FAR</c>
+    /// follows, and with <c>DIST 0</c> it is the only way the wall fires (OV-20261019-wall-pass-clip).
     /// </summary>
     private void DispatchProximityEvents()
     {
@@ -1934,24 +1944,37 @@ public sealed class WdlRuntime :
             return;
         }
 
+        Wall[] touchedWalls = player.TakeTouchedWalls();
         foreach (AcknexObject target in CurrentProximityTargets())
         {
-            if (!ShouldTrackProximity(target) ||
-                !TryCurrentProximity(player, target, out bool isNear))
+            if (!ShouldTrackProximity(target))
             {
                 _proximityStates.Remove(target);
                 continue;
             }
 
-            bool hadPrevious = _proximityStates.TryGetValue(target, out bool wasNear);
-            _proximityStates[target] = isNear;
-            if (isNear && (!hadPrevious || !wasNear))
+            bool wasNear = false;
+            if (TryCurrentProximity(player, target, out bool isNear))
+            {
+                wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+                _proximityStates[target] = isNear;
+            }
+            else
+            {
+                _proximityStates.Remove(target);
+            }
+
+            if (isNear && !wasNear)
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
             }
-            else if (!isNear && hadPrevious && wasNear)
+            else if (!isNear && wasNear)
             {
                 TriggerObjectActionHook(target, "IF_FAR");
+            }
+            else if (!isNear && target is Wall wall && Array.IndexOf(touchedWalls, wall) >= 0)
+            {
+                TriggerObjectActionHook(target, "IF_NEAR");
             }
         }
     }
@@ -2059,6 +2082,33 @@ public sealed class WdlRuntime :
                 distance = 0;
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Whether an object's <c>EACH_TICK</c> runs this cycle. The original runs a wall's only while
+    /// its distance from the player (<see cref="TryProximityDistance"/>) is below the
+    /// <c>CLIP_DIST</c> of the player's region, a thing's below <c>CLIP_DIST × THING_DIST</c> and an
+    /// actor's below <c>CLIP_DIST × ACTOR_DIST</c> (OV-20261019-wall-pass-clip). A thing or actor
+    /// with <c>LIBER</c> set runs at any distance (manual p.71, not measured). Regions are not gated.
+    /// </summary>
+    private bool IsWithinClipDistance(AcknexObject target)
+    {
+        if (target is not (Wall or MapEntity) ||
+            GetObject("player") is not Player player ||
+            RegionAt(player.Region) is not { } region ||
+            target["LIBER"] > 0 ||
+            !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
+        {
+            return true;
+        }
+
+        double limit = region["CLIP_DIST"] * target switch
+        {
+            Actor => GetSkill("ACTOR_DIST"),
+            MapEntity => GetSkill("THING_DIST"),
+            _ => 1,
+        };
+        return distance < limit;
     }
 
     private static bool TargetCanSeePlayerRegion(AcknexObject target, int playerRegion) =>

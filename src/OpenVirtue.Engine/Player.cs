@@ -33,6 +33,7 @@ public sealed class Player : AcknexObject
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
+    private readonly List<Wall> _touchedWalls = [];
 
     public Vector3 Position
     {
@@ -145,6 +146,18 @@ public sealed class Player : AcknexObject
         }
     }
 
+    /// <summary>
+    /// Returns the walls that the horizontal moves since the last call passed through or pushed
+    /// against (see <see cref="LevelCollisionWorld.Move"/>), and starts a new list. A placement
+    /// with <see cref="MoveTo"/> or a position write touches nothing.
+    /// </summary>
+    public Wall[] TakeTouchedWalls()
+    {
+        Wall[] touched = [.. _touchedWalls];
+        _touchedWalls.Clear();
+        return touched;
+    }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz)
     {
@@ -156,7 +169,8 @@ public sealed class Player : AcknexObject
             Width,
             CanCross,
             EntityCollisionRadius,
-            static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0);
+            static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
+            touchedWalls: _touchedWalls);
         _region = result.Region;
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
