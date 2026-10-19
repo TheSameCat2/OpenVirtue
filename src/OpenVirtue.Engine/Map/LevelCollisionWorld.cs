@@ -33,7 +33,13 @@ public sealed class LevelCollisionWorld
         }
     }
 
-    /// <summary>Moves a circle through portals while sliding along solid walls and entities.</summary>
+    /// <summary>
+    /// Moves a circle through portals while sliding along solid walls and entities. When
+    /// <paramref name="touchedWalls"/> is given, every wall the move touched is added to it: a wall
+    /// the circle may cross whose segment a step passed through, end points included, and a solid
+    /// wall that pushed the circle back. A step that ends on a wall's line touches it, and so does
+    /// the next step off it (OV-20261019-wall-pass-clip).
+    /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
         int startRegion,
@@ -42,7 +48,8 @@ public sealed class LevelCollisionWorld
         Func<Wall, int, int, bool> canCross,
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
-        MapEntity? ignoredEntity = null)
+        MapEntity? ignoredEntity = null,
+        ICollection<Wall>? touchedWalls = null)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -71,7 +78,7 @@ public sealed class LevelCollisionWorld
             for (int pass = 0; pass < 4; pass++)
             {
                 bool adjusted = ResolveWalls(
-                    from, region, radius, canCross, crossedWallIndex, ref desired);
+                    from, region, radius, canCross, crossedWallIndex, touchedWalls, ref desired);
                 adjusted |= ResolveEntities(
                     from, region, radius, entityRadius, canCrossEntity, ignoredEntity, ref desired);
                 collided |= adjusted;
@@ -79,6 +86,11 @@ public sealed class LevelCollisionWorld
                 {
                     break;
                 }
+            }
+
+            if (touchedWalls is not null)
+            {
+                AddPassedWalls(from, desired, region, canCross, touchedWalls);
             }
 
             position = desired;
@@ -93,6 +105,7 @@ public sealed class LevelCollisionWorld
         float radius,
         Func<Wall, int, int, bool> canCross,
         int ignoredWallIndex,
+        ICollection<Wall>? touchedWalls,
         ref Vector2 desired)
     {
         if (!_regionWalls.TryGetValue(region, out List<int>? walls))
@@ -125,9 +138,61 @@ public sealed class LevelCollisionWorld
 
             desired = closest + (CollisionNormal(from, desired, closest, a, b, along) * radius);
             adjusted = true;
+            if (touchedWalls is not null && !touchedWalls.Contains(wall))
+            {
+                touchedWalls.Add(wall);
+            }
         }
 
         return adjusted;
+    }
+
+    /// <summary>
+    /// Adds the crossable walls of the step's region (a portal wall is listed in both of its
+    /// regions) whose segment the step from <paramref name="from"/> to <paramref name="to"/>
+    /// passed through.
+    /// </summary>
+    private void AddPassedWalls(
+        Vector2 from,
+        Vector2 to,
+        int region,
+        Func<Wall, int, int, bool> canCross,
+        ICollection<Wall> touchedWalls)
+    {
+        if (!_regionWalls.TryGetValue(region, out List<int>? walls))
+        {
+            return;
+        }
+
+        foreach (int wallIndex in walls)
+        {
+            Wall wall = _level.Walls[wallIndex];
+            if (!touchedWalls.Contains(wall) &&
+                Vertex(wall.Vertex1, out Vector2 a) &&
+                Vertex(wall.Vertex2, out Vector2 b) &&
+                PassesThrough(from, to, a, b) &&
+                canCross(wall, region, OtherRegion(wall, region)))
+            {
+                touchedWalls.Add(wall);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a step changes its side of the line through <paramref name="a"/> and
+    /// <paramref name="b"/>, counting "on the line" as a side of its own, within the segment
+    /// including its end points.
+    /// </summary>
+    private static bool PassesThrough(Vector2 from, Vector2 to, Vector2 a, Vector2 b)
+    {
+        if (Math.Sign(Orient(a, b, from)) == Math.Sign(Orient(a, b, to)))
+        {
+            return false;
+        }
+
+        float endpointSide1 = Orient(from, to, a);
+        float endpointSide2 = Orient(from, to, b);
+        return !((endpointSide1 > 0 && endpointSide2 > 0) || (endpointSide1 < 0 && endpointSide2 < 0));
     }
 
     private bool ResolveEntities(

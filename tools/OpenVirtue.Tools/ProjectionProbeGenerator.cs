@@ -30,6 +30,7 @@ internal static class ProjectionProbeGenerator
     public const string FlicDetailProbeName = "flic-detail";
     public const string ProximityProbeName = "proximity-events";
     public const string WallDistanceProbeName = "wall-distance";
+    public const string WallPassClipProbeName = "wall-pass-clip";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -41,6 +42,7 @@ internal static class ProjectionProbeGenerator
     private const string FlicDetailProbeId = "OV-20261015-flic-scheduler-detail";
     private const string ProximityProbeId = "OV-20261019-proximity-events";
     private const string WallDistanceProbeId = "OV-20261019-wall-distance";
+    private const string WallPassClipProbeId = "OV-20261019-wall-pass-clip";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -294,6 +296,7 @@ internal static class ProjectionProbeGenerator
         FlicDetailProbeName => FlicDetailProbeId,
         ProximityProbeName => ProximityProbeId,
         WallDistanceProbeName => WallDistanceProbeId,
+        WallPassClipProbeName => WallPassClipProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -400,6 +403,7 @@ internal static class ProjectionProbeGenerator
             case FlicDetailProbeName:
             case ProximityProbeName:
             case WallDistanceProbeName:
+            case WallPassClipProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -422,6 +426,7 @@ internal static class ProjectionProbeGenerator
         FlicDetailProbeName => FlicDetailProbeCases.Set,
         ProximityProbeName => ProximityProbeCases.Set,
         WallDistanceProbeName => WallDistanceProbeCases.Set,
+        WallPassClipProbeName => WallDistanceProbeCases.PassClipSet,
         _ => null,
     };
 

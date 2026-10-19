@@ -3050,6 +3050,208 @@ public class WdlRuntimeTests
         Assert.Equal(33 + 1.5, plain["DISTANCE"], 6);
     }
 
+    // A free-standing wall from (20, -8) to (20, 8) with the room on both sides.
+    private const string GateMap =
+        "VERTEX 20 -8 0;#0\nVERTEX 20 8 0;#1\nREGION room 0 10;#0\n" +
+        "WALL gate 0 1 0 0 0 0;#0\nPLAYER_START 10 0 0 0;#1";
+
+    private const string GateCounters =
+        "MAPFILE <m.wmp>; SKILL near_count { VAL 0; } SKILL far_count { VAL 0; } SKILL near_dist { VAL -1; } " +
+        "ACTION near_gate { RULE near_count += 1; RULE near_dist = my.DISTANCE; } " +
+        "ACTION far_gate { RULE far_count += 1; } ";
+
+    [Fact]
+    public void Tick_PlayerProximity_WallCrossingFiresNearOutsideDistOnly()
+    {
+        // OV-20261019-wall-pass-clip: walking through a passable wall fires IF_NEAR in either
+        // direction while the player is outside DIST, with no IF_FAR; within DIST, or by a beam,
+        // a crossing fires nothing.
+        Level level = LoadWithMap(
+            GateMap,
+            GateCounters + "WALL gate { DIST 6; IF_NEAR near_gate; IF_FAR far_gate; FLAGS PASSABLE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 16, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(8, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(4 + 8, runtime.GetSkill("near_dist"), 4);
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(-8, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 24, 0);
+        runtime.Tick(1.0 / 16);
+        player.MoveTo(0, 16, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 17, 5); // 3 + 3 from v2: enters DIST
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3, runtime.GetSkill("near_count"));
+        player.MoveHorizontal(5, 0); // through the wall within DIST, to 2 + 3 from v2
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+
+        player.MoveTo(0, 30, 5);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_DistZeroWallFiresNearOnCrossingIncludingEndPoints()
+    {
+        // OV-20261019-wall-pass-clip: with DIST 0 a crossing of the segment fires IF_NEAR, end
+        // points included, a step onto the line and the step off it both count, a crossing beyond
+        // the vertex or coming close does not, and IF_FAR never fires.
+        Level level = LoadWithMap(
+            GateMap,
+            GateCounters + "WALL gate { IF_NEAR near_gate; IF_FAR far_gate; FLAGS PASSABLE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 16, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(3.5f, 0); // to x = 19.5, short of the wall
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+
+        player.MoveHorizontal(1, 0);
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 19.75f, 7.75f);
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(0.25f, 0.25f); // onto v2
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("near_dist"), 6);
+        player.MoveHorizontal(0.25f, 0.25f); // off it
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 19.75f, 8.25f);
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(0.5f, 0.5f); // crosses the line at y = 8.5
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_PushingAgainstSolidWallFiresNearEveryCycleOutsideDist()
+    {
+        // OV-20261019-wall-pass-clip: every cycle of pushing against a solid wall fires IF_NEAR
+        // while the player is outside DIST; standing against it does not, and within DIST the
+        // contact is silent.
+        Level level = LoadWithMap(
+            GateMap,
+            GateCounters + "WALL gate { DIST 6; IF_NEAR near_gate; IF_FAR far_gate; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 17, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(2, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.True(player.Position.X < 20 - 1);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        player.MoveHorizontal(1, 0);
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 17, 5); // enters DIST
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(2, 0);
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(1, 0.5f);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(3, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_WallRunsOnlyWithinClipDist()
+    {
+        // OV-20261019-wall-pass-clip: a wall's EACH_TICK runs only while |dx| + |dy| to its nearer
+        // vertex is below the CLIP_DIST of the player's region.
+        Level level = LoadWithMap(
+            GateMap,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } REGION room { CLIP_DIST 10; } " +
+            "WALL gate { EACH_TICK gate_tick; FLAGS PASSABLE; } ACTION gate_tick { RULE runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        Assert.Equal(1, Runs(11, 8)); // 9
+        Assert.Equal(0, Runs(10, 8)); // 10: the border is outside
+        Assert.Equal(0, Runs(14, 4)); // 6 + 4, 7.2 in a straight line
+        Assert.Equal(1, Runs(15, 4)); // 5 + 4
+
+        double Runs(float x, float y)
+        {
+            player.MoveTo(0, x, y);
+            double before = runtime.GetSkill("runs");
+            runtime.Tick(1.0 / 16);
+            return runtime.GetSkill("runs") - before;
+        }
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_ThingsAndActorsUseThingAndActorDistRatios()
+    {
+        // OV-20261019-wall-pass-clip: a thing's EACH_TICK runs only below CLIP_DIST x THING_DIST,
+        // an actor's below CLIP_DIST x ACTOR_DIST (both 1 by default). LIBER lifts the gate (p.71).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\n" +
+            "THING post 20 -12 0 0;#0\nACTOR guard 20 12 0 0;#1\nTHING beacon -40 0 0 0;#2\n" +
+            "PLAYER_START 0 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL post_runs { VAL 0; } SKILL guard_runs { VAL 0; } SKILL beacon_runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 20; } " +
+            "THING post { EACH_TICK post_tick; } ACTOR guard { EACH_TICK guard_tick; } " +
+            "THING beacon { EACH_TICK beacon_tick; FLAGS LIBER; } " +
+            "ACTION post_tick { RULE post_runs += 1; } ACTION guard_tick { RULE guard_runs += 1; } " +
+            "ACTION beacon_tick { RULE beacon_runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        Assert.Equal(1, runtime.GetSkill("THING_DIST"));
+        Assert.Equal(1, runtime.GetSkill("ACTOR_DIST"));
+
+        Assert.Equal((1, 0), Runs(1, -12)); // 19 from the post
+        Assert.Equal((0, 0), Runs(0, -12));
+        Assert.Equal((0, 1), Runs(1, 12)); // 19 from the guard
+        Assert.Equal((0, 0), Runs(8, 4)); // 12 + 8 from the guard
+
+        runtime.SetSkill("THING_DIST", 0.5);
+        runtime.SetSkill("ACTOR_DIST", 0.25);
+        Assert.Equal((1, 0), Runs(11, -12)); // 9 from the post
+        Assert.Equal((0, 0), Runs(10, -12));
+        Assert.Equal((0, 1), Runs(16, 12)); // 4 from the guard
+        Assert.Equal((0, 0), Runs(15, 12));
+        Assert.Equal(8, runtime.GetSkill("beacon_runs"));
+
+        (double Post, double Guard) Runs(float x, float y)
+        {
+            player.MoveTo(0, x, y);
+            double post = runtime.GetSkill("post_runs");
+            double guard = runtime.GetSkill("guard_runs");
+            runtime.Tick(1.0 / 16);
+            return (runtime.GetSkill("post_runs") - post, runtime.GetSkill("guard_runs") - guard);
+        }
+    }
+
     [Fact]
     public void Runtime_ObjectActionHooks_CanBeReassignedWithSetInstructions()
     {

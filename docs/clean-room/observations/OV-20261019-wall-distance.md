@@ -129,5 +129,6 @@ points. The `DIST` test stores the value it compared for walls too. As for thing
 computes the value for every wall in any region, and a script write lasts until the next
 refresh.
 
-Not implemented yet: the pass-through `IF_NEAR` (rule 4) and the `CLIP_DIST` gate on wall
-`EACH_TICK` (rule 5). Both need the open questions above answered first.
+Rules 4 and 5 were measured further and implemented from OV-20261019-wall-pass-clip: passing
+through or pushing against a wall fires `IF_NEAR` while the player is outside `DIST`, and the
+`EACH_TICK` gate is `DISTANCE < CLIP_DIST`, for things and actors scaled by `THING_DIST`/`ACTOR_DIST`.
