@@ -153,7 +153,7 @@ writes without touching the player's region, and `LOCATE` sets it, which the nex
 `DispatchPlayerRegionEvents` reports.
 
 `MY.DISTANCE` (added after the first implementation) is a skill of every thing and actor that
-`WdlRuntime.RefreshEntityDistances` sets to the same |dx| + |dy|. The probe only read it inside
+`WdlRuntime.RefreshDistances` sets to the same |dx| + |dy|. The probe only read it inside
 `IF_NEAR`/`IF_FAR`, so these choices are OpenVirtue's own:
 - It is refreshed twice per cycle: at the start, before resumed `WAIT` actions, and again after
   the actors move, before the global and object `EACH_TICK` actions. The `DIST` test also stores

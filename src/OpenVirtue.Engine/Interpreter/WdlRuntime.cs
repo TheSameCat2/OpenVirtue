@@ -1317,21 +1317,21 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
-    /// The things' and actors' <c>DISTANCE</c> is refreshed before the resumed actions and again
-    /// after the actors move (see <see cref="RefreshEntityDistances"/>).
+    /// <c>DISTANCE</c> is refreshed before the resumed actions, and the things' and actors' again
+    /// after the actors move (see <see cref="RefreshDistances"/>).
     /// </summary>
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
         RefreshEntityVisibilityFlags();
-        RefreshEntityDistances();
+        RefreshDistances(cycleStart: true);
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
         AdvanceAnimationCycles(timeCorrection);
         AdvanceActorTargets(timeCorrection);
-        RefreshEntityDistances();
+        RefreshDistances(cycleStart: false);
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(deltaSeconds))
         {
@@ -1990,25 +1990,25 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        if (target is MapEntity entity)
-        {
-            entity[DistanceSkill] = distance;
-        }
-
+        target[DistanceSkill] = distance;
         isNear = distance <= threshold;
         return true;
     }
 
     /// <summary>
-    /// Sets every thing's and actor's <c>DISTANCE</c> to |dx| + |dy| between the player and its
-    /// center, the value the <c>DIST</c> test compares with (OV-20261019-proximity-events). The
-    /// manual calls it approximate and only valid within the player's <c>CLIP_DIST</c> (p.69);
-    /// OpenVirtue computes it for every object. When the original refreshes it is not measured:
-    /// OpenVirtue does it at the start of the cycle and again after the actors move, so resumed
-    /// <c>WAIT</c> actions and the <c>EACH_TICK</c> actions read the current positions, and the
-    /// <c>DIST</c> test stores the value it compared, which its <c>IF_NEAR</c>/<c>IF_FAR</c> action reads.
+    /// Sets the <c>DISTANCE</c> of every thing, actor and (at the start of the cycle) wall to the
+    /// value the <c>DIST</c> test compares with (see <see cref="TryProximityDistance"/>). The
+    /// manual calls it approximate and only valid within the player's <c>CLIP_DIST</c> (p.52,
+    /// p.69); the original computes a wall's outside it too (OV-20261019-wall-distance), and
+    /// OpenVirtue does so for every object. A wall's is computed once, before the cycle's actions
+    /// (OV-20261019-wall-distance). A beam reaches the player's position only after the cycle,
+    /// when the host applies <c>PLAYER_X/PLAYER_Y</c>, so it shows in the next cycle as in the
+    /// original. When the original refreshes a thing's or actor's is not measured: OpenVirtue
+    /// does it at the start of the cycle and again after the actors move, so resumed <c>WAIT</c>
+    /// actions and the <c>EACH_TICK</c> actions read the current positions. The <c>DIST</c> test
+    /// stores the value it compared, which its <c>IF_NEAR</c>/<c>IF_FAR</c> action reads.
     /// </summary>
-    private void RefreshEntityDistances()
+    private void RefreshDistances(bool cycleStart)
     {
         if (GetObject("player") is not Player player)
         {
@@ -2022,22 +2022,43 @@ public sealed class WdlRuntime :
                 entity[DistanceSkill] = distance;
             }
         }
+
+        if (!cycleStart)
+        {
+            return;
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            if (TryProximityDistance(player.Position.X, player.Position.Z, wall, out double distance))
+            {
+                wall[DistanceSkill] = distance;
+            }
+        }
     }
 
     /// <summary>
-    /// The distance a <c>DIST</c> border is compared with. For things and actors it is
-    /// |dx| + |dy| between the player and the object's center, the value <c>MY.DISTANCE</c> reads
-    /// in the original (OV-20261019-proximity-events). Walls keep the segment distance (not probed).
+    /// The distance a <c>DIST</c> border is compared with, the value <c>MY.DISTANCE</c> reads in
+    /// the original: |dx| + |dy| between the player and a thing's or actor's center
+    /// (OV-20261019-proximity-events), or the nearer of a wall's two vertices
+    /// (OV-20261019-wall-distance).
     /// </summary>
     private bool TryProximityDistance(double x, double y, AcknexObject target, out double distance)
     {
-        if (target is MapEntity entity)
+        switch (target)
         {
-            distance = Math.Abs(entity.X - x) + Math.Abs(entity.Y - y);
-            return true;
+            case MapEntity entity:
+                distance = Math.Abs(entity.X - x) + Math.Abs(entity.Y - y);
+                return true;
+            case Wall wall when TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by):
+                distance = Math.Min(
+                    Math.Abs(ax - x) + Math.Abs(ay - y),
+                    Math.Abs(bx - x) + Math.Abs(by - y));
+                return true;
+            default:
+                distance = 0;
+                return false;
         }
-
-        return TryDistanceFromPoint(x, y, target, out distance);
     }
 
     private static bool TargetCanSeePlayerRegion(AcknexObject target, int playerRegion) =>

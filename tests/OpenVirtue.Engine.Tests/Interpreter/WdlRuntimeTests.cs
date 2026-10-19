@@ -2982,30 +2982,72 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Tick_PlayerProximity_TriggersWallNearFromSegmentDistance()
+    public void Tick_PlayerProximity_ComparesWallDistWithSumOfAxisDistancesToNearestVertex()
     {
+        // OV-20261019-wall-distance: a wall's DIST is compared with |dx| + |dy| to its nearer
+        // vertex, so the middle of a wall longer than 2 x DIST never fires, and IF_NEAR/IF_FAR
+        // read the compared value as MY.DISTANCE.
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nREGION room 0 10;#0\n" +
             "WALL rail 0 1 0 -1 0 0;#0\nPLAYER_START 5 5 0 0;#1";
         Level level = LoadWithMap(
             map,
-            "MAPFILE <m.wmp>; SKILL wall_near { VAL 0; } " +
-            "WALL rail { DIST 1.5; IF_NEAR near_rail; } " +
-            "ACTION near_rail { RULE wall_near += 1; RULE my.OFFSET_X += 2; }");
+            "MAPFILE <m.wmp>; SKILL near_count { VAL 0; } SKILL near_dist { VAL -1; } SKILL far_dist { VAL -1; } " +
+            "WALL rail { DIST 3; IF_NEAR near_rail; IF_FAR far_rail; } " +
+            "ACTION near_rail { RULE near_count += 1; RULE near_dist = my.DISTANCE; } " +
+            "ACTION far_rail { RULE far_dist = my.DISTANCE; }");
         var player = new Player(level);
         var runtime = new WdlRuntime(level);
-        Wall wall = Assert.Single(level.Walls);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
 
+        player.MoveTo(0, 5, 1); // 1 from the segment, 6 by axes from either vertex
+        runtime.Tick(1.0 / 16);
+        player.MoveTo(0, 2, 1.5f); // 2.5 straight-line from v1, 3.5 by axes
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 1.5f, 1);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(2.5, runtime.GetSkill("near_dist"), 6);
+
+        player.MoveTo(0, 5, 5);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(10, runtime.GetSkill("far_dist"), 6);
+
+        player.MoveTo(0, 9, 1); // 2 by axes from v2
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+        Assert.Equal(2, runtime.GetSkill("near_dist"), 6);
+    }
+
+    [Fact]
+    public void Tick_EachTickActions_ReadWallDistanceToNearestVertex()
+    {
+        // OV-20261019-wall-distance: every wall's MY.DISTANCE is |dx| + |dy| to its nearer vertex,
+        // with or without hooks, at any range.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 40 0 0;#2\nVERTEX 40 10 0;#3\nREGION room 0 10;#0\n" +
+            "WALL rail 0 1 0 -1 0 0;#0\nWALL plain 2 3 0 -1 0 0;#1\nPLAYER_START 5 5 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL rail_dist { VAL -1; } " +
+            "WALL rail { EACH_TICK rail_tick; } WALL plain { } " +
+            "ACTION rail_tick { RULE rail_dist = my.DISTANCE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        Wall plain = level.Walls[1];
         runtime.RegisterObject("player", player);
 
         runtime.Tick(1.0 / 16);
-        Assert.Equal(0, runtime.GetSkill("wall_near"));
+        Assert.Equal(10, runtime.GetSkill("rail_dist"), 6);
+        Assert.Equal(35 + 5, plain["DISTANCE"], 6);
 
-        player.MoveTo(0, 5, 1);
+        player.MoveTo(0, 7, 1.5f);
         runtime.Tick(1.0 / 16);
-
-        Assert.Equal(1, runtime.GetSkill("wall_near"));
-        Assert.Equal(2, wall.OffsetX);
+        Assert.Equal(3 + 1.5, runtime.GetSkill("rail_dist"), 6);
+        Assert.Equal(33 + 1.5, plain["DISTANCE"], 6);
     }
 
     [Fact]

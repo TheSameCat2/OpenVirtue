@@ -110,18 +110,21 @@ with the boundary seen only from the inside (9.982).
 
 ## Tests To Add Or Update
 - `WdlRuntimeTests.Tick_PlayerProximity_ComparesWallDistWithSumOfAxisDistancesToNearestVertex`
-  (replaces `Tick_PlayerProximity_TriggersWallNearFromSegmentDistance`): at the centre of a
-  wall longer than 2 × `DIST`, nothing fires; 3 + 2 to a vertex fires with `DIST` 5.
-- `WdlRuntimeTests.Tick_EachTickActions_ReadWallDistanceToNearestVertexFromCycleStart`: a wall's
-  `EACH_TICK` reads |dx| + |dy| to the nearer vertex, and a beam in an earlier action of the same
-  cycle shows only in the next cycle.
-- `WdlRuntimeTests.Tick_PlayerProximity_WallNearAndFarActionsReadComparedDistance`: inside
-  `IF_NEAR`/`IF_FAR`, `MY.DISTANCE` is the value that fired them.
+  (replaces `Tick_PlayerProximity_TriggersWallNearFromSegmentDistance`): 1 step from the middle
+  of a wall longer than 2 × `DIST` does not fire, nor does 2.5 straight-line (3.5 by axes) from a
+  vertex. 1.5 + 1 from v1 and 1 + 1 from v2 fire, and `IF_NEAR`/`IF_FAR` read the compared value
+  as `MY.DISTANCE`.
+- `WdlRuntimeTests.Tick_EachTickActions_ReadWallDistanceToNearestVertex`: a wall's `EACH_TICK`
+  reads |dx| + |dy| to the nearer vertex, and a wall without hooks has the value too.
+- `RuntimeHostWallDistanceTests.Frame_BeamInAnAction_ShowsInWallDistanceFromTheNextCycle`: in
+  the cycle of a beam the wall's `EACH_TICK` reads the distance from before the beam, and in the
+  next cycle the new one.
 
 ## Implementation Notes
 `WdlRuntime.TryProximityDistance` uses |dx| + |dy| to the nearer vertex for walls.
-`RefreshEntityDistances` sets every wall's `DISTANCE` at the start of the cycle only, before the
-resumed actions, so a beam shows in the next cycle (rule 1). Things and actors keep both refresh
+`RefreshDistances` sets every wall's `DISTANCE` at the start of the cycle only, before the
+resumed actions. A beam reaches the player's position only when the host applies
+`PLAYER_X/PLAYER_Y` after the cycle, so it shows in the next cycle (rule 1). Things and actors keep both refresh
 points. The `DIST` test stores the value it compared for walls too. As for things, OpenVirtue
 computes the value for every wall in any region, and a script write lasts until the next
 refresh.
