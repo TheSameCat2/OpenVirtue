@@ -33,12 +33,17 @@ internal sealed record TraceProbeCase(
 /// second region with the room's heights, an 8 × 8 square island at x −12…−4, y 12…20 behind and
 /// left of the player, bounded by invisible passable walls; the string goes into its WDL
 /// definition. <c>Placements</c> are WMP <c>THING</c>/<c>ACTOR</c> lines (region 0 is
-/// <c>room</c>, the pad is region 2).
+/// <c>room</c>, the pad is region 2). <c>Walls</c> are free-standing walls inside the room, with
+/// <c>room</c> on both sides; their WALL keywords are defined in the case's declarations.
 /// </summary>
 internal sealed record TraceProbeMap(
     string RoomBody = "",
     string? PadBody = null,
-    IReadOnlyList<string>? Placements = null);
+    IReadOnlyList<string>? Placements = null,
+    IReadOnlyList<TraceProbeWall>? Walls = null);
+
+/// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
+internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as

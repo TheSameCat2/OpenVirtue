@@ -83,3 +83,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   side moved onto: the first WMP region is left of v1 → v2. The repeated `IF_NEAR` of the
   flic-detail controls came from actor contact (still open). Five DOSBox-X runs; implemented in
   `WdlRuntime` and `LevelCollisionWorld`.
+
+## Wall distance probe (2026-10-19 — confirmed and implemented)
+
+- `OV-20261019-wall-distance.md` — a wall's `MY.DISTANCE` and its `DIST` test use |dx| + |dy|
+  between the player and the nearer of the wall's two vertices, so the centre of a long wall
+  does not fire. The value is computed once per cycle before the actions, for walls in or out of
+  view and outside `CLIP_DIST`. Passing through a wall fires `IF_NEAR` regardless of `DIST`, and a
+  wall's `EACH_TICK` only runs within the player's `CLIP_DIST` (neither implemented yet). Three
+  DOSBox-X runs; implemented in `WdlRuntime`.

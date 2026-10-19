@@ -25,7 +25,7 @@ internal static class ProximityProbeCases
     /// <summary>The PRINTFILE base name of the trace file (written as OVPRX0.TXT).</summary>
     public const string TraceFile = "ovprx";
 
-    private const string Skills =
+    internal const string Skills =
         "SKILL pe_n { VAL 0; }\n" +
         "SKILL pe_tnext { VAL 0; }\n" +
         "SKILL pe_vx { VAL 0; }\n" +
@@ -36,7 +36,7 @@ internal static class ProximityProbeCases
         "SKILL pe_h { VAL 0; }\n";
 
     /// <summary>A trace line: the token, then <c>TICKS</c>, the sampler's run count, then any extra skills.</summary>
-    private static string L(string token, params string[] extra) =>
+    internal static string L(string token, params string[] extra) =>
         V(token, ["TICKS", "pe_n", .. extra]);
 
     /// <summary>
@@ -44,31 +44,31 @@ internal static class ProximityProbeCases
     /// <c>pe_vx/pe_vy</c>, and prints <c>TK</c> with the player position (and the extra skills)
     /// every 16 ticks. <paramref name="prologue"/> runs first on every cycle. No WAIT (p.96).
     /// </summary>
-    private static string Sampler(string prologue = "", params string[] extra) => Action(
+    internal static string Sampler(string prologue = "", params string[] extra) => Action(
         "pe_tick",
         "    RULE pe_n = pe_n + 1;\n" + prologue +
         "    SET PLAYER_VX, pe_vx;\n    SET PLAYER_VY, pe_vy;\n" +
         "    IF (TICKS > pe_tnext) {\n        RULE pe_tnext = TICKS + 16;\n" +
         Indent(L("TK", ["PLAYER_X", "PLAYER_Y", "pe_nn", "pe_fn", .. extra])) + "    }\n");
 
-    private const string ArmSampler = "    SET EACH_TICK.1, pe_tick;\n";
+    internal const string ArmSampler = "    SET EACH_TICK.1, pe_tick;\n";
 
-    private const string ClearSampler =
+    internal const string ClearSampler =
         "    RULE pe_vx = 0;\n    RULE pe_vy = 0;\n    WAITT 2;\n    SET EACH_TICK.1, NULL;\n";
 
     /// <summary>Walks the player at (<paramref name="vx"/>, <paramref name="vy"/>) steps per tick for <paramref name="ticks"/> ticks, then stops and prints <paramref name="token"/>.</summary>
-    private static string Walk(double vx, double vy, int ticks, string token) =>
+    internal static string Walk(double vx, double vy, int ticks, string token) =>
         FormattableString.Invariant($"    RULE pe_vx = {vx};\n    RULE pe_vy = {vy};\n    WAITT {ticks};\n") +
         "    RULE pe_vx = 0;\n    RULE pe_vy = 0;\n" + L(token, "PLAYER_X", "PLAYER_Y");
 
     /// <summary>Sets the player position directly (a beam), printing <paramref name="token"/> before and <paramref name="token"/>D after.</summary>
-    private static string Beam(int x, int y, string token, bool locate = false) =>
+    internal static string Beam(int x, int y, string token, bool locate = false) =>
         L(token, "PLAYER_X", "PLAYER_Y") +
         FormattableString.Invariant($"    SET PLAYER_X, {x};\n    SET PLAYER_Y, {y};\n") +
         (locate ? "    LOCATE;\n" : "") +
         L(token + (locate ? "L" : "D"), "PLAYER_X", "PLAYER_Y");
 
-    private static string Wait(int ticks, string token) => $"    WAITT {ticks};\n" + L(token, "PLAYER_X", "PLAYER_Y");
+    internal static string Wait(int ticks, string token) => $"    WAITT {ticks};\n" + L(token, "PLAYER_X", "PLAYER_Y");
 
     // ---- proximity ---------------------------------------------------------------------------
 
@@ -240,6 +240,6 @@ internal static class ProximityProbeCases
         "for compile errors.",
         All);
 
-    private static string Indent(string lines) =>
+    internal static string Indent(string lines) =>
         string.Concat(lines.Split('\n').Select(static l => l.Length == 0 ? "" : "    " + l + "\n"));
 }
