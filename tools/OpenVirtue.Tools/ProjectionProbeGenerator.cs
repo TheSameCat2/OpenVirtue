@@ -33,6 +33,7 @@ internal static class ProjectionProbeGenerator
     public const string WallPassClipProbeName = "wall-pass-clip";
     public const string ClipContactProbeName = "clip-contact";
     public const string BorderClimbProbeName = "border-climb";
+    public const string EyeClampProbeName = "eye-clamp";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -47,6 +48,7 @@ internal static class ProjectionProbeGenerator
     private const string WallPassClipProbeId = "OV-20261019-wall-pass-clip";
     private const string ClipContactProbeId = "OV-20261019-clip-contact";
     private const string BorderClimbProbeId = "OV-20261019-border-climb";
+    private const string EyeClampProbeId = "OV-20261019-eye-clamp";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -303,6 +305,7 @@ internal static class ProjectionProbeGenerator
         WallPassClipProbeName => WallPassClipProbeId,
         ClipContactProbeName => ClipContactProbeId,
         BorderClimbProbeName => BorderClimbProbeId,
+        EyeClampProbeName => EyeClampProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -412,6 +415,7 @@ internal static class ProjectionProbeGenerator
             case WallPassClipProbeName:
             case ClipContactProbeName:
             case BorderClimbProbeName:
+            case EyeClampProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -437,6 +441,7 @@ internal static class ProjectionProbeGenerator
         WallPassClipProbeName => WallDistanceProbeCases.PassClipSet,
         ClipContactProbeName => ClipContactProbeCases.Set,
         BorderClimbProbeName => BorderClimbProbeCases.Set,
+        EyeClampProbeName => EyeClampProbeCases.Set,
         _ => null,
     };
 
