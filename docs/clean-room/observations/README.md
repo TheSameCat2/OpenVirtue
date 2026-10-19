@@ -72,3 +72,14 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   (`FLIC_FRAME` unchanged); requested during a flic, it faults this runtime. Mouse clicks came
   from an X11 helper (`tools/oracle/x11_click.py`). Fifteen DOSBox-X runs; implemented in
   `WdlRuntime`, `Timing` and `RuntimeHost`.
+
+## Proximity and region event probe (2026-10-19 — confirmed and implemented)
+
+- `OV-20261019-proximity-events.md` — `IF_NEAR` fires once when the player comes within `DIST`
+  and `IF_FAR` once when they leave, checked every cycle, so walks, beams and moving actors all
+  count. For things and actors `DIST` is compared with |dx| + |dy| (also `MY.DISTANCE`). A write
+  to `PLAYER_X/PLAYER_Y` keeps the player's region and fires no region event. `LOCATE` fires the
+  old region's `IF_LEAVE`, then the new one's `IF_ENTER`. Crossing a wall enters the region on the
+  side moved onto: the first WMP region is left of v1 → v2. The repeated `IF_NEAR` of the
+  flic-detail controls came from actor contact (still open). Five DOSBox-X runs; implemented in
+  `WdlRuntime` and `LevelCollisionWorld`.

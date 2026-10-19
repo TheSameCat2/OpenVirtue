@@ -20,6 +20,7 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [out
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare flic-play [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
 ```
 
 - `wrs list` — print each entry (name, compressed/uncompressed size) and a
@@ -84,6 +85,12 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare flic-play [output-
   DOSBox-X `AUTOTYPE` line in the autoexec (`TraceProbeCase.Autotype`); `key-control` checks
   that the scripted key reaches the runtime at all. Every line in `OVFLC0.TXT` is a token
   followed by `FLIC_FRAME` and `TICKS`.
+- `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
+  `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
+  player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of
+  a THING's `DIST`, let a FOLLOW actor approach a player who stands still, and beam into the pad
+  island with and without `LOCATE`. Every line in `OVPRX0.TXT` is a token followed by `TICKS`
+  and the sampler's run count; `N`/`F` lines are `IF_NEAR`/`IF_FAR` runs with `MY.DISTANCE`.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the
