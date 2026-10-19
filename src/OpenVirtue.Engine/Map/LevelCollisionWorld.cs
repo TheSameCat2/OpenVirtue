@@ -40,6 +40,7 @@ public sealed class LevelCollisionWorld
     /// two regions too, OV-20261019-clip-contact), a solid wall that pushed the circle back, and a
     /// solid thing or actor that pushed it back (OV-20261019-clip-contact). A step that ends on a
     /// wall's line touches it, and so does the next step off it (OV-20261019-wall-pass-clip).
+    /// A solid wall holds the circle <paramref name="wallClearance"/> beyond <paramref name="radius"/>.
     /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
@@ -50,7 +51,8 @@ public sealed class LevelCollisionWorld
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity = null,
-        ICollection<AcknexObject>? touched = null)
+        ICollection<AcknexObject>? touched = null,
+        float wallClearance = 0)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -61,6 +63,7 @@ public sealed class LevelCollisionWorld
         }
 
         radius = Math.Max(0.01f, radius);
+        float wallRadius = radius + Math.Max(0, wallClearance);
         Vector2 position = start;
         int region = startRegion;
         bool collided = false;
@@ -79,7 +82,7 @@ public sealed class LevelCollisionWorld
             for (int pass = 0; pass < 4; pass++)
             {
                 bool adjusted = ResolveWalls(
-                    from, region, radius, canCross, crossedWallIndex, touched, ref desired);
+                    from, region, wallRadius, canCross, crossedWallIndex, touched, ref desired);
                 adjusted |= ResolveEntities(
                     from, region, radius, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
                 collided |= adjusted;

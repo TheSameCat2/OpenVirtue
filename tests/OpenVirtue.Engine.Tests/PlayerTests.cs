@@ -101,7 +101,7 @@ public class PlayerTests
         player.MoveHorizontal(0, 10);
 
         Assert.Equal(expectedRegion, player.Region);
-        Assert.Equal(expectedRegion == 0 ? 10 - player.Width : 15, player.Position.Z, 3);
+        Assert.Equal(expectedRegion == 0 ? 10 - player.Width - Player.WallClearance : 15, player.Position.Z, 3);
         Assert.Equal(eye, player.Position.Y); // the step itself does not move the eye
     }
 
@@ -153,7 +153,7 @@ public class PlayerTests
         player.Position = new Vector3(15, 4, 15);
         player.MoveHorizontal(0, -10);
         Assert.Equal(1, player.Region);
-        Assert.Equal(10 + player.Width, player.Position.Z, 3);
+        Assert.Equal(10 + player.Width + Player.WallClearance, player.Position.Z, 3);
     }
 
     [Fact]
@@ -202,18 +202,70 @@ public class PlayerTests
         player.MoveHorizontal(0, 2);
 
         Assert.Equal(1, player.Region);
-        Assert.Equal(-player.Width, player.Position.Z, 3);
+        Assert.Equal(-player.Width - Player.WallClearance, player.Position.Z, 3);
     }
 
     [Fact]
-    public void MoveHorizontal_IntoSolidWall_StopsAtPlayerWidth()
+    public void MoveHorizontal_IntoSolidWall_StopsPlayerWidthPlusClearanceAway()
     {
+        // OV-20261019-eye-clamp, stop-solid and stop-border: 1.245–1.249 from the wall with
+        // PLAYER_WIDTH 1.2.
         var player = new Player(Load());
 
         player.MoveHorizontal(-10, 0); // toward the solid region across x=0
 
         Assert.Equal(0, player.Region);
-        Assert.Equal(player.Width, player.Position.X, 3);
+        Assert.Equal(1.25f, player.Position.X, 3);
+    }
+
+    [Theory]
+    [InlineData(0.5f, 0.55f)]
+    [InlineData(2f, 2.05f)]
+    [InlineData(3f, 3.05f)]
+    public void MoveHorizontal_IntoSolidWall_StopDistanceFollowsPlayerWidth(float width, float expected)
+    {
+        // OV-20261019-eye-clamp, stop-solid: 0.550, 2.046 and 3.050 from the wall.
+        var player = new Player(Load()) { Width = width };
+
+        player.MoveHorizontal(-10, 0);
+
+        Assert.Equal(expected, player.Position.X, 3);
+    }
+
+    [Theory]
+    [InlineData(10, 16, 8f, 8f, 10.35f)] // pass-10: a PASSABLE step onto floor 10
+    [InlineData(1, 16, 1.1f, 1f, 1.35f)] // edge-1
+    [InlineData(10, 16, 15.9f, 8f, 15.65f)] // eye-10
+    [InlineData(0, 4, 3.9f, 3f, 3.65f)] // ceil-4b
+    [InlineData(16, 16, 8f, 8f, 15.65f)] // border-ceil: floor = ceiling, the ceiling wins
+    [InlineData(10, 16, 12f, 8f, 12f)] // inside: left alone, the feet hang below the floor
+    public void ClampEye_KeepsTheEyeAMarginInsideTheRegion(int padFloor, int padCeiling, float eye, float eyeHeight, float expected)
+    {
+        // OV-20261019-border-climb, rule 6.
+        (Player player, _) = PadPlayer(padFloor, padCeiling, eye, eyeHeight, climb: 1.5f, padFlags: "PASSABLE");
+        player.MoveHorizontal(0, 10);
+        Assert.Equal(1, player.Region);
+
+        float correction = player.ClampEye();
+
+        Assert.Equal(expected, player.Position.Y, 4);
+        Assert.Equal(expected - eye, correction, 4);
+    }
+
+    [Fact]
+    public void MoveVertical_PastTheFloor_LeavesTheEyeToTheClamp()
+    {
+        // OV-20261019-eye-clamp, vz-move: PLAYER_VZ carried the eye past the feet-on-floor height
+        // (3 with PLAYER_SIZE 3) down to the floor + 0.35, PLAYER_HGT −2.65.
+        var player = new Player(Load());
+        Assert.Equal(3, player.Position.Y);
+
+        Assert.Equal(-2.8f, player.MoveVertical(-2.8f), 4);
+        Assert.Equal(0.2f, player.Position.Y, 4);
+        Assert.True(player.Grounded);
+
+        Assert.Equal(0.15f, player.ClampEye(), 4);
+        Assert.Equal(0.35f, player.Position.Y, 4);
     }
 
     [Fact]
@@ -223,19 +275,19 @@ public class PlayerTests
 
         Vector2 displacement = player.MoveHorizontal(-10, 4);
 
-        Assert.Equal(player.Width, player.Position.X, 3);
+        Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
         Assert.Equal(-1, player.Position.Z, 3);
         Assert.True(displacement.Y > 3.9f);
     }
 
     [Fact]
-    public void MoveHorizontal_ApproachingSolidWallWithoutCrossing_MaintainsPlayerWidth()
+    public void MoveHorizontal_ApproachingSolidWallWithoutCrossing_MaintainsPlayerWidthPlusClearance()
     {
         var player = new Player(Load());
 
         player.MoveHorizontal(-4.5f, 0);
 
-        Assert.Equal(player.Width, player.Position.X, 3);
+        Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
     }
 
     [Fact]
@@ -250,7 +302,7 @@ public class PlayerTests
 
         blocked.MoveHorizontal(-10, 0);
 
-        Assert.Equal(blocked.Width, blocked.Position.X, 3);
+        Assert.Equal(blocked.Width + Player.WallClearance, blocked.Position.X, 3);
 
         level.Walls[0]["passable"] = 1;
         var passable = new Player(level);

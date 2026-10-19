@@ -98,9 +98,9 @@ public sealed class WdlPlayerMotionTests
 
         WdlPlayerMotion.Apply(runtime, player, 1);
 
-        Assert.Equal(player.Width, player.Position.X, 3);
-        Assert.Equal(-3.8, runtime.GetSkill("PLAYER_VX"), 3);
-        Assert.Equal(6.2, runtime.GetSkill("IMPACT_VX"), 3);
+        Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
+        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 3);
+        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 3);
     }
 
     [Fact]
@@ -131,50 +131,83 @@ public sealed class WdlPlayerMotionTests
         Assert.Equal(Math.Cos(0.25), runtime.GetSkill("PLAYER_COS"), 6);
     }
 
-    [Fact]
-    public void Apply_VerticalVelocity_MovesByTimeCorrectionAndUpdatesHeightSkills()
+    [Theory]
+    [InlineData(0.25, 4)] // vz-move: 1.000 per cycle for PLAYER_VZ 0.25 at TIME_CORR 0.25–0.281
+    [InlineData(2.375, 4)] // vz-rate at cycles=fixed 25000
+    [InlineData(4.688, 4.688)] // vz-rate at cycles=fixed 12000
+    [InlineData(8, 8)] // vz-slow and vz-rate: TIME_CORR 8
+    public void Apply_VerticalVelocity_MovesByPlayerVzTimesTimeCorrectionButAtLeastFourTicks(
+        double timeCorrection, double ticks)
     {
+        // OV-20261019-eye-clamp: the eye moves by PLAYER_VZ × max(TIME_CORR, 4) per frame.
         (WdlRuntime runtime, Player player) = Create();
-        runtime.SetSkill("PLAYER_VZ", 4);
+        runtime.SetSkill("PLAYER_VZ", 0.25);
 
-        WdlPlayerMotion.Apply(runtime, player, 0.5);
+        WdlPlayerMotion.Apply(runtime, player, timeCorrection);
 
-        Assert.Equal(5, player.Position.Y);
-        Assert.Equal(4, runtime.GetSkill("PLAYER_VZ"));
-        Assert.Equal(5, runtime.GetSkill("PLAYER_Z"));
+        Assert.Equal(3 + (0.25 * ticks), player.Position.Y, 4);
+        Assert.Equal(0.25, runtime.GetSkill("PLAYER_VZ"));
+        Assert.Equal(3 + (0.25 * ticks), runtime.GetSkill("PLAYER_Z"), 4);
         Assert.Equal(0, runtime.GetSkill("FLOOR_HGT"));
         Assert.Equal(20, runtime.GetSkill("CEIL_HGT"));
-        Assert.Equal(2, runtime.GetSkill("PLAYER_HGT"));
+        Assert.Equal(0.25 * ticks, runtime.GetSkill("PLAYER_HGT"), 4);
+        Assert.Equal(0, runtime.GetSkill("IMPACT_VZ"));
     }
 
     [Fact]
-    public void Apply_DownwardVelocityAtFloor_StopsAndAccumulatesVerticalImpact()
+    public void Apply_DownwardVelocity_SinksTheFeetAndStopsTheEyeAtTheFloorClamp()
     {
+        // OV-20261019-eye-clamp, vz-move A: the eye fell past 3 (feet on the floor) to 0.35,
+        // PLAYER_HGT −2.65; PLAYER_VZ kept its −0.25; IMPACT_VZ gained 0.35, then 1 per cycle.
         (WdlRuntime runtime, Player player) = Create();
-        runtime.SetSkill("PLAYER_VZ", -10);
+        runtime.SetSkill("PLAYER_VZ", -0.25);
 
-        WdlPlayerMotion.Apply(runtime, player, 1);
-
-        Assert.Equal(3, player.Position.Y);
-        Assert.Equal(0, runtime.GetSkill("PLAYER_VZ"));
-        Assert.Equal(10, runtime.GetSkill("IMPACT_VZ"));
-        Assert.Equal(0, runtime.GetSkill("PLAYER_HGT"));
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        Assert.Equal(1, player.Position.Y, 4);
+        Assert.Equal(-2, runtime.GetSkill("PLAYER_HGT"), 4);
         Assert.True(player.Grounded);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        Assert.Equal(0.35, player.Position.Y, 4);
+        Assert.Equal(0.35, runtime.GetSkill("IMPACT_VZ"), 4);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        Assert.Equal(0.35, player.Position.Y, 4);
+        Assert.Equal(-0.25, runtime.GetSkill("PLAYER_VZ"));
+        Assert.Equal(1.35, runtime.GetSkill("IMPACT_VZ"), 4);
+        Assert.Equal(-2.65, runtime.GetSkill("PLAYER_HGT"), 4);
     }
 
     [Fact]
-    public void Apply_UpwardVelocityAtCeiling_StopsAndAccumulatesVerticalImpact()
+    public void Apply_UpwardVelocity_StopsTheEyeAtTheCeilingClamp()
     {
+        // OV-20261019-eye-clamp, vz-move B: 15.650 under a ceiling of 16, IMPACT_VZ −0.35.
         (WdlRuntime runtime, Player player) = Create();
         player.Position = new System.Numerics.Vector3(5, 19, -5);
-        runtime.SetSkill("PLAYER_VZ", 5);
+        runtime.SetSkill("PLAYER_VZ", 0.25);
 
-        WdlPlayerMotion.Apply(runtime, player, 1);
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
 
-        Assert.Equal(20, player.Position.Y);
-        Assert.Equal(1, runtime.GetSkill("PLAYER_VZ"));
-        Assert.Equal(-4, runtime.GetSkill("IMPACT_VZ"));
+        Assert.Equal(19.65f, player.Position.Y, 4);
+        Assert.Equal(0.25, runtime.GetSkill("PLAYER_VZ"));
+        Assert.Equal(-0.35, runtime.GetSkill("IMPACT_VZ"), 4);
         Assert.False(player.Grounded);
+    }
+
+    [Theory]
+    [InlineData(0.1f, 0.35f)] // vz-move G: IMPACT_VZ +0.25
+    [InlineData(19.95f, 19.65f)] // vz-move H (ceiling 16 there): IMPACT_VZ −0.3
+    public void Apply_ScriptedEyeOutsideTheRegion_IsClampedAndCountedInImpact(float eye, float expected)
+    {
+        (WdlRuntime runtime, Player player) = Create();
+        player.Position = new System.Numerics.Vector3(5, eye, -5);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+
+        Assert.Equal(expected, player.Position.Y, 4);
+        Assert.Equal(expected, runtime.GetSkill("PLAYER_Z"), 4);
+        Assert.Equal(expected - eye, runtime.GetSkill("IMPACT_VZ"), 4);
     }
 
     [Fact]
@@ -223,6 +256,10 @@ public sealed class WdlPlayerMotionTests
 
         Assert.Equal(4, player.EyeHeight);
         Assert.Equal(2, player.Width);
+
+        runtime.SetSkill("PLAYER_WIDTH", 0.5); // below the manual's minimum of 1.2 (p.109)
+        WdlPlayerMotion.Apply(runtime, player, 0);
+        Assert.Equal(0.5, player.Width);
         Assert.Equal(2.5f, player.StepUp);
         Assert.Equal(1.5f, player.ActorWidthFactor);
         Assert.Equal(0.75f, player.ThingWidthFactor);
@@ -280,8 +317,8 @@ public sealed class WdlPlayerMotionTests
         WdlPlayerMotion.Apply(runtime, player, 1);
 
         Assert.Equal(0, player.Region);
-        Assert.Equal(4, player.Position.Y);
-        Assert.Equal(0, runtime.GetSkill("PLAYER_VZ"));
+        Assert.Equal(1.35f, player.Position.Y, 4);
+        Assert.Equal(-10, runtime.GetSkill("PLAYER_VZ"));
     }
 
     private static (WdlRuntime Runtime, Player Player) Create()
