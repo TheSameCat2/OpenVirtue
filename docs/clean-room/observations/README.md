@@ -92,3 +92,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   view and outside `CLIP_DIST`. Passing through a wall fires `IF_NEAR` regardless of `DIST`, and a
   wall's `EACH_TICK` only runs within the player's `CLIP_DIST` (neither implemented yet). Three
   DOSBox-X runs; implemented in `WdlRuntime`.
+
+## Wall pass-through and CLIP_DIST probe (2026-10-19 — confirmed and implemented)
+
+- `OV-20261019-wall-pass-clip.md` — a wall's `IF_NEAR` also fires in every cycle the player's
+  movement passes through it (segment crossing, end points included) or pushes against it, while
+  the player is outside its `DIST`. No `IF_FAR` follows, and with `DIST 0` this is the only way it
+  fires. A beam across a wall does not count. A wall's `EACH_TICK` runs only while its `DISTANCE` is
+  below the player region's `CLIP_DIST` (border excluded). A thing's and an actor's run only while
+  theirs is below `CLIP_DIST × THING_DIST` or `× ACTOR_DIST` (both default 1). Six DOSBox-X runs;
+  implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`.

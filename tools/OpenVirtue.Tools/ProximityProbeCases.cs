@@ -62,7 +62,7 @@ internal static class ProximityProbeCases
         "    RULE pe_vx = 0;\n    RULE pe_vy = 0;\n" + L(token, "PLAYER_X", "PLAYER_Y");
 
     /// <summary>Sets the player position directly (a beam), printing <paramref name="token"/> before and <paramref name="token"/>D after.</summary>
-    internal static string Beam(int x, int y, string token, bool locate = false) =>
+    internal static string Beam(double x, double y, string token, bool locate = false) =>
         L(token, "PLAYER_X", "PLAYER_Y") +
         FormattableString.Invariant($"    SET PLAYER_X, {x};\n    SET PLAYER_Y, {y};\n") +
         (locate ? "    LOCATE;\n" : "") +
