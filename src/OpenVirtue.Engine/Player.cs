@@ -33,7 +33,7 @@ public sealed class Player : AcknexObject
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
-    private readonly List<Wall> _touchedWalls = [];
+    private readonly List<AcknexObject> _touchedObjects = [];
 
     public Vector3 Position
     {
@@ -148,13 +148,14 @@ public sealed class Player : AcknexObject
 
     /// <summary>
     /// Returns the walls that the horizontal moves since the last call passed through or pushed
-    /// against (see <see cref="LevelCollisionWorld.Move"/>), and starts a new list. A placement
-    /// with <see cref="MoveTo"/> or a position write touches nothing.
+    /// against, and the things and actors they pushed against (see
+    /// <see cref="LevelCollisionWorld.Move"/>), and starts a new list. A placement with
+    /// <see cref="MoveTo"/> or a position write touches nothing.
     /// </summary>
-    public Wall[] TakeTouchedWalls()
+    public AcknexObject[] TakeTouchedObjects()
     {
-        Wall[] touched = [.. _touchedWalls];
-        _touchedWalls.Clear();
+        AcknexObject[] touched = [.. _touchedObjects];
+        _touchedObjects.Clear();
         return touched;
     }
 
@@ -170,7 +171,7 @@ public sealed class Player : AcknexObject
             CanCross,
             EntityCollisionRadius,
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
-            touchedWalls: _touchedWalls);
+            touched: _touchedObjects);
         _region = result.Region;
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;

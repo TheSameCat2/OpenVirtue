@@ -30,7 +30,23 @@ public class PlayerTests
     }
 
     [Fact]
-    public void TakeTouchedWalls_ReportsWallsPassedAndPushedAgainstButNotBeams()
+    public void MoveHorizontal_StepEndingJustShortOfPortalLine_StillCrossesOnTheNextStep()
+    {
+        // Eight steps of 8/14 from y = -4 put the seventh step within float rounding of the portal
+        // line at y = 0; the move must still enter region b (OV-20261019-clip-contact walked the
+        // player across region borders in steps like these).
+        Level level = Load();
+        var player = new Player(level);
+        player.MoveTo(0, 5, -4);
+
+        player.MoveHorizontal(0, 8);
+
+        Assert.Equal(1, player.Region);
+        Assert.Contains(level.Walls[0], player.TakeTouchedObjects());
+    }
+
+    [Fact]
+    public void TakeTouchedObjects_ReportsWallsPassedAndPushedAgainstButNotBeams()
     {
         // OV-20261019-wall-pass-clip: a wall's IF_NEAR fires when the player's movement passes
         // through it or pushes against it; a beam touches nothing.
@@ -38,14 +54,14 @@ public class PlayerTests
         var player = new Player(level);
 
         player.MoveHorizontal(-6, 0); // into the solid region's wall at x = 0
-        Assert.Equal([level.Walls[1]], player.TakeTouchedWalls());
-        Assert.Empty(player.TakeTouchedWalls());
+        Assert.Equal<AcknexObject>([level.Walls[1]], player.TakeTouchedObjects());
+        Assert.Empty(player.TakeTouchedObjects());
 
         player.MoveHorizontal(0, 10); // through the portal at y = 0
-        Assert.Equal([level.Walls[0]], player.TakeTouchedWalls());
+        Assert.Equal<AcknexObject>([level.Walls[0]], player.TakeTouchedObjects());
 
         player.MoveTo(0, 5, -5); // a beam back across the portal
-        Assert.Empty(player.TakeTouchedWalls());
+        Assert.Empty(player.TakeTouchedObjects());
     }
 
     [Fact]

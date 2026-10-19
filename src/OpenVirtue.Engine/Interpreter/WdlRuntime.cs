@@ -1935,6 +1935,11 @@ public sealed class WdlRuntime :
     /// after the player's movement passed through the wall or pushed against it, unless the player
     /// is within its <c>DIST</c>. This leaves the <c>DIST</c> state alone, so no <c>IF_FAR</c>
     /// follows, and with <c>DIST 0</c> it is the only way the wall fires (OV-20261019-wall-pass-clip).
+    /// The same holds for a wall between two regions, and for a thing or actor the player pushed
+    /// against. A thing or actor outside its <c>CLIP_DIST</c> border (see
+    /// <see cref="IsWithinClipDistance"/>) is not tested at all and keeps its state, so it fires
+    /// <c>IF_NEAR</c> when it comes within the border while the player is within <c>DIST</c>, and
+    /// no <c>IF_FAR</c> when it leaves the border (OV-20261019-clip-contact).
     /// </summary>
     private void DispatchProximityEvents()
     {
@@ -1944,12 +1949,17 @@ public sealed class WdlRuntime :
             return;
         }
 
-        Wall[] touchedWalls = player.TakeTouchedWalls();
+        AcknexObject[] touched = player.TakeTouchedObjects();
         foreach (AcknexObject target in CurrentProximityTargets())
         {
             if (!ShouldTrackProximity(target))
             {
                 _proximityStates.Remove(target);
+                continue;
+            }
+
+            if (target is MapEntity && !IsWithinClipDistance(target))
+            {
                 continue;
             }
 
@@ -1964,6 +1974,12 @@ public sealed class WdlRuntime :
                 _proximityStates.Remove(target);
             }
 
+            if (target["BERKELEY"] > 0 && target is MapEntity)
+            {
+                // OV-20261019-clip-contact: a BERKELEY object fired neither hook within or leaving DIST.
+                continue;
+            }
+
             if (isNear && !wasNear)
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
@@ -1972,7 +1988,7 @@ public sealed class WdlRuntime :
             {
                 TriggerObjectActionHook(target, "IF_FAR");
             }
-            else if (!isNear && target is Wall wall && Array.IndexOf(touchedWalls, wall) >= 0)
+            else if (!isNear && Array.IndexOf(touched, target) >= 0)
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
             }
@@ -2085,24 +2101,51 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Whether an object's <c>EACH_TICK</c> runs this cycle. The original runs a wall's only while
-    /// its distance from the player (<see cref="TryProximityDistance"/>) is below the
-    /// <c>CLIP_DIST</c> of the player's region, a thing's below <c>CLIP_DIST × THING_DIST</c> and an
-    /// actor's below <c>CLIP_DIST × ACTOR_DIST</c> (OV-20261019-wall-pass-clip). A thing or actor
-    /// with <c>LIBER</c> set runs at any distance (manual p.71, not measured). Regions are not gated.
+    /// Whether an object's actions run this cycle. The original runs a wall's <c>EACH_TICK</c> only
+    /// while its distance from the player (<see cref="TryProximityDistance"/>) is below
+    /// <c>CLIP_DIST</c>, a thing's below <c>CLIP_DIST × THING_DIST</c> and an actor's below
+    /// <c>CLIP_DIST × ACTOR_DIST</c> (OV-20261019-wall-pass-clip). <c>CLIP_DIST</c> is the smaller
+    /// of the player's region's and the object's own region's (a wall's: its side regions'). Outside
+    /// that border a thing or actor also runs no <c>EACH_CYCLE</c>, does not move and is not
+    /// <c>DIST</c>-tested, unless it is <c>LIBER</c>. A <c>BERKELEY</c> thing or actor is inactive
+    /// while the player is outside its <c>DIST</c>, even in view (OV-20261019-clip-contact).
+    /// Regions are not gated.
     /// </summary>
     private bool IsWithinClipDistance(AcknexObject target)
     {
         if (target is not (Wall or MapEntity) ||
             GetObject("player") is not Player player ||
             RegionAt(player.Region) is not { } region ||
-            target["LIBER"] > 0 ||
             !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
         {
             return true;
         }
 
-        double limit = region["CLIP_DIST"] * target switch
+        if (target is MapEntity && target["BERKELEY"] > 0 && distance > target["DIST"])
+        {
+            return false;
+        }
+
+        if (target["LIBER"] > 0)
+        {
+            return true;
+        }
+
+        double clipDistance = region["CLIP_DIST"];
+        foreach (int own in target switch
+                 {
+                     MapEntity entity => [entity.Region],
+                     Wall wall => [wall.LeftRegion, wall.RightRegion],
+                     _ => Array.Empty<int>(),
+                 })
+        {
+            if (RegionAt(own) is { } ownRegion)
+            {
+                clipDistance = Math.Min(clipDistance, ownRegion["CLIP_DIST"]);
+            }
+        }
+
+        double limit = clipDistance * target switch
         {
             Actor => GetSkill("ACTOR_DIST"),
             MapEntity => GetSkill("THING_DIST"),
@@ -2130,14 +2173,20 @@ public sealed class WdlRuntime :
             actor["IMPACT_VROT"] = 0;
             string? target = actor.Target;
             LevelWay? way = null;
-            bool followsWay = target is null &&
-                              actor.WayName is { } wayName &&
+            // A TARGET naming a way assigns it (p.66), like the WAY property.
+            bool followsWay = (target ?? actor.WayName) is { } wayName &&
                               _level.Ways.TryGetValue(wayName, out way) &&
                               way.Points.Count > 0;
             if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
             {
                 _arrivedTargets.Remove(actor);
                 _actorTargetStates.Remove(actor);
+                continue;
+            }
+
+            // OV-20261019-clip-contact: an actor outside its CLIP_DIST border does not move.
+            if (!IsWithinClipDistance(actor))
+            {
                 continue;
             }
 
@@ -2577,7 +2626,9 @@ public sealed class WdlRuntime :
 
         foreach (AcknexObject target in CurrentCycleTargets())
         {
+            // OV-20261019-clip-contact: a thing or actor outside its CLIP_DIST border runs no EACH_CYCLE.
             if (IsInactiveEntity(target) ||
+                (target is MapEntity && !IsWithinClipDistance(target)) ||
                 AnimationTexture(target) is not { } texture ||
                 (texture.Cycles <= 1 && !texture.IsOneShot))
             {
