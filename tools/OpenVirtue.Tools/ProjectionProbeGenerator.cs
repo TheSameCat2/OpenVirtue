@@ -31,6 +31,8 @@ internal static class ProjectionProbeGenerator
     public const string ProximityProbeName = "proximity-events";
     public const string WallDistanceProbeName = "wall-distance";
     public const string WallPassClipProbeName = "wall-pass-clip";
+    public const string ClipContactProbeName = "clip-contact";
+    public const string BorderClimbProbeName = "border-climb";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -43,6 +45,8 @@ internal static class ProjectionProbeGenerator
     private const string ProximityProbeId = "OV-20261019-proximity-events";
     private const string WallDistanceProbeId = "OV-20261019-wall-distance";
     private const string WallPassClipProbeId = "OV-20261019-wall-pass-clip";
+    private const string ClipContactProbeId = "OV-20261019-clip-contact";
+    private const string BorderClimbProbeId = "OV-20261019-border-climb";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -297,6 +301,8 @@ internal static class ProjectionProbeGenerator
         ProximityProbeName => ProximityProbeId,
         WallDistanceProbeName => WallDistanceProbeId,
         WallPassClipProbeName => WallPassClipProbeId,
+        ClipContactProbeName => ClipContactProbeId,
+        BorderClimbProbeName => BorderClimbProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -404,6 +410,8 @@ internal static class ProjectionProbeGenerator
             case ProximityProbeName:
             case WallDistanceProbeName:
             case WallPassClipProbeName:
+            case ClipContactProbeName:
+            case BorderClimbProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -427,6 +435,8 @@ internal static class ProjectionProbeGenerator
         ProximityProbeName => ProximityProbeCases.Set,
         WallDistanceProbeName => WallDistanceProbeCases.Set,
         WallPassClipProbeName => WallDistanceProbeCases.PassClipSet,
+        ClipContactProbeName => ClipContactProbeCases.Set,
+        BorderClimbProbeName => BorderClimbProbeCases.Set,
         _ => null,
     };
 
@@ -586,7 +596,7 @@ internal static class ProjectionProbeGenerator
                 CEIL_TEX cel_tex;
                 {{variant.Trace?.Map?.RoomBody ?? ""}}
             }
-            {{(variant.Trace?.Map?.PadBody is { } padBody ? PadRegionWdl(variant.Room, padBody) : "")}}
+            {{(variant.Trace?.Map is { PadBody: not null } padMap ? PadRegionWdl(variant.Room, padMap) : "")}}
             REGION solid
             {
                 FLOOR_HGT {{variant.Room.CeilingHeight}};
@@ -723,17 +733,17 @@ internal static class ProjectionProbeGenerator
         return sb.ToString();
     }
 
-    /// <summary>The pad island's region and its invisible, passable boundary wall (see <see cref="TraceProbeMap"/>).</summary>
-    private static string PadRegionWdl(Room room, string body) =>
+    /// <summary>The pad island's region and, unless the case brings its own, its invisible, passable boundary wall (see <see cref="TraceProbeMap"/>).</summary>
+    private static string PadRegionWdl(Room room, TraceProbeMap map) =>
         $$"""
-        WALL pad_wall { TEXTURE red_tex; FLAGS INVISIBLE, PASSABLE; }
+        {{(map.PadWall is null ? "WALL pad_wall { TEXTURE red_tex; FLAGS INVISIBLE, PASSABLE; }" : "")}}
         REGION pad
         {
-            FLOOR_HGT 0;
-            CEIL_HGT {{room.CeilingHeight}};
+            FLOOR_HGT {{map.PadFloor}};
+            CEIL_HGT {{map.PadCeiling ?? room.CeilingHeight}};
             FLOOR_TEX flr_tex;
             CEIL_TEX cel_tex;
-            {{body}}
+            {{map.PadBody}}
         }
 
         """;
@@ -819,7 +829,7 @@ internal static class ProjectionProbeGenerator
         }
         else if (map?.PadBody is not null)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"REGION pad 0 {room.CeilingHeight};#2\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"REGION pad {map.PadFloor} {map.PadCeiling ?? room.CeilingHeight};#2\r\n");
         }
 
         int wall = 0;
@@ -851,7 +861,7 @@ internal static class ProjectionProbeGenerator
             {
                 int from = padFirst + k;
                 int to = padFirst + ((k + 1) % PadCorners.Length);
-                sb.Append(CultureInfo.InvariantCulture, $"WALL pad_wall {from} {to} 2 0 0 0;#{wall++}\r\n");
+                sb.Append(CultureInfo.InvariantCulture, $"WALL {map.PadWall ?? "pad_wall"} {from} {to} 2 0 0 0;#{wall++}\r\n");
             }
         }
 

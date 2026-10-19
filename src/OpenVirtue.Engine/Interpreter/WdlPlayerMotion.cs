@@ -18,7 +18,6 @@ public static class WdlPlayerMotion
         ArgumentNullException.ThrowIfNull(player);
 
         player.EyeHeight = (float)Math.Max(0.01, runtime.GetSkill("PLAYER_SIZE"));
-        player.MinHeadroom = player.EyeHeight;
         player.Width = (float)Math.Max(1.2, runtime.GetSkill("PLAYER_WIDTH"));
         player.ActorWidthFactor = (float)Math.Max(0, runtime.GetSkill("ACTOR_WIDTH"));
         player.ThingWidthFactor = (float)Math.Max(0, runtime.GetSkill("THING_WIDTH"));

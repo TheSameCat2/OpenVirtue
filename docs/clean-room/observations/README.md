@@ -102,3 +102,27 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   below the player region's `CLIP_DIST` (border excluded). A thing's and an actor's run only while
   theirs is below `CLIP_DIST × THING_DIST` or `× ACTOR_DIST` (both default 1). Six DOSBox-X runs;
   implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`.
+
+## Region borders, contact, LIBER/BERKELEY and the CLIP_DIST gate (2026-10-19 — confirmed and implemented)
+
+- `OV-20261019-clip-contact.md` — crossing a wall between two regions fires its `IF_NEAR`, with or
+  without `PASSABLE`. Pushing against a solid thing or actor fires its `IF_NEAR` in every pushing
+  cycle while the player is outside its `DIST`, with no `IF_FAR`. Outside its border
+  (`CLIP_DIST × THING_DIST`/`ACTOR_DIST`) a thing or actor runs no `EACH_TICK` or `EACH_CYCLE`,
+  does not move and is not `DIST`-tested, so leaving the border fires no `IF_FAR`. `LIBER` lifts
+  all of that. `CLIP_DIST` is the smaller of the player's region's and the object's region's. A
+  `BERKELEY` object is active only while the player is within its `DIST`, even in view, and fired
+  no `IF_NEAR`/`IF_FAR`. A `TARGET` naming a way makes the actor patrol it. The player walked onto
+  floors 14 and 16 steps higher, so contact with an unenterable region border is still open.
+  Seventeen DOSBox-X runs; implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`.
+
+## Region-border climb and headroom (2026-10-19 — confirmed and implemented)
+
+- `OV-20261019-border-climb.md` — a `PASSABLE` wall lets the player through whatever the
+  heights. Through any other wall between two regions the player enters only if the new floor is
+  less than `PLAYER_CLIMB` above the feet (`PLAYER_Z − PLAYER_SIZE`, so a raised eye climbs
+  higher), and the eye lies above the new floor and below the new ceiling. `PLAYER_SIZE` and the
+  headroom count only through those, and a region with floor = ceiling always holds. Pushing
+  against a border that blocks fires its `IF_NEAR` in every pushing cycle. The runtime keeps the
+  eye within the floor + 0.35 and the ceiling − 0.35 (not implemented). Fourteen DOSBox-X runs;
+  implemented in `Player`.

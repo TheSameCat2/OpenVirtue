@@ -35,10 +35,11 @@ public sealed class LevelCollisionWorld
 
     /// <summary>
     /// Moves a circle through portals while sliding along solid walls and entities. When
-    /// <paramref name="touchedWalls"/> is given, every wall the move touched is added to it: a wall
-    /// the circle may cross whose segment a step passed through, end points included, and a solid
-    /// wall that pushed the circle back. A step that ends on a wall's line touches it, and so does
-    /// the next step off it (OV-20261019-wall-pass-clip).
+    /// <paramref name="touched"/> is given, every object the move touched is added to it: a wall the
+    /// circle may cross whose segment a step passed through, end points included (a portal between
+    /// two regions too, OV-20261019-clip-contact), a solid wall that pushed the circle back, and a
+    /// solid thing or actor that pushed it back (OV-20261019-clip-contact). A step that ends on a
+    /// wall's line touches it, and so does the next step off it (OV-20261019-wall-pass-clip).
     /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
@@ -49,7 +50,7 @@ public sealed class LevelCollisionWorld
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity = null,
-        ICollection<Wall>? touchedWalls = null)
+        ICollection<AcknexObject>? touched = null)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -78,9 +79,9 @@ public sealed class LevelCollisionWorld
             for (int pass = 0; pass < 4; pass++)
             {
                 bool adjusted = ResolveWalls(
-                    from, region, radius, canCross, crossedWallIndex, touchedWalls, ref desired);
+                    from, region, radius, canCross, crossedWallIndex, touched, ref desired);
                 adjusted |= ResolveEntities(
-                    from, region, radius, entityRadius, canCrossEntity, ignoredEntity, ref desired);
+                    from, region, radius, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
                 collided |= adjusted;
                 if (!adjusted)
                 {
@@ -88,9 +89,9 @@ public sealed class LevelCollisionWorld
                 }
             }
 
-            if (touchedWalls is not null)
+            if (touched is not null)
             {
-                AddPassedWalls(from, desired, region, canCross, touchedWalls);
+                AddPassedWalls(from, desired, region, canCross, touched);
             }
 
             position = desired;
@@ -105,7 +106,7 @@ public sealed class LevelCollisionWorld
         float radius,
         Func<Wall, int, int, bool> canCross,
         int ignoredWallIndex,
-        ICollection<Wall>? touchedWalls,
+        ICollection<AcknexObject>? touched,
         ref Vector2 desired)
     {
         if (!_regionWalls.TryGetValue(region, out List<int>? walls))
@@ -138,9 +139,9 @@ public sealed class LevelCollisionWorld
 
             desired = closest + (CollisionNormal(from, desired, closest, a, b, along) * radius);
             adjusted = true;
-            if (touchedWalls is not null && !touchedWalls.Contains(wall))
+            if (touched is not null && !touched.Contains(wall))
             {
-                touchedWalls.Add(wall);
+                touched.Add(wall);
             }
         }
 
@@ -157,7 +158,7 @@ public sealed class LevelCollisionWorld
         Vector2 to,
         int region,
         Func<Wall, int, int, bool> canCross,
-        ICollection<Wall> touchedWalls)
+        ICollection<AcknexObject> touched)
     {
         if (!_regionWalls.TryGetValue(region, out List<int>? walls))
         {
@@ -167,13 +168,13 @@ public sealed class LevelCollisionWorld
         foreach (int wallIndex in walls)
         {
             Wall wall = _level.Walls[wallIndex];
-            if (!touchedWalls.Contains(wall) &&
+            if (!touched.Contains(wall) &&
                 Vertex(wall.Vertex1, out Vector2 a) &&
                 Vertex(wall.Vertex2, out Vector2 b) &&
                 PassesThrough(from, to, a, b) &&
                 canCross(wall, region, OtherRegion(wall, region)))
             {
-                touchedWalls.Add(wall);
+                touched.Add(wall);
             }
         }
     }
@@ -202,6 +203,7 @@ public sealed class LevelCollisionWorld
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity,
+        ICollection<AcknexObject>? touched,
         ref Vector2 desired)
     {
         bool adjusted = false;
@@ -230,6 +232,10 @@ public sealed class LevelCollisionWorld
                     : Vector2.UnitX;
             desired = center + (normal * combinedRadius);
             adjusted = true;
+            if (touched is not null && !touched.Contains(entity))
+            {
+                touched.Add(entity);
+            }
         }
 
         return adjusted;
@@ -359,12 +365,18 @@ public sealed class LevelCollisionWorld
         return Orient(a, b, from) >= 0 ? leftNormal : -leftNormal;
     }
 
+    /// <summary>
+    /// Whether a step changes sides of the portal line within the segment. A step that starts
+    /// within <c>Epsilon</c> of the line counts when it ends clearly off it: the step before may
+    /// have stopped just short of the line, on the old side, and the caller only changes the region
+    /// when the end lies on the other region's side.
+    /// </summary>
     private static bool CrossesPortal(Vector2 from, Vector2 to, Vector2 a, Vector2 b)
     {
         const float Epsilon = 0.00001f;
         float fromSide = Orient(a, b, from);
         float toSide = Orient(a, b, to);
-        if (MathF.Abs(fromSide) <= Epsilon ||
+        if ((MathF.Abs(fromSide) <= Epsilon && MathF.Abs(toSide) <= Epsilon) ||
             (fromSide > 0 && toSide > Epsilon) ||
             (fromSide < 0 && toSide < -Epsilon))
         {

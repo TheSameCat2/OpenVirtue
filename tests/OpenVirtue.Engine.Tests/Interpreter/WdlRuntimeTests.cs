@@ -3252,6 +3252,253 @@ public class WdlRuntimeTests
         }
     }
 
+    // Two regions joined at x = 0: room (x < 0, region 0) and annex (x > 0, region 1).
+    private const string BorderMap =
+        "VERTEX 0 -8 0;#0\nVERTEX 0 8 0;#1\nREGION room 0 10;#0\nREGION annex 0 10;#1\n" +
+        "WALL border 0 1 0 1 0 0;#0\nPLAYER_START -4 0 0 0;#1";
+
+    [Fact]
+    public void Tick_PlayerProximity_CrossingRegionBorderFiresNearWithoutPassable()
+    {
+        // OV-20261019-clip-contact: a wall between two regions is passed whatever its flags, and
+        // every crossing fires its IF_NEAR (DIST 0), in either direction, with no IF_FAR.
+        Level level = LoadWithMap(
+            BorderMap,
+            GateCounters + "WALL border { IF_NEAR near_gate; IF_FAR far_gate; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(8, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, player.Region);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(-8, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, player.Region);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    // A 2-step wide post at (10, 0) (contact within 2.2 steps) and a guard of the same size at (10, 20).
+    private const string ContactMap =
+        "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING post 10 0 0 0;#0\nACTOR guard 10 20 0 0;#1\n" +
+        "PLAYER_START 5 0 0 0;#2";
+
+    [Fact]
+    public void Tick_PlayerProximity_PushingAgainstThingOrActorFiresNearEveryCycleOutsideDist()
+    {
+        // OV-20261019-clip-contact: every cycle of pushing against a solid thing or actor fires its
+        // IF_NEAR while the player is outside its DIST, with no IF_FAR; standing against it does
+        // not, and within DIST the contact is silent.
+        Level level = LoadWithMap(
+            ContactMap,
+            GateCounters + "SKILL guard_near { VAL 0; } SKILL guard_far { VAL 0; } " +
+            "BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex { BMAPS postMap; } " +
+            "THING post { TEXTURE postTex; IF_NEAR near_gate; IF_FAR far_gate; } " +
+            "ACTOR guard { TEXTURE postTex; DIST 8; IF_NEAR guard_n; IF_FAR guard_f; } " +
+            "ACTION guard_n { RULE guard_near += 1; } ACTION guard_f { RULE guard_far += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(4, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(7.8f, player.Position.X, 3);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        player.MoveHorizontal(1, 0);
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+        player.MoveHorizontal(-4, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+
+        player.MoveTo(0, 1, 20); // 9 from the guard
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(1, 0); // 8: enters DIST
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(10, 0); // pushes against it within DIST
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("guard_near"));
+        Assert.Equal(0, runtime.GetSkill("guard_far"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_ThingOutsideClipDistIsNotDistTestedUnlessLiber()
+    {
+        // OV-20261019-clip-contact: with CLIP_DIST 10 and DIST 15, a thing fires IF_NEAR only when it
+        // comes within the CLIP_DIST border while the player is within DIST, and no IF_FAR when it
+        // leaves the border; a LIBER thing fires at DIST both ways.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING post 24 -16 0 0;#0\nTHING beacon 24 16 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            GateCounters + "SKILL beacon_near { VAL 0; } SKILL beacon_far { VAL 0; } REGION room { CLIP_DIST 10; } " +
+            "THING post { DIST 15; IF_NEAR near_gate; IF_FAR far_gate; } " +
+            "THING beacon { DIST 15; IF_NEAR beacon_n; IF_FAR beacon_f; FLAGS LIBER; } " +
+            "ACTION beacon_n { RULE beacon_near += 1; } ACTION beacon_f { RULE beacon_far += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        Assert.Equal((0, 0), Hooks(12, -16)); // 12: within DIST, outside the border
+        Assert.Equal((1, 0), Hooks(15, -16)); // 9
+        Assert.Equal((1, 0), Hooks(12, -16));
+        Assert.Equal((1, 0), Hooks(0, -16)); // 24: beyond DIST, no IF_FAR
+
+        Assert.Equal(0, runtime.GetSkill("beacon_near"));
+        player.MoveTo(0, 10, 16); // 14
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("beacon_near"));
+        player.MoveTo(0, 0, 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("beacon_far"));
+
+        (double Near, double Far) Hooks(float x, float y)
+        {
+            player.MoveTo(0, x, y);
+            runtime.Tick(1.0 / 16);
+            return (runtime.GetSkill("near_count"), runtime.GetSkill("far_count"));
+        }
+    }
+
+    [Fact]
+    public void Tick_ActorTargets_ActorOutsideClipDistDoesNotMoveUnlessLiber()
+    {
+        // OV-20261019-clip-contact: a FOLLOW or WAY actor stands still while outside
+        // CLIP_DIST x ACTOR_DIST and moves again within it; a LIBER actor moves at any distance.
+        // A TARGET naming a way assigns that way (p.66).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR follower 40 0 180 0;#0\nACTOR patrol 30 12 0 0;#1\n" +
+            "ACTOR scout 40 -12 180 0;#2\nWAY route 30 12 46 12;#3\nPLAYER_START 0 0 0 0;#4";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; WAY route; REGION room { CLIP_DIST 10; } " +
+            "ACTOR follower { TARGET FOLLOW; SPEED 1; } ACTOR patrol { TARGET route; SPEED 1; } " +
+            "ACTOR scout { TARGET FOLLOW; SPEED 1; FLAGS LIBER; }");
+        Actor follower = level.Actors[0];
+        Actor patrol = level.Actors[1];
+        Actor scout = level.Actors[2];
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(40, follower.X, 6);
+        Assert.Equal(30, patrol.X, 6);
+        Assert.True(scout.X < 40);
+
+        player.MoveTo(0, 31, 0); // 9 from the follower
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(39, follower.X, 6);
+        player.MoveTo(0, 0, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(39, follower.X, 6);
+
+        player.MoveTo(0, 32, 8); // 6 from the patrol, which starts on its first waypoint
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(31, patrol.X, 6);
+    }
+
+    [Fact]
+    public void Tick_ObjectEachCycle_ThingOutsideClipDistDoesNotCycle()
+    {
+        // OV-20261019-clip-contact: a thing's EACH_CYCLE runs only within CLIP_DIST x THING_DIST.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING runner 20 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL cycles { VAL 0; } REGION room { CLIP_DIST 10; } " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 2; BMAPS p1,p2; DELAY 1,1; } " +
+            "THING runner { TEXTURE runnerTex; EACH_CYCLE runner_cycle; } ACTION runner_cycle { RULE cycles += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        for (int i = 0; i < 8; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(0, runtime.GetSkill("cycles"));
+        player.MoveTo(0, 15, 0);
+        for (int i = 0; i < 8; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.True(runtime.GetSkill("cycles") > 0);
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_ClipDistIsTheSmallerOfThePlayersAndTheObjectsRegion()
+    {
+        // OV-20261019-clip-contact: the CLIP_DIST border is the smaller of the player's region's and
+        // the object's own region's CLIP_DIST.
+        const string map =
+            "VERTEX 0 -8 0;#0\nVERTEX 0 8 0;#1\nREGION room 0 10;#0\nREGION annex 0 10;#1\n" +
+            "WALL border 0 1 0 1 0 0;#0\nTHING near_post -20 0 0 0;#1\nTHING far_post 20 0 0 1;#2\n" +
+            "PLAYER_START -4 0 0 0;#3";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL near_runs { VAL 0; } SKILL far_runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 30; } REGION annex { CLIP_DIST 10; } " +
+            "THING near_post { EACH_TICK near_tick; } THING far_post { EACH_TICK far_tick; } " +
+            "ACTION near_tick { RULE near_runs += 1; } ACTION far_tick { RULE far_runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        Assert.Equal((1, 0), Runs(0, -4)); // room: 16 from near_post (< 30), 24 from far_post (annex, 10)
+        Assert.Equal((0, 0), Runs(1, 4)); // annex: 24 from near_post (room, but the player's 10)
+        Assert.Equal((0, 1), Runs(1, 12)); // 8 from far_post
+
+        (double Near, double Far) Runs(int region, float x)
+        {
+            player.MoveTo(region, x, 0);
+            double near = runtime.GetSkill("near_runs");
+            double far = runtime.GetSkill("far_runs");
+            runtime.Tick(1.0 / 16);
+            return (runtime.GetSkill("near_runs") - near, runtime.GetSkill("far_runs") - far);
+        }
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_BerkeleyThingRunsOnlyWithinDistAndFiresNoProximityHooks()
+    {
+        // OV-20261019-clip-contact: a BERKELEY thing's EACH_TICK runs only while the player is within
+        // its DIST, also when it is in view, and it fires neither IF_NEAR nor IF_FAR.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING ghost 10 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            GateCounters + "SKILL runs { VAL 0; } " +
+            "THING ghost { DIST 4; IF_NEAR near_gate; IF_FAR far_gate; EACH_TICK ghost_tick; FLAGS BERKELEY; } " +
+            "ACTION ghost_tick { RULE runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(0, runtime.GetSkill("runs"));
+        player.MoveTo(0, 7, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("runs"));
+        player.MoveTo(0, 0, 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("runs"));
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
     [Fact]
     public void Runtime_ObjectActionHooks_CanBeReassignedWithSetInstructions()
     {

@@ -18,7 +18,8 @@ public readonly record struct PlayerVerticalTransition(
 /// First-person player physics over a level's sector geometry: tracks the region the player
 /// stands in, resolves floor/ceiling motion, and moves horizontally using portal
 /// crossing — passing through walls into neighbouring rooms, or being blocked by "solid"
-/// walls (where the neighbour has no headroom or the step up is too high).
+/// walls (where the step up from the feet is too high or the eye would end up outside the
+/// neighbour's floor and ceiling, OV-20261019-border-climb).
 /// </summary>
 /// <remarks>
 /// Horizontal movement is point-based until radius-aware collision is applied.
@@ -33,7 +34,7 @@ public sealed class Player : AcknexObject
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
-    private readonly List<Wall> _touchedWalls = [];
+    private readonly List<AcknexObject> _touchedObjects = [];
 
     public Vector3 Position
     {
@@ -62,10 +63,10 @@ public sealed class Player : AcknexObject
     /// <summary>Global collision-width multiplier for things.</summary>
     public float ThingWidthFactor { get; set; } = 1f;
 
-    /// <summary>Minimum neighbour headroom required to step through a wall (else it is solid).</summary>
-    public float MinHeadroom { get; set; } = 3f;
-
-    /// <summary>Largest floor rise the player can step up through a portal.</summary>
+    /// <summary>
+    /// <c>PLAYER_CLIMB</c>: a neighbouring floor must be less than this far above the player's
+    /// feet (eye height minus <see cref="EyeHeight"/>) to step onto it (OV-20261019-border-climb).
+    /// </summary>
     public float StepUp { get; set; } = 1.5f;
 
     /// <summary>Downward acceleration applied per tick.</summary>
@@ -148,13 +149,14 @@ public sealed class Player : AcknexObject
 
     /// <summary>
     /// Returns the walls that the horizontal moves since the last call passed through or pushed
-    /// against (see <see cref="LevelCollisionWorld.Move"/>), and starts a new list. A placement
-    /// with <see cref="MoveTo"/> or a position write touches nothing.
+    /// against, and the things and actors they pushed against (see
+    /// <see cref="LevelCollisionWorld.Move"/>), and starts a new list. A placement with
+    /// <see cref="MoveTo"/> or a position write touches nothing.
     /// </summary>
-    public Wall[] TakeTouchedWalls()
+    public AcknexObject[] TakeTouchedObjects()
     {
-        Wall[] touched = [.. _touchedWalls];
-        _touchedWalls.Clear();
+        AcknexObject[] touched = [.. _touchedObjects];
+        _touchedObjects.Clear();
         return touched;
     }
 
@@ -170,20 +172,30 @@ public sealed class Player : AcknexObject
             CanCross,
             EntityCollisionRadius,
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
-            touchedWalls: _touchedWalls);
+            touched: _touchedObjects);
         _region = result.Region;
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
     }
 
+    /// <summary>
+    /// A wall with one region on both sides is crossable only when <c>PASSABLE</c>. A wall between
+    /// two regions is crossable when <c>PASSABLE</c>, whatever the heights, or when the player can
+    /// enter the other region (OV-20261019-border-climb).
+    /// </summary>
     private bool CanCross(Wall wall, int currentRegion, int otherRegion)
     {
-        if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+        if (wall["PASSABLE"] > 0)
         {
-            return wall["PASSABLE"] > 0;
+            return true;
         }
 
-        return Enterable(currentRegion, otherRegion);
+        if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+        {
+            return false;
+        }
+
+        return Enterable(otherRegion);
     }
 
     private float EntityCollisionRadius(MapEntity entity)
@@ -314,12 +326,7 @@ public sealed class Player : AcknexObject
     private bool CanCross(Wall wall, out int other)
     {
         other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
-        if (other == _region || other < 0 || other >= _level.Regions.Count)
-        {
-            return wall["passable"] > 0;
-        }
-
-        return Enterable(other);
+        return CanCross(wall, _region, other);
     }
 
     private static Vector2 ClosestPoint(Vector2 point, Vector2 a, Vector2 b, out float along)
@@ -462,19 +469,26 @@ public sealed class Player : AcknexObject
         list.Add(wallIndex);
     }
 
-    private bool Enterable(int region) => Enterable(_region, region);
-
-    private bool Enterable(int fromRegion, int region)
+    /// <summary>
+    /// Whether the player may walk into <paramref name="region"/> through a wall that is not
+    /// <c>PASSABLE</c>, measured in patched V3.963 (OV-20261019-border-climb): the region's floor
+    /// must be less than <see cref="StepUp"/> above the player's feet (a step equal to it blocks),
+    /// and the eye must lie above its floor and below its ceiling. The step is taken from the feet,
+    /// not from the current floor, so a raised eye climbs higher and a stepping-down player who has
+    /// not sunk walks back up. Neither <c>PLAYER_SIZE</c> nor the region's headroom count otherwise:
+    /// a player taller than the headroom enters as long as the eye fits.
+    /// </summary>
+    private bool Enterable(int region)
     {
         if (region < 0 || region >= _level.Regions.Count)
         {
             return false;
         }
 
-        var target = _level.Regions[region];
-        float headroom = (float)(target.CeilHeight - target.FloorHeight);
-        float step = (float)target.FloorHeight - FloorOf(fromRegion);
-        return headroom >= MinHeadroom && step <= StepUp;
+        float eye = _position.Y;
+        float feet = eye - EyeHeight;
+        float floor = FloorOf(region);
+        return floor - feet < StepUp && eye > floor && eye < CeilingOf(region);
     }
 
     private bool TryDiveRegion(int region, out int below)
