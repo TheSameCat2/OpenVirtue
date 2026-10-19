@@ -136,10 +136,15 @@ floor 10; eye 3.9 vs 4.1 under ceiling 4). medium for rule 6: the margin 0.35 wa
 cases, but the order of the two clamps is only known from the floor-16/ceiling-16 pad.
 
 ## Open Questions
+Answered by OV-20261019-eye-clamp:
 - The player stopped 1.25 from a blocking region border (y 10.751–10.755 against y = 12), not at
-  `PLAYER_WIDTH` 1.2. OpenVirtue stops at `PLAYER_WIDTH`.
-- The eye clamp (rule 6) is not implemented. OpenVirtue's `Player.MoveVertical` clamps the eye to
-  the floor + `PLAYER_SIZE` and the ceiling, and only while `PLAYER_VZ` moves it.
+  `PLAYER_WIDTH` 1.2. Solid walls and blocking borders both stop the player 0.01–0.05 beyond
+  `PLAYER_WIDTH`, whatever its value; OpenVirtue now stops at `PLAYER_WIDTH` + 0.05.
+- The eye clamp (rule 6) is implemented as `Player.ClampEye`, after every movement frame.
+  `PLAYER_VZ` moves the eye freely (the feet sink below the floor), the clamp leaves `PLAYER_VZ`
+  alone and adds its correction to `IMPACT_VZ`.
+
+Still open:
 - How exactly the eye has to lie above the floor (strictly, or by less than 0.1), and whether
   the floor is sampled at the player's position on slopes, was not probed.
 - `IMPASSABLE`, an `INVISIBLE` region border (p.53 says it must have one region on both sides),
@@ -163,4 +168,5 @@ not `PASSABLE` is crossable when `Player.Enterable` holds:
 `Position.Y` (`PLAYER_Z`), `EyeHeight` is `PLAYER_SIZE` and `StepUp` is `PLAYER_CLIMB`, and the
 floor and ceiling are the other region's, sampled at the player's position. `MinHeadroom` is
 gone. A blocked border is a solid wall to `LevelCollisionWorld`, which already reports it as
-touched on every pushing move, so `WdlRuntime` fires its `IF_NEAR` every cycle.
+touched on every pushing move, so `WdlRuntime` fires its `IF_NEAR` every cycle. Rule 6 and the
+stop distance are implemented with OV-20261019-eye-clamp.

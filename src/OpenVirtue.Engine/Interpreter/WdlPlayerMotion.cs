@@ -18,7 +18,9 @@ public static class WdlPlayerMotion
         ArgumentNullException.ThrowIfNull(player);
 
         player.EyeHeight = (float)Math.Max(0.01, runtime.GetSkill("PLAYER_SIZE"));
-        player.Width = (float)Math.Max(1.2, runtime.GetSkill("PLAYER_WIDTH"));
+        // The manual's 1.2 minimum (p.109) is not enforced: PLAYER_WIDTH 0.5 held the player
+        // 0.55 from a wall (OV-20261019-eye-clamp).
+        player.Width = (float)Math.Max(0, runtime.GetSkill("PLAYER_WIDTH"));
         player.ActorWidthFactor = (float)Math.Max(0, runtime.GetSkill("ACTOR_WIDTH"));
         player.ThingWidthFactor = (float)Math.Max(0, runtime.GetSkill("THING_WIDTH"));
         player.StepUp = (float)Math.Max(0, runtime.GetSkill("PLAYER_CLIMB"));
@@ -41,13 +43,12 @@ public static class WdlPlayerMotion
         runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + actualVelocityX - requestedVelocityX);
         runtime.SetSkill("IMPACT_VY", runtime.GetSkill("IMPACT_VY") + actualVelocityY - requestedVelocityY);
 
-        double requestedVelocityZ = runtime.GetSkill("PLAYER_VZ");
-        float verticalDisplacement = timeCorrection > 0
-            ? player.MoveVertical((float)(requestedVelocityZ * timeCorrection))
-            : 0;
-        double actualVelocityZ = timeCorrection > 0 ? verticalDisplacement / timeCorrection : requestedVelocityZ;
-        runtime.SetSkill("PLAYER_VZ", actualVelocityZ);
-        runtime.SetSkill("IMPACT_VZ", runtime.GetSkill("IMPACT_VZ") + actualVelocityZ - requestedVelocityZ);
+        // PLAYER_VZ moves the eye freely (the feet may sink below the floor) and keeps its value;
+        // the eye clamp then holds the eye inside the region and adds its correction, in steps,
+        // to IMPACT_VZ, also when a script moved PLAYER_Z out of range (OV-20261019-eye-clamp).
+        player.MoveVertical(timeCorrection > 0 ? (float)(runtime.GetSkill("PLAYER_VZ") * VerticalScale(timeCorrection)) : 0);
+
+        runtime.SetSkill("IMPACT_VZ", runtime.GetSkill("IMPACT_VZ") + player.ClampEye());
         foreach (PlayerVerticalTransition transition in player.VerticalTransitions)
         {
             runtime.DispatchPlayerVerticalTransition(transition);
@@ -89,6 +90,14 @@ public static class WdlPlayerMotion
         runtime.SetSkill("PLAYER_HGT", player.Position.Y - runtime.GetSkill("PLAYER_SIZE") - player.FloorHeight);
         runtime.SetSkill("PLAYER_DEPTH", player.WaterDepth);
     }
+
+    /// <summary>
+    /// How many ticks of <c>PLAYER_VZ</c> one frame applies: patched V3.963 moved the eye by
+    /// <c>PLAYER_VZ × TIME_CORR</c> only while <c>TIME_CORR</c> was above 4, and by
+    /// <c>4 × PLAYER_VZ</c> at every <c>TIME_CORR</c> from 0.25 to 2.4 (OV-20261019-eye-clamp). The
+    /// horizontal velocities scale by <c>TIME_CORR</c> alone.
+    /// </summary>
+    private static double VerticalScale(double timeCorrection) => Math.Max(timeCorrection, 4);
 
     private static double NormalizeAngle(double angle)
     {

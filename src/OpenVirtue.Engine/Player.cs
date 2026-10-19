@@ -46,16 +46,34 @@ public sealed class Player : AcknexObject
 
     public float VelocityY => _velocityY;
 
+    /// <summary>Whether the feet are on or below the floor of a region the player cannot dive through.</summary>
     public bool Grounded { get; private set; }
 
     /// <summary>Vertical region transitions produced by the latest velocity move.</summary>
     public IReadOnlyList<PlayerVerticalTransition> VerticalTransitions => _verticalTransitions;
 
+    /// <summary>
+    /// How close the runtime lets the eye come to the floor and the ceiling of the player's
+    /// region (<see cref="ClampEye"/>; OV-20261019-border-climb, OV-20261019-eye-clamp).
+    /// </summary>
+    public const float EyeMargin = 0.35f;
+
     /// <summary>Distance between the player's feet and eyes.</summary>
     public float EyeHeight { get; set; } = 3f;
 
-    /// <summary>Minimum distance maintained from solid walls and objects.</summary>
+    /// <summary>
+    /// <c>PLAYER_WIDTH</c>: the minimum distance kept from solid walls and objects. A solid wall
+    /// (or a region border the player cannot enter) holds the player <see cref="WallClearance"/>
+    /// further away.
+    /// </summary>
     public float Width { get; set; } = 1.2f;
+
+    /// <summary>
+    /// How much further than <see cref="Width"/> a solid wall or a blocking region border stops
+    /// the player: patched V3.963 stopped walks 0.01–0.05 (mostly 0.045–0.05) beyond
+    /// <c>PLAYER_WIDTH</c> 0.5, 1.2, 2 and 3, at any speed (OV-20261019-eye-clamp).
+    /// </summary>
+    public const float WallClearance = 0.05f;
 
     /// <summary>Global collision-width multiplier for actors.</summary>
     public float ActorWidthFactor { get; set; } = 1f;
@@ -172,7 +190,8 @@ public sealed class Player : AcknexObject
             CanCross,
             EntityCollisionRadius,
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
-            touched: _touchedObjects);
+            touched: _touchedObjects,
+            wallClearance: WallClearance);
         _region = result.Region;
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
@@ -372,19 +391,23 @@ public sealed class Player : AcknexObject
         return Orient(a, b, from) >= 0 ? leftNormal : -leftNormal;
     }
 
-    /// <summary>Moves the player's eye vertically, clamping velocity motion to floor and ceiling.</summary>
+    /// <summary>
+    /// Moves the player's eye vertically by <paramref name="dy"/>, through linked <c>BELOW</c>
+    /// surfaces (<c>IF_DIVE</c>/<c>IF_ARISE</c>). Nothing else holds the eye: the feet may sink
+    /// below the floor, and only <see cref="ClampEye"/> keeps the eye inside the region
+    /// (OV-20261019-eye-clamp).
+    /// </summary>
+    /// <returns>The vertical displacement, <paramref name="dy"/>.</returns>
     public float MoveVertical(float dy)
     {
         _verticalTransitions.Clear();
         if (dy == 0)
         {
-            Grounded = !TryDiveRegion(_region, out _) &&
-                       _position.Y - EyeHeight <= FloorOf(_region) + 0.0001f;
+            UpdateGrounded();
             return 0;
         }
 
-        float from = _position.Y;
-        float requested = from + dy;
+        float requested = _position.Y + dy;
         for (int pass = 0; pass < 4; pass++)
         {
             if (dy < 0 &&
@@ -412,14 +435,32 @@ public sealed class Player : AcknexObject
             break;
         }
 
-        bool permeableFloor = TryDiveRegion(_region, out _);
-        float floor = FloorOf(_region) + (permeableFloor ? 0 : EyeHeight);
-        float ceiling = CeilingOf(_region);
-        float to = Math.Clamp(requested, floor, Math.Max(floor, ceiling));
-        _position.Y = to;
-        Grounded = !permeableFloor && to <= floor + 0.0001f;
-        return to - from;
+        _position.Y = requested;
+        UpdateGrounded();
+        return dy;
     }
+
+    /// <summary>
+    /// Keeps the eye at least <see cref="EyeMargin"/> above the floor and below the ceiling of the
+    /// player's region, at the player's position, as patched V3.963 does after every movement
+    /// (OV-20261019-border-climb, OV-20261019-eye-clamp). When the two overlap (headroom below
+    /// twice the margin) the ceiling wins. An eye already inside is left alone, whatever
+    /// <c>PLAYER_SIZE</c>: the feet may hang above or sink below the floor.
+    /// </summary>
+    /// <returns>The correction applied to the eye height (positive when it was raised).</returns>
+    public float ClampEye()
+    {
+        float before = _position.Y;
+        float eye = Math.Max(before, FloorOf(_region) + EyeMargin);
+        eye = Math.Min(eye, CeilingOf(_region) - EyeMargin);
+        _position.Y = eye;
+        UpdateGrounded();
+        return eye - before;
+    }
+
+    private void UpdateGrounded() =>
+        Grounded = !TryDiveRegion(_region, out _) &&
+                   _position.Y - EyeHeight <= FloorOf(_region) + 0.0001f;
 
     /// <summary>Advances vertical physics one tick: gravity, then land on the current region's floor.</summary>
     public void Tick()
