@@ -153,7 +153,13 @@ public sealed partial class RetailSmokeTests
                     graphics);
                 host.Boot();
                 var session = new Session(host, platform, graphics, input, _output);
-                session.Run(120);
+
+                // The first frames carry the boot and upload hitches, so only the second half is
+                // timed. The rate is logged, not asserted: CI's llvmpipe is far slower.
+                session.Run(60);
+                session.ResetTiming();
+                session.Run(60);
+                _output.WriteLine($"{name}: {session.TimingSummary()}");
                 Assert.False(host.ExitRequested, $"{name} asked to exit: {host.StatusText}");
                 Assert.Contains("IF_START ran", host.StatusText, StringComparison.Ordinal);
                 session.Capture($"archive-{name.ToLowerInvariant()}");
@@ -181,6 +187,7 @@ public sealed partial class RetailSmokeTests
             return false;
         }
 
+        _output.WriteLine($"GL {graphics?.Version} renderer {graphics?.Renderer}");
         return true;
     }
 
@@ -282,7 +289,32 @@ public sealed partial class RetailSmokeTests
         ScriptedInput input,
         ITestOutputHelper output)
     {
+        private int _timedFrames;
+        private TimeSpan _timedWork;
+        private TimeSpan _timedWall;
+
         public int Frames { get; private set; }
+
+        /// <summary>Starts a new window for <see cref="TimingSummary"/>.</summary>
+        public void ResetTiming()
+        {
+            _timedFrames = 0;
+            _timedWork = TimeSpan.Zero;
+            _timedWall = TimeSpan.Zero;
+        }
+
+        /// <summary>
+        /// The mean host frame time since <see cref="ResetTiming"/>, without the 16 ms pacing sleep,
+        /// as an uncapped rate, beside the paced rate the frames actually ran at.
+        /// </summary>
+        public string TimingSummary()
+        {
+            int frames = Math.Max(1, _timedFrames);
+            double workMs = _timedWork.TotalMilliseconds / frames;
+            double wallMs = _timedWall.TotalMilliseconds / frames;
+            return FormattableString.Invariant(
+                $"{workMs:F2} ms/frame over {_timedFrames} frames ({1000 / Math.Max(workMs, 0.001):F0} FPS uncapped, {1000 / Math.Max(wallMs, 0.001):F0} FPS paced) | {host.StatusText}");
+        }
 
         public void Press(HostKey key)
         {
@@ -338,6 +370,10 @@ public sealed partial class RetailSmokeTests
             {
                 Thread.Sleep(wait);
             }
+
+            _timedFrames++;
+            _timedWork += spent;
+            _timedWall += Stopwatch.GetElapsedTime(started);
         }
 
         private static int DistinctColors(RgbaImage image)

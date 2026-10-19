@@ -105,6 +105,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
         _white = CreateTexture(new TextureImage(1, 1, [255, 255, 255, 255]));
         Version = _gl.GetStringS(StringName.Version) ?? "";
+        Renderer = _gl.GetStringS(StringName.Renderer) ?? "";
     }
 
     public int Width { get; private set; }
@@ -112,6 +113,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     public int Height { get; private set; }
 
     public string Version { get; }
+
+    /// <summary>The GL_RENDERER string, which tells a hardware driver from a software one such as llvmpipe.</summary>
+    public string Renderer { get; }
 
     public void Resize(int width, int height)
     {
