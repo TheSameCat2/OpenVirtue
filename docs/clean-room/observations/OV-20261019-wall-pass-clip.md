@@ -121,6 +121,10 @@ printed to three decimals. What "on the line" means in the original's own number
 measured.
 
 ## Open Questions
+Measured further by OV-20261019-clip-contact: region-border crossings, `LIBER`, the other gated
+object actions, actor movement, thing and actor contact, and regions with different `CLIP_DIST`s.
+No unenterable region border was found there, so contact with one is still open.
+
 - Contact with a solid wall that separates two regions (a region border the player cannot step
   onto) was not probed; OpenVirtue treats it like a free-standing solid wall.
 - Whether passing through a wall that separates two regions fires its `IF_NEAR` is not probed

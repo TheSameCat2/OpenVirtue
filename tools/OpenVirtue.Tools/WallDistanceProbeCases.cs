@@ -115,7 +115,7 @@ internal static class WallDistanceProbeCases
     /// every 2 ticks. After a gap the first run prints at once, so the lines show when the action
     /// stopped and started running.
     /// </summary>
-    private static string CountingTick(string name, string token, string prefix) =>
+    internal static string CountingTick(string name, string token, string prefix) =>
         $"SKILL {prefix}_k {{ VAL 0; }}\nSKILL {prefix}_t {{ VAL 0; }}\nSKILL {prefix}_d {{ VAL 0; }}\n" +
         Action(
             name,
