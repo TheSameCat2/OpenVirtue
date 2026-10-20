@@ -120,7 +120,9 @@ placements. medium for the contact reading, which rests on one case.
   cycle when `DIST` is below the contact distance, and what does that do to `IF_FAR`? In
   flic-detail `near-control` the player was beamed 4 steps from a 16-step THING (`DIST` 6,
   `IF_FAR` set): `IF_NEAR` fired once, the player was pushed out to |dx| + |dy| = 9.2, and
-  `IF_FAR` never fired, against rule 1. OpenVirtue has no contact rule yet.
+  `IF_FAR` never fired, against rule 1. OpenVirtue has no contact rule yet. Answered by
+  OV-20261019-actor-contact: actors push the player and fire `IF_NEAR` on contact, a beam inside an
+  object is pushed out, and the `DIST` test needs the eye within `DIST` of the object's centre too.
 - Walls: the manual measures a wall's `DIST` to its nearest vertex (p.51). Answered by
   OV-20261019-wall-distance: |dx| + |dy| to the nearer vertex.
 - Order in the cycle: `LOCATE` events ran after the global `EACH_TICK` slot in the same cycle,
@@ -128,7 +130,8 @@ placements. medium for the contact reading, which rests on one case.
   the player after the WDL cycle, so a walk's events come one cycle later than in the original.
 - When the original refreshes `MY.DISTANCE` within a cycle, and what it reads outside the
   player's `CLIP_DIST` (p.69) or in another region. Not probed (see Implementation Notes).
-- Whether `DIST` is compared with `<=` or `<` (no sample at exactly 10).
+- Whether `DIST` is compared with `<=` or `<` (no sample at exactly 10). Answered by
+  OV-20261019-actor-contact: `<`.
 
 ## Tests To Add Or Update
 - `WdlRuntimeTests.Tick_PlayerProximity_ComparesDistWithSumOfAxisDistancesAndFiresOncePerCrossing`:

@@ -34,6 +34,9 @@ internal static class ProjectionProbeGenerator
     public const string ClipContactProbeName = "clip-contact";
     public const string BorderClimbProbeName = "border-climb";
     public const string EyeClampProbeName = "eye-clamp";
+    public const string ActorContactProbeName = "actor-contact";
+    public const string BorderKindsProbeName = "border-kinds";
+    public const string ClipDetailProbeName = "clip-detail";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -49,6 +52,9 @@ internal static class ProjectionProbeGenerator
     private const string ClipContactProbeId = "OV-20261019-clip-contact";
     private const string BorderClimbProbeId = "OV-20261019-border-climb";
     private const string EyeClampProbeId = "OV-20261019-eye-clamp";
+    private const string ActorContactProbeId = "OV-20261019-actor-contact";
+    private const string BorderKindsProbeId = "OV-20261019-border-kinds";
+    private const string ClipDetailProbeId = "OV-20261019-clip-detail";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -306,6 +312,9 @@ internal static class ProjectionProbeGenerator
         ClipContactProbeName => ClipContactProbeId,
         BorderClimbProbeName => BorderClimbProbeId,
         EyeClampProbeName => EyeClampProbeId,
+        ActorContactProbeName => ActorContactProbeId,
+        BorderKindsProbeName => BorderKindsProbeId,
+        ClipDetailProbeName => ClipDetailProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -416,6 +425,9 @@ internal static class ProjectionProbeGenerator
             case ClipContactProbeName:
             case BorderClimbProbeName:
             case EyeClampProbeName:
+            case ActorContactProbeName:
+            case BorderKindsProbeName:
+            case ClipDetailProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -442,6 +454,9 @@ internal static class ProjectionProbeGenerator
         ClipContactProbeName => ClipContactProbeCases.Set,
         BorderClimbProbeName => BorderClimbProbeCases.Set,
         EyeClampProbeName => EyeClampProbeCases.Set,
+        ActorContactProbeName => ActorContactProbeCases.Set,
+        BorderKindsProbeName => BorderKindsProbeCases.Set,
+        ClipDetailProbeName => ClipDetailProbeCases.Set,
         _ => null,
     };
 

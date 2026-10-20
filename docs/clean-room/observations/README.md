@@ -133,3 +133,28 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   to `IMPACT_VZ`. Solid walls and blocking region borders stop the player about 0.05 beyond
   `PLAYER_WIDTH`, which is not held at the manual's 1.2 minimum. Ten DOSBox-X runs (six at
   forced CPU speeds); implemented in `Player`, `LevelCollisionWorld` and `WdlPlayerMotion`.
+
+## Contact, border kinds and CLIP_DIST detail (2026-10-19/20 — confirmed and implemented)
+
+- `OV-20261019-actor-contact.md` — contact with a thing or actor is a circle of half its width
+  (× `THING_WIDTH`/`ACTOR_WIDTH`) plus `PLAYER_WIDTH`. An actor without `CAREFULLY` pushes the
+  player ahead of it and fires `IF_NEAR` in every pushing cycle. A `CAREFULLY` one stops short,
+  halving its step until the point two steps ahead is clear, and fires `IF_NEAR` while blocked.
+  A beam inside a solid object is pushed straight out at the next move. `DIST` is strict (`<`).
+  For things and actors the eye must also be less than `DIST` above or below the texture's
+  centre, which is why small `DIST`s on low objects never fired. `DISTANCE` reads 65535.999
+  until the player first comes within 1.5 × the `CLIP_DIST` border. Eighteen DOSBox-X runs;
+  implemented in `WdlRuntime`, `Player`, `LevelCollisionWorld` and `WdlPlayerMotion`.
+- `OV-20261019-border-kinds.md` — `IMPASSABLE` stops the player unless `PASSABLE` and always stops
+  a `CAREFULLY` actor (1.05 from the wall for a 2-wide one). `INVISIBLE` walls never stop the player
+  and fire nothing when a free-standing one is passed; an invisible region border ignores the
+  climb and still fires `IF_NEAR` on crossing. A `CAREFULLY` actor climbs a rise below
+  `ACTOR_CLIMB` (default 1.1) and below its own height; `PLAYER_CLIMB` does not apply.
+  `SKIP_FRAMES` moves unseen actors outside `DIST` every 6th cycle (not implemented). The eye must
+  be strictly above a new floor. Fifteen DOSBox-X runs; implemented in `Player`,
+  `LevelCollisionWorld` and `WdlRuntime`.
+- `OV-20261019-clip-detail.md` — outside its border a thing's or actor's texture animation is
+  paused. A `BERKELEY` wall runs its `EACH_TICK` only while in view (not implemented). A wall's
+  `DIST` test is gated by the border like a thing's. A wall's border is the player's region's
+  `CLIP_DIST` alone, even between two regions. `INVISIBLE` walls run no `EACH_TICK`. Five
+  DOSBox-X runs (one more failed to compile); implemented in `WdlRuntime`.
