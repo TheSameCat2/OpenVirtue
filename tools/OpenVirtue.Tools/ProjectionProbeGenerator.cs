@@ -494,6 +494,12 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBYEL.PCX", Ink.Yellow, palette);
         }
 
+        if (plan.ProbeName == ViewActivityProbeName)
+        {
+            // view-activity round 6: a texture entirely in colour 0, see-through on a TRANSPARENT wall (p.53).
+            WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
+        }
+
         WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
         WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
