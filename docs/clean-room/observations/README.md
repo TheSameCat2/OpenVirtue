@@ -169,5 +169,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   every (`SKIP_FRAMES` + 1)th cycle counted from its own last move, by that many cycles' step. Such
   a step, for a `CAREFULLY` actor, is tested at its end only and can jump walls and raised regions.
   A `BERKELEY` wall runs its `EACH_TICK` while visible or while the player is within its `DIST`.
+  Rounds 6–9: the near range is ≤ 20 of the actor's `DISTANCE` as last refreshed, and the original
+  refreshes every actor's `DISTANCE` only in cycles in which the player moved or an actor in front
+  of the player moved (which explains range-shape's actor that never skipped). `TRANSPARENT` and
+  `INVISIBLE` walls hide nothing, nor do sprites. Every wall gets `VISIBLE`; walls and actors keep
+  `SEEN` once seen.
   Twenty-one DOSBox-X launches (seventeen usable); implemented in `ViewTest` and `WdlRuntime`
   (ADR-0010).

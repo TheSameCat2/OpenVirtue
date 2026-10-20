@@ -24,6 +24,10 @@ using static TraceProbeWdl;
 /// <item><c>berkeley-near</c>: does a <c>BERKELEY</c> wall (p.53) run its <c>EACH_TICK</c> while
 /// the player is within its <c>DIST</c> but looks away, or while it is in the cone but behind
 /// another wall?</item>
+/// <item>Rounds 2–9 (appended below): the edges of the cone and of occlusion, the near range and
+/// what refreshes the distance it tests (<c>edge-*</c>, <c>walk-*</c>, <c>dist-*</c>, round 8 and
+/// round 9), <c>TRANSPARENT</c> walls and sprites as occluders, and plain walls' <c>VISIBLE</c> and
+/// <c>SEEN</c>.</item>
 /// </list>
 /// While <c>va_p</c> is set the sampler prints a <c>C</c> line in every cycle.
 /// </summary>
@@ -341,6 +345,385 @@ internal static class ViewActivityProbeCases
             ("an edge that depends on TIME_CORR", "the split differs between runs that went at different rates")),
         Map: new TraceProbeMap(Placements: FinePlacements));
 
+    // ---- round 6: the near range's shape, occlusion, walls' VISIBLE and SEEN ----------------------
+
+    /// <summary>
+    /// Way actors <c>va_a1</c>… (facing 0) on the given ways, the WMP lines for
+    /// <see cref="WayActorDeclarations"/>. Coordinates are in tenths of a step, so no value prints as −0.
+    /// </summary>
+    private static string[] WayPlacements(params (int X, int Y, int X2, int Y2)[] tenths) =>
+    [
+        .. tenths.Select(static (w, i) => FormattableString.Invariant($"ACTOR va_a{i + 1} {w.X / 10.0} {w.Y / 10.0} 0 0")),
+        .. tenths.Select(static (w, i) => FormattableString.Invariant($"WAY va_w{i + 1} {w.X / 10.0} {w.Y / 10.0} {w.X2 / 10.0} {w.Y2 / 10.0}")),
+    ];
+
+    /// <summary>Eight starts 19.6, 19.8, … 21 from the player, in tenths.</summary>
+    private static readonly int[] EdgeStarts = [.. Enumerable.Range(0, 8).Select(static i => 196 + (2 * i))];
+
+    /// <summary>
+    /// range-shape's on-axis actors, extended: behind the player at (20, 0), on the axis 19.6 to 21
+    /// away, each on a way 0.4 long straight away from the player (x → x − 0.4). The third is
+    /// range-shape's actor 20.0–20.4 away.
+    /// </summary>
+    private static readonly string[] EdgeAlongPlacements = WayPlacements([.. EdgeStarts.Select(static m => (200 - m, 0, 196 - m, 0))]);
+
+    /// <summary>
+    /// The same along the −Y axis from the player at the origin, which stays there facing +X (no beam):
+    /// (0, −m) → (0, −m − 0.4).
+    /// </summary>
+    private static readonly string[] EdgeAlongYPlacements = WayPlacements([.. EdgeStarts.Select(static m => (0, -m, 0, -m - 4))]);
+
+    /// <summary>
+    /// The same starts on the −Y axis from the origin, each on a way 0.4 long across the line of
+    /// sight that starts on the axis: (0, −m) → (0.4, −m), so |dx| + |dy| grows from m to m + 0.4.
+    /// </summary>
+    private static readonly string[] EdgeAcrossPlacements = WayPlacements([.. EdgeStarts.Select(static m => (0, -m, 4, -m))]);
+
+    /// <summary>
+    /// Four way actors walking straight away from or toward the player at the origin (facing +X, no
+    /// beam) between 17 and 22 (|dx| + |dy|): on the −Y axis, the +Y axis, back right and back left.
+    /// <paramref name="outward"/> starts them at 17.
+    /// </summary>
+    private static string[] WalkPlacements(bool outward)
+    {
+        (int X, int Y, int X2, int Y2)[] ways = [(0, -170, 0, -220), (0, 170, 0, 220), (-85, -85, -110, -110), (-85, 85, -110, 110)];
+        return WayPlacements([.. ways.Select(w => outward ? w : (w.X2, w.Y2, w.X, w.Y))]);
+    }
+
+    private static string WayActorDeclarations(int count) =>
+        Skills + ActorTexture + Ways(count) +
+        string.Concat(Enumerable.Range(1, count).Select(static i => $"ACTOR va_a{i} {{ TEXTURE va_tex; TARGET va_w{i}; SPEED 0; DIST 1; }}\n")) +
+        ControlledActorSampler(count, SpeedControl([.. Enumerable.Repeat(0.1, count)]));
+
+    /// <summary>40 cycles at the origin facing +X.</summary>
+    private static readonly string StayRun = Start(8) + Face(0) + Cycles(40, "S") + Stop;
+
+    /// <summary>120 cycles at the origin facing +X: at 0.1 a cycle a way leg takes 50 cycles when moved every cycle.</summary>
+    private static readonly string WalkRun = Start(4) + Face(0) + Cycles(120, "S") + Stop;
+
+    /// <summary>
+    /// Five still actors 40 ahead of the player at the origin (facing +X), at y −15, −5, 5, 15 and
+    /// 0, the first four each behind a free-standing wall at x = 30: <c>TRANSPARENT</c> with a solid
+    /// texture, <c>TRANSPARENT</c> with a texture all in colour 0, <c>INVISIBLE</c>, and plain. The
+    /// fifth is in the open.
+    /// </summary>
+    private static readonly string OccludeKindsDeclarations =
+        Skills + ActorTexture +
+        "BMAP clr_map,<PRBCLR.PCX>;\nTEXTURE clr_tex { SCALE_X 4; SCALE_Y 4; BMAPS clr_map; }\n" +
+        "WALL va_tsol { TEXTURE red_tex; FLAGS TRANSPARENT; }\nWALL va_tclr { TEXTURE clr_tex; FLAGS TRANSPARENT; }\n" +
+        "WALL va_inv { TEXTURE red_tex; FLAGS INVISIBLE; }\n" +
+        string.Concat(Enumerable.Range(1, 5).Select(static i => $"ACTOR va_a{i} {{ TEXTURE va_tex; DIST 1; }}\n")) +
+        ActorSampler(5);
+
+    private static readonly string[] OccludeKindsPlacements =
+        ["ACTOR va_a1 40 -15 0 0", "ACTOR va_a2 40 -5 0 0", "ACTOR va_a3 40 5 0 0", "ACTOR va_a4 40 15 0 0", "ACTOR va_a5 40 0 0 0"];
+
+    private static readonly TraceProbeWall[] OccludeKindsWalls =
+    [
+        new("va_tsol", 30, -14, 30, -8), new("va_tclr", 30, -6, 30, -2), new("va_inv", 30, 2, 30, 6), new("red_wall", 30, 8, 30, 14),
+    ];
+
+    /// <summary>12 cycles facing +X, then 12 facing −X (none visible).</summary>
+    private static readonly string OccludeKindsRun = Start(5) + Face(0) + Cycles(12, "K1") + Face(Math.PI) + Cycles(12, "K2") + Stop;
+
+    /// <summary>
+    /// With the eye lowered to 1.5 (the 2-high sprites' middle), from the origin facing +X:
+    /// <c>va_a1</c> 40 ahead right behind the actor <c>va_a2</c> 10 ahead (the near sprite covers
+    /// ±0.1 of the view, the far one ±0.025), <c>va_a3</c> at (40, 12) right behind the thing
+    /// <c>va_t</c> at (10, 3), and <c>va_a4</c> at (40, −12) in the open.
+    /// </summary>
+    private static readonly string SpriteOccludeDeclarations =
+        Skills + ActorTexture +
+        string.Concat(Enumerable.Range(1, 4).Select(static i => $"ACTOR va_a{i} {{ TEXTURE va_tex; DIST 1; }}\n")) +
+        "THING va_t { TEXTURE va_tex; }\n" +
+        ActorSampler(4, "PLAYER_Y", "PLAYER_Z");
+
+    private static readonly string[] SpriteOccludePlacements =
+        ["ACTOR va_a1 40 0 0 0", "ACTOR va_a2 10 0 0 0", "ACTOR va_a3 40 12 0 0", "ACTOR va_a4 40 -12 0 0", "THING va_t 10 3 0 0"];
+
+    /// <summary>12 cycles covered; 12 at (0, −3), where the sight lines part; 12 back at the origin.</summary>
+    private static readonly string SpriteOccludeRun =
+        Start(4) + "    SET PLAYER_SIZE, 1;\n    SET PLAYER_Z, 1.5;\n" + Face(0) + Cycles(12, "H1") +
+        Beam(0, -3, "H2") + Cycles(12, "H2S") + Beam(0, 0, "H3") + Cycles(12, "H3S") + Stop;
+
+    /// <summary>
+    /// Plain walls (no <c>BERKELEY</c>): <c>va_wa</c> from (30, −4) to (30, 4) ahead of the player,
+    /// <c>va_wb</c> from (40, −2) to (40, 2) right behind it, <c>va_wc</c> from (−10, −4) to (−10, 2)
+    /// behind the player, and a still actor at (−14, 6) seen past <c>va_wc</c>'s end when facing −X.
+    /// The sampler prints <c>W</c> in every cycle with each wall's <c>VISIBLE</c> and <c>SEEN</c>,
+    /// then the actor's.
+    /// </summary>
+    private static readonly string WallSeenDeclarations =
+        Skills +
+        ActorTexture +
+        "SKILL va_p { VAL 0; }\nSYNONYM va_s1 { TYPE ACTOR; }\nSYNONYM va_sw1 { TYPE WALL; }\nSYNONYM va_sw2 { TYPE WALL; }\nSYNONYM va_sw3 { TYPE WALL; }\n" +
+        string.Concat(new[] { "w1", "w2", "w3", "a1" }.Select(static o => $"SKILL va_v{o} {{ VAL 0; }}\nSKILL va_e{o} {{ VAL 0; }}\n")) +
+        "WALL va_wa { TEXTURE red_tex; }\nWALL va_wb { TEXTURE grn_tex; }\nWALL va_wc { TEXTURE grn_tex; }\n" +
+        "ACTOR va_a1 { TEXTURE va_tex; DIST 1; }\n" +
+        Sampler(
+            "    IF (va_p > 0) {\n" +
+            Indent(string.Concat(new[] { ("w1", "va_sw1"), ("w2", "va_sw2"), ("w3", "va_sw3"), ("a1", "va_s1") }.Select(static o =>
+                $"    IF ({o.Item2}.VISIBLE == 1) {{\n        RULE va_v{o.Item1} = 1;\n    }} ELSE {{\n        RULE va_v{o.Item1} = 0;\n    }}\n" +
+                $"    IF ({o.Item2}.SEEN == 1) {{\n        RULE va_e{o.Item1} = 1;\n    }} ELSE {{\n        RULE va_e{o.Item1} = 0;\n    }}\n")) +
+                L("W", "va_vw1", "va_ew1", "va_vw2", "va_ew2", "va_vw3", "va_ew3", "va_va1", "va_ea1", "PLAYER_X", "PLAYER_ANGLE")) +
+            "    }\n");
+
+    /// <summary>
+    /// With the eye at 1.5, 8 cycles each: S1 the origin facing +X (<c>va_wa</c> in view,
+    /// <c>va_wb</c> hidden behind it); S2 facing −X (<c>va_wc</c> and the actor in view); S3 at
+    /// (35, 0) facing +X (<c>va_wb</c> in view); S4 the origin facing +X again.
+    /// </summary>
+    private static readonly string WallSeenRun =
+        "    SET va_sw1, va_wa;\n    SET va_sw2, va_wb;\n    SET va_sw3, va_wc;\n    SET va_s1, va_a1;\n" +
+        "    SET PLAYER_SIZE, 1;\n    SET PLAYER_Z, 1.5;\n" +
+        ArmSampler + "    RULE va_p = 1;\n" + L("GO") +
+        Face(0) + Cycles(8, "S1") + Face(Math.PI) + Cycles(8, "S2") +
+        Beam(35, 0, "S3") + Face(0) + Cycles(8, "S3S") + Beam(0, 0, "S4") + Cycles(8, "S4S") + Stop;
+
+    // ---- round 7: what freezes a radial walker -------------------------------------------------------
+
+    /// <summary>
+    /// As <see cref="WayActorDeclarations"/> for four actors, the C lines adding each actor's
+    /// <c>DISTANCE</c> (<c>va_d1</c>…<c>va_d4</c>) and the player's X.
+    /// </summary>
+    private static readonly string DistanceWalkDeclarations =
+        Skills + ActorTexture + Ways(4) +
+        string.Concat(Enumerable.Range(1, 4).Select(static i => $"SKILL va_d{i} {{ VAL 0; }}\nACTOR va_a{i} {{ TEXTURE va_tex; TARGET va_w{i}; SPEED 0; DIST 1; }}\n")) +
+        ControlledActorSampler(
+            4,
+            SpeedControl(0.1, 0.1, 0.1, 0.1) +
+            string.Concat(Enumerable.Range(1, 4).Select(static i => $"    RULE va_d{i} = va_s{i}.DISTANCE;\n")),
+            "va_d1", "va_d2", "va_d3", "va_d4", "PLAYER_X");
+
+    /// <summary>
+    /// Starting at 22 (|dx| + |dy|) from the origin and walking in to 17: <c>va_a1</c> straight in
+    /// on the −Y axis (walk-in's), <c>va_a2</c> from (0, 22) to (1, 17), a little off the sight
+    /// line, <c>va_a3</c> from (−11, −11) to (−6, −11), along x, and <c>va_a4</c> straight in from
+    /// back left (walk-in's).
+    /// </summary>
+    private static readonly string[] DistanceInPlacements = WayPlacements((0, -220, 0, -170), (0, 220, 10, 170), (-110, -110, -60, -110), (-110, 110, -85, 85));
+
+    /// <summary>
+    /// Starting at 17 and walking out: <c>va_a1</c> straight out on the −Y axis to 22,
+    /// <c>va_a2</c> straight out back left to 29, <c>va_a3</c> from (−6, −11) to (−11, −11) along x
+    /// (to 22), <c>va_a4</c> from (1, 17) to (0, 22), a little off the sight line.
+    /// </summary>
+    private static readonly string[] DistanceOutPlacements = WayPlacements((0, -170, 0, -220), (-85, 85, -145, 145), (-60, -110, -110, -110), (10, 170, 0, 220));
+
+    /// <summary>60 cycles at the origin facing +X, then 60 at (2, 0): does the player's move update the frozen walkers?</summary>
+    private static readonly string DistanceWalkRun =
+        Start(4) + Face(0) + Cycles(60, "S") + Beam(2, 0, "P") + Cycles(60, "PS") + Stop;
+
+    /// <summary>120 cycles at the origin facing +X.</summary>
+    private static readonly string LongStayRun = Start(4) + Face(0) + Cycles(120, "S") + Stop;
+
+    /// <summary>60 cycles at the origin, then the player walks 2 along +X (20 ticks at 0.1) and stands 60 cycles.</summary>
+    private static readonly string WalkAsideRun =
+        Start(4) + Face(0) + Cycles(60, "S") + Walk(0.1, 0, 20, "P") + Cycles(60, "PS") + Stop;
+
+    /// <summary>As <see cref="DistanceWalkRun"/> with <c>LOCATE</c> after the beam.</summary>
+    private static readonly string LocateAsideRun =
+        Start(4) + Face(0) + Cycles(60, "S") + Beam(2, 0, "P", locate: true) + Cycles(60, "PS") + Stop;
+
+    /// <summary>30 cycles at the origin, 30 at (2, 0), 60 back at the origin.</summary>
+    private static readonly string BeamBackRun =
+        Start(4) + Face(0) + Cycles(30, "S") + Beam(2, 0, "P") + Cycles(30, "PS") + Beam(0, 0, "Q") + Cycles(60, "QS") + Stop;
+
+    /// <summary>As <see cref="DistanceWalkDeclarations"/> for <paramref name="count"/> actors.</summary>
+    private static string DistanceDeclarations(int count) =>
+        Skills + ActorTexture + Ways(count) +
+        string.Concat(Enumerable.Range(1, count).Select(static i => $"SKILL va_d{i} {{ VAL 0; }}\nACTOR va_a{i} {{ TEXTURE va_tex; TARGET va_w{i}; SPEED 0; DIST 1; }}\n")) +
+        ControlledActorSampler(
+            count,
+            SpeedControl([.. Enumerable.Repeat(0.1, count)]) +
+            string.Concat(Enumerable.Range(1, count).Select(static i => $"    RULE va_d{i} = va_s{i}.DISTANCE;\n")),
+            [.. Enumerable.Range(1, count).Select(static i => $"va_d{i}")]);
+
+    /// <summary>dist-in's ways: straight in on −Y, a little off the sight line from +Y, along x, straight in from back left.</summary>
+    private static readonly (int X, int Y, int X2, int Y2) InRadial = (0, -220, 0, -170);
+    private static readonly (int X, int Y, int X2, int Y2) InOffLine = (0, 220, 10, 170);
+    private static readonly (int X, int Y, int X2, int Y2) InAlongX = (-110, -110, -60, -110);
+    private static readonly (int X, int Y, int X2, int Y2) InDiagonal = (-110, 110, -85, 85);
+
+    private static TraceProbeCase Isolate(string label, string question, params (int X, int Y, int X2, int Y2)[] ways) => new(
+        label,
+        "Round 9. In dist-in every actor's DISTANCE (and so the near test) changed only in the cycles in which va_a2 (a little off its sight line) moved. " + question,
+        DistanceDeclarations(ways.Length),
+        Start(ways.Length) + Face(0) + Cycles(70, "S") + Stop,
+        Predict(
+            ("the second walker's moves refresh everyone", "va_d1 changes only when the trigger walker moves"),
+            ("its own moves refresh a walker", "va_d1 follows va_a1's moves")),
+        Map: new TraceProbeMap(Placements: WayPlacements(ways)));
+
+    /// <summary>The round-9 cases, appended to <see cref="All"/>.</summary>
+    private static readonly TraceProbeCase[] Round9 =
+    [
+        Isolate("solo-radial", "The straight-in walker alone: does its DISTANCE ever change?", InRadial),
+        Isolate("pair-offline", "The straight-in walker, then the off-line one.", InRadial, InOffLine),
+        Isolate("pair-offline-first", "The off-line walker first, then the straight-in one: does the order matter?", InOffLine, InRadial),
+        Isolate("pair-alongx", "The straight-in walker, then the one along x.", InRadial, InAlongX),
+        Isolate("pair-diagonal", "The straight-in walker, then the straight-in one from back left.", InRadial, InDiagonal),
+    ];
+
+    /// <summary>The round-8 cases, appended to <see cref="All"/>.</summary>
+    private static readonly TraceProbeCase[] Round8 =
+    [
+        new(
+            "ab-noread",
+            "Round 8. dist-in without reading DISTANCE: does walk-in's freeze come back (va_a1 and va_a4 skipping all the way in)?",
+            WayActorDeclarations(4),
+            DistanceWalkRun,
+            Predict(
+                ("reading DISTANCE refreshes it", "va_a1 and va_a4 skip throughout before P, unlike dist-in"),
+                ("reading does not matter", "the moves as in dist-in")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+        new(
+            "long-read",
+            "Round 8. dist-in without the beam, 120 cycles: does DISTANCE keep following?",
+            DistanceWalkDeclarations,
+            LongStayRun,
+            Predict(
+                ("the beam froze it", "va_d* follow throughout"),
+                ("it freezes after a while", "va_d* stop changing near cycle 60")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+        new(
+            "walk-aside",
+            "Round 8. dist-in with the player walking 2 along +X instead of the beam.",
+            DistanceWalkDeclarations,
+            WalkAsideRun,
+            Predict(
+                ("any player move freezes it", "va_d* stop changing after P"),
+                ("only a beam does", "va_d* follow throughout")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+        new(
+            "locate-aside",
+            "Round 8. dist-in with LOCATE after the beam.",
+            DistanceWalkDeclarations,
+            LocateAsideRun,
+            Predict(
+                ("LOCATE does not matter", "va_d* stop changing after P as in dist-in"),
+                ("the beam without LOCATE froze it", "va_d* follow throughout")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+        new(
+            "beam-back",
+            "Round 8. Beamed to (2, 0) at 30 and back to the origin at 60: does DISTANCE follow again at the origin?",
+            DistanceWalkDeclarations,
+            BeamBackRun,
+            Predict(
+                ("following depends on where the player stands", "va_d* frozen in PS, following again in QS"),
+                ("a beam freezes it for good", "va_d* frozen from P on")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+    ];
+
+    /// <summary>The round-7 cases, appended to <see cref="All"/>.</summary>
+    private static readonly TraceProbeCase[] Round7 =
+    [
+        new(
+            "dist-in",
+            "Round 7. walk-in's actors walked straight in from 22 to 17 and skipped throughout; edge-across's followed their position. What does DISTANCE say for walkers straight in, a little off the sight line and along x, and does the player's own move (a beam 2 along x) update them?",
+            DistanceWalkDeclarations,
+            DistanceWalkRun,
+            Predict(
+                ("DISTANCE is not updated by a move along the sight line", "va_d1 and va_d4 stay at 22 while the actors walk in; va_d3 follows"),
+                ("DISTANCE follows, the skip state is cached", "va_d1 goes down to 17, the actor still skips"),
+                ("the player's move refreshes it", "after P, va_a1 and va_a4 move every cycle while under 20 from (2, 0)")),
+            Map: new TraceProbeMap(Placements: DistanceInPlacements)),
+        new(
+            "dist-out",
+            "Round 7. The mirror: walkers starting at 17 and walking out, straight (to 22 and to 29), along x, and a little off the sight line.",
+            DistanceWalkDeclarations,
+            DistanceWalkRun,
+            Predict(
+                ("DISTANCE is not updated by a move along the sight line", "va_d1 and va_d2 stay at 17, va_a2 moves every cycle out to 29"),
+                ("a radial walker keeps its state to some range", "va_a2 starts skipping somewhere beyond 22"),
+                ("off the sight line follows the position", "va_a3 and va_a4 skip beyond 20")),
+            Map: new TraceProbeMap(Placements: DistanceOutPlacements)),
+    ];
+
+    /// <summary>The round-6 cases, appended to <see cref="All"/>.</summary>
+    private static readonly TraceProbeCase[] Round6 =
+    [
+        new(
+            "edge-along",
+            "Round 6. range-shape's actor 20.0–20.4 behind on a way along the line of sight moved every cycle; range-fine's at 20.0–20.1 on a way across it skipped. Eight actors on the axis 19.6 to 21 behind the player at (20, 0), each on a way 0.4 long straight away from it: where is the edge?",
+            WayActorDeclarations(8),
+            RangeRun,
+            Predict(
+                ("ways along the line of sight reach farther", "actors starting at 20.0 and beyond move every cycle too (the edge beyond range-fine's)"),
+                ("the start position decides, 20 inclusive", "19.6 to 20.0 move every cycle throughout, 20.2 and beyond every 6th"),
+                ("the position in each cycle, under 20", "19.6 and 19.8 skip whenever they are beyond 20; range-shape's 20.0 actor is not explained")),
+            Map: new TraceProbeMap(Placements: EdgeAlongPlacements)),
+        new(
+            "edge-along-y",
+            "Round 6. As edge-along on the −Y axis from the player at the origin, which never moves: does the edge follow the beam to (20, 0) that range-shape and range-fine began with?",
+            WayActorDeclarations(8),
+            StayRun,
+            Predict(
+                ("the same split as edge-along", "the beam does not matter"),
+                ("a different split", "something before or at the beam (the actors near the origin) matters")),
+            Map: new TraceProbeMap(Placements: EdgeAlongYPlacements)),
+        new(
+            "edge-across",
+            "Round 6. The same starts on the −Y axis from the origin, each on a way 0.4 long across the line of sight that starts on the axis (range-fine's started 0.1 off it).",
+            WayActorDeclarations(8),
+            StayRun,
+            Predict(
+                ("the direction matters", "a different split from edge-along-y"),
+                ("the start position decides", "the same split as edge-along-y")),
+            Map: new TraceProbeMap(Placements: EdgeAcrossPlacements)),
+        new(
+            "walk-out",
+            "Round 6. Four actors walk straight away from the player at the origin from 17 to 22 and back (|dx| + |dy|): do they skip once beyond 20, or does having started near keep them moving?",
+            WayActorDeclarations(4),
+            WalkRun,
+            Predict(
+                ("the position in each cycle", "every cycle under 20, every 6th beyond, on both legs"),
+                ("once near, always", "every cycle throughout"),
+                ("radial motion extends the range", "every cycle somewhat beyond 20 on both legs")),
+            Map: new TraceProbeMap(Placements: WalkPlacements(outward: true))),
+        new(
+            "walk-in",
+            "Round 6. The same four actors starting at 22 and walking in to 17 and back out.",
+            WayActorDeclarations(4),
+            WalkRun,
+            Predict(
+                ("the position in each cycle", "every 6th beyond 20, every cycle under, on both legs"),
+                ("once near, always", "every 6th cycle until under 20, then every cycle throughout"),
+                ("the start position decides", "every 6th cycle throughout")),
+            Map: new TraceProbeMap(Placements: WalkPlacements(outward: false))),
+        new(
+            "occlude-kinds",
+            "Round 6. Do TRANSPARENT walls (p.53: colour 0 see-through) hide a sprite behind them, with a solid texture and with one all in colour 0? And INVISIBLE walls? Still actors 40 ahead behind each, a plain wall and none.",
+            OccludeKindsDeclarations,
+            OccludeKindsRun,
+            Predict(
+                ("TRANSPARENT and INVISIBLE walls are see-through", "K1: va_v1, va_v2, va_v3 and va_v5 1, va_v4 0"),
+                ("a TRANSPARENT wall hides by its pixels", "K1: va_v1 0, va_v2 1"),
+                ("only INVISIBLE walls are see-through", "K1: va_v1 and va_v2 0, va_v3 1")),
+            Map: new TraceProbeMap(Placements: OccludeKindsPlacements, Walls: OccludeKindsWalls)),
+        new(
+            "sprite-occlude",
+            "Round 6. Do sprites hide each other? With the eye at the sprites' middle, an actor 40 ahead right behind an actor 10 ahead, another behind a thing, one in the open; then the player steps sideways so the sight lines part.",
+            SpriteOccludeDeclarations,
+            SpriteOccludeRun,
+            Predict(
+                ("sprites do not hide sprites", "H1: va_v1, va_v3, va_v4 1"),
+                ("a nearer sprite hides", "H1: va_v1 and va_v3 0, va_v4 1; H2S: all 1; H3S as H1")),
+            Map: new TraceProbeMap(Placements: SpriteOccludePlacements)),
+        new(
+            "wall-seen",
+            "Round 6. Do plain walls (no BERKELEY) get VISIBLE as BERKELEY ones do (in view, not behind another wall), and SEEN (p.53) once seen? An actor's SEEN (p.71) alongside.",
+            WallSeenDeclarations,
+            WallSeenRun,
+            Predict(
+                ("plain walls get VISIBLE and SEEN", "S1: va_vw1 1, va_vw2 0, va_vw3 0; S2: va_vw3 1; S3S: va_vw2 1; SEEN stays 1 once 1"),
+                ("only BERKELEY walls get VISIBLE", "va_vw* 0 throughout"),
+                ("SEEN is not readable", "va_e* 0 throughout")),
+            Map: new TraceProbeMap(
+                Placements: ["ACTOR va_a1 -14 6 0 0"],
+                Walls: [new TraceProbeWall("va_wa", 30, -4, 30, 4), new TraceProbeWall("va_wb", 40, -2, 40, 2), new TraceProbeWall("va_wc", -10, -4, -10, 2)])),
+    ];
+
     /// <summary>The round-5 cases, appended to <see cref="All"/>.</summary>
     private static readonly TraceProbeCase[] Round5 = [Fine("range-fine-a"), Fine("range-fine-b")];
 
@@ -517,6 +900,10 @@ internal static class ViewActivityProbeCases
         .. Round3,
         .. Round4,
         .. Round5,
+        .. Round6,
+        .. Round7,
+        .. Round8,
+        .. Round9,
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
@@ -528,7 +915,8 @@ internal static class ViewActivityProbeCases
         "Each trace line is a token followed by `TICKS` and `pe_n` (the global EACH_TICK sampler's run count)\n" +
         "when it was printed, then the case's extra skills. `C` lines print in every cycle with each watched\n" +
         "actor's X, Y and VISIBLE (`va_x*`, `va_y*`, `va_v*`); `W` lines (berkeley-near) with the BERKELEY\n" +
-        "wall's EACH_TICK count, VISIBLE and DISTANCE. Compare the trace with `case.json` → `predictions`, and\n" +
-        "check `OVCON.TXT` for compile errors.",
+        "wall's EACH_TICK count, VISIBLE and DISTANCE; in wall-seen with each wall's and the actor's VISIBLE and\n" +
+        "SEEN. The C lines of rounds 7–9 (but ab-noread) add each actor's DISTANCE. Compare the trace with\n" +
+        "`case.json` → `predictions`, and check `OVCON.TXT` for compile errors.",
         All);
 }
