@@ -137,6 +137,60 @@ public class PlayerTests
     }
 
     [Fact]
+    public void MoveHorizontal_ImpassableRegionBorder_BlocksEvenALevelPad()
+    {
+        // OV-20261019-border-kinds, imp-border: the player stops at PLAYER_WIDTH + 0.05.
+        (Player player, _) = PadPlayer(padFloor: 0, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1.5f, padFlags: "IMPASSABLE");
+
+        player.MoveHorizontal(0, 10);
+
+        Assert.Equal(0, player.Region);
+        Assert.Equal(10 - player.Width - Player.WallClearance, player.Position.Z, 3);
+        Assert.Contains(player.TakeTouchedObjects(), static touched => touched is Wall);
+    }
+
+    [Fact]
+    public void MoveHorizontal_ImpassableAndPassableRegionBorder_LetsThePlayerThrough()
+    {
+        // OV-20261019-border-kinds, imp-pass-border (p.53: passable for the player, not for actors).
+        (Player player, _) = PadPlayer(padFloor: 0, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1.5f, padFlags: "IMPASSABLE, PASSABLE");
+
+        player.MoveHorizontal(0, 10);
+
+        Assert.Equal(1, player.Region);
+    }
+
+    [Fact]
+    public void MoveHorizontal_InvisibleRegionBorder_IgnoresTheClimbAndCountsTheCrossing()
+    {
+        // OV-20261019-border-kinds, invisible-border: a pad 4 above the room behind INVISIBLE walls.
+        (Player player, _) = PadPlayer(padFloor: 4, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1.5f, padFlags: "INVISIBLE");
+
+        player.MoveHorizontal(0, 10);
+
+        Assert.Equal(1, player.Region);
+        Assert.Contains(player.TakeTouchedObjects(), static touched => touched is Wall);
+    }
+
+    [Fact]
+    public void MoveHorizontal_InvisibleFreeStandingWall_IsPassedWithoutATouchEvenWhenImpassable()
+    {
+        // OV-20261019-border-kinds, invisible: no IF_NEAR on passing, INVISIBLE wins over IMPASSABLE.
+        string map =
+            "VERTEX 0 0 0;#0\nVERTEX 40 0 0;#1\nVERTEX 40 40 0;#2\nVERTEX 0 40 0;#3\n" +
+            "VERTEX 20 10 0;#4\nVERTEX 20 30 0;#5\nREGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL ghost 4 5 0 0 0 0;#4\nPLAYER_START 15 20 0 0;#5";
+        var player = new Player(Load(map, "MAPFILE <m.wmp>;\nWALL ghost { FLAGS INVISIBLE, IMPASSABLE; }\n"));
+        player.MoveTo(0, 15, 20);
+
+        player.MoveHorizontal(10, 0);
+
+        Assert.Equal(25, player.Position.X, 3);
+        Assert.Empty(player.TakeTouchedObjects());
+    }
+
+    [Fact]
     public void MoveHorizontal_AfterSteppingDownWithoutSinking_WalksBackUpButNotFromThePadFloor()
     {
         // OV-20261019-border-climb, step-down: a pad 4 below the room. The eye stays at 8 on the

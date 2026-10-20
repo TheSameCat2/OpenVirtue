@@ -286,8 +286,9 @@ public sealed class WdlActorMotionTests
 
         runtime.Tick(1.0 / 16);
 
-        Assert.Equal(9.5, actor.X, 3);
-        Assert.Equal(-10.5, actor["IMPACT_VX"], 3);
+        // OV-20261019-border-kinds: a CAREFULLY actor stops 0.05 beyond its radius, like the player.
+        Assert.Equal(9.45, actor.X, 3);
+        Assert.Equal(-10.55, actor["IMPACT_VX"], 3);
         Assert.Equal(0, runtime.GetSkill("hits"));
     }
 
@@ -303,6 +304,70 @@ public sealed class WdlActorMotionTests
 
         Assert.Equal(5, actor.X, 3);
         Assert.Equal(-5, actor["IMPACT_VX"], 3);
+    }
+
+    private const string StepMap =
+        "VERTEX -10 -10 0;#0\nVERTEX 30 -10 0;#1\nVERTEX 30 10 0;#2\nVERTEX -10 10 0;#3\n" +
+        "VERTEX 10 -5 0;#4\nVERTEX 20 -5 0;#5\nVERTEX 20 5 0;#6\nVERTEX 10 5 0;#7\n" +
+        "REGION room 0 20;#0\nREGION pad {0} 20;#1\n" +
+        "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+        "WALL rim 4 5 1 0 0 0;#4\nWALL rim 5 6 1 0 0 0;#5\nWALL rim 6 7 1 0 0 0;#6\nWALL rim 7 4 1 0 0 0;#7\n" +
+        "ACTOR mover 0 0 0 0;#8\nPLAYER_START -8 -8 0 0;#9";
+
+    private static string StepMapWithPad(int padFloor) =>
+        StepMap.Replace("{0}", padFloor.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData(1, "", 32, true)] // the default ACTOR_CLIMB is 1.1 (climb-1)
+    [InlineData(1, "SKILL ACTOR_CLIMB { VAL 1; } ", 32, false)] // a rise equal to it blocks (climb-eq)
+    [InlineData(1, "SKILL ACTOR_CLIMB { VAL 0.5; } ", 32, false)] // climb-actor-05
+    [InlineData(2, "SKILL ACTOR_CLIMB { VAL 3; } ", 32, false)] // not as high as the 2-high actor (actor-climb-2)
+    [InlineData(2, "SKILL ACTOR_CLIMB { VAL 3; } ", 128, true)] // an 8-high actor climbs it (climb-tall)
+    public void Tick_CarefulMove_ClimbsARiseBelowActorClimbAndItsOwnHeight(int padFloor, string climb, int bitmapHeight, bool climbs)
+    {
+        // OV-20261019-border-kinds: a CAREFULLY actor enters a raised region only when the floor rises
+        // less than ACTOR_CLIMB and less than the actor's height; otherwise the region border holds it.
+        (WdlRuntime runtime, Level level) = Create(
+            climb +
+            $"BMAP stepMap, <step.pcx>, 0, 0, 32, {bitmapHeight}; TEXTURE stepTex {{ BMAPS stepMap; }} " +
+            "ACTOR mover { TEXTURE stepTex; TARGET MOVE; SPEED 1; FLAGS CAREFULLY; }",
+            StepMapWithPad(padFloor));
+        Actor actor = Assert.Single(level.Actors);
+
+        for (int i = 0; i < 14; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        if (climbs)
+        {
+            Assert.Equal(14, actor.X, 3);
+            Assert.Equal(1, actor.Region);
+        }
+        else
+        {
+            Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
+            Assert.Equal(0, actor.Region);
+        }
+    }
+
+    [Fact]
+    public void Tick_CarefulMove_ImpassableWallStopsTheActorEvenWhenPassable()
+    {
+        // OV-20261019-border-kinds, imp-pass-border.
+        (WdlRuntime runtime, Level level) = Create(
+            "WALL rim { FLAGS IMPASSABLE, PASSABLE; } " +
+            "BMAP stepMap, <step.pcx>, 0, 0, 32, 32; TEXTURE stepTex { BMAPS stepMap; } " +
+            "ACTOR mover { TEXTURE stepTex; TARGET MOVE; SPEED 1; FLAGS CAREFULLY; }",
+            StepMapWithPad(0));
+        Actor actor = Assert.Single(level.Actors);
+
+        for (int i = 0; i < 14; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
     }
 
     [Fact]

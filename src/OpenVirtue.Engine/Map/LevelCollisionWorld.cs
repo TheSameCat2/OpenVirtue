@@ -103,6 +103,33 @@ public sealed class LevelCollisionWorld
         return new CircleMoveResult(position, region, position - start, collided, regionChanged);
     }
 
+    /// <summary>
+    /// Pushes a circle that overlaps solid things or actors straight out from their centres to
+    /// the contact distance, without a move (a player beamed inside an object,
+    /// OV-20261019-actor-contact), and adds the objects to <paramref name="touched"/>.
+    /// </summary>
+    public Vector2 PushOutOfEntities(
+        Vector2 position,
+        int region,
+        float radius,
+        Func<MapEntity, float> entityRadius,
+        Func<MapEntity, bool> canCrossEntity,
+        ICollection<AcknexObject>? touched = null)
+    {
+        ArgumentNullException.ThrowIfNull(entityRadius);
+        ArgumentNullException.ThrowIfNull(canCrossEntity);
+        Vector2 desired = position;
+        for (int pass = 0; pass < 4; pass++)
+        {
+            if (!ResolveEntities(position, region, Math.Max(0.01f, radius), entityRadius, canCrossEntity, null, touched, ref desired))
+            {
+                break;
+            }
+        }
+
+        return desired;
+    }
+
     private bool ResolveWalls(
         Vector2 from,
         int region,
@@ -154,7 +181,8 @@ public sealed class LevelCollisionWorld
     /// <summary>
     /// Adds the crossable walls of the step's region (a portal wall is listed in both of its
     /// regions) whose segment the step from <paramref name="from"/> to <paramref name="to"/>
-    /// passed through.
+    /// passed through. An <c>INVISIBLE</c> wall with one region on both sides is passed without
+    /// a touch; one between two regions still counts (OV-20261019-border-kinds).
     /// </summary>
     private void AddPassedWalls(
         Vector2 from,
@@ -171,11 +199,13 @@ public sealed class LevelCollisionWorld
         foreach (int wallIndex in walls)
         {
             Wall wall = _level.Walls[wallIndex];
+            int other = OtherRegion(wall, region);
             if (!touched.Contains(wall) &&
+                !(wall["INVISIBLE"] > 0 && other == region) &&
                 Vertex(wall.Vertex1, out Vector2 a) &&
                 Vertex(wall.Vertex2, out Vector2 b) &&
                 PassesThrough(from, to, a, b) &&
-                canCross(wall, region, OtherRegion(wall, region)))
+                canCross(wall, region, other))
             {
                 touched.Add(wall);
             }

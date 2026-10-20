@@ -179,7 +179,9 @@ public sealed class Player : AcknexObject
     }
 
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
-    public Vector2 MoveHorizontal(float dx, float dz)
+    public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null);
+
+    private Vector2 MoveHorizontal(float dx, float dz, MapEntity? ignored)
     {
         var start = new Vector2(_position.X, _position.Z);
         CircleMoveResult result = _collisionWorld.Move(
@@ -190,26 +192,73 @@ public sealed class Player : AcknexObject
             CanCross,
             EntityCollisionRadius,
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
-            touched: _touchedObjects,
-            wallClearance: WallClearance);
+            ignored,
+            _touchedObjects,
+            WallClearance);
         _region = result.Region;
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
     }
 
     /// <summary>
+    /// Pushes the player out of any solid thing or actor it overlaps, straight away from the
+    /// object's centre to the contact distance (half the object's width plus <see cref="Width"/>),
+    /// and counts the object as touched. The original does this after a beam into an object
+    /// (OV-20261019-actor-contact).
+    /// </summary>
+    public void PushOutOfObjects()
+    {
+        var start = new Vector2(_position.X, _position.Z);
+        Vector2 end = _collisionWorld.PushOutOfEntities(
+            start,
+            _region,
+            Width,
+            EntityCollisionRadius,
+            static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
+            _touchedObjects);
+        _position = new Vector3(end.X, _position.Y, end.Y);
+    }
+
+    /// <summary>
+    /// Moves the player straight away from <paramref name="center"/> to
+    /// <paramref name="contactDistance"/> when it is closer, as an actor walking into the player
+    /// does (OV-20261019-actor-contact). Walls and other objects stop the push; the move ignores
+    /// <paramref name="pusher"/>, whose contact hook is the caller's.
+    /// </summary>
+    /// <returns>Whether the player was within <paramref name="contactDistance"/>.</returns>
+    public bool PushAway(MapEntity pusher, Vector2 center, float contactDistance)
+    {
+        ArgumentNullException.ThrowIfNull(pusher);
+        var position = new Vector2(_position.X, _position.Z);
+        Vector2 offset = position - center;
+        float distance = offset.Length();
+        if (distance >= contactDistance)
+        {
+            return false;
+        }
+
+        Vector2 normal = distance > 1e-6f ? offset / distance : Vector2.UnitX;
+        Vector2 push = center + (normal * contactDistance) - position;
+        MoveHorizontal(push.X, push.Y, pusher);
+        return true;
+    }
+
+    /// <summary>
     /// A wall with one region on both sides is crossable only when <c>PASSABLE</c>. A wall between
     /// two regions is crossable when <c>PASSABLE</c>, whatever the heights, or when the player can
-    /// enter the other region (OV-20261019-border-climb).
+    /// enter the other region (OV-20261019-border-climb). An <c>INVISIBLE</c> wall is always
+    /// crossable, even <c>IMPASSABLE</c>, and an <c>IMPASSABLE</c> wall that is not <c>PASSABLE</c>
+    /// never is (OV-20261019-border-kinds).
     /// </summary>
     private bool CanCross(Wall wall, int currentRegion, int otherRegion)
     {
-        if (wall["PASSABLE"] > 0)
+        if (wall["PASSABLE"] > 0 || wall["INVISIBLE"] > 0)
         {
             return true;
         }
 
-        if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+        if (wall["IMPASSABLE"] > 0 ||
+            otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
         {
             return false;
         }

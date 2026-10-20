@@ -49,6 +49,12 @@ public sealed class WdlRuntime :
     /// <summary>The thing and actor skill holding the player's approximate distance (manual p.69).</summary>
     private const string DistanceSkill = "DISTANCE";
 
+    /// <summary>A thing's or actor's <c>DISTANCE</c> before its first refresh (OV-20261019-clip-contact).</summary>
+    private const double UnrefreshedDistance = 65535.999;
+
+    /// <summary>The first refresh of a thing's or actor's <c>DISTANCE</c> needs the player within this times its border (OV-20261019-actor-contact).</summary>
+    private const double DistanceStartFactor = 1.5;
+
     /// <summary>The skill holding the 1-based number of the flic frame on screen, 0 when none plays.</summary>
     public const string FlicFrameSkill = "FLIC_FRAME";
 
@@ -150,6 +156,7 @@ public sealed class WdlRuntime :
     private readonly string? _startupAction;
     private readonly string? _printDirectory;
     private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
+    private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
     private readonly Dictionary<Actor, string> _actorTargetStates = [];
     private readonly Dictionary<AcknexObject, TextureAnimationState> _textureAnimationStates = [];
@@ -1342,7 +1349,8 @@ public sealed class WdlRuntime :
 
         foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
         {
-            if (!IsWithinClipDistance(target))
+            // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
+            if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target))
             {
                 continue;
             }
@@ -1688,6 +1696,8 @@ public sealed class WdlRuntime :
             EnsureSkillDefault($"CHANNEL_{channel}", 0);
         }
 
+        // OV-20261019-border-kinds: the runtime starts ACTOR_CLIMB at 1.1 (the manual says 1, p.113).
+        EnsureSkillDefault("ACTOR_CLIMB", 1.1);
         EnsureSkillDefault("ACTOR_WIDTH", 1);
         EnsureSkillDefault("THING_WIDTH", 1);
         EnsureSkillDefault("SCREEN_X", 0);
@@ -1958,26 +1968,27 @@ public sealed class WdlRuntime :
                 continue;
             }
 
-            if (target is MapEntity && !IsWithinClipDistance(target))
+            bool withinBorder = IsWithinClipDistance(target);
+            if (target is MapEntity && !withinBorder)
             {
                 continue;
             }
 
-            bool wasNear = false;
-            if (TryCurrentProximity(player, target, out bool isNear))
+            // OV-20261019-clip-detail: a wall outside its CLIP_DIST border is not DIST-tested either
+            // and keeps its state; passing or touching it still counts.
+            bool wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+            bool isNear = wasNear;
+            if (withinBorder)
             {
-                wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
-                _proximityStates[target] = isNear;
-            }
-            else
-            {
-                _proximityStates.Remove(target);
-            }
-
-            if (target["BERKELEY"] > 0 && target is MapEntity)
-            {
-                // OV-20261019-clip-contact: a BERKELEY object fired neither hook within or leaving DIST.
-                continue;
+                if (TryCurrentProximity(player, target, out isNear))
+                {
+                    _proximityStates[target] = isNear;
+                }
+                else
+                {
+                    _proximityStates.Remove(target);
+                    wasNear = false;
+                }
             }
 
             if (isNear && !wasNear)
@@ -2030,9 +2041,21 @@ public sealed class WdlRuntime :
         }
 
         target[DistanceSkill] = distance;
-        isNear = distance <= threshold;
+        // OV-20261019-actor-contact: the border itself is outside (strictly less than DIST), and a
+        // thing or actor is near only while the eye is also less than DIST above or below its centre.
+        isNear = distance < threshold &&
+                 (target is not MapEntity entity || VerticalOffsetFromCentre(player, entity) < threshold);
         return true;
     }
+
+    /// <summary>
+    /// How far the player's eye lies above or below the centre of a thing's or actor's texture
+    /// (its feet plus half its height); 0 when the size is unknown.
+    /// </summary>
+    private double VerticalOffsetFromCentre(Player player, MapEntity entity) =>
+        MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size)
+            ? Math.Abs(player.Position.Y - (EntityFeetHeight(entity) + (size.Height / 2)))
+            : 0;
 
     /// <summary>
     /// Sets the <c>DISTANCE</c> of every thing, actor and (at the start of the cycle) wall to the
@@ -2054,12 +2077,29 @@ public sealed class WdlRuntime :
             return;
         }
 
+        AcknexObject? playerRegion = RegionAt(player.Region);
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
-            if (TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance))
+            if (!TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance))
             {
-                entity[DistanceSkill] = distance;
+                continue;
             }
+
+            // OV-20261019-actor-contact: a thing's or actor's DISTANCE reads 65535.999 until the
+            // player first comes within 1.5 times its CLIP_DIST border, LIBER or not; from then on
+            // it is current at any range.
+            if (!_distanceStarted.Contains(entity))
+            {
+                if (playerRegion is not null && distance >= DistanceStartFactor * ClipBorder(entity, playerRegion))
+                {
+                    entity[DistanceSkill] = UnrefreshedDistance;
+                    continue;
+                }
+
+                _distanceStarted.Add(entity);
+            }
+
+            entity[DistanceSkill] = distance;
         }
 
         if (!cycleStart)
@@ -2126,32 +2166,29 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        if (target["LIBER"] > 0)
+        return target["LIBER"] > 0 || distance < ClipBorder(target, region);
+    }
+
+    /// <summary>
+    /// The <c>CLIP_DIST</c> border of a wall, thing or actor, ignoring <c>LIBER</c>. A thing's or
+    /// actor's is the smaller of the player's region's and its own region's <c>CLIP_DIST</c>
+    /// (OV-20261019-clip-contact), times <c>THING_DIST</c> or <c>ACTOR_DIST</c>. A wall's is the
+    /// player's region's alone, even for a wall between two regions (OV-20261019-clip-detail).
+    /// </summary>
+    private double ClipBorder(AcknexObject target, AcknexObject playerRegion)
+    {
+        double clipDistance = playerRegion["CLIP_DIST"];
+        if (target is MapEntity entity && RegionAt(entity.Region) is { } ownRegion)
         {
-            return true;
+            clipDistance = Math.Min(clipDistance, ownRegion["CLIP_DIST"]);
         }
 
-        double clipDistance = region["CLIP_DIST"];
-        foreach (int own in target switch
-                 {
-                     MapEntity entity => [entity.Region],
-                     Wall wall => [wall.LeftRegion, wall.RightRegion],
-                     _ => Array.Empty<int>(),
-                 })
-        {
-            if (RegionAt(own) is { } ownRegion)
-            {
-                clipDistance = Math.Min(clipDistance, ownRegion["CLIP_DIST"]);
-            }
-        }
-
-        double limit = clipDistance * target switch
+        return clipDistance * target switch
         {
             Actor => GetSkill("ACTOR_DIST"),
             MapEntity => GetSkill("THING_DIST"),
             _ => 1,
         };
-        return distance < limit;
     }
 
     private static bool TargetCanSeePlayerRegion(AcknexObject target, int playerRegion) =>
@@ -2445,14 +2482,17 @@ public sealed class WdlRuntime :
         SetActorWorldHeight(actor, currentFeet + Math.Clamp(difference, -maximum, maximum));
     }
 
-    private double ActorWorldHeight(Actor actor)
+    private double ActorWorldHeight(Actor actor) => EntityFeetHeight(actor);
+
+    /// <summary>A thing's or actor's feet in world height: its <c>HEIGHT</c> above its region's floor, or absolute with <c>GROUND</c>.</summary>
+    private double EntityFeetHeight(MapEntity entity)
     {
-        if (actor["GROUND"] > 0 || actor.Region < 0 || actor.Region >= _level.Regions.Count)
+        if (entity["GROUND"] > 0 || entity.Region < 0 || entity.Region >= _level.Regions.Count)
         {
-            return actor.Z;
+            return entity.Z;
         }
 
-        return _level.Regions[actor.Region].FloorHeight + actor.Z;
+        return _level.Regions[entity.Region].FloorHeight + entity.Z;
     }
 
     private void SetActorWorldHeight(Actor actor, double height)
@@ -2473,18 +2513,26 @@ public sealed class WdlRuntime :
         double requestedY = y - actor.Y;
         int previousRegion = actor.Region;
         bool carefully = actor["CAREFULLY"] > 0;
+        Player? blocked = actor["PASSABLE"] > 0 ? null : GetObject("player") as Player;
         if (carefully)
         {
+            double scale = blocked is null ? 1 : CarefulStepScale(actor, blocked, requestedX, requestedY);
+            if (scale < 1)
+            {
+                FireActorContact(actor);
+            }
+
             var start = new Vector2((float)actor.X, (float)actor.Y);
             CircleMoveResult result = _collisionWorld.Move(
                 start,
                 actor.Region,
-                new Vector2((float)requestedX, (float)requestedY),
+                new Vector2((float)(requestedX * scale), (float)(requestedY * scale)),
                 ActorCollisionRadius(actor),
-                ActorCanCross,
+                (wall, current, other) => ActorCanCross(actor, wall, current, other),
                 EntityCollisionRadius,
                 static entity => entity["INVISIBLE"] > 0,
-                actor);
+                actor,
+                wallClearance: Player.WallClearance);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             actor.Region = result.Region;
@@ -2509,6 +2557,12 @@ public sealed class WdlRuntime :
             actor.X = x;
             actor.Y = y;
             UpdateActorRegion(actor);
+            // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it.
+            if (blocked is not null &&
+                blocked.PushAway(actor, new Vector2((float)actor.X, (float)actor.Y), ActorCollisionRadius(actor) + blocked.Width))
+            {
+                FireActorContact(actor);
+            }
         }
 
         actor["MOVED"] = Math.Abs(actor.X - (x - requestedX)) > 0.000001 ||
@@ -2521,14 +2575,66 @@ public sealed class WdlRuntime :
         }
     }
 
-    private bool ActorCanCross(Wall wall, int currentRegion, int otherRegion)
+    /// <summary>
+    /// The share of its step a <c>CAREFULLY</c> actor takes toward the player
+    /// (OV-20261019-actor-contact): the position two steps ahead must lie at least the contact
+    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player; otherwise the
+    /// step is halved, up to four times, and with no free step the actor stays.
+    /// </summary>
+    private double CarefulStepScale(Actor actor, Player player, double stepX, double stepY)
     {
+        double contact = ActorCollisionRadius(actor) + player.Width;
+        double scale = 1;
+        for (int attempt = 0; attempt < 5; attempt++, scale /= 2)
+        {
+            double dx = actor.X + (2 * scale * stepX) - player.Position.X;
+            double dy = actor.Y + (2 * scale * stepY) - player.Position.Z;
+            if ((dx * dx) + (dy * dy) >= contact * contact)
+            {
+                return scale;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// An actor that pushes the player, or a <c>CAREFULLY</c> one the player blocks, fires its
+    /// <c>IF_NEAR</c> in that cycle while the player is outside its <c>DIST</c>
+    /// (OV-20261019-actor-contact), as the player's contact does (OV-20261019-clip-contact).
+    /// </summary>
+    private void FireActorContact(Actor actor)
+    {
+        if (_proximityStates.TryGetValue(actor, out bool near) && near)
+        {
+            return;
+        }
+
+        TriggerObjectActionHook(actor, "IF_NEAR");
+    }
+
+    /// <summary>
+    /// Whether a <c>CAREFULLY</c> actor crosses a wall (OV-20261019-border-kinds). <c>IMPASSABLE</c>
+    /// stops it even on a <c>PASSABLE</c> wall (p.53). A wall with one region on both sides is
+    /// crossed only when <c>PASSABLE</c>. Into another region, the floor may rise less than
+    /// <c>ACTOR_CLIMB</c> (p.113; a rise equal to it blocks) and less than the actor's own height
+    /// above its feet; <c>PLAYER_CLIMB</c> does not count.
+    /// </summary>
+    private bool ActorCanCross(Actor actor, Wall wall, int currentRegion, int otherRegion)
+    {
+        if (wall["IMPASSABLE"] > 0)
+        {
+            return false;
+        }
+
         if (otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
         {
             return wall["PASSABLE"] > 0;
         }
 
-        return true;
+        double rise = _level.Regions[otherRegion].FloorHeight - ActorWorldHeight(actor);
+        double height = MapEntitySizing.TryGetSize(_level, actor, out MapEntitySize size) ? size.Height : double.PositiveInfinity;
+        return rise < GetSkill("ACTOR_CLIMB") && rise < height;
     }
 
     private float ActorCollisionRadius(Actor actor) => EntityCollisionRadius(actor);
