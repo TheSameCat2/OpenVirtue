@@ -68,18 +68,73 @@ public sealed class WdlViewActivityTests
 
     [Theory]
     [InlineData(19.8f, 1)] // the mover 19.8 behind the player
-    [InlineData(20f, 0)] // 20 behind
+    [InlineData(20f, 1)] // 20 behind
+    [InlineData(20.2f, 0)]
     public void Tick_SkipFrames_ActorsWithin20OfThePlayerMoveEveryCycle(float playerX, double expected)
     {
-        // OV-20261020-view-activity, range-d1/d2 and range-fine: behind the player, actors up to 19.8
-        // away moved every cycle with DIST 1 or 2, those 20 or more away every 6th; the off-axis ones
-        // of range-shape (Euclidean 16.6 and 17.2, |dx| + |dy| 23 and 24) skipped.
+        // OV-20261020-view-activity, range-d1/d2, range-fine, edge-along and edge-across: behind the
+        // player, actors up to 20 away moved every cycle with DIST 1 or 2, those farther every 6th;
+        // the off-axis ones of range-shape (Euclidean 16.6 and 17.2, |dx| + |dy| 23 and 24) skipped.
         (WdlRuntime runtime, Actor mover, _) = Create("ACTOR mover { TEXTURE moverTex; TARGET MOVE; SPEED 0.2; DIST 1; }");
         ((Player)runtime.Objects["player"]).MoveTo(0, playerX, 0);
 
         runtime.Tick(Cycle);
 
         Assert.Equal(expected * 0.2, mover.X, 6);
+    }
+
+    // The player at the origin facing +X; a walker 22 behind it walking straight at it, and a pacer
+    // in front of the player's plane, out of the cone and 40 away (both skip while far).
+    private const string WalkerMap =
+        "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+        "REGION room 0 16;#0\n" +
+        "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+        "ACTOR walker -22 0 0 0;#4\nACTOR pacer 10 30 90 0;#5\nPLAYER_START 0 0 0 0;#6";
+
+    [Fact]
+    public void Tick_SkipFrames_WalkerBehindThePlayerKeepsItsLastRefreshedDistance()
+    {
+        // OV-20261020-view-activity rounds 6-9, walk-in and solo-radial: an actor walking in from
+        // behind skips all the way, its distance (22) never refreshed while nothing in front moves
+        // and the player stands.
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; } ACTOR pacer { TEXTURE moverTex; DIST 1; }",
+            WalkerMap);
+
+        List<double> positions = Positions(runtime, walker, 18);
+
+        Assert.Equal(-22 + 9, positions[^1], 6); // three moves of 3, the last two from within 20
+        Assert.Equal(-22 + 6, positions[^2], 6);
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_AMoveInFrontOfThePlayerRefreshesEveryDistance()
+    {
+        // OV-20261020-view-activity rounds 8-9, pair-offline and beam-back: when an actor in front of
+        // the player's plane moves (even far off and unseen), every actor's distance is refreshed, and
+        // the walker moves every cycle once within 20.
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; } ACTOR pacer { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; }",
+            WalkerMap);
+
+        List<double> positions = Positions(runtime, walker, 9);
+
+        // A move of 3 to -19 at cycle 6, with the pacer's; refreshed, the walker moves every cycle from then on.
+        Assert.Equal([-22, -19, -18.5, -18, -17.5], positions[4..]);
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_APlayerMoveRefreshesEveryDistance()
+    {
+        // OV-20261020-view-activity round 8, walk-aside and locate-aside: the player's own move (a
+        // walk or a beam) refreshes the distances too.
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; } ACTOR pacer { TEXTURE moverTex; DIST 1; }",
+            WalkerMap);
+        Positions(runtime, walker, 6); // one move of 3, to -19: still 22 as last refreshed
+        ((Player)runtime.Objects["player"]).MoveTo(0, 0.01f, 0);
+
+        Assert.Equal([-18.5, -18, -17.5], Positions(runtime, walker, 3));
     }
 
     [Fact]
@@ -191,6 +246,45 @@ public sealed class WdlViewActivityTests
 
         Assert.Equal(1, runtime.GetSkill("runs"));
         Assert.Equal(0, level.Walls[0]["VISIBLE"]);
+    }
+
+    // ---- VISIBLE and SEEN of plain walls, things and actors -----------------------------------
+
+    private static readonly string[] ProbeSkills = ["vf", "ef", "vh", "eh", "vw", "ew"];
+
+    [Fact]
+    public void Tick_PlainWallsAndActors_GetVisibleAndKeepSeen()
+    {
+        // OV-20261020-view-activity round 6, wall-seen: a plain wall ahead (front), one right behind
+        // it (hidden), and an actor behind the player. VISIBLE follows the last drawn frame, SEEN
+        // stays once set (p.53, p.71).
+        const string map =
+            "VERTEX 30 -4 0;#0\nVERTEX 30 4 0;#1\nVERTEX 40 -2 0;#2\nVERTEX 40 2 0;#3\nREGION room 0 16;#0\n" +
+            "WALL front 0 1 0 0 0 0;#0\nWALL hidden 2 3 0 0 0 0;#1\nACTOR watcher -40 5 0 0;#2\nPLAYER_START 0 0 0 0;#3";
+        (WdlRuntime runtime, _, _) = Create(
+            "WALL front { } WALL hidden { } ACTOR watcher { TEXTURE moverTex; DIST 1; } " +
+            "SYNONYM sf { TYPE WALL; } SYNONYM sh { TYPE WALL; } SYNONYM sw { TYPE ACTOR; } " +
+            "SKILL vf { VAL 0; } SKILL ef { VAL 0; } SKILL vh { VAL 0; } SKILL eh { VAL 0; } SKILL vw { VAL 0; } SKILL ew { VAL 0; } " +
+            "ACTION probe { SET sf, front; SET sh, hidden; SET sw, watcher; " +
+            "RULE vf = sf.VISIBLE; RULE ef = sf.SEEN; RULE vh = sh.VISIBLE; RULE eh = sh.SEEN; RULE vw = sw.VISIBLE; RULE ew = sw.SEEN; }",
+            map);
+        var player = (Player)runtime.Objects["player"];
+        runtime.SetEachTickAction(1, "probe");
+
+        Assert.Equal([1, 1, 0, 0, 0, 0], Probe(runtime)); // S1: facing +X
+        runtime.SetSkill("PLAYER_ANGLE", Math.PI);
+        Assert.Equal([0, 1, 0, 0, 1, 1], Probe(runtime)); // S2: facing -X, the actor in view
+        player.MoveTo(0, 35, 0);
+        runtime.SetSkill("PLAYER_ANGLE", 0);
+        Assert.Equal([0, 1, 1, 1, 0, 1], Probe(runtime)); // S3: between the walls
+        player.MoveTo(0, 0, 0);
+        Assert.Equal([1, 1, 0, 1, 0, 1], Probe(runtime)); // S4: back at the start
+
+        static double[] Probe(WdlRuntime runtime)
+        {
+            runtime.Tick(Cycle);
+            return [.. ProbeSkills.Select(runtime.GetSkill)];
+        }
     }
 
     private static List<double> Positions(WdlRuntime runtime, Actor mover, int cycles)

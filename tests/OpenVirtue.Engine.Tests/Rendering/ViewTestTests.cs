@@ -94,6 +94,21 @@ public sealed class ViewTestTests
         Assert.True(View.IsWallVisible(Viewer(12, 20, -Math.PI / 2), farSide));
     }
 
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("FLAGS TRANSPARENT;", true)] // with a solid texture as with one all in colour 0
+    [InlineData("FLAGS INVISIBLE;", true)]
+    public void IsSpriteVisible_BehindATransparentOrInvisibleWall_IsVisible(string flags, bool expected)
+    {
+        // OV-20261020-view-activity round 6, occlude-kinds: still actors 40 ahead behind free-standing
+        // walls at x = 30.
+        const string map =
+            "VERTEX 30 -6 0;#0\nVERTEX 30 6 0;#1\nREGION room 0 16;#0\nWALL pane 0 1 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        var view = new ViewTest(Load(map, $"WALL pane {{ {flags} }}"));
+
+        Assert.Equal(expected, view.IsSpriteVisible(Viewer(0, 0, 0), 40, 0, 1, 0, 2));
+    }
+
     [Fact]
     public void Update_AWallWhoseVerticesMoved_HidesFromItsNewPlace()
     {

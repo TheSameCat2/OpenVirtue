@@ -1793,7 +1793,7 @@ public sealed class WdlInterpreter(IWdlContext context)
             string property = header[start + 2].Text;
             if (context.GetObject(name) is { } obj)
             {
-                SetObjectNumber(obj, property, Apply(op, obj[property], rvalue));
+                SetObjectNumber(obj, property, Apply(op, GetObjectNumber(obj, property), rvalue));
                 return;
             }
 
@@ -1823,7 +1823,7 @@ public sealed class WdlInterpreter(IWdlContext context)
             string property = header[start + 2].Text;
             if (context.GetObject(name) is { } obj)
             {
-                value = obj[property];
+                value = GetObjectNumber(obj, property);
                 return true;
             }
 
@@ -1872,6 +1872,9 @@ public sealed class WdlInterpreter(IWdlContext context)
             SetObjectNumber(obj, property, value);
         }
     }
+
+    private double GetObjectNumber(AcknexObject target, string memberName) =>
+        context is IWdlObjectReadContext reads ? reads.GetObjectNumber(target, memberName) : target[memberName];
 
     private void SetObjectNumber(AcknexObject target, string memberName, double value)
     {

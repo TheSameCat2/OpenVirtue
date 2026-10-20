@@ -22,9 +22,10 @@ the start of the next `Tick`.
 eye height and `PLAYER_ANGLE`, the `PLAYER_ARC` cone and the tilted vertical window of
 `ProjectionModel`, and the level's wall geometry (a sight-line walk past walls and region
 openings, like the hitscan's). The model lives in `OpenVirtue.Engine.Rendering.ViewTest`, which has
-no graphics dependency. `WdlRuntime` sets `VISIBLE` on things, actors and `BERKELEY` walls and keeps
-the result for the cycle's `SKIP_FRAMES` and `BERKELEY` gates. Nothing flows back from the
-renderer.
+no graphics dependency. `WdlRuntime` sets `VISIBLE` (and `SEEN`) on things, actors and `BERKELEY`
+walls and keeps the result for the cycle's `SKIP_FRAMES` and `BERKELEY` gates. Other walls are
+tested for the same frame only when a script reads their `VISIBLE` or `SEEN` (and every frame once
+one has read a wall's `SEEN`). Nothing flows back from the renderer.
 
 ## Alternatives considered
 
@@ -45,4 +46,6 @@ renderer.
 - The test costs a few sight lines per thing, actor and `BERKELEY` wall per cycle. Each is checked
   only against the walls of the 16-step grid cells it crosses: under 1 ms a frame on the retail
   levels (about 7000 walls, 600–1000 things and actors). The grid is built once per level (5–8 ms)
-  and follows moving vertices. Other walls get no `VISIBLE` flag until a need for it exists.
+  and follows moving vertices. Testing every wall costs 3–13 ms a pass on the same levels and no
+  retail script reads a plain wall's flags, so plain walls are tested on demand (amended
+  2026-10-20, view-activity round 6).

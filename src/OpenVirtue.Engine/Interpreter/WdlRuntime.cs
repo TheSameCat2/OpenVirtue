@@ -24,6 +24,7 @@ public sealed class WdlRuntime :
     IWdlActionHookContext,
     IWdlObjectGroupContext,
     IWdlObjectMutationContext,
+    IWdlObjectReadContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
     IWdlInputContext,
@@ -166,10 +167,31 @@ public sealed class WdlRuntime :
     private readonly HashSet<AcknexObject> _inView = [];
 
     /// <summary>
-    /// Unseen actors closer than this to the player (|dx| + |dy|) move every cycle whatever their
-    /// <c>DIST</c>; the manual does not mention it (OV-20261020-view-activity, range-*).
+    /// Unseen actors at most this far from the player (|dx| + |dy|, see <see cref="RefreshSkipDistances"/>)
+    /// move every cycle whatever their <c>DIST</c>; the manual does not mention it
+    /// (OV-20261020-view-activity, range-* and edge-*).
     /// </summary>
     private const double SkipFramesNearRange = 20;
+
+    /// <summary>Each actor's distance from the player as <see cref="RefreshSkipDistances"/> last refreshed it.</summary>
+    private readonly Dictionary<Actor, double> _skipDistances = [];
+
+    /// <summary>The player's position at the last refresh of <see cref="_skipDistances"/>.</summary>
+    private (double X, double Y)? _skipDistancePlayer;
+
+    /// <summary>Whether an actor in front of the player moved since the last refresh of <see cref="_skipDistances"/>.</summary>
+    private bool _frontActorMoved;
+
+    /// <summary>The view of the last drawn frame (<see cref="RefreshView"/>), counted by <see cref="_viewFrame"/>.</summary>
+    private Viewer? _lastViewer;
+
+    private int _viewFrame;
+
+    /// <summary>The frame in which each wall's <c>VISIBLE</c> was last worked out (<see cref="TestWallView"/>).</summary>
+    private readonly Dictionary<Wall, int> _wallViewFrames = [];
+
+    /// <summary>Whether an action has read a wall's <c>SEEN</c>, so every wall is tested in every frame.</summary>
+    private bool _trackWallsSeen;
 
     /// <summary>The cycles an unseen actor has skipped since it last moved (<c>SKIP_FRAMES</c>).</summary>
     private readonly Dictionary<Actor, int> _skippedCycles = [];
@@ -400,6 +422,8 @@ public sealed class WdlRuntime :
         RestoreLevelObjects(snapshot.LevelObjects);
         RestorePlayer(snapshot.Player);
         _skippedCycles.Clear();
+        _skipDistances.Clear();
+        _skipDistancePlayer = null;
         RefreshView();
         _proximityStates.Clear();
         _arrivedTargets.Clear();
@@ -2257,6 +2281,8 @@ public sealed class WdlRuntime :
 
             timeCorrection = cycleCorrection * cycles;
             _longSkippedStep = cycles > 1;
+            double startX = actor.X;
+            double startY = actor.Y;
 
             string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
             bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
@@ -2275,6 +2301,7 @@ public sealed class WdlRuntime :
                 }
 
                 _arrivedTargets.Remove(actor);
+                NoteFrontMove(actor, startX, startY);
                 continue;
             }
 
@@ -2300,6 +2327,8 @@ public sealed class WdlRuntime :
             {
                 _arrivedTargets.Remove(actor);
             }
+
+            NoteFrontMove(actor, startX, startY);
         }
 
         _longSkippedStep = false;
@@ -3648,14 +3677,22 @@ public sealed class WdlRuntime :
     /// start of the cycle, before the cycle's actions turn or move it, is the frame the original drew
     /// at the end of the previous cycle. A thing's or actor's <c>VISIBLE</c> is set while some of it
     /// is on the screen (p.70, <see cref="ViewTest"/>); an <c>INVISIBLE</c> one is never visible.
-    /// <c>SKIP_FRAMES</c> and <c>BERKELEY</c> walls follow it (OV-20261020-view-activity). Of the walls
-    /// only <c>BERKELEY</c> ones are tested, and only they get a <c>VISIBLE</c> flag. Without a player
-    /// there is no view: every visible object counts as seen.
+    /// Things, actors and walls set <c>SEEN</c> once visible and keep it (p.53, p.71).
+    /// <c>SKIP_FRAMES</c> and <c>BERKELEY</c> walls follow it (OV-20261020-view-activity), so things,
+    /// actors and <c>BERKELEY</c> walls are tested here in every cycle. Other walls get their
+    /// <c>VISIBLE</c> the same way (round 6, wall-seen) but are tested only when an action reads it
+    /// (<see cref="GetObjectNumber"/>): testing thousands of walls costs milliseconds a cycle, and the
+    /// retail scripts never read them. Once an action reads a wall's <c>SEEN</c>, every wall is tested
+    /// here from then on. Without a player there is no view: every object that is not
+    /// <c>INVISIBLE</c> counts as visible, and none as seen. Also refreshes the distances of
+    /// <see cref="RefreshSkipDistances"/>.
     /// </summary>
     private void RefreshView()
     {
         _inView.Clear();
+        _viewFrame++;
         Viewer? viewer = CurrentViewer();
+        _lastViewer = viewer;
         if (viewer is not null && _viewTest?.Update(_level) != true)
         {
             _viewTest = new ViewTest(_level);
@@ -3668,29 +3705,108 @@ public sealed class WdlRuntime :
             entity["VISIBLE"] = visible ? 1 : 0;
             if (visible)
             {
+                if (viewer is not null)
+                {
+                    entity["SEEN"] = 1;
+                }
+
                 _inView.Add(entity);
             }
         }
 
-        if (viewer is not { } wallView)
+        RefreshSkipDistances();
+        if (viewer is null)
         {
             return;
         }
 
         foreach (Wall wall in _level.Walls)
         {
-            if (wall["BERKELEY"] <= 0)
+            if (_trackWallsSeen || wall["BERKELEY"] > 0)
             {
-                continue;
-            }
-
-            bool visible = wall["INVISIBLE"] <= 0 && test!.IsWallVisible(wallView, wall);
-            wall["VISIBLE"] = visible ? 1 : 0;
-            if (visible)
-            {
-                _inView.Add(wall);
+                TestWallView(wall);
             }
         }
+    }
+
+    /// <summary>Sets a wall's <c>VISIBLE</c> (and <c>SEEN</c>) for the last drawn frame, once a frame.</summary>
+    private void TestWallView(Wall wall)
+    {
+        if (_lastViewer is not { } viewer || _viewTest is null || _wallViewFrames.GetValueOrDefault(wall) == _viewFrame)
+        {
+            return;
+        }
+
+        _wallViewFrames[wall] = _viewFrame;
+        bool visible = wall["INVISIBLE"] <= 0 && _viewTest.IsWallVisible(viewer, wall);
+        wall["VISIBLE"] = visible ? 1 : 0;
+        if (visible)
+        {
+            wall["SEEN"] = 1;
+            _inView.Add(wall);
+        }
+    }
+
+    /// <inheritdoc/>
+    public double GetObjectNumber(AcknexObject target, string memberName)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (target is Wall wall)
+        {
+            if (memberName.Equals("SEEN", StringComparison.OrdinalIgnoreCase))
+            {
+                _trackWallsSeen = true;
+                TestWallView(wall);
+            }
+            else if (memberName.Equals("VISIBLE", StringComparison.OrdinalIgnoreCase))
+            {
+                TestWallView(wall);
+            }
+        }
+
+        return target[memberName];
+    }
+
+    /// <summary>
+    /// Refreshes the distances <see cref="SkipFramesMultiplier"/> tests against its near range. The
+    /// original keeps an actor's distance (|dx| + |dy|, its <c>DISTANCE</c>) from the last frame in
+    /// which the player moved or an actor in front of the player moved; actors walking behind the
+    /// player keep the old value however far they walk (OV-20261020-view-activity rounds 6–9). It
+    /// refreshes every actor's at once.
+    /// </summary>
+    private void RefreshSkipDistances()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        var position = (player.Position.X, player.Position.Z);
+        if (!_frontActorMoved && _skipDistancePlayer == position && _skipDistances.Count == _level.Actors.Count)
+        {
+            return;
+        }
+
+        _frontActorMoved = false;
+        _skipDistancePlayer = position;
+        _skipDistances.Clear();
+        foreach (Actor actor in _level.Actors)
+        {
+            _skipDistances[actor] = Math.Abs(actor.X - position.X) + Math.Abs(actor.Y - position.Z);
+        }
+    }
+
+    /// <summary>Notes an actor's move this cycle when it ends in front of the player (see <see cref="RefreshSkipDistances"/>).</summary>
+    private void NoteFrontMove(Actor actor, double startX, double startY)
+    {
+        if ((actor.X == startX && actor.Y == startY) || GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        double angle = GetSkill("PLAYER_ANGLE");
+        double depth = ((actor.X - player.Position.X) * Math.Cos(angle)) + ((actor.Y - player.Position.Z) * Math.Sin(angle));
+        _frontActorMoved |= depth > 0;
     }
 
     private Viewer? CurrentViewer()
@@ -3720,7 +3836,8 @@ public sealed class WdlRuntime :
     /// <summary>
     /// How many cycles' distance an actor covers this cycle under <c>SKIP_FRAMES</c> (p.113), 0 to
     /// stay put. An actor that was not visible in the last drawn frame, is outside its <c>DIST</c>
-    /// and at least <see cref="SkipFramesNearRange"/> from the player moves only every
+    /// and more than <see cref="SkipFramesNearRange"/> from the player (as last refreshed, see
+    /// <see cref="RefreshSkipDistances"/>) moves only every
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
     /// (OV-20261019-border-kinds, OV-20261020-view-activity).
@@ -3732,7 +3849,7 @@ public sealed class WdlRuntime :
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
             _inView.Contains(actor) ||
-            Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z) < SkipFramesNearRange ||
+            _skipDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
             _skippedCycles.Remove(actor);

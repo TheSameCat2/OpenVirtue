@@ -107,6 +107,13 @@ public interface IWdlObjectMutationContext
     void SetObjectNumber(AcknexObject target, string memberName, double value);
 }
 
+/// <summary>Optional runtime surface for numeric object reads that the engine works out on demand.</summary>
+public interface IWdlObjectReadContext
+{
+    /// <summary>Reads a numeric object member, bringing an engine-computed value up to date first.</summary>
+    double GetObjectNumber(AcknexObject target, string memberName);
+}
+
 /// <summary>How a synonym-iteration instruction selects the next object reference.</summary>
 public enum WdlObjectIterationMode
 {
