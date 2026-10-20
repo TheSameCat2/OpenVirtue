@@ -148,7 +148,8 @@ Still open:
 - How exactly the eye has to lie above the floor (strictly, or by less than 0.1), and whether
   the floor is sampled at the player's position on slopes, was not probed.
 - `IMPASSABLE`, an `INVISIBLE` region border (p.53 says it must have one region on both sides),
-  actors (`ACTOR_CLIMB`, p.113) and things were not probed.
+  actors (`ACTOR_CLIMB`, p.113) and things were not probed. Answered for all but things by
+  OV-20261019-border-kinds, which also measured the eye strictly above the floor.
 
 ## Tests To Add Or Update
 - `PlayerTests.MoveHorizontal_IntoRegionBorder_EntersWhenTheFloorIsLessThanClimbAboveTheFeet`.

@@ -139,7 +139,9 @@ Confirmed for patched V3.963:
 5. **`CLIP_DIST` is the smaller of the player's region's and the object's own region's.** A
    room wall followed the room's value like a room thing.
 6. **A `BERKELEY` thing or actor is active only while the player is within its `DIST`**, whether
-   or not it is in view. It fired neither `IF_NEAR` nor `IF_FAR`.
+   or not it is in view. It fired neither `IF_NEAR` nor `IF_FAR`. (OV-20261019-actor-contact:
+   a thing is near only while the eye is also within its `DIST` of the texture's centre; the eye at
+   8 was 7 above these 2-high `DIST 4` objects, so the silence does not come from `BERKELEY`.)
 7. **A `TARGET` naming a way assigns that way** (p.66): the actor patrols it.
 
 ## Confidence
@@ -164,6 +166,9 @@ an inactive object). The contact runs had only 4 pushing cycles at 8 ticks per c
   (OpenVirtue pauses it). `BERKELEY` walls (p.53) were not probed.
 - Contact by an actor moving into a standing player (the 307 `IF_NEAR`s of
   OV-20261015-flic-scheduler-detail) is not modelled: OpenVirtue actors do not push the player.
+  Answered by OV-20261019-actor-contact: an actor without `CAREFULLY` pushes the player and fires
+  `IF_NEAR` in every pushing cycle. Gated texture animation (paused) and walls between regions
+  with different `CLIP_DIST`s are answered by OV-20261019-clip-detail.
 
 ## Tests To Add Or Update
 - `WdlRuntimeTests.Tick_PlayerProximity_CrossingRegionBorderFiresNearWithoutPassable`.

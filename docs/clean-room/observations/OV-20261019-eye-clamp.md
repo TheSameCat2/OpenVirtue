@@ -129,7 +129,8 @@ neither was a reading of `TIME_CORR` exactly 4.
   `BELOW` link (`IF_DIVE`/`IF_ARISE`) clamp the same way is not probed.
 - Whether contact with things and actors keeps the same 0.05 beyond `PLAYER_WIDTH` + half their
   width is not probed (OV-20261015-flic-scheduler-detail measured about 2.2 for a 2-step-wide
-  object).
+  object). Answered by OV-20261019-actor-contact: no, contact is half the width plus
+  `PLAYER_WIDTH`, with no clearance.
 
 ## Tests To Add Or Update
 - `PlayerTests.ClampEye_KeepsTheEyeAMarginInsideTheRegion` (border-climb's pass-10, edge-1,
