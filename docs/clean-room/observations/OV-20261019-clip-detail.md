@@ -105,5 +105,6 @@ the wall).
 `WdlRuntime.ClipBorder` returns the player's region's `CLIP_DIST` for a wall and the smaller of
 that and the object's own region's for a thing or actor. `DispatchProximityEvents` skips the
 `DIST` test of a wall outside its border and keeps its state; the touched-wall path still runs.
-The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are not implemented: the
-engine has no per-wall view test yet.
+The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are implemented from
+OV-20261020-view-activity, which answers the second open question above: a `BERKELEY` wall also
+runs while the player is within its `DIST`.

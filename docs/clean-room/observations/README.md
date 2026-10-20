@@ -150,11 +150,24 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   and fire nothing when a free-standing one is passed; an invisible region border ignores the
   climb and still fires `IF_NEAR` on crossing. A `CAREFULLY` actor climbs a rise below
   `ACTOR_CLIMB` (default 1.1) and below its own height; `PLAYER_CLIMB` does not apply.
-  `SKIP_FRAMES` moves unseen actors outside `DIST` every 6th cycle (not implemented). The eye must
-  be strictly above a new floor. Fifteen DOSBox-X runs; implemented in `Player`,
+  `SKIP_FRAMES` moves unseen actors outside `DIST` every 6th cycle (implemented with
+  OV-20261020-view-activity). The eye must be strictly above a new floor. Fifteen DOSBox-X runs; implemented in `Player`,
   `LevelCollisionWorld` and `WdlRuntime`.
 - `OV-20261019-clip-detail.md` — outside its border a thing's or actor's texture animation is
-  paused. A `BERKELEY` wall runs its `EACH_TICK` only while in view (not implemented). A wall's
+  paused. A `BERKELEY` wall runs its `EACH_TICK` only while in view (refined and implemented in
+  OV-20261020-view-activity). A wall's
   `DIST` test is gated by the border like a thing's. A wall's border is the player's region's
   `CLIP_DIST` alone, even between two regions. `INVISIBLE` walls run no `EACH_TICK`. Five
   DOSBox-X runs (one more failed to compile); implemented in `WdlRuntime`.
+
+## View activity (2026-10-20 — confirmed and implemented)
+
+- `OV-20261020-view-activity.md` — `VISIBLE` is set while some of a sprite or wall is on the screen
+  in the last drawn frame: in the `PLAYER_ARC` cone (counting its width), not behind a wall or a
+  region step, and between the screen's top and bottom. `SKIP_FRAMES` follows it: an actor that is
+  not visible, outside its `DIST`, without `FAR` and at least 20 from the player (|dx| + |dy|) moves
+  every (`SKIP_FRAMES` + 1)th cycle counted from its own last move, by that many cycles' step. Such
+  a step, for a `CAREFULLY` actor, is tested at its end only and can jump walls and raised regions.
+  A `BERKELEY` wall runs its `EACH_TICK` while visible or while the player is within its `DIST`.
+  Twenty-one DOSBox-X launches (seventeen usable); implemented in `ViewTest` and `WdlRuntime`
+  (ADR-0010).

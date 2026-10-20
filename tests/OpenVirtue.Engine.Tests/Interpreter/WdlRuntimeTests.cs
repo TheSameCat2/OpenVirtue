@@ -3392,6 +3392,7 @@ public class WdlRuntimeTests
         var player = new Player(level);
         var runtime = new WdlRuntime(level);
         runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0); // the actor pushes from behind the player
         player.MoveTo(0, 4, 0);
         Actor pusher = Assert.Single(level.Actors);
 
@@ -3418,6 +3419,7 @@ public class WdlRuntimeTests
         var player = new Player(level);
         var runtime = new WdlRuntime(level);
         runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0); // the actor pushes from behind the player
         player.MoveTo(0, 10.05f, 0);
         Actor pusher = Assert.Single(level.Actors);
 
@@ -3540,6 +3542,7 @@ public class WdlRuntimeTests
         var player = new Player(level);
         var runtime = new WdlRuntime(level);
         runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0); // the patrol is out of view at the last stand
 
         runtime.Tick(1.0 / 16);
         Assert.Equal(40, follower.X, 6);

@@ -128,5 +128,5 @@ apart. medium for rule 4: the counting was read from samples 24 ticks apart.
 skips free-standing `INVISIBLE` walls. `WdlRuntime.ActorCanCross` (for `CAREFULLY` moves) stops at
 `IMPASSABLE`, needs `PASSABLE` for a wall with one region on both sides, and limits a rise to below
 `ACTOR_CLIMB` and below the actor's texture height. `CAREFULLY` moves now pass
-`Player.WallClearance`. `ACTOR_CLIMB` defaults to 1.1. `SKIP_FRAMES` is not implemented yet: it
-needs a view test for actors.
+`Player.WallClearance`. `ACTOR_CLIMB` defaults to 1.1. `SKIP_FRAMES` is implemented from
+OV-20261020-view-activity, which answers the second open question above.

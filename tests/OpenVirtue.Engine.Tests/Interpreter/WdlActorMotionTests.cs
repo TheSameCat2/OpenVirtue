@@ -414,6 +414,9 @@ public sealed class WdlActorMotionTests
             "test.wdl",
             "MAPFILE <m.wmp>; " + declarations,
             name => resources.GetValueOrDefault(Path.GetFileName(name)));
-        return (new WdlRuntime(level), level);
+        var runtime = new WdlRuntime(level);
+        // The mover starts behind the player start; SKIP_FRAMES would hold it (OV-20261020-view-activity).
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        return (runtime, level);
     }
 }

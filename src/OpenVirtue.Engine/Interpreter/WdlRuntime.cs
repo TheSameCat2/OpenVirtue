@@ -158,6 +158,24 @@ public sealed class WdlRuntime :
     private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
     private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
+
+    /// <summary>The level's walls indexed for the view test (<see cref="ViewTest.Update"/> follows moving vertices).</summary>
+    private ViewTest? _viewTest;
+
+    /// <summary>The things, actors and <c>BERKELEY</c> walls visible in the last drawn frame (see <see cref="RefreshView"/>).</summary>
+    private readonly HashSet<AcknexObject> _inView = [];
+
+    /// <summary>
+    /// Unseen actors closer than this to the player (|dx| + |dy|) move every cycle whatever their
+    /// <c>DIST</c>; the manual does not mention it (OV-20261020-view-activity, range-*).
+    /// </summary>
+    private const double SkipFramesNearRange = 20;
+
+    /// <summary>The cycles an unseen actor has skipped since it last moved (<c>SKIP_FRAMES</c>).</summary>
+    private readonly Dictionary<Actor, int> _skippedCycles = [];
+
+    /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TryEndPointCarefulMove"/>).</summary>
+    private bool _longSkippedStep;
     private readonly Dictionary<Actor, string> _actorTargetStates = [];
     private readonly Dictionary<AcknexObject, TextureAnimationState> _textureAnimationStates = [];
     private readonly LevelCollisionWorld _collisionWorld;
@@ -204,7 +222,7 @@ public sealed class WdlRuntime :
         InitializeEachTickActions(level);
         InitializeEachSecActions(level);
         InitializeActionHooks(level);
-        RefreshEntityVisibilityFlags();
+        RefreshView();
         InitializeAnimationCycles();
         _interpreter = new WdlInterpreter(this);
     }
@@ -381,7 +399,8 @@ public sealed class WdlRuntime :
         RestoreVertices(snapshot.Vertices);
         RestoreLevelObjects(snapshot.LevelObjects);
         RestorePlayer(snapshot.Player);
-        RefreshEntityVisibilityFlags();
+        _skippedCycles.Clear();
+        RefreshView();
         _proximityStates.Clear();
         _arrivedTargets.Clear();
         _actorTargetStates.Clear();
@@ -1331,7 +1350,7 @@ public sealed class WdlRuntime :
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
-        RefreshEntityVisibilityFlags();
+        RefreshView();
         RefreshDistances(cycleStart: true);
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
@@ -1350,7 +1369,7 @@ public sealed class WdlRuntime :
         foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
         {
             // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
-            if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target))
+            if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target) || IsDormantBerkeleyWall(target))
             {
                 continue;
             }
@@ -1698,6 +1717,7 @@ public sealed class WdlRuntime :
 
         // OV-20261019-border-kinds: the runtime starts ACTOR_CLIMB at 1.1 (the manual says 1, p.113).
         EnsureSkillDefault("ACTOR_CLIMB", 1.1);
+        EnsureSkillDefault("SKIP_FRAMES", 5);
         EnsureSkillDefault("ACTOR_WIDTH", 1);
         EnsureSkillDefault("THING_WIDTH", 1);
         EnsureSkillDefault("SCREEN_X", 0);
@@ -2199,10 +2219,12 @@ public sealed class WdlRuntime :
             _ => false,
         };
 
-    private void AdvanceActorTargets(double timeCorrection)
+    private void AdvanceActorTargets(double cycleCorrection)
     {
         foreach (Actor actor in _level.Actors)
         {
+            double timeCorrection = cycleCorrection;
+            _longSkippedStep = false;
             actor["MOVED"] = 0;
             actor["IMPACT_VX"] = 0;
             actor["IMPACT_VY"] = 0;
@@ -2226,6 +2248,15 @@ public sealed class WdlRuntime :
             {
                 continue;
             }
+
+            int cycles = SkipFramesMultiplier(actor);
+            if (cycles == 0)
+            {
+                continue;
+            }
+
+            timeCorrection = cycleCorrection * cycles;
+            _longSkippedStep = cycles > 1;
 
             string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
             bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
@@ -2270,6 +2301,8 @@ public sealed class WdlRuntime :
                 _arrivedTargets.Remove(actor);
             }
         }
+
+        _longSkippedStep = false;
     }
 
     private bool AdvanceActorWay(Actor actor, LevelWay way, double timeCorrection)
@@ -2523,16 +2556,19 @@ public sealed class WdlRuntime :
             }
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
-            CircleMoveResult result = _collisionWorld.Move(
-                start,
-                actor.Region,
-                new Vector2((float)(requestedX * scale), (float)(requestedY * scale)),
-                ActorCollisionRadius(actor),
-                (wall, current, other) => ActorCanCross(actor, wall, current, other),
-                EntityCollisionRadius,
-                static entity => entity["INVISIBLE"] > 0,
-                actor,
-                wallClearance: Player.WallClearance);
+            var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
+            CircleMoveResult result = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion)
+                ? new CircleMoveResult(start + step, endRegion, step, Collided: false, RegionChanged: endRegion != actor.Region)
+                : _collisionWorld.Move(
+                    start,
+                    actor.Region,
+                    step,
+                    ActorCollisionRadius(actor),
+                    (wall, current, other) => ActorCanCross(actor, wall, current, other),
+                    EntityCollisionRadius,
+                    static entity => entity["INVISIBLE"] > 0,
+                    actor,
+                    wallClearance: Player.WallClearance);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             actor.Region = result.Region;
@@ -2632,10 +2668,90 @@ public sealed class WdlRuntime :
             return wall["PASSABLE"] > 0;
         }
 
-        double rise = _level.Regions[otherRegion].FloorHeight - ActorWorldHeight(actor);
+        return ActorCanClimbInto(actor, otherRegion);
+    }
+
+    private bool ActorCanClimbInto(Actor actor, int region)
+    {
+        double rise = _level.Regions[region].FloorHeight - ActorWorldHeight(actor);
         double height = MapEntitySizing.TryGetSize(_level, actor, out MapEntitySize size) ? size.Height : double.PositiveInfinity;
         return rise < GetSkill("ACTOR_CLIMB") && rise < height;
     }
+
+    /// <summary>
+    /// A skipped actor's <c>CAREFULLY</c> step (<c>SKIP_FRAMES</c>) longer than its half width is
+    /// tested at its end only (OV-20261020-view-activity, long-wall and long-pad): it goes through when the region at its
+    /// end point may be entered (<see cref="ActorCanClimbInto"/>) and no wall the actor may not cross
+    /// lies within its half width and the wall clearance ahead of that point. Walls in between are
+    /// not tested, so the step can jump a wall or a whole raised region. Otherwise the step is swept
+    /// as usual and stops at the first wall. A shorter step is swept: the end test of the step before
+    /// covered the walls it can reach. Other things, actors and the player are not tested at the end
+    /// either. Steps of actors that are not skipping were not measured and are always swept.
+    /// </summary>
+    private bool TryEndPointCarefulMove(Actor actor, double stepX, double stepY, out int endRegion)
+    {
+        endRegion = actor.Region;
+        double radius = ActorCollisionRadius(actor);
+        double length = Math.Sqrt((stepX * stepX) + (stepY * stepY));
+        if (!_longSkippedStep || length <= radius || actor.Region < 0 || actor.Region >= _level.Regions.Count)
+        {
+            return false;
+        }
+
+        double directionX = stepX / length;
+        double directionY = stepY / length;
+        // The end point's region: follow the region borders the step crosses, nearest first.
+        int region = actor.Region;
+        foreach (Wall wall in CrossedWalls(actor.X, actor.Y, directionX, directionY, length))
+        {
+            region = OtherSide(wall, region);
+        }
+
+        if (region < 0 || region >= _level.Regions.Count || (region != actor.Region && !ActorCanClimbInto(actor, region)))
+        {
+            return false;
+        }
+
+        double endX = actor.X + stepX;
+        double endY = actor.Y + stepY;
+        int current = region;
+        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius + Player.WallClearance))
+        {
+            int other = OtherSide(wall, current);
+            if (!ActorCanCross(actor, wall, current, other))
+            {
+                return false;
+            }
+
+            current = other;
+        }
+
+        endRegion = region;
+        return true;
+    }
+
+    /// <summary>The walls a segment from (x, y) along a unit direction crosses within <paramref name="length"/>, nearest first.</summary>
+    private IEnumerable<Wall> CrossedWalls(double x, double y, double directionX, double directionY, double length)
+    {
+        var crossed = new List<(double Distance, Wall Wall)>();
+        foreach (Wall wall in _level.Walls)
+        {
+            if (TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
+                TryRaySegmentDistance(x, y, directionX, directionY, ax, ay, bx, by, out double distance) &&
+                distance > 1e-9 &&
+                distance <= length)
+            {
+                crossed.Add((distance, wall));
+            }
+        }
+
+        return crossed.OrderBy(static c => c.Distance).Select(static c => c.Wall);
+    }
+
+    private static int OtherSide(Wall wall, int region) =>
+        wall.LeftRegion == region ? wall.RightRegion :
+        wall.RightRegion == region ? wall.LeftRegion :
+        region;
 
     private float ActorCollisionRadius(Actor actor) => EntityCollisionRadius(actor);
 
@@ -3527,12 +3643,133 @@ public sealed class WdlRuntime :
         return Math.Sqrt((dx * dx) + (dy * dy));
     }
 
-    private void RefreshEntityVisibilityFlags()
+    /// <summary>
+    /// Works out what the last drawn frame showed (ADR-0010): the player's view as it stands at the
+    /// start of the cycle, before the cycle's actions turn or move it, is the frame the original drew
+    /// at the end of the previous cycle. A thing's or actor's <c>VISIBLE</c> is set while some of it
+    /// is on the screen (p.70, <see cref="ViewTest"/>); an <c>INVISIBLE</c> one is never visible.
+    /// <c>SKIP_FRAMES</c> and <c>BERKELEY</c> walls follow it (OV-20261020-view-activity). Of the walls
+    /// only <c>BERKELEY</c> ones are tested, and only they get a <c>VISIBLE</c> flag. Without a player
+    /// there is no view: every visible object counts as seen.
+    /// </summary>
+    private void RefreshView()
     {
+        _inView.Clear();
+        Viewer? viewer = CurrentViewer();
+        if (viewer is not null && _viewTest?.Update(_level) != true)
+        {
+            _viewTest = new ViewTest(_level);
+        }
+
+        ViewTest? test = viewer is null ? null : _viewTest;
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
-            entity["VISIBLE"] = entity["INVISIBLE"] > 0 ? 0 : 1;
+            bool visible = entity["INVISIBLE"] <= 0 && (viewer is not { } view || IsVisible(test!, view, entity));
+            entity["VISIBLE"] = visible ? 1 : 0;
+            if (visible)
+            {
+                _inView.Add(entity);
+            }
         }
+
+        if (viewer is not { } wallView)
+        {
+            return;
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            if (wall["BERKELEY"] <= 0)
+            {
+                continue;
+            }
+
+            bool visible = wall["INVISIBLE"] <= 0 && test!.IsWallVisible(wallView, wall);
+            wall["VISIBLE"] = visible ? 1 : 0;
+            if (visible)
+            {
+                _inView.Add(wall);
+            }
+        }
+    }
+
+    private Viewer? CurrentViewer()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return null;
+        }
+
+        ProjectionModel projection = ProjectionModel.Create(
+            GetSkill("PLAYER_ARC"),
+            GetSkill("ASPECT"),
+            GetSkill("PLAYER_TILT"),
+            (int)Math.Round(GetSkill("SCREEN_WIDTH")),
+            (int)Math.Round(GetSkill("SCREEN_HGT")));
+        return new Viewer(player.Position.X, player.Position.Z, player.Position.Y, GetSkill("PLAYER_ANGLE"), projection);
+    }
+
+    private bool IsVisible(ViewTest test, Viewer viewer, MapEntity entity)
+    {
+        double bottom = EntityFeetHeight(entity);
+        return MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size)
+            ? test.IsSpriteVisible(viewer, entity.X, entity.Y, size.Width * 0.5, bottom, bottom + size.Height)
+            : test.IsSpriteVisible(viewer, entity.X, entity.Y, 0, bottom, bottom + 1);
+    }
+
+    /// <summary>
+    /// How many cycles' distance an actor covers this cycle under <c>SKIP_FRAMES</c> (p.113), 0 to
+    /// stay put. An actor that was not visible in the last drawn frame, is outside its <c>DIST</c>
+    /// and at least <see cref="SkipFramesNearRange"/> from the player moves only every
+    /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
+    /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
+    /// (OV-20261019-border-kinds, OV-20261020-view-activity).
+    /// </summary>
+    private int SkipFramesMultiplier(Actor actor)
+    {
+        int skip = (int)Math.Truncate(GetSkill("SKIP_FRAMES"));
+        if (skip <= 0 ||
+            actor["FAR"] > 0 ||
+            GetObject("player") is not Player player ||
+            _inView.Contains(actor) ||
+            Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z) < SkipFramesNearRange ||
+            IsWithinDist(player, actor))
+        {
+            _skippedCycles.Remove(actor);
+            return 1;
+        }
+
+        int skipped = _skippedCycles.GetValueOrDefault(actor) + 1;
+        if (skipped <= skip)
+        {
+            _skippedCycles[actor] = skipped;
+            return 0;
+        }
+
+        _skippedCycles.Remove(actor);
+        return skip + 1;
+    }
+
+    /// <summary>
+    /// Whether a <c>BERKELEY</c> wall sleeps this cycle: it runs its <c>EACH_TICK</c> only while it
+    /// was in view in the last drawn frame or the player is within its <c>DIST</c> (p.53,
+    /// OV-20261019-clip-detail, OV-20261020-view-activity). Without a player it never sleeps.
+    /// </summary>
+    private bool IsDormantBerkeleyWall(AcknexObject target) =>
+        target is Wall wall &&
+        wall["BERKELEY"] > 0 &&
+        GetObject("player") is Player player &&
+        !_inView.Contains(wall) &&
+        !IsWithinDist(player, wall);
+
+    /// <summary>The player is within an object's <c>DIST</c>, as the <c>IF_NEAR</c> test counts it (<see cref="TryCurrentProximity"/>).</summary>
+    private bool IsWithinDist(Player player, AcknexObject target)
+    {
+        double threshold = target["DIST"];
+        return threshold > 0 &&
+               TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance) &&
+               distance < threshold &&
+               (target is not MapEntity entity || VerticalOffsetFromCentre(player, entity) < threshold);
     }
 
     private static bool IsInactiveEntity(AcknexObject? target) =>
