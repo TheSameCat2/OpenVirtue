@@ -39,7 +39,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.EyeClampProbeName or
             ProjectionProbeGenerator.ActorContactProbeName or
             ProjectionProbeGenerator.BorderKindsProbeName or
-            ProjectionProbeGenerator.ClipDetailProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.ClipDetailProbeName or
+            ProjectionProbeGenerator.ViewActivityProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };
