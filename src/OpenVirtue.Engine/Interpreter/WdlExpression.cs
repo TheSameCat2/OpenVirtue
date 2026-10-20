@@ -111,7 +111,7 @@ public sealed class MemberExpression(string objectName, string property) : WdlEx
     {
         if (context.GetObject(objectName) is { } obj)
         {
-            return obj[property];
+            return context is IWdlObjectReadContext reads ? reads.GetObjectNumber(obj, property) : obj[property];
         }
 
         // PANEL / TEXT / OVERLAY members (POS_Y, VISIBLE, ...) read the same way SET writes them.
