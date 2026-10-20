@@ -36,3 +36,4 @@ Trade-offs, follow-ups, risks.
 | [0007](0007-oracle-based-invariant-discovery.md) | **Oracle-based invariant discovery** for hidden runtime behavior | accepted |
 | [0008](0008-cross-platform-host-sdl3-opengl.md) | Cross-platform host: **SDL3 + OpenGL 3.3**, `OpenVirtue.Host`, D3D11 kept only until GL replaces it | accepted |
 | [0009](0009-render-space-handedness.md) | Render space is **(map x, height, −map y)**, camera yaw = `PLAYER_ANGLE` + π/2; WMP start angle = `PLAYER_ANGLE` (0 = +x) | accepted |
+| [0010](0010-engine-side-view-test.md) | The **engine decides what is in view** (`ViewTest`, start of each cycle); the renderer reports nothing back | accepted |
