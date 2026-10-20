@@ -25,6 +25,7 @@ public static class WdlPlayerMotion
         player.ThingWidthFactor = (float)Math.Max(0, runtime.GetSkill("THING_WIDTH"));
         player.StepUp = (float)Math.Max(0, runtime.GetSkill("PLAYER_CLIMB"));
 
+        player.PushOutOfObjects();
         runtime.SetSkill("PLAYER_LAST_X", player.Position.X);
         runtime.SetSkill("PLAYER_LAST_Y", player.Position.Z);
 
