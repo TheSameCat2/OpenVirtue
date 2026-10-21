@@ -16,7 +16,8 @@ public readonly record struct Viewer(double X, double Y, double EyeHeight, doubl
 /// <summary>
 /// A headless model of what the original's renderer shows (ADR-0010, OV-20261020-view-activity):
 /// whether some part of a wall, thing or actor is on the screen in the last drawn frame, the
-/// <c>#VISIBLE</c> flag (p.53, p.70) that <c>SKIP_FRAMES</c> and <c>BERKELEY</c> walls follow. A
+/// <c>#VISIBLE</c> flag (p.53, p.70) that <c>SKIP_FRAMES</c> and <c>BERKELEY</c> walls follow, and
+/// whether some of a region is (<see cref="IsRegionVisible"/>). A
 /// point is seen when it lies within the horizontal <c>PLAYER_ARC</c> cone of
 /// <see cref="ProjectionModel"/>, the sight line from the eye reaches it, and its height falls
 /// within the screen's top and bottom (with the <c>PLAYER_TILT</c> shear). Walls with one region on
@@ -34,12 +35,16 @@ public sealed class ViewTest
     private const int MaxWallSamples = 32;
     private const double Epsilon = 1e-6;
 
+    /// <summary>How thick a floor or ceiling is taken to be when it is sampled for <see cref="IsRegionVisible"/>.</summary>
+    private const double SurfaceBand = 0.01;
+
     /// <summary>The side of a cell of the grid that indexes the walls for the sight lines, in steps.</summary>
     private const double CellSize = 16;
 
     private readonly Level _level;
     private readonly Segment[] _segments;
     private readonly int[][] _segmentsOfVertex;
+    private readonly Dictionary<int, List<int>> _segmentsOfRegion = [];
     private readonly double[] _vertices;
     private readonly double _gridX;
     private readonly double _gridY;
@@ -71,6 +76,12 @@ public sealed class ViewTest
             {
                 (segmentsOfVertex[wall.Vertex1] ??= []).Add(segments.Count);
                 (segmentsOfVertex[wall.Vertex2] ??= []).Add(segments.Count);
+                AddRegionSegment(wall.LeftRegion, segments.Count);
+                if (wall.RightRegion != wall.LeftRegion)
+                {
+                    AddRegionSegment(wall.RightRegion, segments.Count);
+                }
+
                 segments.Add(new Segment(wall, ax, ay, bx, by));
             }
         }
@@ -218,6 +229,75 @@ public sealed class ViewTest
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Tests a region, visible "as long as a floor, ceiling or wall of the region is visible" (p.53,
+    /// OV-20261021-distance-refresh): its floor and ceiling are sampled along its border walls, the
+    /// part of them inside the cone, and so are the faces of its border walls that are drawn (solid
+    /// walls and steps, not <c>INVISIBLE</c> ones). Sampling the border finds the farthest, and so
+    /// the highest on the screen, points of a convex floor; a region the viewer stands in is not
+    /// handled here.
+    /// </summary>
+    public bool IsRegionVisible(Viewer viewer, int region)
+    {
+        if (!TryGetRegion(_level, region, out Region? surfaces) || !_segmentsOfRegion.TryGetValue(region, out List<int>? border))
+        {
+            return false;
+        }
+
+        foreach (int index in border)
+        {
+            Segment segment = _segments[index];
+            Wall wall = segment.Wall;
+            if (!TryClipToCone(viewer, segment.Ax, segment.Ay, segment.Bx, segment.By, out double u0, out double u1))
+            {
+                continue;
+            }
+
+            if (wall["INVISIBLE"] <= 0 && HasFace(_level, wall) && IsWallVisible(viewer, wall))
+            {
+                return true;
+            }
+
+            double length = Math.Sqrt(((segment.Bx - segment.Ax) * (segment.Bx - segment.Ax)) + ((segment.By - segment.Ay) * (segment.By - segment.Ay))) * (u1 - u0);
+            int samples = Math.Clamp((int)Math.Ceiling(length), 2, MaxWallSamples);
+            for (int i = 0; i < samples; i++)
+            {
+                double u = u0 + ((u1 - u0) * i / (samples - 1));
+                double px = segment.Ax + ((segment.Bx - segment.Ax) * u);
+                double py = segment.Ay + ((segment.By - segment.Ay) * u);
+                if (IsSurfaceVisible(viewer, px, py, surfaces.FloorHeight, surfaces.FloorHeight + SurfaceBand, wall) ||
+                    IsSurfaceVisible(viewer, px, py, surfaces.CeilHeight - SurfaceBand, surfaces.CeilHeight, wall))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsSurfaceVisible(Viewer viewer, double px, double py, double bottom, double top, Wall border) =>
+        TryVisibleSpan(viewer, px, py, bottom, top, border, out double low, out double high) &&
+        IntersectsScreen(viewer, px, py, low, high);
+
+    /// <summary>Whether a wall shows a face: a solid wall, or a step in the floor or ceiling between its regions.</summary>
+    private static bool HasFace(Level level, Wall wall) =>
+        !TryGetRegion(level, wall.LeftRegion, out Region? left) ||
+        !TryGetRegion(level, wall.RightRegion, out Region? right) ||
+        wall.LeftRegion == wall.RightRegion ||
+        left.FloorHeight != right.FloorHeight ||
+        left.CeilHeight != right.CeilHeight;
+
+    private void AddRegionSegment(int region, int segment)
+    {
+        if (!_segmentsOfRegion.TryGetValue(region, out List<int>? list))
+        {
+            _segmentsOfRegion[region] = list = [];
+        }
+
+        list.Add(segment);
     }
 
     /// <summary>Whether a map point lies in front of the viewer within the <c>PLAYER_ARC</c> cone.</summary>

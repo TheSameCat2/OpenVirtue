@@ -167,19 +167,19 @@ public sealed class WdlRuntime :
     private readonly HashSet<AcknexObject> _inView = [];
 
     /// <summary>
-    /// Unseen actors at most this far from the player (|dx| + |dy|, see <see cref="RefreshSkipDistances"/>)
+    /// Unseen actors at most this far from the player (|dx| + |dy|, see <see cref="RefreshEntityDistances"/>)
     /// move every cycle whatever their <c>DIST</c>; the manual does not mention it
     /// (OV-20261020-view-activity, range-* and edge-*).
     /// </summary>
     private const double SkipFramesNearRange = 20;
 
-    /// <summary>Each actor's distance from the player as <see cref="RefreshSkipDistances"/> last refreshed it.</summary>
-    private readonly Dictionary<Actor, double> _skipDistances = [];
+    /// <summary>Each thing's and actor's distance from the player as <see cref="RefreshEntityDistances"/> last refreshed it.</summary>
+    private readonly Dictionary<MapEntity, double> _entityDistances = [];
 
-    /// <summary>The player's position at the last refresh of <see cref="_skipDistances"/>.</summary>
-    private (double X, double Y)? _skipDistancePlayer;
+    /// <summary>The player's view at the last refresh of <see cref="_entityDistances"/>.</summary>
+    private DistanceView? _distanceView;
 
-    /// <summary>Whether an actor in front of the player moved since the last refresh of <see cref="_skipDistances"/>.</summary>
+    /// <summary>Whether an actor in front of the player moved since the last refresh of <see cref="_entityDistances"/>.</summary>
     private bool _frontActorMoved;
 
     /// <summary>The view of the last drawn frame (<see cref="RefreshView"/>), counted by <see cref="_viewFrame"/>.</summary>
@@ -192,6 +192,12 @@ public sealed class WdlRuntime :
 
     /// <summary>Whether an action has read a wall's <c>SEEN</c>, so every wall is tested in every frame.</summary>
     private bool _trackWallsSeen;
+
+    /// <summary>The frame in which each region's <c>VISIBLE</c> was last worked out (<see cref="TestRegionView"/>).</summary>
+    private readonly Dictionary<Region, int> _regionViewFrames = [];
+
+    /// <summary>Whether an action has read a region's <c>SEEN</c>, so every region is tested in every frame.</summary>
+    private bool _trackRegionsSeen;
 
     /// <summary>The cycles an unseen actor has skipped since it last moved (<c>SKIP_FRAMES</c>).</summary>
     private readonly Dictionary<Actor, int> _skippedCycles = [];
@@ -422,8 +428,8 @@ public sealed class WdlRuntime :
         RestoreLevelObjects(snapshot.LevelObjects);
         RestorePlayer(snapshot.Player);
         _skippedCycles.Clear();
-        _skipDistances.Clear();
-        _skipDistancePlayer = null;
+        _entityDistances.Clear();
+        _distanceView = null;
         RefreshView();
         _proximityStates.Clear();
         _arrivedTargets.Clear();
@@ -1367,21 +1373,26 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
-    /// <c>DISTANCE</c> is refreshed before the resumed actions, and the things' and actors' again
-    /// after the actors move (see <see cref="RefreshDistances"/>).
+    /// Walls' <c>DISTANCE</c> is refreshed before the resumed actions (see <see cref="RefreshWallDistances"/>);
+    /// things' and actors' only when the view changed or an actor in front of the player moved (see
+    /// <see cref="RefreshEntityDistances"/>).
     /// </summary>
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds);
         RefreshView();
-        RefreshDistances(cycleStart: true);
+        RefreshWallDistances();
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
         AdvanceAnimationCycles(timeCorrection);
         AdvanceActorTargets(timeCorrection);
-        RefreshDistances(cycleStart: false);
+        if (_frontActorMoved)
+        {
+            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
+            RefreshEntityDistances(force: true);
+        }
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(deltaSeconds))
         {
@@ -2078,7 +2089,7 @@ public sealed class WdlRuntime :
         }
 
         if (!TargetCanSeePlayerRegion(target, player.Region) ||
-            !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
+            !TryDistTestDistance(player, target, out double distance))
         {
             isNear = false;
             return true;
@@ -2102,51 +2113,17 @@ public sealed class WdlRuntime :
             : 0;
 
     /// <summary>
-    /// Sets the <c>DISTANCE</c> of every thing, actor and (at the start of the cycle) wall to the
-    /// value the <c>DIST</c> test compares with (see <see cref="TryProximityDistance"/>). The
-    /// manual calls it approximate and only valid within the player's <c>CLIP_DIST</c> (p.52,
-    /// p.69); the original computes a wall's outside it too (OV-20261019-wall-distance), and
-    /// OpenVirtue does so for every object. A wall's is computed once, before the cycle's actions
-    /// (OV-20261019-wall-distance). A beam reaches the player's position only after the cycle,
-    /// when the host applies <c>PLAYER_X/PLAYER_Y</c>, so it shows in the next cycle as in the
-    /// original. When the original refreshes a thing's or actor's is not measured: OpenVirtue
-    /// does it at the start of the cycle and again after the actors move, so resumed <c>WAIT</c>
-    /// actions and the <c>EACH_TICK</c> actions read the current positions. The <c>DIST</c> test
-    /// stores the value it compared, which its <c>IF_NEAR</c>/<c>IF_FAR</c> action reads.
+    /// Sets every wall's <c>DISTANCE</c> to the value the <c>DIST</c> test compares with (see
+    /// <see cref="TryProximityDistance"/>), once a cycle before the cycle's actions
+    /// (OV-20261019-wall-distance). The manual calls it approximate and only valid within the
+    /// player's <c>CLIP_DIST</c> (p.52); the original computes a wall's outside it too. A beam
+    /// reaches the player's position only after the cycle, when the host applies
+    /// <c>PLAYER_X/PLAYER_Y</c>, so it shows in the next cycle as in the original. Things and
+    /// actors keep the value of the last refresh instead (<see cref="RefreshEntityDistances"/>).
     /// </summary>
-    private void RefreshDistances(bool cycleStart)
+    private void RefreshWallDistances()
     {
         if (GetObject("player") is not Player player)
-        {
-            return;
-        }
-
-        AcknexObject? playerRegion = RegionAt(player.Region);
-        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
-        {
-            if (!TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance))
-            {
-                continue;
-            }
-
-            // OV-20261019-actor-contact: a thing's or actor's DISTANCE reads 65535.999 until the
-            // player first comes within 1.5 times its CLIP_DIST border, LIBER or not; from then on
-            // it is current at any range.
-            if (!_distanceStarted.Contains(entity))
-            {
-                if (playerRegion is not null && distance >= DistanceStartFactor * ClipBorder(entity, playerRegion))
-                {
-                    entity[DistanceSkill] = UnrefreshedDistance;
-                    continue;
-                }
-
-                _distanceStarted.Add(entity);
-            }
-
-            entity[DistanceSkill] = distance;
-        }
-
-        if (!cycleStart)
         {
             return;
         }
@@ -2159,6 +2136,15 @@ public sealed class WdlRuntime :
             }
         }
     }
+
+    /// <summary>
+    /// The distance the <c>DIST</c> test compares with: a thing's or actor's as last refreshed
+    /// (<see cref="RefreshEntityDistances"/>, OV-20261021-distance-refresh), a wall's current one.
+    /// </summary>
+    private bool TryDistTestDistance(Player player, AcknexObject target, out double distance) =>
+        target is MapEntity entity && _entityDistances.TryGetValue(entity, out distance)
+            ? true
+            : TryProximityDistance(player.Position.X, player.Position.Z, target, out distance);
 
     /// <summary>
     /// The distance a <c>DIST</c> border is compared with, the value <c>MY.DISTANCE</c> reads in
@@ -3683,9 +3669,9 @@ public sealed class WdlRuntime :
     /// <c>VISIBLE</c> the same way (round 6, wall-seen) but are tested only when an action reads it
     /// (<see cref="GetObjectNumber"/>): testing thousands of walls costs milliseconds a cycle, and the
     /// retail scripts never read them. Once an action reads a wall's <c>SEEN</c>, every wall is tested
-    /// here from then on. Without a player there is no view: every object that is not
+    /// here from then on. Regions are tested in the same way (<see cref="TestRegionView"/>). Without a player there is no view: every object that is not
     /// <c>INVISIBLE</c> counts as visible, and none as seen. Also refreshes the distances of
-    /// <see cref="RefreshSkipDistances"/>.
+    /// <see cref="RefreshEntityDistances"/>.
     /// </summary>
     private void RefreshView()
     {
@@ -3714,7 +3700,7 @@ public sealed class WdlRuntime :
             }
         }
 
-        RefreshSkipDistances();
+        RefreshEntityDistances();
         if (viewer is null)
         {
             return;
@@ -3725,6 +3711,14 @@ public sealed class WdlRuntime :
             if (_trackWallsSeen || wall["BERKELEY"] > 0)
             {
                 TestWallView(wall);
+            }
+        }
+
+        if (_trackRegionsSeen)
+        {
+            foreach (Region region in _level.Regions)
+            {
+                TestRegionView(region);
             }
         }
     }
@@ -3747,20 +3741,53 @@ public sealed class WdlRuntime :
         }
     }
 
+    /// <summary>
+    /// Sets a region's <c>VISIBLE</c> (and <c>SEEN</c>) for the last drawn frame, once a frame: set
+    /// while some of its floor, ceiling or walls is on the screen (p.53, <see cref="ViewTest.IsRegionVisible"/>)
+    /// or the player stands in it, as for walls one frame after a turn or beam, with <c>SEEN</c>
+    /// kept once set (OV-20261021-distance-refresh, region-seen).
+    /// </summary>
+    private void TestRegionView(Region region)
+    {
+        if (_lastViewer is not { } viewer || _viewTest is null || _regionViewFrames.GetValueOrDefault(region) == _viewFrame ||
+            GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        _regionViewFrames[region] = _viewFrame;
+        bool visible = false;
+        for (int index = 0; index < _level.Regions.Count && !visible; index++)
+        {
+            // A REGION keyword may name several map regions, each its own object.
+            visible = ReferenceEquals(_level.Regions[index], region) &&
+                      (index == player.Region || _viewTest.IsRegionVisible(viewer, index));
+        }
+
+        region["VISIBLE"] = visible ? 1 : 0;
+        if (visible)
+        {
+            region["SEEN"] = 1;
+        }
+    }
+
     /// <inheritdoc/>
     public double GetObjectNumber(AcknexObject target, string memberName)
     {
         ArgumentNullException.ThrowIfNull(target);
-        if (target is Wall wall)
+        bool seen = memberName.Equals("SEEN", StringComparison.OrdinalIgnoreCase);
+        if (seen || memberName.Equals("VISIBLE", StringComparison.OrdinalIgnoreCase))
         {
-            if (memberName.Equals("SEEN", StringComparison.OrdinalIgnoreCase))
+            switch (target)
             {
-                _trackWallsSeen = true;
-                TestWallView(wall);
-            }
-            else if (memberName.Equals("VISIBLE", StringComparison.OrdinalIgnoreCase))
-            {
-                TestWallView(wall);
+                case Wall wall:
+                    _trackWallsSeen |= seen;
+                    TestWallView(wall);
+                    break;
+                case Region region:
+                    _trackRegionsSeen |= seen;
+                    TestRegionView(region);
+                    break;
             }
         }
 
@@ -3768,35 +3795,63 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Refreshes the distances <see cref="SkipFramesMultiplier"/> tests against its near range. The
-    /// original keeps an actor's distance (|dx| + |dy|, its <c>DISTANCE</c>) from the last frame in
-    /// which the player moved or an actor in front of the player moved; actors walking behind the
-    /// player keep the old value however far they walk (OV-20261020-view-activity rounds 6–9). It
-    /// refreshes every actor's at once.
+    /// Refreshes every thing's and actor's <c>DISTANCE</c> (|dx| + |dy| from the player), which the
+    /// <c>DIST</c> test (<c>IF_NEAR</c>/<c>IF_FAR</c>, <see cref="IsWithinDist"/>) and the
+    /// <c>SKIP_FRAMES</c> near range read. The original refreshes them all at once, and only when
+    /// the view changed since the last refresh (the player walked or was beamed, turned or tilted)
+    /// or an actor in front of the player walked; between refreshes they keep their value, however
+    /// far the objects move (OV-20261020-view-activity rule 5, OV-20261021-distance-refresh). A
+    /// script's <c>SET</c> of a thing's or actor's position refreshes nothing, and reading
+    /// <c>DISTANCE</c> refreshes nothing. A thing's or actor's <c>DISTANCE</c> reads 65535.999
+    /// until the player first comes within 1.5 times its <c>CLIP_DIST</c> border, <c>LIBER</c> or
+    /// not (OV-20261019-actor-contact). <paramref name="force"/> refreshes after a move in front.
     /// </summary>
-    private void RefreshSkipDistances()
+    private void RefreshEntityDistances(bool force = false)
     {
         if (GetObject("player") is not Player player)
         {
             return;
         }
 
-        var position = (player.Position.X, player.Position.Z);
-        if (!_frontActorMoved && _skipDistancePlayer == position && _skipDistances.Count == _level.Actors.Count)
+        var view = new DistanceView(
+            player.Position.X,
+            player.Position.Z,
+            player.Position.Y,
+            GetSkill("PLAYER_ANGLE"),
+            GetSkill("PLAYER_TILT"),
+            GetSkill("PLAYER_ARC"));
+        if (!force && !_frontActorMoved && _distanceView == view && _entityDistances.Count == _levelObjects.OfType<MapEntity>().Count())
         {
             return;
         }
 
         _frontActorMoved = false;
-        _skipDistancePlayer = position;
-        _skipDistances.Clear();
-        foreach (Actor actor in _level.Actors)
+        _distanceView = view;
+        _entityDistances.Clear();
+        AcknexObject? playerRegion = RegionAt(player.Region);
+        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
-            _skipDistances[actor] = Math.Abs(actor.X - position.X) + Math.Abs(actor.Y - position.Z);
+            double distance = Math.Abs(entity.X - view.X) + Math.Abs(entity.Y - view.Y);
+            _entityDistances[entity] = distance;
+            if (!_distanceStarted.Contains(entity))
+            {
+                if (playerRegion is not null && distance >= DistanceStartFactor * ClipBorder(entity, playerRegion))
+                {
+                    entity[DistanceSkill] = UnrefreshedDistance;
+                    continue;
+                }
+
+                _distanceStarted.Add(entity);
+            }
+
+            entity[DistanceSkill] = distance;
         }
     }
 
-    /// <summary>Notes an actor's move this cycle when it ends in front of the player (see <see cref="RefreshSkipDistances"/>).</summary>
+    /// <summary>What a change of refreshes the things' and actors' distances (<see cref="RefreshEntityDistances"/>).</summary>
+    private readonly record struct DistanceView(double X, double Y, double EyeHeight, double Angle, double Tilt, double Arc);
+
+    /// <summary>Notes an actor's move this cycle when it ends in front of the player (see <see cref="RefreshEntityDistances"/>).</summary>
     private void NoteFrontMove(Actor actor, double startX, double startY)
     {
         if ((actor.X == startX && actor.Y == startY) || GetObject("player") is not Player player)
@@ -3837,7 +3892,7 @@ public sealed class WdlRuntime :
     /// How many cycles' distance an actor covers this cycle under <c>SKIP_FRAMES</c> (p.113), 0 to
     /// stay put. An actor that was not visible in the last drawn frame, is outside its <c>DIST</c>
     /// and more than <see cref="SkipFramesNearRange"/> from the player (as last refreshed, see
-    /// <see cref="RefreshSkipDistances"/>) moves only every
+    /// <see cref="RefreshEntityDistances"/>) moves only every
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
     /// (OV-20261019-border-kinds, OV-20261020-view-activity).
@@ -3849,7 +3904,7 @@ public sealed class WdlRuntime :
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
             _inView.Contains(actor) ||
-            _skipDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
+            _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
             _skippedCycles.Remove(actor);
@@ -3884,7 +3939,7 @@ public sealed class WdlRuntime :
     {
         double threshold = target["DIST"];
         return threshold > 0 &&
-               TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance) &&
+               TryDistTestDistance(player, target, out double distance) &&
                distance < threshold &&
                (target is not MapEntity entity || VerticalOffsetFromCentre(player, entity) < threshold);
     }
