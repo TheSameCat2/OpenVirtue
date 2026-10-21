@@ -40,7 +40,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.ActorContactProbeName or
             ProjectionProbeGenerator.BorderKindsProbeName or
             ProjectionProbeGenerator.ClipDetailProbeName or
-            ProjectionProbeGenerator.ViewActivityProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.ViewActivityProbeName or
+            ProjectionProbeGenerator.DistanceRefreshProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

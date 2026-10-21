@@ -176,3 +176,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `SEEN` once seen.
   Twenty-one DOSBox-X launches (seventeen usable); implemented in `ViewTest` and `WdlRuntime`
   (ADR-0010).
+
+## Distance refresh (2026-10-21 — confirmed and implemented)
+
+- `OV-20261021-distance-refresh.md` — `IF_NEAR`/`IF_FAR` and the `DIST` lift of `SKIP_FRAMES` read
+  things' and actors' `DISTANCE` as last refreshed. It is refreshed for all of them at once when the
+  view changes (a walk or beam, a turn, a tilt, the eye height, `PLAYER_ARC`) or an actor in front
+  of the player walks; a script's `SET` of a thing's or actor's position refreshes nothing, its own
+  `DISTANCE` included. A region is `VISIBLE` while some of its floor, ceiling or walls is on the
+  screen, and keeps `SEEN`. Six DOSBox-X runs; implemented in `ViewTest` and `WdlRuntime`.

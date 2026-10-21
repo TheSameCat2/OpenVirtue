@@ -38,6 +38,7 @@ internal static class ProjectionProbeGenerator
     public const string BorderKindsProbeName = "border-kinds";
     public const string ClipDetailProbeName = "clip-detail";
     public const string ViewActivityProbeName = "view-activity";
+    public const string DistanceRefreshProbeName = "distance-refresh";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -57,6 +58,7 @@ internal static class ProjectionProbeGenerator
     private const string BorderKindsProbeId = "OV-20261019-border-kinds";
     private const string ClipDetailProbeId = "OV-20261019-clip-detail";
     private const string ViewActivityProbeId = "OV-20261020-view-activity";
+    private const string DistanceRefreshProbeId = "OV-20261021-distance-refresh";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -318,6 +320,7 @@ internal static class ProjectionProbeGenerator
         BorderKindsProbeName => BorderKindsProbeId,
         ClipDetailProbeName => ClipDetailProbeId,
         ViewActivityProbeName => ViewActivityProbeId,
+        DistanceRefreshProbeName => DistanceRefreshProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -432,6 +435,7 @@ internal static class ProjectionProbeGenerator
             case BorderKindsProbeName:
             case ClipDetailProbeName:
             case ViewActivityProbeName:
+            case DistanceRefreshProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -462,6 +466,7 @@ internal static class ProjectionProbeGenerator
         BorderKindsProbeName => BorderKindsProbeCases.Set,
         ClipDetailProbeName => ClipDetailProbeCases.Set,
         ViewActivityProbeName => ViewActivityProbeCases.Set,
+        DistanceRefreshProbeName => DistanceRefreshProbeCases.Set,
         _ => null,
     };
 

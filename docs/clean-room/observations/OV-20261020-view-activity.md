@@ -204,12 +204,10 @@ high for rule 6 on walls and actors (one run; things not tried).
 ## Open Questions
 - Whether a fast `CAREFULLY` actor that is not skipping is tested along its step or at its end.
 - Whether a skipped long step is tested against things, other actors and the player at its end.
-- Whether `IF_NEAR`/`IF_FAR` and the `DIST` test of actors (and the `DISTANCE` of things) also use
-  the stale value of rule 5, and whether turning the player, a moving thing or a script's `SET` of
-  an actor's position refreshes it. OpenVirtue keeps `DISTANCE` current and uses the refreshed
-  value only for the `SKIP_FRAMES` near test.
-- A region's `VISIBLE` and `SEEN` (p.53, "as long as a floor, ceiling or wall of the region is
-  visible"); LEGALISM reads `THERE.VISIBLE` in its lift actions.
+- Answered by OV-20261021-distance-refresh: `IF_NEAR`/`IF_FAR` and the `DIST` test read the stale
+  value of rule 5 too, things' `DISTANCE` is stale in the same way, any change of the view (a turn,
+  a tilt, the eye height, `PLAYER_ARC`) refreshes it, and a script's `SET` of a position does not.
+  Regions get `VISIBLE` and `SEEN` as walls do.
 
 ## Tests To Add Or Update
 - `ViewTestTests`: the cone, a free-standing wall, a wall's end, a pillar region, the vertical
@@ -241,7 +239,7 @@ action reads their `VISIBLE` or `SEEN` (`WdlRuntime.GetObjectNumber`, through
 `IWdlObjectReadContext`), once a frame and with that frame's view; after the first read of a wall's
 `SEEN`, every wall is tested in every frame so `SEEN` misses nothing from then on. Testing all of a
 retail level's walls costs 3–13 ms a pass, and no retail script reads them. `RefreshSkipDistances`
-keeps the rule-5 distances: refreshed at the start of a cycle when the player's position changed or
+(now `RefreshEntityDistances`, OV-20261021-distance-refresh) keeps the rule-5 distances: refreshed at the start of a cycle when the player's position changed or
 `AdvanceActorTargets` moved an actor to a point in front of the player (`NoteFrontMove`).
 `SkipFramesMultiplier` gates `AdvanceActorTargets` with them (≤ 20 is near);
 `TryEndPointCarefulMove` makes a skipped long step's end test; `IsDormantBerkeleyWall` gates the
