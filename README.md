@@ -145,12 +145,14 @@ What works today:
   `LIBER`, `BERKELEY` things, `IMPASSABLE` and `INVISIBLE` walls are handled. The player climbs
   region borders from the feet with a clamped eye. Actors without `CAREFULLY` push the player,
   and `CAREFULLY` ones stop short of it, honour `IMPASSABLE` and climb below `ACTOR_CLIMB`.
-  A headless view test (ADR-0010, OV-20261020-view-activity) sets `VISIBLE`, lets unseen actors
-  skip frames (`SKIP_FRAMES`) and puts unseen `BERKELEY` walls to sleep.
+  A headless view test (ADR-0010, OV-20261020-view-activity) sets `VISIBLE` and `SEEN` on things,
+  actors, walls and regions, lets unseen actors skip frames (`SKIP_FRAMES`) and puts unseen
+  `BERKELEY` walls to sleep. Things' and actors' `DISTANCE`, which the `DIST` test reads, is
+  refreshed only when the view changes or an actor in front of the player walks
+  (OV-20261021-distance-refresh).
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
-Acknex-parity `each_cycle` discovery/dispatch order, `VISIBLE`/`SEEN` on walls other than
-`BERKELEY` ones, slopes, stacked (`BELOW`) regions, and exact actor AI/path event ordering,
+Acknex-parity `each_cycle` discovery/dispatch order, slopes, stacked (`BELOW`) regions, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
 legacy-compatible save/load, and the DOSBox-X oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
