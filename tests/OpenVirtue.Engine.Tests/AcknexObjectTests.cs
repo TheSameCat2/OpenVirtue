@@ -110,4 +110,35 @@ public class AcknexObjectTests
         Assert.False(actor.HasSkill("HEIGHT"));
         Assert.False(actor.HasSkill("REGION"));
     }
+
+    [Theory]
+    [InlineData("Ambient")]
+    [InlineData("FLOOR_OFFS_X")]
+    [InlineData("AMB\u0130ENT")]
+    [InlineData("\u212Aambient")]
+    [InlineData("FLOOR_OFFS_X_TOO_LONG")]
+    [InlineData("")]
+    public void TypedNames_MatchAsToLowerInvariantWould(string name)
+    {
+        var region = new Region("amphi");
+        bool typed = name.ToLowerInvariant() is "ambient" or "floor_offs_x";
+
+        region[name] = 7;
+
+        Assert.Equal(typed, region.Ambient == 7 || region.FloorOffsetX == 7);
+        Assert.Equal(!typed, region.HasSkill(name));
+    }
+
+    [Fact]
+    public void RegionStringNames_AreCaseInsensitive()
+    {
+        var region = new Region("amphi");
+
+        Assert.True(region.TrySetString("Floor_Tex", "grass"));
+        Assert.True(region.TryGetString("FLOOR_TEX", out string? floor));
+        Assert.Equal("grass", floor);
+        Assert.True(region.TrySetString("EACH_CYCLE", "spin"));
+        Assert.Equal("spin", region.EachCycleAction);
+        Assert.False(region.TrySetString("FLOOR_TEXTURE_X", "grass"));
+    }
 }
