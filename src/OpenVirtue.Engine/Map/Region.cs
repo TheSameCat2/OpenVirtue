@@ -55,7 +55,7 @@ public sealed class Region : AcknexObject
 
     public override bool TryGetString(string name, out string? value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[12]))
         {
             case "floor_tex": value = FloorTexture; return true;
             case "ceil_tex": value = CeilTexture; return true;
@@ -77,7 +77,7 @@ public sealed class Region : AcknexObject
 
     public override bool TrySetString(string name, string? value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[12]))
         {
             case "floor_tex": FloorTexture = value; return true;
             case "ceil_tex": CeilTexture = value; return true;
@@ -100,7 +100,7 @@ public sealed class Region : AcknexObject
 
     protected override bool TryGetTyped(string name, out double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[12]))
         {
             case "floor_hgt": value = FloorHeight; return true;
             case "ceil_hgt": value = CeilHeight; return true;
@@ -115,7 +115,7 @@ public sealed class Region : AcknexObject
 
     protected override bool TrySetTyped(string name, double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[12]))
         {
             case "floor_hgt": FloorHeight = value; return true;
             case "ceil_hgt": CeilHeight = value; return true;

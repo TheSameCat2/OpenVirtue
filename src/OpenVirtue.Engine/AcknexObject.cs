@@ -77,6 +77,20 @@ public abstract class AcknexObject
     /// <summary>Writes a well-known property name to a typed field. Override in derived types.</summary>
     protected virtual bool TrySetTyped(string name, double value) => false;
 
+    /// <summary>
+    /// Lower-cases a property name into <paramref name="buffer"/> as <see cref="string.ToLowerInvariant()"/>
+    /// would, for the typed-name switches the scheduler reads every cycle, without allocating a string.
+    /// The lowering keeps the length, so a name longer than the buffer (and so than every key) comes
+    /// back empty and matches none.
+    /// </summary>
+    protected static ReadOnlySpan<char> LowerInvariant(string name, Span<char> buffer)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return name.Length <= buffer.Length
+            ? buffer[..name.AsSpan().ToLowerInvariant(buffer)]
+            : [];
+    }
+
     /// <inheritdoc/>
     public override string ToString() => $"{GetType().Name} '{Name}'";
 }
