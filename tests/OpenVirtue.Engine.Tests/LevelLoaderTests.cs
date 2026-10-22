@@ -473,6 +473,26 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void FindTexture_ResolvesAnyCaseAndRemembersEachName()
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main = "MAPFILE <m.wmp>; BMAP stone,<s.pcx>,0,0,16,16; TEXTURE stoneTex { BMAPS stone; }";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelTextureEntry? entry = level.FindTexture("STONETEX");
+        Assert.NotNull(entry);
+        Assert.Equal(level.Textures["stoneTex"], entry.Texture);
+        Assert.Same(entry, level.FindTexture("STONETEX"));
+        Assert.Equal(entry.Texture, level.FindTexture(new string("stonetex".AsSpan()))?.Texture);
+        Assert.Null(level.FindTexture("missing"));
+        Assert.Null(level.FindTexture(null));
+    }
+
+    [Fact]
     public void LoadCore_WallOffsetDeclarations_OverridePlacementOffsets()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

@@ -33,6 +33,11 @@ public sealed record LevelWay(string Name, IReadOnlyList<LevelWayPoint> Points);
 /// </summary>
 public sealed class Level
 {
+    /// <summary>How many name instances <see cref="FindTexture"/> remembers before it starts over.</summary>
+    private const int MaxRememberedTextureNames = 4096;
+
+    private readonly Dictionary<string, LevelTextureEntry?> _texturesByNameInstance = new(ReferenceEqualityComparer.Instance);
+
     public Level(
         string name,
         IReadOnlyList<Vertex> vertices,
@@ -157,6 +162,32 @@ public sealed class Level
 
     /// <summary>The action named by <c>IF_START</c> — the level's startup script, if any.</summary>
     public string? StartupAction { get; }
+
+    /// <summary>
+    /// The <see cref="Textures"/> entry a name resolves to, or null. Each name string instance is
+    /// resolved once and remembered: walls, regions and objects share a few instances, so the
+    /// per-cycle scans over thousands of them skip the case-insensitive hash and the record copy.
+    /// </summary>
+    public LevelTextureEntry? FindTexture(string? name)
+    {
+        if (name is null)
+        {
+            return null;
+        }
+
+        if (!_texturesByNameInstance.TryGetValue(name, out LevelTextureEntry? entry))
+        {
+            if (_texturesByNameInstance.Count >= MaxRememberedTextureNames)
+            {
+                _texturesByNameInstance.Clear();
+            }
+
+            entry = Textures.TryGetValue(name, out LevelTexture texture) ? new LevelTextureEntry(texture) : null;
+            _texturesByNameInstance[name] = entry;
+        }
+
+        return entry;
+    }
 
     /// <summary>Per-region boundary loops and floor triangulations, built on first use by <see cref="LevelTopology"/>.</summary>
     internal LevelTopology.RegionSurfaceCache? SurfaceCache { get; set; }

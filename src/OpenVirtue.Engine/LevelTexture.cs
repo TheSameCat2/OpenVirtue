@@ -39,6 +39,15 @@ public readonly record struct LevelTexture(
     bool IsSoundLoop,
     double RandomDelayFactor);
 
+/// <summary>
+/// A catalog <see cref="LevelTexture"/> held by reference (<see cref="Level.FindTexture"/>), so a
+/// per-cycle scan reads its fields without copying the whole record.
+/// </summary>
+public sealed class LevelTextureEntry(LevelTexture texture)
+{
+    public LevelTexture Texture { get; } = texture;
+}
+
 /// <summary>Resolves a logical WDL texture and object cycle/side to a renderable bitmap phase.</summary>
 public static class TextureAnimation
 {

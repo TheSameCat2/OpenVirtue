@@ -197,7 +197,7 @@ public abstract class MapEntity : AcknexObject
 
     protected override bool TryGetTyped(string name, out double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[6]))
         {
             case "x": value = X; return true;
             case "y": value = Y; return true;
@@ -211,7 +211,7 @@ public abstract class MapEntity : AcknexObject
 
     protected override bool TrySetTyped(string name, double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[6]))
         {
             case "x": X = value; return true;
             case "y": Y = value; return true;

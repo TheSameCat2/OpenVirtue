@@ -209,6 +209,9 @@ public sealed class WdlRuntime :
     private readonly LevelCollisionWorld _collisionWorld;
     private readonly IReadOnlyDictionary<string, TextureImage> _hitTextures;
     private string _printBaseName = "PRINT";
+
+    /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
+    private List<(AcknexObject Target, string ActionName)>? _schedulerActionBuffer;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -1401,7 +1404,8 @@ public sealed class WdlRuntime :
 
         DispatchGlobalEachTickActions();
 
-        foreach ((AcknexObject target, string actionName) in CurrentObjectSchedulerActions(eachCycle: false))
+        List<(AcknexObject Target, string ActionName)> scheduled = CurrentObjectSchedulerActions(eachCycle: false);
+        foreach ((AcknexObject target, string actionName) in scheduled)
         {
             // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
             if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target) || IsDormantBerkeleyWall(target))
@@ -1412,6 +1416,9 @@ public sealed class WdlRuntime :
             PrepareActorTickSkills(target);
             RunForActionTarget(target, actionName);
         }
+
+        scheduled.Clear();
+        _schedulerActionBuffer = scheduled;
 
         CountDownWaitingActions(timeCorrection);
         return timeCorrection;
@@ -2861,25 +2868,45 @@ public sealed class WdlRuntime :
             return;
         }
 
-        foreach (AcknexObject target in CurrentCycleTargets())
+        // The order of CurrentCycleTargets, without its iterator: regions, walls, things and actors.
+        foreach (Region region in _regions)
         {
-            // OV-20261019-clip-contact: a thing or actor outside its CLIP_DIST border runs no EACH_CYCLE.
-            if (IsInactiveEntity(target) ||
-                (target is MapEntity && !IsWithinClipDistance(target)) ||
-                AnimationTexture(target) is not { } texture ||
-                (texture.Cycles <= 1 && !texture.IsOneShot))
-            {
-                continue;
-            }
-
-            if (!_textureAnimationStates.TryGetValue(target, out TextureAnimationState? state))
-            {
-                state = new TextureAnimationState();
-                _textureAnimationStates[target] = state;
-            }
-
-            AdvanceAnimationTarget(target, texture, state, timeCorrection);
+            AdvanceAnimationCycle(region, timeCorrection);
         }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            AdvanceAnimationCycle(wall, timeCorrection);
+        }
+
+        foreach (AcknexObject levelObject in _levelObjects)
+        {
+            if (levelObject is MapEntity entity)
+            {
+                AdvanceAnimationCycle(entity, timeCorrection);
+            }
+        }
+    }
+
+    private void AdvanceAnimationCycle(AcknexObject target, double timeCorrection)
+    {
+        // OV-20261019-clip-contact: a thing or actor outside its CLIP_DIST border runs no EACH_CYCLE.
+        // None of these checks changes anything, so the cheap texture test goes first.
+        if (AnimationTexture(target) is not { } entry ||
+            (entry.Texture.Cycles <= 1 && !entry.Texture.IsOneShot) ||
+            IsInactiveEntity(target) ||
+            (target is MapEntity && !IsWithinClipDistance(target)))
+        {
+            return;
+        }
+
+        if (!_textureAnimationStates.TryGetValue(target, out TextureAnimationState? state))
+        {
+            state = new TextureAnimationState();
+            _textureAnimationStates[target] = state;
+        }
+
+        AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
     }
 
     private void AdvanceAnimationTarget(
@@ -2970,30 +2997,24 @@ public sealed class WdlRuntime :
         }
     }
 
-    private LevelTexture? AnimationTexture(AcknexObject target)
-    {
-        string? textureName = target switch
+    private LevelTextureEntry? AnimationTexture(AcknexObject target) =>
+        target switch
         {
-            MapEntity entity => entity.Texture,
-            Wall wall => wall.Texture,
+            MapEntity entity => _level.FindTexture(entity.Texture),
+            Wall wall => _level.FindTexture(wall.Texture),
             Region region => PreferredRegionAnimationTexture(region),
             _ => null,
         };
-        return textureName is not null && _level.Textures.TryGetValue(textureName, out LevelTexture texture)
-            ? texture
-            : null;
-    }
 
-    private string? PreferredRegionAnimationTexture(Region region)
+    private LevelTextureEntry? PreferredRegionAnimationTexture(Region region)
     {
-        if (region.FloorTexture is { } floor &&
-            _level.Textures.TryGetValue(floor, out LevelTexture floorTexture) &&
-            (floorTexture.Cycles > 1 || floorTexture.IsOneShot))
+        if (_level.FindTexture(region.FloorTexture) is { } floor &&
+            (floor.Texture.Cycles > 1 || floor.Texture.IsOneShot))
         {
             return floor;
         }
 
-        return region.CeilTexture;
+        return _level.FindTexture(region.CeilTexture);
     }
 
     private static void SetAnimationCycle(AcknexObject target, int cycle)
@@ -3035,9 +3056,14 @@ public sealed class WdlRuntime :
         }
     }
 
+    /// <summary>
+    /// A snapshot of the objects' scheduler actions, in a list taken from
+    /// <see cref="_schedulerActionBuffer"/> when one is free; the caller may hand it back cleared.
+    /// </summary>
     private List<(AcknexObject Target, string ActionName)> CurrentObjectSchedulerActions(bool eachCycle)
     {
-        var actions = new List<(AcknexObject Target, string ActionName)>();
+        List<(AcknexObject Target, string ActionName)> actions = _schedulerActionBuffer ?? [];
+        _schedulerActionBuffer = null;
         foreach (Region region in _regions)
         {
             AddIfPresent(region);
@@ -3048,9 +3074,12 @@ public sealed class WdlRuntime :
             AddIfPresent(wall);
         }
 
-        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
+        foreach (AcknexObject levelObject in _levelObjects)
         {
-            AddIfPresent(entity);
+            if (levelObject is MapEntity entity)
+            {
+                AddIfPresent(entity);
+            }
         }
 
         return actions;

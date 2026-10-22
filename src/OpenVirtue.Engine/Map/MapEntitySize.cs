@@ -21,14 +21,13 @@ public static class MapEntitySizing
         ArgumentNullException.ThrowIfNull(level);
         ArgumentNullException.ThrowIfNull(entity);
 
-        if (entity.Texture is not { } textureName ||
-            !level.Textures.TryGetValue(textureName, out LevelTexture texture))
+        if (level.FindTexture(entity.Texture) is not { } entry)
         {
             size = default;
             return false;
         }
 
-        return TryGetTextureSize(texture, entity["CYCLE"], side, out size);
+        return TryGetTextureSize(entry.Texture, entity["CYCLE"], side, out size);
     }
 
     /// <summary>Returns a texture phase's world-space size for an entity billboard layer.</summary>

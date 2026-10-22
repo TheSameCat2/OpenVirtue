@@ -129,7 +129,7 @@ public sealed class Wall : AcknexObject
 
     protected override bool TryGetTyped(string name, out double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[8]))
         {
             case "left": value = LeftRegion; return true;
             case "right": value = RightRegion; return true;
@@ -143,7 +143,7 @@ public sealed class Wall : AcknexObject
 
     protected override bool TrySetTyped(string name, double value)
     {
-        switch (name.ToLowerInvariant())
+        switch (LowerInvariant(name, stackalloc char[8]))
         {
             case "offsx": OffsetX = value; return true;
             case "offset_x": OffsetX = value; return true;

@@ -429,6 +429,12 @@ public sealed partial class RuntimeHost
             AddSpatialLoopCandidate(actor, candidates);
         }
 
+        // Nothing loops nearby and nothing plays: the usual case, with nothing to stop or start.
+        if (candidates.Count == 0 && _spatialLoopSounds.Count == 0)
+        {
+            return;
+        }
+
         Dictionary<AcknexObject, SpatialLoopCandidate> audible = candidates.ToDictionary(static candidate => candidate.Emitter);
         foreach ((AcknexObject emitter, SpatialLoopSound active) in _spatialLoopSounds.ToArray())
         {
@@ -463,14 +469,15 @@ public sealed partial class RuntimeHost
     {
         // Most emitters have no looping sound texture, so the texture is checked before the
         // emitter is placed (which reads its skills).
-        if (EmitterTextureName(emitter) is not { } textureName ||
-            !_level.Textures.TryGetValue(textureName, out LevelTexture spatialTexture) ||
-            !spatialTexture.IsSoundLoop ||
-            string.IsNullOrWhiteSpace(spatialTexture.SoundName) ||
+        if (_level.FindTexture(EmitterTextureName(emitter)) is not { } entry ||
+            !entry.Texture.IsSoundLoop ||
+            string.IsNullOrWhiteSpace(entry.Texture.SoundName) ||
             !TrySoundEmitter(emitter, out Vector3 position, out _))
         {
             return;
         }
+
+        LevelTexture spatialTexture = entry.Texture;
 
         (float requestVolume, float pan) = SpatialSoundMix(
             spatialTexture.SoundVolume,
