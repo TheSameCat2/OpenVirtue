@@ -54,7 +54,8 @@ Five more cases repeat angles 0, π/2, π, 3π/2 and 1 with `FLAGS CAREFULLY`.
   point.
 
 This is the 4-unit drift of the actor-events bullet and of the border-climb and wall-distance
-walkers.
+walkers. The border-climb player, moved by `PLAYER_VY` alone, creeps the same way: X goes from −8
+to −7.992 in two steps. OpenVirtue applies the rule to the player too.
 
 ## Invariant
 A step along an actor's `ANGLE` has the length `SPEED·TIME_CORR` in 22.10 fixed point. Its X part
