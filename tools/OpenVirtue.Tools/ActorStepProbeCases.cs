@@ -60,8 +60,31 @@ internal static class ActorStepProbeCases
             ("CAREFULLY drifts", "its X wanders 4–8 units and its Y falls behind")),
         Map: new TraceProbeMap(Placements: ["ACTOR as_a 10 0 0 0", "WAY as_w 10 0 " + to]));
 
+    /// <summary>
+    /// Round 5: as round 4, but the actor stands (<c>SPEED</c> 0) until the probe starts, sets
+    /// <c>SKIP_FRAMES</c> 0 and gives it <paramref name="speed"/>; the way runs from
+    /// <paramref name="from"/> to <paramref name="to"/> inside the room.
+    /// </summary>
+    private static TraceProbeCase WayStep5(string label, string from, string to, double speed, string flags = "") => new(
+        label,
+        string.Create(CultureInfo.InvariantCulture, $"Round 5. An actor on a way ({from.Replace(' ', ',')}) → ({to.Replace(' ', ',')}), SPEED {speed} from the probe start{(flags.Length > 0 ? ", FLAGS " + flags : "")}: how do X and Y step toward the point?"),
+        Skills + Hooks + "WAY as_w;\nACTOR as_a { TEXTURE as_tex; TARGET as_w; SPEED 0; EACH_TICK as_tick;" +
+            (flags.Length > 0 ? " FLAGS " + flags + ";" : "") + " }\n",
+        "    SET SKIP_FRAMES, 0;\n    SET as_s, as_a;\n    SET EACH_TICK.1, as_g1;\n    RULE as_on = 1;\n" +
+        string.Create(CultureInfo.InvariantCulture, $"    SET as_s.SPEED, {speed};\n") + V("GO", "TICKS", "as_n") +
+        "    WAITT 24;\n    RULE as_on = 0;\n    SET EACH_TICK.1, NULL;\n" + P("RET"),
+        Predict(
+            ("both split the step by |dx| + |dy|", "the CAREFULLY actor's X stays within 4 units of the way"),
+            ("CAREFULLY drifts", "its X wanders 4–8 units and its Y falls behind")),
+        Map: new TraceProbeMap(Placements: ["ACTOR as_a " + from + " 0 0", "WAY as_w " + from + " " + to]));
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        WayStep5("v-p-y", "10 -20", "10 20", 0.5),
+        WayStep5("v-c-y", "10 -20", "10 20", 0.5, "CAREFULLY"),
+        WayStep5("v-c-y2", "10 -20", "10 20", 2, "CAREFULLY"),
+        WayStep5("v-p-d", "-20 -20", "20 -5", 0.5),
+        WayStep5("v-c-d", "-20 -20", "20 -5", 0.5, "CAREFULLY"),
         WayStep("w-p-y", "10 30", 2),
         WayStep("w-c-y", "10 30", 2, "CAREFULLY"),
         WayStep("w-c-y-fast", "10 60", 6.4, "CAREFULLY"),

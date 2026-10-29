@@ -169,6 +169,9 @@ public sealed class WdlRuntime :
     private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
 
+    /// <summary>The point each actor last turned toward and the facing it took then (OV-20261029-actor-step round 5).</summary>
+    private readonly Dictionary<Actor, (double X, double Y, double Facing)> _legFacings = [];
+
     /// <summary>The level's walls indexed for the view test (<see cref="ViewTest.Update"/> follows moving vertices).</summary>
     private ViewTest? _viewTest;
 
@@ -2600,6 +2603,13 @@ public sealed class WdlRuntime :
 
         actor["WAYPOINT"] = waypoint;
         LevelWayPoint point = way.Points[waypoint - 1];
+        // OV-20261029-actor-step round 5: a way actor standing (SPEED 0) on a point does not arrive
+        // there; given a speed, it spends its first cycle arriving and steps from the next one.
+        if (actor["SPEED"] <= 0)
+        {
+            return false;
+        }
+
         bool arrived = AdvanceActorToward(actor, point.X, point.Y, timeCorrection);
         if (!arrived)
         {
@@ -2748,20 +2758,39 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+        double distance = WdlFixed.Multiply(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
             return false;
         }
 
-        TurnActorToward(actor, Math.Atan2(dy, dx), timeCorrection);
+        // The facing is taken once per point, from where the actor sets off: a 22.10 angle in 0..2π
+        // cut toward zero, 1608 raw for a way along +Y however far a CAREFULLY actor then drifts off
+        // it, 367 for 40:15 all the way (OV-20261029-actor-step round 5).
+        if (!_legFacings.TryGetValue(actor, out (double X, double Y, double Facing) leg) || leg.X != targetX || leg.Y != targetY)
+        {
+            double facing = Math.Atan2(dy, dx);
+            leg = (targetX, targetY, Math.Truncate((facing < 0 ? facing + (2 * Math.PI) : facing) * 1024) / 1024);
+            _legFacings[actor] = leg;
+        }
+
+        TurnActorToward(actor, leg.Facing, timeCorrection);
         if (distance >= remaining)
         {
             MoveActor(actor, targetX, targetY);
             return true;
         }
 
-        MoveActor(actor, actor.X + ((dx / remaining) * distance), actor.Y + ((dy / remaining) * distance));
+        // OV-20261029-actor-step round 5: each part of the step is cut toward zero to 1/1024 (40:15
+        // split a 128-unit step 93 and 34), so a CAREFULLY actor 4 units off its line gets no X
+        // part, its nudge, and a Y part one short.
+        double rawX = Math.Round(dx * 1024);
+        double rawY = Math.Round(dy * 1024);
+        double rawRemaining = Math.Abs(rawX) + Math.Abs(rawY);
+        double rawStep = Math.Round(distance * 1024);
+        double stepX = rawRemaining > 0 ? Math.Truncate(rawStep * rawX / rawRemaining) / 1024 : 0;
+        double stepY = rawRemaining > 0 ? Math.Truncate(rawStep * rawY / rawRemaining) / 1024 : 0;
+        MoveActor(actor, actor.X + stepX, actor.Y + stepY);
         return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
     }
 
@@ -2871,17 +2900,18 @@ public sealed class WdlRuntime :
                 actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
             }
 
-            // OV-20261029-actor-step: after a CAREFULLY step with no X part (or no Y part), the
-            // original moves the actor 4/1024 along that axis, always positive, even when a wall
-            // stopped the step, so axis-aligned walkers creep 4 units a step.
+            // OV-20261029-actor-step: a CAREFULLY step's part under 4/1024 along one axis becomes
+            // 4/1024, keeping its sign and positive for none, even when a wall stopped the step:
+            // axis-aligned walkers creep 4 units a step, and one drifting back toward its way's line
+            // (a part of −1) steps −4 (round 5).
             const double Nudge = 4.0 / 1024;
-            if (Math.Abs(requestedX) < 1e-9 && Math.Abs(requestedY) >= 1e-9)
+            if (Math.Abs(requestedX) < Nudge - 1e-9 && Math.Abs(requestedY) >= Nudge - 1e-9)
             {
-                actor.X += Nudge;
+                actor.X += (requestedX < 0 ? -Nudge : Nudge) - requestedX;
             }
-            else if (Math.Abs(requestedY) < 1e-9 && Math.Abs(requestedX) >= 1e-9)
+            else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
             {
-                actor.Y += Nudge;
+                actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
             }
 
             actor.Region = result.Region;

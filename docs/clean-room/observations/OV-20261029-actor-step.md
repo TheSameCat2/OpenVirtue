@@ -90,8 +90,36 @@ rounding rule for the split by \|dx\| + \|dy\| fitted those samples.
 
 The probe needs `SKIP_FRAMES` 0 and a longer room before it can settle the rule.
 
+## Round 5: steps toward a way point, settled (2026-10-29)
+Five carriers ran. In each, the actor stands (`SPEED` 0) until the probe starts, `SKIP_FRAMES` is
+set to 0, and then it gets `SPEED` 0.5 or 2. The ways run (10, −20) → (10, 20) and (−20, −20) →
+(20, −5). Hashes (`OVAST0.TXT`, first 8): v-p-y `084faaf4`, v-c-y `ee5ded84`, v-p-d `870e40f0`.
+- **The first cycle.** The first sample shows the actor still on the way's first point with
+  `ANGLE` 0; it steps from the second cycle on. A `BULLET` steps in its first cycle. So a way
+  actor given a speed spends a cycle arriving at the point it stands on. With `SPEED` 0 it does
+  not arrive at all.
+- **The split.** A step toward a point is split by \|dx\| + \|dy\| of the way left, each part cut
+  toward zero to 1/1024. At 40:15, 128 units split 93 and 34, and 144 split 104 and 39.
+- **The facing.** `ANGLE` is taken once per point, from where the actor sets off, cut toward zero
+  to 22.10 (1608 along +Y, 367 at 40:15). It stays the same however far the actor drifts.
+- **`CAREFULLY`.**
+  - Along +Y the actor's X goes up 4 every cycle, and each Y step is one short (143 for 144). Four
+    units off the line, the X part is 0 and the Y part is cut to 143. A part under 4 units becomes
+    4 units with its sign (0 counts as +4).
+  - At 232 units off the line the X part reaches −1 and the actor steps −4. From then on it wobbles
+    ±4 about that line, as `w-c-y-slow` showed.
+- **Residuals.** After about ten cycles some steps come out one unit shorter than the rule gives
+  (143 for 144 on the +Y way). One `CAREFULLY` X turnaround comes a cycle early. A `TIME_CORR` held
+  more finely than its printed 1/1024 would explain the short steps, but not the turnaround.
+  The (−20, −20) carriers start outside the room, so they part ways at its wall.
+
+Implementation: `WdlRuntime.AdvanceActorWay` (no arrival at `SPEED` 0),
+`AdvanceActorToward` (raw-unit split, facing per point), `MoveActor` (the 4-unit minimum). The
+round-5 traces now match for 13 to 84 lines before the first one-unit residual (3 before).
+
 ## Open Questions
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
+- The one-unit residuals of round 5.
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by

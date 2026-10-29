@@ -411,6 +411,24 @@ public sealed class WdlActorMotionTests
         Assert.Equal(0, actor["TARGET_Y"], 6);
     }
 
+    [Fact]
+    public void Tick_WayActor_SplitsItsStepByCutPartsAndKeepsItsFacing()
+    {
+        // OV-20261029-actor-step round 5: 128 units toward a point 40:15 away go 93 and 34, and the
+        // facing (367 raw) is taken once, where the actor sets off.
+        const string map = "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover -20 -20 0 0;#0\nWAY route -20 -20 20 -5;#1\nPLAYER_START 40 40 0 0;#2";
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(0.25 / 16); // arrives on the point it stands on
+        Assert.Equal(-20, actor.X, 6);
+
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(93, Math.Round((actor.X + 20) * 1024), 6);
+        Assert.Equal(34, Math.Round((actor.Y + 20) * 1024), 6);
+        Assert.Equal(367, Math.Round(actor["ANGLE"] * 1024), 6);
+    }
+
     [Theory]
     [InlineData(1, 0.25, 69, 108)]
     [InlineData(1, 0.28125, 78, 121)]
