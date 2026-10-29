@@ -48,6 +48,7 @@ internal static class ProjectionProbeGenerator
     public const string ShadingProbeName = "shading";
     public const string SlopeProbeName = "slope";
     public const string AudioProbeName = "audio";
+    public const string AutorangeProbeName = "autorange";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -77,6 +78,7 @@ internal static class ProjectionProbeGenerator
     private const string ShadingProbeId = "OV-20261029-shading";
     private const string SlopeProbeId = "OV-20261029-slope";
     private const string AudioProbeId = "OV-20261029-audio";
+    private const string AutorangeProbeId = "OV-20261029-autorange";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -348,6 +350,7 @@ internal static class ProjectionProbeGenerator
         ShadingProbeName => ShadingProbeId,
         SlopeProbeName => SlopeProbeId,
         AudioProbeName => AudioProbeId,
+        AutorangeProbeName => AutorangeProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -472,6 +475,7 @@ internal static class ProjectionProbeGenerator
             case ShadingProbeName:
             case SlopeProbeName:
             case AudioProbeName:
+            case AutorangeProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -512,6 +516,7 @@ internal static class ProjectionProbeGenerator
         ShadingProbeName => ShadingProbeCases.Set,
         SlopeProbeName => SlopeProbeCases.Set,
         AudioProbeName => AudioProbeCases.Set,
+        AutorangeProbeName => AutorangeProbeCases.Set,
         _ => null,
     };
 
@@ -520,7 +525,9 @@ internal static class ProjectionProbeGenerator
         string workDir = Path.Combine(variantDir, "work");
         Directory.CreateDirectory(workDir);
 
-        SyntheticPcx.Palette palette = BuildPalette();
+        SyntheticPcx.Palette palette = plan.ProbeName != AutorangeProbeName ? BuildPalette()
+            : variant.Label.StartsWith("auto", StringComparison.Ordinal) ? AutorangeProbeCases.AutoPalette()
+            : AutorangeProbeCases.SortedPalette();
         string wdl = Wdl(plan, variant);
         string wmp = Wmp(variant.Room, variant.Targets, variant.Trace?.Map);
         WdlParser.Parse(wdl);
@@ -538,6 +545,10 @@ internal static class ProjectionProbeGenerator
             // and the half/half target bitmap (left half cyan, right half orange) for sprites.
             WriteValidated(Path.Combine(workDir, "PRBYEL.PCX"), SyntheticPcx.HalfHalf(64, 64, (byte)Ink.Yellow, (byte)Ink.Mark, palette));
             WriteValidated(Path.Combine(workDir, "PRBTGT.PCX"), SyntheticPcx.HalfHalf(TargetBitmapWidth, TargetBitmapHeight, (byte)Ink.TargetLeft, (byte)Ink.TargetRight, palette));
+        }
+        else if (plan.ProbeName == AutorangeProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, "PRBYEL.PCX"), SyntheticPcx.Write(64, 64, AutorangeProbeCases.GridBitmap, palette));
         }
         else
         {

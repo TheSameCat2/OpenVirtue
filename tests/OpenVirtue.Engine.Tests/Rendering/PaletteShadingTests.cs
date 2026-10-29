@@ -36,15 +36,29 @@ public class PaletteShadingTests
         Assert.Equal(expected, PaletteShading.Level(distance, playerLight, lightDistance, ambient));
     }
 
-    [Fact]
-    public void BuildTable_SortedRange_MovesAlongTheRangeAndLeavesOtherColoursAlone()
+    [Theory]
+    [InlineData(32, 2, new[] { 2, 2, 1, 1 }, 18, 0)]
+    [InlineData(32, 30, new[] { 30, 30, 29, 28 }, 17, -1)]
+    [InlineData(16, 6, new[] { 3, 3, 2, 2 }, 12, 0)]
+    [InlineData(8, 6, new[] { 1, 1, 1, 1 }, 4, 0)]
+    [InlineData(64, 2, new[] { 4, 4, 3, 3 }, 50, 0)]
+    public void BuildTable_SortedRange_MovesEachColourAsMeasured(int length, int level, int[] firstMoves, int place, int moveAtPlace)
     {
+        // OV-20261029-autorange: colour i moves floor((n + 1 - i) * level / 32) places; past the end
+        // it becomes the INFINITY colour (index 1), shown here as a move of -1.
+        const int start = 80;
         byte[] palette = new byte[768];
-        byte[] table = PaletteShading.BuildTable(palette, [(16, 32)], autoRange: false);
+        byte[] table = PaletteShading.BuildTable(palette, [(start, length)], autoRange: false);
 
-        Assert.Equal(16, table[(16 * 32) + 0]);
-        Assert.Equal(16 + 22, table[(16 * 32) + 22]);
-        Assert.Equal(47, table[(40 * 32) + 30]); // clamped to the range's darkest colour
+        int Move(int i)
+        {
+            int shaded = table[((start + i) * 32) + level];
+            return shaded == 1 ? -1 : shaded - start - i;
+        }
+
+        Assert.Equal(firstMoves, Enumerable.Range(0, firstMoves.Length).Select(Move));
+        Assert.Equal(moveAtPlace, Move(place));
+        Assert.Equal(start + 3, table[((start + 3) * 32) + 0]);
         Assert.Equal(5, table[(5 * 32) + 30]); // outside every range: not shaded
     }
 
@@ -60,5 +74,22 @@ public class PaletteShadingTests
         Assert.Equal(10, table[(10 * 32) + 0]);
         Assert.Equal(11, table[(10 * 32) + 16]);
         Assert.Equal(1, table[(10 * 32) + 31]);
+    }
+
+    [Fact]
+    public void BuildTable_AutoRange_FadesInWholeSixBitSteps()
+    {
+        // OV-20261029-autorange, colour 7 of the probe palette at level 2: the 6-bit target
+        // (32·30 + 8·2) >> 5 … = (30, 16, 42) is nearer colour 69 than colour 7 itself, though the
+        // exact fade (30.5, 16.7, 42.7) would be nearer colour 7.
+        byte[] palette = new byte[768];
+        void Set(int index, int r, int g, int b) =>
+            (palette[index * 3], palette[(index * 3) + 1], palette[(index * 3) + 2]) = ((byte)(r * 4), (byte)(g * 4), (byte)(b * 4));
+        Set(1, 8, 12, 24);
+        Set(7, 32, 17, 44);
+        Set(69, 31, 14, 43);
+        byte[] table = PaletteShading.BuildTable(palette, [(2, 254)], autoRange: true);
+
+        Assert.Equal(69, table[(7 * 32) + 2]);
     }
 }

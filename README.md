@@ -172,7 +172,8 @@ What works today:
   - Save files: OpenVirtue writes `SAVE_INFO` files byte for byte and reads the skills of
     full saves.
   - The sky panorama.
-  - Palette-index shading by distance and `PLAYER_LIGHT`.
+  - Palette-index shading by distance and `PLAYER_LIGHT`, and the shade table for sorted
+    ranges and `AUTORANGE`.
   - Which slope flags tilt a region.
   - Texture animation phase lengths: each loop is fixed in frames from the `TIME_CORR` it
     starts with.
@@ -184,8 +185,7 @@ What works today:
   pixel aspect, tilt, `BRANCH`) match; the timed ones list what is still off (start-up `WAITT`
   timing, sub-percent movement steps, details the notes left open).
 
-Not yet complete: the exact `AUTORANGE` shade table the retail palettes use (the distance and light
-curve is measured and drawn by palette index),
+Not yet complete: the palette `HARD` flag,
 the remaining `BELOW` details above,
 how floor and texture-cycle sounds take channels, exact UI behavior,
 the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads

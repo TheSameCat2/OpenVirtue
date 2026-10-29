@@ -1,6 +1,6 @@
 # OV-20261029-shading: how the original darkens a texel with distance and light
 Date: 2026-10-29
-Status: distance/light curve confirmed (two rounds, fifteen carriers) and implemented; AUTORANGE table unmeasured
+Status: distance/light curve confirmed (two rounds, fifteen carriers) and implemented; the AUTORANGE table is OV-20261029-autorange
 Observer: OpenVirtue maintainers (black-box probe, screenshot measurement)
 Implementer: OpenVirtue maintainers
 
@@ -54,10 +54,9 @@ level and clamped to 0…30, d being its depth along the line of sight and `AMBI
 the texture's. A sorted range moves a colour that many entries along it (level 0 is the colour itself).
 
 ## Open Questions
-- The `AUTORANGE` table the retail palette uses (`RANGE 3, 253; FLAGS AUTORANGE`): OpenVirtue fades
-  each colour toward the `INFINITY` colour and takes the nearest colour of the range — unmeasured.
-- Texture `AMBIENT` and negative ambients, `ALBEDO`/`GENIUS` light, `HARD` on an unsorted palette,
-  ranges not 32 long, and whether d is the depth or the Euclidean distance off the screen centre.
+- Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
+  then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).
+- Texture `AMBIENT` and negative ambients, `ALBEDO`/`GENIUS` light, `HARD` on an unsorted palette, and whether d is the depth or the Euclidean distance off the screen centre.
 
 ## Implementation
 `OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), the palette `RANGE`/`FLAGS`

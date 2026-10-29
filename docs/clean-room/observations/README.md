@@ -275,3 +275,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   when the loop starts: ⌊DELAY·(1 + RANDOM·u) / TIME_CORR⌋, with that cycle's `TIME_CORR` and one random
   draw per loop. A `ONESHOT` plays with the step fixed when its last run (or the level) started. A
   re-analysis of the motion-timing traces; implemented in `WdlRuntime.AdvanceAnimationTarget`.
+
+## Shade tables (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-autorange.md` — the colour drawn for each palette index and shade level:
+  - a sorted range moves place i of n by `⌊(n + 1 − i)·L/32⌋`, past the end to `INFINITY`;
+  - `AUTORANGE` fades each colour toward `INFINITY` in whole 6-bit steps, `(c·(32−L) + I·L) >> 5`,
+    then takes the nearest range colour.
+
+  Thirty-two DOSBox-X screenshots, every cell reproduced; implemented in `PaletteShading.BuildTable`.

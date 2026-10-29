@@ -33,12 +33,15 @@ public static class PaletteShading
     }
 
     /// <summary>
-    /// A shade table: for each palette index and level (0…31), the index drawn. Colours outside every
-    /// range are not shaded (manual p.34). A sorted range moves a colour along it toward its darkest
-    /// end; with <paramref name="autoRange"/> a colour in any range instead fades toward the
-    /// <c>INFINITY</c> colour (index 1) and takes the nearest colour of the ranges (p.35).
+    /// A shade table: for each palette index and level (0…31), the index drawn, as measured in
+    /// OV-20261029-autorange. Colours outside every range are not shaded (manual p.34). The
+    /// <c>INFINITY</c> colour is index 1. The colour i places into a sorted range of length n moves
+    /// <c>⌊(n + 1 − i)·level / 32⌋</c> places toward the range's dark end. A move past the end gives
+    /// index 1. With <paramref name="autoRange"/> a colour in any range instead fades toward index 1
+    /// in 6-bit VGA values, <c>(c·(32 − level) + infinity·level) >> 5</c> per channel. It then takes
+    /// the nearest colour of the ranges or index 1 by squared RGB distance, the lower index on a tie.
     /// </summary>
-    /// <param name="palette">256 colours, 3 bytes each.</param>
+    /// <param name="palette">256 colours, 3 bytes each (8-bit channels; the engine compares the top 6 bits).</param>
     /// <param name="ranges">The palette's <c>RANGE start, length</c> pairs.</param>
     /// <param name="autoRange">The palette's <c>AUTORANGE</c> flag.</param>
     public static byte[] BuildTable(ReadOnlySpan<byte> palette, IReadOnlyList<(int Start, int Length)> ranges, bool autoRange)
@@ -58,29 +61,38 @@ public static class PaletteShading
             }
         }
 
-        var inRange = new bool[256];
-        foreach ((int start, int length) in ranges)
-        {
-            for (int i = Math.Max(0, start); i < Math.Min(256, start + length); i++)
-            {
-                inRange[i] = true;
-            }
-        }
-
         if (autoRange)
         {
-            int[] candidates = Enumerable.Range(0, 256).Where(i => inRange[i]).ToArray();
-            (int R, int G, int B) infinity = (palette[3], palette[4], palette[5]);
-            foreach (int index in candidates)
+            var vga = new int[256 * 3];
+            for (int i = 0; i < vga.Length; i++)
             {
-                (int r, int g, int b) = (palette[index * 3], palette[(index * 3) + 1], palette[(index * 3) + 2]);
+                vga[i] = palette[i] >> 2;
+            }
+
+            var inRange = new bool[256];
+            foreach ((int start, int length) in ranges)
+            {
+                for (int i = Math.Max(0, start); i < Math.Min(256, start + length); i++)
+                {
+                    inRange[i] = true;
+                }
+            }
+
+            int[] candidates = [1, .. Enumerable.Range(0, 256).Where(i => inRange[i] && i != 1)];
+            Array.Sort(candidates);
+            for (int index = 0; index < 256; index++)
+            {
+                if (!inRange[index])
+                {
+                    continue;
+                }
+
                 for (int level = 1; level < Levels; level++)
                 {
-                    double t = level / (double)(Levels - 1);
-                    double tr = r + ((infinity.R - r) * t);
-                    double tg = g + ((infinity.G - g) * t);
-                    double tb = b + ((infinity.B - b) * t);
-                    table[(index * Levels) + level] = (byte)Nearest(palette, candidates, tr, tg, tb);
+                    int r = ((vga[index * 3] * (32 - level)) + (vga[3] * level)) >> 5;
+                    int g = ((vga[(index * 3) + 1] * (32 - level)) + (vga[4] * level)) >> 5;
+                    int b = ((vga[(index * 3) + 2] * (32 - level)) + (vga[5] * level)) >> 5;
+                    table[(index * Levels) + level] = (byte)Nearest(vga, candidates, r, g, b);
                 }
             }
 
@@ -93,10 +105,11 @@ public static class PaletteShading
             int last = Math.Min(255, start + length - 1);
             for (int index = first; index <= last; index++)
             {
+                int place = index - start;
                 for (int level = 0; level < Levels; level++)
                 {
-                    int shifted = index + (int)Math.Round(level * (length / (double)Levels));
-                    table[(index * Levels) + level] = (byte)Math.Min(last, shifted);
+                    int moved = place + ((length + 1 - place) * level / 32);
+                    table[(index * Levels) + level] = (byte)(moved < length ? Math.Min(last, start + moved) : 1);
                 }
             }
         }
@@ -104,16 +117,17 @@ public static class PaletteShading
         return table;
     }
 
-    private static int Nearest(ReadOnlySpan<byte> palette, int[] candidates, double r, double g, double b)
+    /// <summary>The candidate nearest (r, g, b) by squared distance; the lowest index on a tie.</summary>
+    private static int Nearest(int[] vga, int[] candidates, int r, int g, int b)
     {
         int best = candidates[0];
-        double bestDistance = double.MaxValue;
+        int bestDistance = int.MaxValue;
         foreach (int index in candidates)
         {
-            double dr = palette[index * 3] - r;
-            double dg = palette[(index * 3) + 1] - g;
-            double db = palette[(index * 3) + 2] - b;
-            double distance = (dr * dr) + (dg * dg) + (db * db);
+            int dr = vga[index * 3] - r;
+            int dg = vga[(index * 3) + 1] - g;
+            int db = vga[(index * 3) + 2] - b;
+            int distance = (dr * dr) + (dg * dg) + (db * db);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
