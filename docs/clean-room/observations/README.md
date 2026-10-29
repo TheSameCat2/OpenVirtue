@@ -192,3 +192,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   case), `PRINT_VALUE` appends the three-decimal value with nothing after it, and `\n` in a
   `PRINT_STRING` is a bare line feed. Read from the trace files of the earlier runs; the oracle-diff
   harness needs it to compare files byte for byte. Implemented in `WdlRuntime`/`WdlInterpreter`.
+
+## Scheduler order (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-scheduler-order.md` — `IF_START` and the first cycle read `TIME_CORR` 1 and
+  `TICKS` 0; `TICKS` counts from the second cycle, and `IF_START` counts as a cycle for the `WAITT`s
+  it arms (so `WAITT 16` there ends at `TICKS` 13.4 at 60 Hz). A cycle runs the resumed waits, the
+  `EACH_SEC` slots, the global slots in slot order, then regions, actors, things and walls, each
+  kind from the last placed to the first, each object's `EACH_TICK` before its animation step and
+  `EACH_CYCLE`. A `SET EACH_TICK` counts in the same cycle. Four DOSBox-X runs; implemented in
+  `WdlRuntime`.
