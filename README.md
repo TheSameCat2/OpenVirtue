@@ -182,11 +182,19 @@ What works today:
     starts with.
   - How sounds take the eight channels: lowest free, then the oldest; `SLOOP` channels are
     kept; skipped sounds; when channels read free, and `STOP_SOUND`.
-- **Oracle-diff harness** — `ovtool oracle diff <probe>` replays a probe carrier through the
-  headless `RuntimeHost`, in step with the original run's per-cycle `TICKS`, and compares every
-  trace file the DOS runtime wrote with OpenVirtue's line by line. The static probes (projection,
-  pixel aspect, tilt, `BRANCH`) match; the timed ones list what is still off (start-up `WAITT`
-  timing, sub-percent movement steps, details the notes left open).
+- **Oracle-diff harness** — `ovtool oracle check <probe>` prepares a probe's DOSBox-X carriers,
+  runs them headless (`oracle run`) and diffs them (`oracle diff`). The diff replays each carrier
+  through the headless `RuntimeHost` in step with the original run's per-cycle `TICKS` and compares
+  every trace file and save the DOS runtime wrote with OpenVirtue's, line by line.
+  `oracle summary` gives every probe's match count. These probes match in full:
+  - projection, pixel aspect, tilt;
+  - `BRANCH`;
+  - the sky, the shading curve, the shade table;
+  - slopes.
+
+  The timed ones list what is still off: start-up `WAITT` timing, sub-percent movement steps,
+  details the notes left open, and full `SAVE` files, which OpenVirtue does not write in the
+  original's format.
 
 Not yet complete: the palette `HARD` flag,
 the remaining `BELOW` details above,

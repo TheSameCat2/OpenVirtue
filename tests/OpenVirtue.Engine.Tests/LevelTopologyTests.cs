@@ -47,6 +47,30 @@ public class LevelTopologyTests
         return offsets;
     }
 
+    [Theory]
+    [InlineData(2, 2, "room")]
+    [InlineData(6, 6, "pad")]
+    public void LocateRegion_RoomWithAnIsland_FindsTheInnermostRegion(double x, double y, string region)
+    {
+        // A room (0..10) around a pad island (4..8), the room's walls bordering an outer region: the
+        // room's walls form two loops and the outer region shares the room's outline
+        // (OV-20261029-slope's carrier).
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "VERTEX 4 4 0;#4\nVERTEX 8 4 0;#5\nVERTEX 8 8 0;#6\nVERTEX 4 8 0;#7\n" +
+            "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 0 16;#2\n" +
+            "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+            "WALL w 4 5 2 0 0 0;#4\nWALL w 5 6 2 0 0 0;#5\nWALL w 6 7 2 0 0 0;#6\nWALL w 7 4 2 0 0 0;#7\n" +
+            "PLAYER_START 2 2 0 0;#8";
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        Level level = LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        int? found = LevelTopology.LocateRegion(level, x, y);
+
+        Assert.NotNull(found);
+        Assert.Equal(region, level.Regions[found.Value].Name);
+    }
+
     private static Level Load((float X, float Y, float Z)[] corners)
     {
         string map = string.Concat(corners.Select((c, i) =>

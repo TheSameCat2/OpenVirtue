@@ -38,6 +38,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("PSOUND_VOL"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_TONE"));
         Assert.Equal(0, runtime.GetSkill("CHANNEL")); // OV-20261029-audio
+        Assert.Equal(1000, runtime.GetSkill("DARK_DIST")); // OV-20261029-shading
         for (int channel = 0; channel < 8; channel++)
         {
             Assert.Equal(0, runtime.GetSkill($"CHANNEL_{channel}"));
@@ -1866,6 +1867,10 @@ public class WdlRuntimeTests
         var player = new Player(level);
         player.MoveTo(0, 15, 5);
         runtime.RegisterObject("player", player);
+        // The host keeps PLAYER_X/PLAYER_Y on the player's position; LOCATE reads them, since a script
+        // beams the player by setting them (OV-20261029-slope).
+        runtime.SetSkill("PLAYER_X", player.Position.X);
+        runtime.SetSkill("PLAYER_Y", player.Position.Z);
 
         Assert.True(runtime.RunAction("locatePlayer"));
 

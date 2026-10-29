@@ -53,6 +53,11 @@ A texel's shade level is `30 − 32·AMBIENT − 30.4·PLAYER_LIGHT·LIGHT_DIST/
 level and clamped to 0…30, d being its depth along the line of sight and `AMBIENT` the region's plus
 the texture's. A sorted range moves a colour that many entries along it (level 0 is the colour itself).
 
+## Addendum (2026-10-29, oracle summary)
+Every trace printed `DARK_DIST` as 1000, whatever `PLAYER_LIGHT` (0 to 1) and `LIGHT_DIST` (5 to 40)
+were, although the manual says it is recalculated from `PLAYER_LIGHT`. OpenVirtue now starts it at
+1000; with that the `light-*` and `low-*` traces replay line for line.
+
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
   then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).

@@ -61,7 +61,33 @@ internal static class OracleReplay
         }
 
         bool diff = verb == "diff";
-        string root = Path.GetFullPath(args[0]);
+        (int ran, int failures, _) = Execute(args[0], carriers, options, diff);
+        return ran == 0 && diff ? 1 : failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Diffs every run carrier under <paramref name="path"/> without printing each one: the number
+    /// that ran and the number that match (for <c>oracle summary</c>).
+    /// </summary>
+    internal static (int Ran, int Matched) Tally(string path)
+    {
+        List<string> carriers = FindCarriers(path);
+        TextWriter console = Console.Out;
+        Console.SetOut(TextWriter.Null);
+        try
+        {
+            (int ran, int failures, _) = Execute(path, carriers, ReplayOptions.Parse([]), diff: true);
+            return (ran, ran - failures);
+        }
+        finally
+        {
+            Console.SetOut(console);
+        }
+    }
+
+    private static (int Ran, int Failures, int Skipped) Execute(string path, List<string> carriers, ReplayOptions options, bool diff)
+    {
+        string root = Path.GetFullPath(path);
         int failures = 0;
         int skipped = 0;
         foreach (string carrier in carriers)
@@ -93,13 +119,13 @@ internal static class OracleReplay
             }
         }
 
+        int ran = carriers.Count - skipped;
         if (diff && carriers.Count > 1)
         {
-            int ran = carriers.Count - skipped;
             Console.WriteLine($"{ran - failures}/{ran} carriers match ({skipped} not run).");
         }
 
-        return failures == 0 ? 0 : 1;
+        return (ran, failures, skipped);
     }
 
     /// <summary>The carrier itself, or every carrier below a probe folder (round sub-folders included, <c>_stale</c> skipped).</summary>
@@ -123,7 +149,7 @@ internal static class OracleReplay
             .ToList();
     }
 
-    private static bool HasOriginalOutputs(string carrier) =>
+    internal static bool HasOriginalOutputs(string carrier) =>
         Directory.EnumerateFiles(Path.Combine(carrier, "work"), "OV*.TXT")
             .Any(static f => !AutoexecOutputs.Contains(Path.GetFileName(f), StringComparer.OrdinalIgnoreCase));
 

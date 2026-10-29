@@ -99,6 +99,12 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   actors and their `IF_ARRIVED`/`IF_HIT`. `numeric-edge` reads the number format, rounding and what
   division by zero and out-of-domain functions do. `motion-timing` fits `ACCEL` with `FRICTION` and
   `INERTIA` and times texture animation (`DELAY`, `RANDOM`, `ONESHOT`).
+- `oracle run <carrier-or-probe-dir> [--rerun] [--visible] [--timeout s]` — launches the prepared
+  carriers that have not run yet, one after another, through their own launchers, with SDL's dummy
+  video driver unless `--visible`.
+- `oracle check <probe> <output-dir> [prepare options]` — prepare, run and diff in one step.
+- `oracle summary [oracle-runs-dir]` — replays every run carrier of every probe and prints how many
+  match line for line.
 - `oracle replay | diff <carrier-or-probe-dir>` — the oracle-diff harness. `replay` packs a carrier's
   `work/` files (not `VRUN.EXE` or the original's `OV*` outputs) into `<carrier>/ov-replay/TITLE.WRS`
   and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the

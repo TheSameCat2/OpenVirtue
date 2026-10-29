@@ -839,10 +839,18 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public bool Locate(AcknexObject? target)
     {
-        target ??= GetObject("player");
+        AcknexObject? player = GetObject("player");
+        target ??= player;
         if (target is null || !TryGetMapPosition(target, out double x, out double y))
         {
             return false;
+        }
+
+        if (ReferenceEquals(target, player))
+        {
+            // A script beams the player with SET PLAYER_X/PLAYER_Y and then LOCATEs; the host moves the
+            // player object only after the cycle, so the skills hold the position to locate.
+            (x, y) = (GetSkill("PLAYER_X"), GetSkill("PLAYER_Y"));
         }
 
         if (LevelTopology.LocateRegion(_level, x, y) is not { } region)
@@ -851,9 +859,15 @@ public sealed class WdlRuntime :
         }
 
         target["region"] = region;
-        if (ReferenceEquals(target, GetObject("player")) && RegionAt(region) is { } here)
+        if (ReferenceEquals(target, GetObject("player")))
         {
-            SetObjectReference("here", here);
+            // The host copies PLAYER_REGION onto the player when the position changes; keep it current
+            // so a beam followed by LOCATE lands in the located region (OV-20261029-slope).
+            SetSkill("PLAYER_REGION", region);
+            if (RegionAt(region) is { } here)
+            {
+                SetObjectReference("here", here);
+            }
         }
 
         return true;
@@ -1970,6 +1984,9 @@ public sealed class WdlRuntime :
         EnsureValidSkillDefault("ASPECT", 1, value => value is >= 0.1 and <= 10);
         EnsureSkillDefault("PLAYER_LIGHT", 1);
         EnsureSkillDefault("LIGHT_DIST", 10);
+        // The manual (p.112) says DARK_DIST is recalculated from PLAYER_LIGHT; patched V3.963 read
+        // 1000 at every PLAYER_LIGHT and LIGHT_DIST measured (OV-20261029-shading).
+        EnsureSkillDefault("DARK_DIST", 1000);
         EnsureSkillDefault("SOUND_VOL", 1);
         EnsureSkillDefault("MUSIC_VOL", 1);
         EnsureSkillDefault("WALK_PERIOD", 4);

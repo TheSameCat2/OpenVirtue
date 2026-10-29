@@ -540,6 +540,9 @@ internal static class Cli
         {
             "prepare" => OracleProbeGenerator.Prepare(args[1..]),
             "replay" or "diff" => OracleReplay.Run(verb, args[1..]),
+            "run" => OracleRunner.Run(args[1..]),
+            "check" => OracleRunner.Check(args[1..]),
+            "summary" => OracleRunner.Summary(args[1..]),
             _ => Usage($"Unknown oracle subcommand '{verb}'."),
         };
     }
@@ -642,6 +645,9 @@ internal static class Cli
               ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope|audio|autorange|save-body|below-view [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
               ovtool oracle replay <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--extra-ticks n] [--max-ticks n]
               ovtool oracle diff   <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--tolerance x] [--context n]
+              ovtool oracle run    <carrier-or-probe-dir> [--rerun] [--visible] [--timeout s]
+              ovtool oracle check  <probe> <output-dir> [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle summary [oracle-runs-dir]
 
             Notes:
               These tools operate on game data you supply; no game data ships with

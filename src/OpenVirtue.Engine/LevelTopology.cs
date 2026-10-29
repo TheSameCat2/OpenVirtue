@@ -15,16 +15,27 @@ public static class LevelTopology
     {
         ArgumentNullException.ThrowIfNull(level);
         RegionSurfaceCache cache = SurfaceCache(level);
+        int? found = null;
+        double foundArea = double.PositiveInfinity;
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            List<int>? loop = cache.Loop(regionIndex);
-            if (loop is not null && ContainsPoint(level, loop, x, y))
+            List<int>? loop = cache.Outline(regionIndex);
+            if (loop is null || !ContainsPoint(level, loop, x, y))
             {
-                return regionIndex;
+                continue;
+            }
+
+            // An island region (a pad, a pillar's top) lies inside the outline of the region around
+            // it, so the innermost, smallest outline is the one the point is in.
+            double area = cache.Area(regionIndex, loop);
+            if (area < foundArea - 1e-9)
+            {
+                found = regionIndex;
+                foundArea = area;
             }
         }
 
-        return null;
+        return found;
     }
 
     /// <summary>
@@ -245,6 +256,74 @@ public static class LevelTopology
         return loop.Count == edges.Count ? loop : null;
     }
 
+    /// <summary>The largest closed loop among a region's walls, when they form several (a region with holes).</summary>
+    private static List<int>? LargestLoop(Level level, int regionIndex)
+    {
+        regionIndex = Footprint(level, regionIndex);
+        var adjacency = new Dictionary<int, List<int>>();
+        var edges = new HashSet<(int, int)>();
+        foreach (Wall wall in level.Walls)
+        {
+            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2 ||
+                !edges.Add(wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1)))
+            {
+                continue;
+            }
+
+            Connect(adjacency, wall.Vertex1, wall.Vertex2);
+            Connect(adjacency, wall.Vertex2, wall.Vertex1);
+        }
+
+        if (adjacency.Values.Any(static n => n.Count != 2))
+        {
+            return null;
+        }
+
+        var visited = new HashSet<int>();
+        List<int>? best = null;
+        double bestArea = 0;
+        foreach (int start in adjacency.Keys)
+        {
+            if (!visited.Add(start))
+            {
+                continue;
+            }
+
+            var loop = new List<int> { start };
+            int previous = -1;
+            int current = start;
+            while (true)
+            {
+                List<int> neighbours = adjacency[current];
+                int next = neighbours[0] != previous ? neighbours[0] : neighbours[1];
+                if (next == start || !visited.Add(next))
+                {
+                    break;
+                }
+
+                loop.Add(next);
+                previous = current;
+                current = next;
+            }
+
+            double twice = 0;
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Vertex a = level.Vertices[loop[i]];
+                Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+                twice += (a.X * (double)b.Y) - (b.X * (double)a.Y);
+            }
+
+            if (loop.Count >= 3 && Math.Abs(twice) > bestArea)
+            {
+                bestArea = Math.Abs(twice);
+                best = loop;
+            }
+        }
+
+        return best;
+    }
+
     private static bool ContainsPoint(Level level, List<int> loop, double x, double y)
     {
         bool inside = false;
@@ -342,6 +421,55 @@ public static class LevelTopology
             }
 
             return _loops[regionIndex];
+        }
+
+        private readonly double[] _areas = new double[level.Regions.Count];
+        private readonly bool[] _outlined = new bool[level.Regions.Count];
+        private readonly List<int>?[] _outlines = new List<int>?[level.Regions.Count];
+
+        /// <summary>
+        /// The region's outer boundary: its traced loop, or, for a region with holes (islands inside
+        /// it), the largest of its loops.
+        /// </summary>
+        public List<int>? Outline(int regionIndex)
+        {
+            if ((uint)regionIndex >= (uint)_outlines.Length)
+            {
+                return Loop(regionIndex);
+            }
+
+            if (!_outlined[regionIndex])
+            {
+                _outlines[regionIndex] = Loop(regionIndex) ?? LargestLoop(level, regionIndex);
+                _outlined[regionIndex] = true;
+            }
+
+            return _outlines[regionIndex];
+        }
+
+        /// <summary>The area inside a region's traced loop (cached).</summary>
+        public double Area(int regionIndex, List<int> loop)
+        {
+            if ((uint)regionIndex < (uint)_areas.Length && _areas[regionIndex] > 0)
+            {
+                return _areas[regionIndex];
+            }
+
+            double twice = 0;
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Vertex a = level.Vertices[loop[i]];
+                Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+                twice += (a.X * (double)b.Y) - (b.X * (double)a.Y);
+            }
+
+            double area = Math.Abs(twice) / 2;
+            if ((uint)regionIndex < (uint)_areas.Length)
+            {
+                _areas[regionIndex] = area;
+            }
+
+            return area;
         }
 
         public IReadOnlyList<int> Triangles(int regionIndex, List<int> loop)
