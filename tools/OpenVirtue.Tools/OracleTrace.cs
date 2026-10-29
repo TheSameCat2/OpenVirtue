@@ -289,13 +289,41 @@ internal static class OracleTrace
         return new OracleTraceComparison(original.Count, replay.Count, matching, first, tokensMatch, runsMatch);
     }
 
+    /// <summary>
+    /// How far the carrier template's start-up stamp (<c>TCK=</c>, <c>TICKS</c> when the probe action
+    /// starts) may differ: the start-up cycles are not printed, so the replay can only estimate their
+    /// <c>TIME_CORR</c>, and one cycle either way is the start-up offset, not a finding.
+    /// </summary>
+    public const double StartupTickTolerance = 0.3;
+
+    /// <summary>Whether two <c>KEY=value</c> tokens name the same key with numbers within the tolerance.</summary>
+    private static bool KeyedValuesMatch(string original, string replay, double tolerance)
+    {
+        int a = original.IndexOf('=', StringComparison.Ordinal);
+        int b = replay.IndexOf('=', StringComparison.Ordinal);
+        if (a <= 0 || b <= 0 || !original.AsSpan(0, a).SequenceEqual(replay.AsSpan(0, b)) ||
+            !double.TryParse(original.AsSpan(a + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out double x) ||
+            !double.TryParse(replay.AsSpan(b + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out double y))
+        {
+            return false;
+        }
+
+        double allowed = original.AsSpan(0, a).SequenceEqual("TCK") ? StartupTickTolerance : tolerance;
+        return Math.Abs(x - y) <= allowed;
+    }
+
     /// <summary>True when two lines carry the same token and fields, numbers within <paramref name="tolerance"/>.</summary>
     public static bool LinesMatch(OracleTraceLine original, OracleTraceLine replay, double tolerance, OracleTickShift? shift = null)
     {
         ArgumentNullException.ThrowIfNull(original);
         ArgumentNullException.ThrowIfNull(replay);
-        if (!string.Equals(original.Token, replay.Token, StringComparison.Ordinal) ||
-            original.Fields.Count != replay.Fields.Count)
+        if (!string.Equals(original.Token, replay.Token, StringComparison.Ordinal) &&
+            !KeyedValuesMatch(original.Token, replay.Token, tolerance))
+        {
+            return false;
+        }
+
+        if (original.Fields.Count != replay.Fields.Count)
         {
             return false;
         }

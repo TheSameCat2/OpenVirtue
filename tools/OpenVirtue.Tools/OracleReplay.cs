@@ -214,6 +214,67 @@ internal static class OracleReplay
         return new CarrierResult(carrierCase, primary, timing, cycleTicks, clock.Anchored ? clock.Offset : null, frames, ticks, replayDirectory, originalFiles, replayFiles);
     }
 
+    /// <summary>
+    /// For a carrier without a per-cycle timing column, the start offset read off the carrier
+    /// template's start-up stamp (<c>TCK=</c> in <c>OVPRB0.TXT</c>, <c>TICKS</c> as the probe action
+    /// starts), applied to each token's first column when it reads like <c>TICKS</c>: never below
+    /// the stamp and never going down.
+    /// </summary>
+    private static OracleTickShift? StampShift(CarrierResult result, IReadOnlyList<OracleTraceLine> original)
+    {
+        const string Probe = "OVPRB0.TXT";
+        double? originalStamp = result.OriginalFiles.TryGetValue(Probe, out string? originalProbe) ? Stamp(originalProbe) : null;
+        double? replayStamp = result.ReplayFiles.TryGetValue(Probe, out string? replayProbe) ? Stamp(replayProbe) : null;
+        if ((originalStamp is null || replayStamp is null) && result.Primary is { } primary &&
+            result.ReplayFiles.TryGetValue(primary, out string? replayPrimary))
+        {
+            // No stamp (trace carriers before 2026-10-29): the trace's first line with a number first,
+            // usually the GO line printed as the probe starts, stands in for it.
+            IReadOnlyList<OracleTraceLine> replay = OracleTrace.Parse(File.ReadAllText(replayPrimary, Encoding.Latin1));
+            int first = original.ToList().FindIndex(static l => l.Value(0) is not null);
+            if (first >= 0 && first < replay.Count && replay[first].Token == original[first].Token &&
+                original[first].Value(0) is { } a && replay[first].Value(0) is { } b && Math.Abs(a - b) <= 1)
+            {
+                (originalStamp, replayStamp) = (a, b);
+            }
+        }
+
+        if (originalStamp is null || replayStamp is null)
+        {
+            return null;
+        }
+
+        var columns = new HashSet<(string, int)>();
+        foreach (IGrouping<string, OracleTraceLine> group in original.GroupBy(static l => l.Token, StringComparer.Ordinal))
+        {
+            double previous = originalStamp.Value - 1e-3;
+            bool ticks = true;
+            foreach (OracleTraceLine line in group)
+            {
+                if (line.Value(0) is not { } value || value < previous)
+                {
+                    ticks = false;
+                    break;
+                }
+
+                previous = value;
+            }
+
+            if (ticks)
+            {
+                columns.Add((group.Key, 0));
+            }
+        }
+
+        return new OracleTickShift(columns, originalStamp.Value, replayStamp.Value);
+
+        static double? Stamp(string path) =>
+            File.ReadLines(path, Encoding.Latin1)
+                .Where(static l => l.StartsWith("TCK=", StringComparison.Ordinal))
+                .Select(static l => double.TryParse(l.AsSpan(4), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : (double?)null)
+                .FirstOrDefault();
+    }
+
     private static double? FirstValue(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing) =>
         lines.FirstOrDefault(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
             ?.Value(timing.Column);
@@ -281,7 +342,7 @@ internal static class OracleReplay
             IReadOnlyList<OracleTraceLine> replay = OracleTrace.Parse(File.ReadAllText(replayPath, Encoding.Latin1));
             OracleTickShift? shift = result.AnchorOffset is { } anchorOffset && result.CycleTicks.Count > 0
                 ? new OracleTickShift(OracleTrace.TickColumns(original, result.CycleTicks), result.CycleTicks[0], result.CycleTicks[0] + anchorOffset)
-                : null;
+                : StampShift(result, original);
             OracleTraceComparison comparison = OracleTrace.Compare(original, replay, options.Tolerance, shift);
             if (comparison.Identical)
             {

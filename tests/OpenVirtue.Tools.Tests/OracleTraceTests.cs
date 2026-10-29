@@ -131,4 +131,18 @@ public sealed class OracleTraceTests
         Assert.Equal(new OracleTimingColumn("TK", 1), timing);
         Assert.False(OracleTimingColumn.TryParse("TK", out _));
     }
+
+    [Theory]
+    [InlineData("HIN_D=44.000", "HIN_D=44.001", true)]
+    [InlineData("HIN_D=44.000", "HIN_D=45.000", false)]
+    [InlineData("TCK=13.375", "TCK=13.500", true)] // the start-up stamp, within one cycle
+    [InlineData("TCK=13.375", "TCK=14.000", false)]
+    [InlineData("HIN_D=44.000", "HIN_X=44.000", false)]
+    public void LinesMatch_KeyedValues_CompareTheirNumbers(string original, string replay, bool match)
+    {
+        OracleTraceLine a = Assert.Single(OracleTrace.Parse(original));
+        OracleTraceLine b = Assert.Single(OracleTrace.Parse(replay));
+
+        Assert.Equal(match, OracleTrace.LinesMatch(a, b, OracleTrace.DefaultTolerance));
+    }
 }

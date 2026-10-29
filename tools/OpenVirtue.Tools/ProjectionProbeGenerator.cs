@@ -130,6 +130,7 @@ internal static class ProjectionProbeGenerator
         ("PLAYER_Z", "PZ"), ("PLAYER_ANGLE", "ANG"), ("PLAYER_SIZE", "PSIZE"), ("FLOOR_HGT", "FLOOR"),
         ("CEIL_HGT", "CEIL"), ("SCREEN_X", "SX"), ("SCREEN_Y", "SY"), ("SCREEN_WIDTH", "SW"),
         ("SCREEN_HGT", "SH"), ("MOTION_BLUR", "BLUR"), ("ASPECT", "ASPECT"),
+        ("TICKS", "TCK"), // the start-up stamp the oracle diff anchors untimed traces on
     ];
     private static readonly string[] DefaultAspectVideos = ["S640x480", "320x200", "X320x240", "X320x400"];
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };

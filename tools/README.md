@@ -118,7 +118,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles).
   Until the replay prints its first sampled cycle every frame lasts the original's first sampled
   step; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
-  offset, which is reported, and columns that print `TICKS` are compared relative to it.
+  offset, which is reported, and columns that print `TICKS` are compared relative to it. A carrier
+  without a per-cycle timing column is anchored on the template's start-up stamp (`TCK=` in
+  `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line;
+  `KEY=value` lines compare their numbers, the stamp within one start-up cycle.
   `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
