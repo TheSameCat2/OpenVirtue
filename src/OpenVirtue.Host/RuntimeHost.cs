@@ -8,6 +8,7 @@ using OpenVirtue.Engine;
 using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
+using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Host;
@@ -57,6 +58,7 @@ public sealed partial class RuntimeHost : IDisposable
     private bool _startupRan;
     private bool _handlingInputRequest;
     private bool _exitRequested;
+    private bool _shading;
     private double _lastFrameSeconds;
     private double _lastTimeCorrection;
     private double _statusAccum;
@@ -528,9 +530,51 @@ public sealed partial class RuntimeHost : IDisposable
         _graphics.UploadWorld(_textureImages);
         _graphics.UploadUi(_uiImages);
         _graphics.UploadFonts(_fontImages);
+        UploadShading();
         BuildGeometry();
         BuildSprites();
         _geometryReady = true;
+    }
+
+    /// <summary>
+    /// Builds the shade table of the level's first palette that declares <c>RANGE</c>s (the retail
+    /// levels' <c>levelPal</c>) from its <c>PALFILE</c> and hands it to the renderer; without one,
+    /// textures are drawn in RGB (OV-20261029-shading).
+    /// </summary>
+    private void UploadShading()
+    {
+        _shading = false;
+        foreach ((string name, LevelPaletteShading shading) in _level.PaletteShading)
+        {
+            if (shading.Ranges.Count == 0 ||
+                !_level.Palettes.TryGetValue(name, out string? file) ||
+                !TryGetArchiveBytes(file, out byte[] bytes))
+            {
+                continue;
+            }
+
+            try
+            {
+                PcxImage image = PcxImage.Read(bytes);
+                byte[] palette = new byte[256 * 3];
+                for (int i = 0; i < Math.Min(256, image.Palette.Length); i++)
+                {
+                    palette[i * 3] = image.Palette[i].R;
+                    palette[(i * 3) + 1] = image.Palette[i].G;
+                    palette[(i * 3) + 2] = image.Palette[i].B;
+                }
+
+                _graphics.UploadShading(palette, PaletteShading.BuildTable(palette, shading.Ranges, shading.AutoRange));
+                _shading = true;
+                return;
+            }
+            catch (InvalidDataException)
+            {
+                // A bad palette file leaves the level unshaded.
+            }
+        }
+
+        _graphics.UploadShading(null, null);
     }
 
     private void RebuildGeometryResources()

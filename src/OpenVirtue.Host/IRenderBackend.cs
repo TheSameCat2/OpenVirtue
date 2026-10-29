@@ -24,6 +24,14 @@ public interface IRenderBackend
     RgbaImage ReadRgba();
 
     /// <summary>Presents the framebuffer.</summary>
+    /// <summary>
+    /// The palette (256 × RGB) and shade table (256 colours × 32 levels) that shaded batches draw
+    /// through, or <c>null</c>s to draw every batch in RGB (OV-20261029-shading).
+    /// </summary>
+    void UploadShading(byte[]? palette, byte[]? shadeTable)
+    {
+    }
+
     void Present();
 }
 

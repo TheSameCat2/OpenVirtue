@@ -164,7 +164,8 @@ What works today:
   pixel aspect, tilt, `BRANCH`) match; the timed ones list what is still off (start-up `WAITT`
   timing, sub-percent movement steps, details the notes left open).
 
-Not yet complete: indexed-palette shading,
+Not yet complete: the exact `AUTORANGE` shade table the retail palettes use (the distance and light
+curve is measured and drawn by palette index),
 Acknex-parity `each_cycle` discovery/dispatch order, slopes, the remaining `BELOW` details above, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
 the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads

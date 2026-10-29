@@ -243,3 +243,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `SKY_OFFS_X` moving it right; vertically unscaled, its last row on the tilted eye line, `SKY_OFFS_Y`
   moving it down, edge rows repeated. Fourteen DOSBox-X runs (ten failed to compile in round 1);
   implemented in `SkyPanorama`.
+
+## Shading (2026-10-29 — confirmed and implemented; AUTORANGE table open)
+
+- `OV-20261029-shading.md` — the shade level is `30 − 32·AMBIENT − 30.4·PLAYER_LIGHT·LIGHT_DIST/d`,
+  rounded down to even and clamped to 0…30 (16 grades over a 32-colour range): inverse-distance
+  falloff, `AMBIENT` 0.5 brightening by 16 levels, `PLAYER_LIGHT` 0 giving level 30. Fifteen DOSBox-X
+  runs; implemented in `PaletteShading` and the GL backend's indexed path.

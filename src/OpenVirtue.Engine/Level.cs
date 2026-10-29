@@ -124,6 +124,10 @@ public sealed class Level
     /// <summary>The declared skills in declaration order (the last declaration of a name counts).</summary>
     public IReadOnlyList<string> SkillDeclarationOrder { get; init; } = [];
 
+    /// <summary>Each <c>PALETTE</c>'s shading: its <c>RANGE</c>s and flags (manual p.34–35).</summary>
+    public IReadOnlyDictionary<string, LevelPaletteShading> PaletteShading { get; init; } =
+        new Dictionary<string, LevelPaletteShading>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Skills whose declarations supplied an explicit <c>VAL</c> initializer.</summary>
     public IReadOnlySet<string> ExplicitlyInitializedSkills { get; }
 
@@ -198,3 +202,6 @@ public sealed class Level
     /// <summary>Per-region boundary loops and floor triangulations, built on first use by <see cref="LevelTopology"/>.</summary>
     internal LevelTopology.RegionSurfaceCache? SurfaceCache { get; set; }
 }
+
+/// <summary>A palette's shading declarations: its <c>RANGE start, length</c> pairs and its <c>AUTORANGE</c> and <c>HARD</c> flags.</summary>
+public sealed record LevelPaletteShading(IReadOnlyList<(int Start, int Length)> Ranges, bool AutoRange, bool Hard);

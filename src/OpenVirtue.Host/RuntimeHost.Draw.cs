@@ -30,6 +30,7 @@ public sealed partial class RuntimeHost
             Height = height,
             ClearColor = TintedClearColor(),
             ClearDepth = true,
+            Light = new Vector2((float)_runtime.GetSkill("PLAYER_LIGHT"), (float)_runtime.GetSkill("LIGHT_DIST")),
         };
 
         AddSky(frame, worldPixels);
@@ -175,7 +176,8 @@ public sealed partial class RuntimeHost
                 TextureSlot.World,
                 batch.AlphaTest,
                 depthTest: true,
-                batch.Ambient);
+                _shading ? ShadeAmbient(batch.Texture) : batch.Ambient,
+                shaded: _shading);
         }
     }
 
@@ -249,7 +251,8 @@ public sealed partial class RuntimeHost
                 TextureSlot.World,
                 alphaTest: true,
                 depthTest: true,
-                TextureAmbient(texture));
+                _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
+                shaded: _shading);
             start = end;
         }
     }
@@ -381,7 +384,8 @@ public sealed partial class RuntimeHost
         bool depthTest,
         float ambient,
         Vector3? tint = null,
-        TextureImage? dynamic = null)
+        TextureImage? dynamic = null,
+        bool shaded = false)
     {
         if (vertices.Length == 0)
         {
@@ -400,6 +404,7 @@ public sealed partial class RuntimeHost
             Ambient = ambient,
             Tint = tint ?? _paletteTint,
             Vertices = vertices,
+            Shaded = shaded,
         });
     }
 
@@ -433,6 +438,19 @@ public sealed partial class RuntimeHost
         float width = (float)Math.Clamp(_runtime.GetSkill("SCREEN_WIDTH"), 1, display.VirtualWidth - x);
         float height = (float)Math.Clamp(_runtime.GetSkill("SCREEN_HGT"), 1, display.VirtualHeight - y);
         return display.ToPhysical(x, y, width, height);
+    }
+
+    /// <summary>The global and the texture's <c>AMBIENT</c> for a shaded batch; the region's comes per vertex.</summary>
+    private float ShadeAmbient(string? texture)
+    {
+        double ambient = _runtime.GetSkill("AMBIENT");
+        string? logicalTexture = texture is null ? null : TextureAnimation.LogicalTextureName(texture);
+        if (logicalTexture is not null && _level.Textures.TryGetValue(logicalTexture, out LevelTexture levelTexture))
+        {
+            ambient += levelTexture.Ambient;
+        }
+
+        return (float)ambient;
     }
 
     private float TextureAmbient(string? texture)

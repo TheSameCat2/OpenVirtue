@@ -46,7 +46,26 @@ internal static class ShadingProbeCases
         View("region-ambient", "Region AMBIENT 0.5 with PLAYER_LIGHT 0: the floor and walls lit by the region alone.", "    SET PLAYER_LIGHT, 0;\n", "AMBIENT 0.5;"),
         View("region-ambient-light", "Region AMBIENT 0.5 with PLAYER_LIGHT 1: how do the two add up?", "", "AMBIENT 0.5;"),
         View("hard", "FLAGS HARD on the palette: a narrower transition?", "", paletteFlags: "FLAGS HARD; "),
+        Low("low-p1-ld10", 1, 10),
+        Low("low-p1-ld5", 1, 5),
+        Low("low-p1-ld20", 1, 20),
+        Low("low-p1-ld40", 1, 40),
+        Low("low-p075-ld10", 0.75, 10),
+        Low("low-p05-ld10", 0.5, 10),
+        Low("low-p025-ld10", 0.25, 10),
+        Low("low-p05-ld20", 0.5, 20),
     ];
+
+    /// <summary>
+    /// Round 2: the eye lowered to 2, so the floor shows from about 5.5 steps out to the far wall at 48,
+    /// with the given <c>PLAYER_LIGHT</c> and <c>LIGHT_DIST</c>.
+    /// </summary>
+    private static TraceProbeCase Low(string label, double light, double lightDistance) => View(
+        label,
+        string.Create(CultureInfo.InvariantCulture, $"Round 2. Eye at 2, PLAYER_LIGHT {light}, LIGHT_DIST {lightDistance}: the floor's shade from 5.5 to 48 steps."),
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"    SET PLAYER_SIZE, 2;\n    SET PLAYER_Z, 2;\n    SET PLAYER_LIGHT, {light};\n    SET LIGHT_DIST, {lightDistance};\n"));
 
     /// <summary>The probe as the generator consumes it.</summary>
     public static readonly TraceProbeSet Set = new(

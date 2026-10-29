@@ -18,6 +18,9 @@ public sealed class HostFrame
 
     public bool ClearDepth { get; init; }
 
+    /// <summary><c>PLAYER_LIGHT</c> and <c>LIGHT_DIST</c> for the shaded batches (OV-20261029-shading).</summary>
+    public Vector2 Light { get; init; }
+
     public List<DrawBatch> Batches { get; } = [];
 }
 
@@ -45,6 +48,13 @@ public sealed class DrawBatch
 
     /// <summary>Multiplies the textured color. Palette fades live here.</summary>
     public Vector3 Tint { get; init; } = Vector3.One;
+
+    /// <summary>
+    /// Draw by palette index through the uploaded shade table: <see cref="Ambient"/> plus each
+    /// vertex's ambient is the texel's <c>AMBIENT</c>, and its distance and <see cref="HostFrame.Light"/>
+    /// set its shade level.
+    /// </summary>
+    public bool Shaded { get; init; }
 
     public required RenderVertex[] Vertices { get; init; }
 }

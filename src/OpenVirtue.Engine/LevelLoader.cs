@@ -121,6 +121,7 @@ public static class LevelLoader
         {
             LocalSkills = localSkills,
             SkillDeclarationOrder = skillOrder,
+            PaletteShading = GatherPaletteShading(program),
         };
     }
 
@@ -688,6 +689,47 @@ public static class LevelLoader
         }
 
         return sounds;
+    }
+
+    private static Dictionary<string, LevelPaletteShading> GatherPaletteShading(WdlProgram program)
+    {
+        var shading = new Dictionary<string, LevelPaletteShading>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("PALETTE", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Body is not { } body)
+            {
+                continue;
+            }
+
+            var ranges = new List<(int, int)>();
+            bool autoRange = false;
+            bool hard = false;
+            foreach (WdlItem property in body.Items)
+            {
+                if (property.Keyword.Equals("RANGE", StringComparison.OrdinalIgnoreCase))
+                {
+                    int[] numbers = property.Header
+                        .Where(static t => t.Kind == WdlTokenKind.Number)
+                        .Select(static t => (int)double.Parse(t.Text, CultureInfo.InvariantCulture))
+                        .ToArray();
+                    if (numbers.Length >= 2)
+                    {
+                        ranges.Add((numbers[0], numbers[1]));
+                    }
+                }
+                else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+                {
+                    autoRange |= property.Header.Any(static t => t.Text.Equals("AUTORANGE", StringComparison.OrdinalIgnoreCase));
+                    hard |= property.Header.Any(static t => t.Text.Equals("HARD", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            shading[item.Header[0].Text] = new LevelPaletteShading(ranges, autoRange, hard);
+        }
+
+        return shading;
     }
 
     private static Dictionary<string, string> GatherPalettes(WdlProgram program)
