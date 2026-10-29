@@ -137,6 +137,7 @@ public sealed class OracleTraceTests
     [InlineData("HIN_D=44.000", "HIN_D=45.000", false)]
     [InlineData("TCK=13.375", "TCK=13.500", true)] // the start-up stamp, within one cycle
     [InlineData("TCK=13.375", "TCK=14.000", false)]
+    [InlineData("HOUT_T=13.375", "HOUT_T=13.500", true)] // TICKS at the shot, in an untimed carrier
     [InlineData("HIN_D=44.000", "HIN_X=44.000", false)]
     public void LinesMatch_KeyedValues_CompareTheirNumbers(string original, string replay, bool match)
     {

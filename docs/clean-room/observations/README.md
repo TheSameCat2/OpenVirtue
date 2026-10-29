@@ -36,7 +36,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   bitmap's upper-left as drawn and are valid inside `IF_HIT`, `RESULT` follows the manual's
   formula; thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
   viewer in its left region. Eight DOSBox-X runs; implemented in `ProjectionModel.ShootRay`,
-  the `WdlRuntime` hitscan and `MeshBuilder`.
+  the `WdlRuntime` hitscan and `MeshBuilder`. A 19-run sweep (2026-10-29) adds:
+  - the shot goes through the whole pixel `floor(W/2 + SHOOT_X·W/2)`, `floor(H/2 − SHOOT_Y·H/2)`;
+  - a sprite's fractional `HIT_X` is the renderer's texel step at that column, from the projected
+    left edge plus 0.714 pixels, in 22.10 steps;
+  - 24 of 27 carriers replay.
 
 ## BRANCH probe (2026-10-15 — confirmed and implemented)
 

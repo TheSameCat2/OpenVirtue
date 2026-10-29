@@ -3555,6 +3555,14 @@ public sealed class WdlRuntime :
             (int)Math.Round(GetSkill("SCREEN_HGT")));
         double shootX = useShootDeviation ? GetSkill("SHOOT_X") : 0;
         double shootY = useShootDeviation ? GetSkill("SHOOT_Y") : 0;
+        // OV-20261009-shoot-mapping (sweep): the shot goes through a whole screen pixel, the one
+        // whose column is floor(W/2 + SHOOT_X·W/2) and whose row is floor(H/2 − SHOOT_Y·H/2).
+        double halfWidth = projection.ScreenWidth * 0.5;
+        double halfHeight = projection.ScreenHeight * 0.5;
+        double column = Math.Floor(halfWidth + (WdlFixed.Quantize(Math.Clamp(shootX, -1, 1)) * halfWidth)) - halfWidth;
+        double row = Math.Floor(halfHeight - (WdlFixed.Quantize(Math.Clamp(shootY, -1, 1)) * halfHeight)) - halfHeight;
+        shootX = column / halfWidth;
+        shootY = -row / halfHeight;
         (double horizontalDeviation, double rayVertical) = projection.ShootRay(shootX, shootY);
         double horizontalMagnitude = Math.Sqrt(1 + (horizontalDeviation * horizontalDeviation));
         double verticalSlope = rayVertical / horizontalMagnitude;
@@ -3581,7 +3589,8 @@ public sealed class WdlRuntime :
             verticalSlope,
             range / distanceScale,
             distanceScale,
-            player.Region);
+            player.Region,
+            new ShotPixel(column, halfWidth * Math.Truncate(1024 / projection.HorizontalHalfTangent) / 1024));
         if (hit is null)
         {
             ClearHitResult();
@@ -3604,7 +3613,8 @@ public sealed class WdlRuntime :
         double verticalSlope,
         double horizontalRange,
         double distanceScale,
-        int startRegion)
+        int startRegion,
+        ShotPixel shot)
     {
         int region = startRegion;
         double minimumDistance = 0;
@@ -3665,7 +3675,9 @@ public sealed class WdlRuntime :
                             continue;
                         }
 
-                        hitX = pixelX;
+                        hitX = sprite.Mirror
+                            ? pixelX
+                            : SpriteHitColumn(shot, (dx * forwardY) - (dy * forwardX) + sprite.CenterOffset.X, depth, sprite.HalfWidth, image.Width);
                         // OV-20261009-shoot-mapping: the original's HIT_Y is one row below the sampled
                         // pixel row (129 on the eye line's row 128, 64 for a hit at row 63.9).
                         hitY = pixelY + 1;
@@ -5024,6 +5036,28 @@ public sealed class WdlRuntime :
         public WdlInputRequest Request { get; } = request;
 
         public ActionScope Scope { get; } = scope;
+    }
+
+    /// <summary>
+    /// A shot's screen column, as an offset from the centre, and the focal length the original
+    /// projects sprites with: half the width times 1/tan(<c>PLAYER_ARC</c>/2) cut to 22.10.
+    /// </summary>
+    private readonly record struct ShotPixel(double Column, double FocalLength);
+
+    /// <summary>
+    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping, sweep): the texel column the renderer
+    /// steps to at the shot's screen column. It counts from the sprite's projected left edge,
+    /// 0.714 pixels further on. The pixels per step at the sprite's depth and the texels per pixel
+    /// are both cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead). Fitted to
+    /// three sprites and 19 columns in one 640-wide view, within 0.0013.
+    /// </summary>
+    private static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
+    {
+        double pixelsPerStep = Math.Truncate(1024 * shot.FocalLength / depth) / 1024;
+        double left = (centerRight - halfWidth) * pixelsPerStep;
+        double texelsPerPixel = Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep)) / 1024;
+        double texel = texelsPerPixel * (shot.Column + 0.714 - left);
+        return WdlFixed.Quantize(Math.Clamp(texel, 0, textureWidth - (1.0 / 1024)));
     }
 
     private sealed record HitCandidate(

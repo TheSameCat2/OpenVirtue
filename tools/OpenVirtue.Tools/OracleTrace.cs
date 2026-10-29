@@ -366,6 +366,12 @@ internal static class OracleTrace
     /// </summary>
     public const double StartupTickTolerance = 0.3;
 
+    /// <summary>
+    /// Keys that print <c>TICKS</c> in a carrier with no per-cycle timing, so they carry the start-up
+    /// offset: the template's stamp and the shoot-mapping probe's <c>TICKS</c> at the shot.
+    /// </summary>
+    private static readonly string[] StartupStampKeys = ["TCK", "HIN_T", "HOUT_T"];
+
     /// <summary>Whether two <c>KEY=value</c> tokens name the same key with numbers within the tolerance.</summary>
     private static bool KeyedValuesMatch(string original, string replay, double tolerance)
     {
@@ -378,7 +384,8 @@ internal static class OracleTrace
             return false;
         }
 
-        double allowed = original.AsSpan(0, a).SequenceEqual("TCK") ? StartupTickTolerance : tolerance;
+        string key = original[..a];
+        double allowed = StartupStampKeys.Contains(key) ? StartupTickTolerance : tolerance;
         return Math.Abs(x - y) <= allowed;
     }
 

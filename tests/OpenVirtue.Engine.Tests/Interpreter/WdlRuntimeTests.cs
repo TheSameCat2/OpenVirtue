@@ -1988,7 +1988,10 @@ public class WdlRuntimeTests
 
         Assert.Same(level.Things.Single(thing => thing.Name == "far"), runtime.GetObject("hit"));
         Assert.Equal(7, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(1, runtime.GetSkill("HIT_X"));
+        // The texel column the renderer steps to at the centre column: 0.714 pixels past the half-way
+        // point at a texels-per-pixel step cut to 22.10 (24/1024 here), a little short of 1
+        // (OV-20261009-shoot-mapping, sweep).
+        Assert.Equal(1012 / 1024.0, runtime.GetSkill("HIT_X"), 6);
         Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 

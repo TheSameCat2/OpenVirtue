@@ -905,7 +905,7 @@ internal static class ProjectionProbeGenerator
     /// <summary>Extra skills dumped before the shot by the shoot-mapping probe.</summary>
     private static readonly (string Skill, string Label)[] ShootStateLabels =
     [
-        ("SHOOT_X", "SHX"), ("SHOOT_Y", "SHY"), ("SHOOT_RANGE", "SHRNG"), ("SHOOT_FAC", "SHFAC"), ("TICKS", "TCK"),
+        ("SHOOT_X", "SHX"), ("SHOOT_Y", "SHY"), ("SHOOT_RANGE", "SHRNG"), ("SHOOT_FAC", "SHFAC"),
     ];
 
     /// <summary>
