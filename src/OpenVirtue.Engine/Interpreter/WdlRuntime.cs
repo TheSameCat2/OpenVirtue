@@ -576,8 +576,9 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    /// <remarks>Three decimals and no separator: a script writes its own spaces and line feeds (OV-20261029-print-output).</remarks>
     public void PrintValue(double value) =>
-        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture) + Environment.NewLine);
+        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);
@@ -4446,8 +4447,12 @@ public sealed class WdlRuntime :
         File.AppendAllText(PrintFilePath(), text, Encoding.Latin1);
     }
 
+    // The DOS runtime names the file in upper case with the number unpadded (PRINT0.TXT, OVSTA0.TXT;
+    // OV-20261029-print-output).
     private string PrintFilePath() =>
-        Path.Combine(_printDirectory!, $"{_printBaseName}{_printNumber:000}.TXT");
+        Path.Combine(
+            _printDirectory!,
+            string.Create(CultureInfo.InvariantCulture, $"{_printBaseName.ToUpperInvariant()}{_printNumber}.TXT"));
 
     private static string NormalizePrintBaseName(string baseName)
     {

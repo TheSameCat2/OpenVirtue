@@ -118,6 +118,23 @@ Example:
 
 Use these comments sparingly; prefer tests as the durable record.
 
+### Check the implementation against the run (oracle-diff)
+
+A trace carrier that has run can be replayed through OpenVirtue headless and compared with the
+original's files line by line:
+
+```bash
+dotnet run --project tools/OpenVirtue.Tools -- oracle diff <carrier-or-probe-dir>
+```
+
+The replay packs the carrier's `work/` files into a WRS under `<carrier>/ov-replay/` (local-only,
+beside the original's outputs) and runs `RuntimeHost` with the original's per-cycle `TICKS` steps,
+so `TIME_CORR` follows the original run. It reports the tick at which each run reached its first
+sampled cycle (a different start-up shows once, as the start offset) and, per output file, the first
+line that differs. Scripted key presses and clicks are not replayed; such carriers are flagged.
+Re-run it on the probe after implementing a note: the probe's own carriers should then match or
+differ only in what the note leaves open.
+
 ## Split-Role Mode
 
 Use split-role mode for high-risk or source-level questions.

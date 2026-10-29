@@ -151,10 +151,16 @@ What works today:
   refreshed only when the view changes or an actor in front of the player walks
   (OV-20261021-distance-refresh).
 
+- **Oracle-diff harness** — `ovtool oracle diff <probe>` replays a probe carrier through the
+  headless `RuntimeHost`, in step with the original run's per-cycle `TICKS`, and compares every
+  trace file the DOS runtime wrote with OpenVirtue's line by line. The static probes (projection,
+  pixel aspect, tilt, `BRANCH`) match; the timed ones list what is still off (start-up `WAITT`
+  timing, sub-percent movement steps, details the notes left open).
+
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, slopes, stacked (`BELOW`) regions, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
-legacy-compatible save/load, and the DOSBox-X oracle-diff harness.
+legacy-compatible save/load, and making every recorded probe match under the oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in

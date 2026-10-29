@@ -5,6 +5,7 @@ Automated tests (xUnit). See [../docs/recon/06-reimplementation-strategy.md](../
 | Project | Covers |
 |---------|--------|
 | `OpenVirtue.Formats.Tests` | LZSS decoder, WRS archive reader, PCX reader, WAV reader, and the WDL lexer/parser/preprocessor and WMP map reader. |
+| `OpenVirtue.Tools.Tests` | The oracle-diff harness in `ovtool`: trace parsing, `TICKS`-column detection, cycle filling, line comparison and the replay clock. |
 | `OpenVirtue.Engine.Tests` | The hybrid object model, `LevelLoader`, the WDL expression/statement interpreter and `WdlRuntime`, first-cut player physics, and the geometry pipeline (ear clipping, mesh builder, texture loader), the measured projection model, the map→render handedness (`RenderSpaceTests`, `WorldHandednessTests`) and VIDEO-mode display layout. |
 
 Tests use small, hand-built byte vectors so they run anywhere. Some tests

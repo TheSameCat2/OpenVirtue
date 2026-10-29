@@ -1656,12 +1656,9 @@ public class WdlRuntimeTests
             Assert.True(runtime.RunAction("log"));
             Assert.True(runtime.RunAction("log"));
 
-            string outputPath = Path.Combine(outputDir, "ovsta007.TXT");
+            string outputPath = Path.Combine(outputDir, "OVSTA7.TXT");
             string text = File.ReadAllText(outputPath);
-            string expectedRun =
-                "12.346" + Environment.NewLine +
-                "hello" + Environment.NewLine +
-                "worlddone" + Environment.NewLine;
+            const string expectedRun = "12.346hello\nworlddone\n";
             Assert.Equal(expectedRun + expectedRun, text);
         }
         finally

@@ -112,6 +112,12 @@ public sealed partial class RuntimeHost : IDisposable
         _contentRoot = contentRoot;
     }
 
+    /// <summary>
+    /// When set, supplies each frame's duration in seconds in place of the wall clock, so a run is
+    /// reproducible: the oracle replay feeds it the original's per-cycle tick deltas.
+    /// </summary>
+    public Func<double>? FrameClock { get; set; }
+
     /// <summary>The eye. Tests read it after <see cref="Boot"/>.</summary>
     public Camera Camera => _camera;
 
@@ -384,7 +390,7 @@ public sealed partial class RuntimeHost : IDisposable
 
     private void TickRuntime()
     {
-        _lastFrameSeconds = _frameClock.Elapsed.TotalSeconds;
+        _lastFrameSeconds = FrameClock?.Invoke() ?? _frameClock.Elapsed.TotalSeconds;
         _frameClock.Restart();
         WdlRuntime tickRuntime = _runtime;
         Player tickPlayer = _player;

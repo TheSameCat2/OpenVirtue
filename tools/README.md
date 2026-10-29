@@ -91,6 +91,22 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   a THING's `DIST`, let a FOLLOW actor approach a player who stands still, and beam into the pad
   island with and without `LOCATE`. Every line in `OVPRX0.TXT` is a token followed by `TICKS`
   and the sampler's run count; `N`/`F` lines are `IF_NEAR`/`IF_FAR` runs with `MY.DISTANCE`.
+- `oracle replay | diff <carrier-or-probe-dir>` — the oracle-diff harness. `replay` packs a carrier's
+  `work/` files (not `VRUN.EXE` or the original's `OV*` outputs) into `<carrier>/ov-replay/TITLE.WRS`
+  and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the
+  original's last sample; the replay's `PRINTFILE` output lands in
+  `<carrier>/ov-replay/openvirtue-prints/TITLE/`. `diff` does the same and compares every `OV*.TXT`
+  the original wrote (except the autoexec's `OVDIR.TXT`/`OVCON.TXT`) with the replay's, line by line:
+  same token, same field count, numbers within `--tolerance` (default 0.002). Given a probe folder it
+  walks every carrier below it (round sub-folders included) and skips carriers that never ran.
+  Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
+  detected by default: the first non-negative, never-decreasing column of the densest token; a
+  whole-number cycle counter on the same lines fills in samplers that print only every few cycles).
+  Until the replay prints its first sampled cycle every frame lasts the original's first sampled
+  step; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
+  offset, which is reported, and columns that print `TICKS` are compared relative to it.
+  `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
+  `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the

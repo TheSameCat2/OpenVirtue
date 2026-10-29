@@ -185,3 +185,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   of the player walks; a script's `SET` of a thing's or actor's position refreshes nothing, its own
   `DISTANCE` included. A region is `VISIBLE` while some of its floor, ceiling or walls is on the
   screen, and keeps `SEEN`. Six DOSBox-X runs; implemented in `ViewTest` and `WdlRuntime`.
+
+## Print output (2026-10-29 — confirmed from existing runs and implemented)
+
+- `OV-20261029-print-output.md` — `PRINTFILE "name", 0` writes `NAME0.TXT` (number unpadded, upper
+  case), `PRINT_VALUE` appends the three-decimal value with nothing after it, and `\n` in a
+  `PRINT_STRING` is a bare line feed. Read from the trace files of the earlier runs; the oracle-diff
+  harness needs it to compare files byte for byte. Implemented in `WdlRuntime`/`WdlInterpreter`.

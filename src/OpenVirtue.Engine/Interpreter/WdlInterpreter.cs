@@ -1206,7 +1206,8 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
-        print.PrintString(value.Replace("\\n", Environment.NewLine, StringComparison.Ordinal));
+        // "\n" is a bare line feed on every host, as the DOS runtime writes it (OV-20261029-print-output).
+        print.PrintString(value.Replace("\\n", "\n", StringComparison.Ordinal));
     }
 
     private void ExecutePlaySound(WdlItem item)
