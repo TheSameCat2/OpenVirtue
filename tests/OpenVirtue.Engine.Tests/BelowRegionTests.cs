@@ -148,6 +148,23 @@ public class BelowRegionTests
         Assert.Equal(visible, view.IsSpriteVisible(viewer, x, 5, 0.5, bottom, top, region));
     }
 
+    [Fact]
+    public void MeshBuilder_LowerStoreyWallPieces_ShowTheTexturesNextFourSides()
+    {
+        // Manual p.38: of a wall texture with more than four sides, "the first four sides are assigned
+        // to the uppermost region, the BELOW region has the next four sides".
+        string main = Main.Replace(
+            "TEXTURE wallTex { BMAPS m; }",
+            "BMAP u,<u.pcx>,0,0,64,64; TEXTURE wallTex { SIDES 8; BMAPS m,m,m,m,u,u,u,u; }",
+            StringComparison.Ordinal);
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        MeshBatch lower = Assert.Single(MeshBuilder.Build(level).Batches, b => b.Texture == TextureAnimation.FrameKey("wallTex", 4));
+
+        Assert.All(lower.Vertices, v => Assert.InRange(v.Y, 0, 8));
+    }
+
     private static Level Load()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };

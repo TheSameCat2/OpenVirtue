@@ -84,7 +84,9 @@ public static class MeshBuilder
     /// regions' spans and solid in between (the slab of a bridge or balcony). The wall covers what is
     /// open on one side and solid on the other, so it shows a slab's edge to a neighbour, closes a
     /// storey that the other column does not continue, and leaves shared openings as portals. A wall
-    /// with a column on one side only, or the same column on both, covers each of its storeys.
+    /// with a column on one side only, or the same column on both, covers each of its storeys. A
+    /// piece facing storey k shows the texture's sides 4k… when it has that many (manual p.38: "the
+    /// first four sides are assigned to the uppermost region, the BELOW region has the next four").
     /// </summary>
     private static void AddStackedWall(Level level, Accumulator accumulator, Wall wall, Vertex v1, Vertex v2)
     {
@@ -92,17 +94,18 @@ public static class MeshBuilder
         List<(float Floor, float Ceiling)> right = OpenSpans(level, wall.RightRegion);
         if (left.Count == 0 || right.Count == 0 || wall.LeftRegion == wall.RightRegion)
         {
-            foreach ((float floor, float ceiling) in left.Count > 0 ? left : right)
+            List<(float Floor, float Ceiling)> spans = left.Count > 0 ? left : right;
+            for (int storey = 0; storey < spans.Count; storey++)
             {
-                EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling);
+                EmitWallSegment(level, accumulator, wall, v1, v2, spans[storey].Floor, spans[storey].Ceiling, storey);
             }
 
             return;
         }
 
-        foreach ((float floor, float ceiling) in Uncovered(left, right).Concat(Uncovered(right, left)))
+        foreach ((float floor, float ceiling, int storey) in Uncovered(left, right).Concat(Uncovered(right, left)))
         {
-            EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling);
+            EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, storey);
         }
     }
 
@@ -128,12 +131,13 @@ public static class MeshBuilder
     }
 
     /// <summary>The parts of <paramref name="spans"/> that none of <paramref name="cover"/> overlaps.</summary>
-    private static IEnumerable<(float Floor, float Ceiling)> Uncovered(
+    private static IEnumerable<(float Floor, float Ceiling, int Storey)> Uncovered(
         List<(float Floor, float Ceiling)> spans,
         List<(float Floor, float Ceiling)> cover)
     {
-        foreach ((float floor, float ceiling) in spans)
+        for (int storey = 0; storey < spans.Count; storey++)
         {
+            (float floor, float ceiling) = spans[storey];
             var pieces = new List<(float Floor, float Ceiling)> { (floor, ceiling) };
             foreach ((float coverFloor, float coverCeiling) in cover)
             {
@@ -160,12 +164,21 @@ public static class MeshBuilder
                 pieces = next;
             }
 
-            foreach ((float Floor, float Ceiling) piece in pieces)
+            foreach ((float pieceFloor, float pieceCeiling) in pieces)
             {
-                yield return piece;
+                yield return (pieceFloor, pieceCeiling, storey);
             }
         }
     }
+
+    /// <summary>The render texture of a lower storey's own sides (4·storey on), or null to use the wall's texture.</summary>
+    private static string? StoreySide(Level level, string? texture, int storey) =>
+        storey > 0 &&
+        texture is not null &&
+        level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
+        resolved.Sides > 4 * storey
+            ? TextureAnimation.ResolveRenderTexture(resolved, 1, 4 * storey)
+            : null;
 
     private static float Floor(Region region, Vertex vertex) =>
         (float)(region.FloorHeight + (LevelTopology.SlopeSign(region, ceiling: false) * vertex.Z));
@@ -181,8 +194,9 @@ public static class MeshBuilder
         Vertex v1,
         Vertex v2,
         float floor,
-        float ceiling) =>
-        EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, floor, ceiling);
+        float ceiling,
+        int storey) =>
+        EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, floor, ceiling, storey);
 
     private static void EmitWallSegment(
         Level level,
@@ -193,7 +207,8 @@ public static class MeshBuilder
         float floor1,
         float ceiling1,
         float floor2,
-        float ceiling2)
+        float ceiling2,
+        int storey = 0)
     {
         if (ceiling1 <= floor1 && ceiling2 <= floor2)
         {
@@ -215,10 +230,9 @@ public static class MeshBuilder
         float uAtV1 = uAtV2 + (length * mapping.WorldToU);
         float ambient = WallAmbient(level, wall);
 
-        List<RenderVertex> target = accumulator.Bucket(
-            wall.Texture,
-            AnimationSourceFor(level, wall.Texture, wall),
-            alphaTest: wall["TRANSPARENT"] > 0);
+        List<RenderVertex> target = StoreySide(level, wall.Texture, storey) is { } sideTexture
+            ? accumulator.Bucket(sideTexture, animationSource: null, alphaTest: wall["TRANSPARENT"] > 0)
+            : accumulator.Bucket(wall.Texture, AnimationSourceFor(level, wall.Texture, wall), alphaTest: wall["TRANSPARENT"] > 0);
         // Render depth is −map y (RenderSpace, ADR-0009); u follows the vertex order unchanged.
         float z1 = RenderSpace.ZFromMapY(v1.Y);
         float z2 = RenderSpace.ZFromMapY(v2.Y);

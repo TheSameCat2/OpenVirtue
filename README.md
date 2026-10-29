@@ -161,7 +161,8 @@ What works today:
   `IF_DIVE`/`IF_ARISE` links resolve. Things and actors start on the uppermost storey, or with
   `GROUND` on the lowest storey whose ceiling is above their feet (manual p.61). The view test
   sees through the openings between storeys and not through the slabs (OV-20261029-below-view).
-  Still open: the extra wall texture sides of lower storeys.
+  A lower storey's wall pieces show the texture's next four sides (manual p.38). Still open:
+  two- and four-sided wall textures (which half or face shows which side).
 - **Engine rules measured on 2026-10-29** — eight oracle notes (OV-20261029-*):
   - The cycle order: resumed waits, then `EACH_SEC`, the global slots, and the regions, actors,
     things and walls, each kind in reverse map order. `IF_START` and the first cycle have
