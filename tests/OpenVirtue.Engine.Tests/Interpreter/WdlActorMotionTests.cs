@@ -247,6 +247,7 @@ public sealed class WdlActorMotionTests
         (WdlRuntime runtime, _) = Create(
             "SKILL observedFloor { VAL 0; } SKILL observedCeiling { VAL 0; } " +
             "ACTION observe { SET observedFloor,ACTOR_FLOOR_HGT; SET observedCeiling,ACTOR_CEIL_HGT; } " +
+            "REGION ramp { FLAGS FLOOR_ASCEND, CEIL_ASCEND; } " +
             "ACTOR mover { TARGET MOVE; SPEED 0; FLAGS CAREFULLY; EACH_TICK observe; }",
             map);
 

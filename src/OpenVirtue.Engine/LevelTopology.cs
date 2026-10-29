@@ -28,8 +28,56 @@ public static class LevelTopology
     }
 
     /// <summary>
-    /// Interpolates the WMP vertex-height offset of a region surface at a map-space point.
-    /// The triangulation matches the rendered floor and ceiling surface.
+    /// How a region's floor (or ceiling) follows its vertices' WMP heights, as measured in
+    /// OV-20261029-slope: <c>ASCEND</c> adds them (+1), <c>DESCEND</c> subtracts them (−1), and the
+    /// undocumented <c>LIFTED</c> moves the surface into the region — up for a floor (+1), down for a
+    /// ceiling (−1). Without a slope flag the surface is flat (0) whatever the vertex heights.
+    /// </summary>
+    public static double SlopeSign(Region region, bool ceiling)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        string prefix = ceiling ? "CEIL_" : "FLOOR_";
+        if (region[prefix + "ASCEND"] > 0)
+        {
+            return 1;
+        }
+
+        if (region[prefix + "DESCEND"] > 0)
+        {
+            return -1;
+        }
+
+        return region[prefix + "LIFTED"] > 0 ? (ceiling ? -1 : 1) : 0;
+    }
+
+    /// <summary>The height of a region's floor at a map-space point, its slope flags applied.</summary>
+    public static double FloorHeightAt(Level level, int regionIndex, double x, double y) =>
+        SurfaceHeightAt(level, regionIndex, x, y, ceiling: false);
+
+    /// <summary>The height of a region's ceiling at a map-space point, its slope flags applied.</summary>
+    public static double CeilingHeightAt(Level level, int regionIndex, double x, double y) =>
+        SurfaceHeightAt(level, regionIndex, x, y, ceiling: true);
+
+    private static double SurfaceHeightAt(Level level, int regionIndex, double x, double y, bool ceiling)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if ((uint)regionIndex >= (uint)level.Regions.Count)
+        {
+            return 0;
+        }
+
+        Region region = level.Regions[regionIndex];
+        double baseHeight = ceiling ? region.CeilHeight : region.FloorHeight;
+        double sign = SlopeSign(region, ceiling);
+        return sign != 0 && TryGetSurfaceHeightOffset(level, regionIndex, x, y, out double offset)
+            ? baseHeight + (sign * offset)
+            : baseHeight;
+    }
+
+    /// <summary>
+    /// Interpolates the WMP vertex heights of a region's footprint at a map-space point (before the
+    /// region's slope flags, see <see cref="SlopeSign"/>). The triangulation matches the rendered
+    /// floor and ceiling surface.
     /// </summary>
     public static bool TryGetSurfaceHeightOffset(Level level, int regionIndex, double x, double y, out double offset)
     {

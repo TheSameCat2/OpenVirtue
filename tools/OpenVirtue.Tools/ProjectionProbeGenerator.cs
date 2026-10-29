@@ -46,6 +46,7 @@ internal static class ProjectionProbeGenerator
     public const string SaveFormatProbeName = "save-format";
     public const string SkyProbeName = "sky";
     public const string ShadingProbeName = "shading";
+    public const string SlopeProbeName = "slope";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -73,6 +74,7 @@ internal static class ProjectionProbeGenerator
     private const string SaveFormatProbeId = "OV-20261029-save-format";
     private const string SkyProbeId = "OV-20261029-sky";
     private const string ShadingProbeId = "OV-20261029-shading";
+    private const string SlopeProbeId = "OV-20261029-slope";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -342,6 +344,7 @@ internal static class ProjectionProbeGenerator
         SaveFormatProbeName => SaveFormatProbeId,
         SkyProbeName => SkyProbeId,
         ShadingProbeName => ShadingProbeId,
+        SlopeProbeName => SlopeProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -464,6 +467,7 @@ internal static class ProjectionProbeGenerator
             case SaveFormatProbeName:
             case SkyProbeName:
             case ShadingProbeName:
+            case SlopeProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -502,6 +506,7 @@ internal static class ProjectionProbeGenerator
         SaveFormatProbeName => SaveFormatProbeCases.Set,
         SkyProbeName => SkyProbeCases.Set,
         ShadingProbeName => ShadingProbeCases.Set,
+        SlopeProbeName => SlopeProbeCases.Set,
         _ => null,
     };
 
@@ -942,7 +947,10 @@ internal static class ProjectionProbeGenerator
 
         for (int i = 0; i < vertices.Count; i++)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} 0;#{i}\r\n");
+            double z = map?.PadZ is { } padZ && map.PadBody is not null && i >= padFirst && i < padFirst + PadCorners.Length
+                ? padZ[i - padFirst]
+                : 0;
+            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} {Num(z)};#{i}\r\n");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $"REGION room 0 {room.CeilingHeight};#0\r\n");

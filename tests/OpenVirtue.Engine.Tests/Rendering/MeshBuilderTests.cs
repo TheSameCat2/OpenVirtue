@@ -246,7 +246,7 @@ public class MeshBuilderTests
             MAPFILE <m.wmp>;
             BMAP m, <t.pcx>, 0, 0, 64, 64;
             TEXTURE floorTex { BMAPS m; }
-            REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; }
+            REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; FLAGS FLOOR_ASCEND, CEIL_ASCEND; }
             WALL w { TEXTURE floorTex; }
             """;
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));

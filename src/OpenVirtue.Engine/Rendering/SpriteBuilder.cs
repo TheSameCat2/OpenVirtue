@@ -134,16 +134,7 @@ public static class SpriteBuilder
         float regionFloor = 0;
         if (entity.Region >= 0 && entity.Region < level.Regions.Count)
         {
-            regionFloor = (float)level.Regions[entity.Region].FloorHeight;
-            if (LevelTopology.TryGetSurfaceHeightOffset(
-                    level,
-                    entity.Region,
-                    entity.X,
-                    entity.Y,
-                    out double slopeOffset))
-            {
-                regionFloor += (float)slopeOffset;
-            }
+            regionFloor = (float)LevelTopology.FloorHeightAt(level, entity.Region, entity.X, entity.Y);
         }
         float baseFloor = entity["GROUND"] <= 0 ? regionFloor : 0;
         Vector3 basePosition = RenderSpace.FromMap((float)entity.X, baseFloor + (float)entity.Z, (float)entity.Y);

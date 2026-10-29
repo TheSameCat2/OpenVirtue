@@ -55,13 +55,15 @@ What works today:
 - **OpenGL 3.3 renderer** — an SDL3 windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). It recognizes WDL
-  `FLAGS SKY` textures as a camera-selected textured background, renders open
+  `FLAGS SKY` textures as the measured panorama (OV-20261029-sky), renders open
   portal wall spans, alpha-tests palette-index-0 holes only on walls marked
   `TRANSPARENT`, and combines global/texture/region ambient lighting with
   `PLAYER_LIGHT`. Static sprite billboards are
   laid out in the engine layer and drawn back-to-front for deterministic static scenes.
   The camera is driven by the WDL-visible player with radius-aware wall, portal,
-  and entity collision. Floor/ceiling queries interpolate WMP vertex heights so
+  and entity collision. Floor/ceiling queries interpolate WMP vertex heights in
+  regions with slope flags (`FLOOR_ASCEND`/`LIFTED` raise the floor, `FLOOR_DESCEND` lowers it,
+  `CEIL_ASCEND` raises the ceiling, `CEIL_DESCEND`/`LIFTED` lower it; OV-20261029-slope), so
   authored slopes feed vertical collision, WDL height/slope skills, and the
   rendered feet/shadows of things and actors. The tilt-0 synthetic room matches the
   DOSBox-X capture `OVTLT0.PCX` (stripes G R G R G R, floor at the bottom). The previous
@@ -158,6 +160,20 @@ What works today:
   other, such as a bridge's slab), the player walks into the storey it fits, and underwater
   `IF_DIVE`/`IF_ARISE` links resolve. Still open: the extra wall texture sides of lower storeys,
   `GROUND` placement of things and actors, and occlusion by slabs in the view test.
+- **Engine rules measured on 2026-10-29** — eight oracle notes (OV-20261029-*):
+  - The cycle order: resumed waits, then `EACH_SEC`, the global slots, and the regions, actors,
+    things and walls, each kind in reverse map order. `IF_START` and the first cycle have
+    `TICKS` 0.
+  - Numbers are 22.10 fixed point: literals truncate and saturate, arithmetic wraps, and
+    functions truncate.
+  - The `ACCEL` formula, and a default `FRICTION` of 0.
+  - Actors step by |dx| + |dy|, arrive within 0.125, and fire `IF_ARRIVED`/`IF_HIT` in the
+    measured order.
+  - Save files: OpenVirtue writes `SAVE_INFO` files byte for byte and reads the skills of
+    full saves.
+  - The sky panorama.
+  - Palette-index shading by distance and `PLAYER_LIGHT`.
+  - Which slope flags tilt a region.
 - **Oracle-diff harness** — `ovtool oracle diff <probe>` replays a probe carrier through the
   headless `RuntimeHost`, in step with the original run's per-cycle `TICKS`, and compares every
   trace file the DOS runtime wrote with OpenVirtue's line by line. The static probes (projection,
@@ -166,7 +182,7 @@ What works today:
 
 Not yet complete: the exact `AUTORANGE` shade table the retail palettes use (the distance and light
 curve is measured and drawn by palette index),
-Acknex-parity `each_cycle` discovery/dispatch order, slopes, the remaining `BELOW` details above, and exact actor AI/path event ordering,
+the remaining `BELOW` details above, actor animation phase timing,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
 the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads
 the skills and player position of the original's full saves), and making every recorded probe match

@@ -59,15 +59,14 @@ public static class MeshBuilder
 
             if (left is not null && right is not null && !ReferenceEquals(left, right))
             {
-                float leftFloor = (float)left.FloorHeight;
-                float rightFloor = (float)right.FloorHeight;
+                // Each end of the wall meets each region's surfaces at that vertex's height, if the
+                // region's slope flags make it follow them (OV-20261029-slope).
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(leftFloor, rightFloor), Math.Max(leftFloor, rightFloor));
-
-                float leftCeiling = (float)left.CeilHeight;
-                float rightCeiling = (float)right.CeilHeight;
+                    Math.Min(Floor(left, v1), Floor(right, v1)), Math.Max(Floor(left, v1), Floor(right, v1)),
+                    Math.Min(Floor(left, v2), Floor(right, v2)), Math.Max(Floor(left, v2), Floor(right, v2)));
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(leftCeiling, rightCeiling), Math.Max(leftCeiling, rightCeiling));
+                    Math.Min(Ceiling(left, v1), Ceiling(right, v1)), Math.Max(Ceiling(left, v1), Ceiling(right, v1)),
+                    Math.Min(Ceiling(left, v2), Ceiling(right, v2)), Math.Max(Ceiling(left, v2), Ceiling(right, v2)));
                 continue;
             }
 
@@ -75,7 +74,7 @@ public static class MeshBuilder
             if (region is not null)
             {
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    (float)region.FloorHeight, (float)region.CeilHeight);
+                    Floor(region, v1), Ceiling(region, v1), Floor(region, v2), Ceiling(region, v2));
             }
         }
     }
@@ -168,6 +167,13 @@ public static class MeshBuilder
         }
     }
 
+    private static float Floor(Region region, Vertex vertex) =>
+        (float)(region.FloorHeight + (LevelTopology.SlopeSign(region, ceiling: false) * vertex.Z));
+
+    private static float Ceiling(Region region, Vertex vertex) =>
+        (float)(region.CeilHeight + (LevelTopology.SlopeSign(region, ceiling: true) * vertex.Z));
+
+    /// <summary>A flat-topped wall piece between two heights (a <c>BELOW</c> stack's spans).</summary>
     private static void EmitWallSegment(
         Level level,
         Accumulator accumulator,
@@ -175,17 +181,31 @@ public static class MeshBuilder
         Vertex v1,
         Vertex v2,
         float floor,
-        float ceiling)
+        float ceiling) =>
+        EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, floor, ceiling);
+
+    private static void EmitWallSegment(
+        Level level,
+        Accumulator accumulator,
+        Wall wall,
+        Vertex v1,
+        Vertex v2,
+        float floor1,
+        float ceiling1,
+        float floor2,
+        float ceiling2)
     {
-        if (ceiling <= floor)
+        if (ceiling1 <= floor1 && ceiling2 <= floor2)
         {
             return;
         }
 
+        float floor = Math.Min(floor1, floor2);
+        float ceiling = Math.Max(ceiling1, ceiling2);
+
         float dx = v2.X - v1.X;
         float dz = v2.Y - v1.Y;
         float length = MathF.Sqrt((dx * dx) + (dz * dz));
-        float height = ceiling - floor;
         TextureMapping mapping = TextureMappingFor(level, wall.Texture);
         // OV-20261009-shoot-mapping: viewed from the wall's left region (the room side of the
         // retail convention), the bitmap's left half sits at the SECOND vertex, so u starts at
@@ -193,7 +213,6 @@ public static class MeshBuilder
         float uAtV2 = (float)wall.OffsetX * mapping.OffsetToU;
         float v0 = (float)wall.OffsetY * mapping.OffsetToV;
         float uAtV1 = uAtV2 + (length * mapping.WorldToU);
-        float textureV1 = v0 + (height * mapping.WorldToV);
         float ambient = WallAmbient(level, wall);
 
         List<RenderVertex> target = accumulator.Bucket(
@@ -203,10 +222,12 @@ public static class MeshBuilder
         // Render depth is −map y (RenderSpace, ADR-0009); u follows the vertex order unchanged.
         float z1 = RenderSpace.ZFromMapY(v1.Y);
         float z2 = RenderSpace.ZFromMapY(v2.Y);
-        var bottomLeft = new RenderVertex(v1.X, floor + v1.Z, z1, uAtV1, v0, ambient);
-        var bottomRight = new RenderVertex(v2.X, floor + v2.Z, z2, uAtV2, v0, ambient);
-        var topRight = new RenderVertex(v2.X, ceiling + v2.Z, z2, uAtV2, textureV1, ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling + v1.Z, z1, uAtV1, textureV1, ambient);
+        // v runs from the piece's lowest point, so a sloped edge cuts the texture rather than stretching it.
+        float worldToV = mapping.WorldToV;
+        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, v0 + ((floor1 - floor) * worldToV), ambient);
+        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, v0 + ((floor2 - floor) * worldToV), ambient);
+        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, v0 + ((ceiling2 - floor) * worldToV), ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, v0 + ((ceiling1 - floor) * worldToV), ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -245,6 +266,7 @@ public static class MeshBuilder
                 loop,
                 triangles,
                 (float)region.FloorHeight,
+                (float)LevelTopology.SlopeSign(region, ceiling: false),
                 region.FloorTexture,
                 region,
                 (float)region.FloorOffsetX,
@@ -256,6 +278,7 @@ public static class MeshBuilder
                 loop,
                 triangles,
                 (float)region.CeilHeight,
+                (float)LevelTopology.SlopeSign(region, ceiling: true),
                 region.CeilTexture,
                 region,
                 (float)region.CeilOffsetX,
@@ -270,6 +293,7 @@ public static class MeshBuilder
         List<int> loop,
         IReadOnlyList<int> triangles,
         float height,
+        float slopeSign,
         string? texture,
         Region region,
         float offsetX,
@@ -291,19 +315,20 @@ public static class MeshBuilder
             int a = loop[triangles[i]];
             int b = loop[triangles[flip ? i + 2 : i + 1]];
             int c = loop[triangles[flip ? i + 1 : i + 2]];
-            target.Add(SurfaceVertex(level, a, height, mapping, offsetX, offsetY, (float)region.Ambient));
-            target.Add(SurfaceVertex(level, b, height, mapping, offsetX, offsetY, (float)region.Ambient));
-            target.Add(SurfaceVertex(level, c, height, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, a, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, b, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, c, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
         }
     }
 
     private static RenderVertex SurfaceVertex(
-        Level level, int vertexIndex, float height, TextureMapping mapping, float offsetX, float offsetY, float ambient)
+        Level level, int vertexIndex, float height, float slopeSign, TextureMapping mapping, float offsetX, float offsetY, float ambient)
     {
+        // A surface follows its vertices' heights only with a slope flag (OV-20261029-slope).
         Vertex vertex = level.Vertices[vertexIndex];
         return new RenderVertex(
             vertex.X,
-            height + vertex.Z,
+            height + (slopeSign * vertex.Z),
             RenderSpace.ZFromMapY(vertex.Y),
             (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),

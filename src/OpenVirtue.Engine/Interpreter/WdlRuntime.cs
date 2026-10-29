@@ -2498,15 +2498,8 @@ public sealed class WdlRuntime :
         SetSkill("IMPACT_VROT", actor["IMPACT_VROT"]);
         if (actor.Region >= 0 && actor.Region < _level.Regions.Count)
         {
-            Region region = _level.Regions[actor.Region];
-            double offset = LevelTopology.TryGetSurfaceHeightOffset(
-                _level,
-                actor.Region,
-                actor.X,
-                actor.Y,
-                out double value) ? value : 0;
-            SetSkill("ACTOR_FLOOR_HGT", region.FloorHeight + offset);
-            SetSkill("ACTOR_CEIL_HGT", region.CeilHeight + offset);
+            SetSkill("ACTOR_FLOOR_HGT", LevelTopology.FloorHeightAt(_level, actor.Region, actor.X, actor.Y));
+            SetSkill("ACTOR_CEIL_HGT", LevelTopology.CeilingHeightAt(_level, actor.Region, actor.X, actor.Y));
         }
     }
 
@@ -3667,16 +3660,12 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        Region current = _level.Regions[region];
-        Region next = _level.Regions[nextRegion];
-        double currentOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, region, x, y, out double currentValue)
-            ? currentValue
-            : 0;
-        double nextOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, nextRegion, x, y, out double nextValue)
-            ? nextValue
-            : 0;
-        double openingFloor = Math.Max(current.FloorHeight + currentOffset, next.FloorHeight + nextOffset);
-        double openingCeiling = Math.Min(current.CeilHeight + currentOffset, next.CeilHeight + nextOffset);
+        double openingFloor = Math.Max(
+            LevelTopology.FloorHeightAt(_level, region, x, y),
+            LevelTopology.FloorHeightAt(_level, nextRegion, x, y));
+        double openingCeiling = Math.Min(
+            LevelTopology.CeilingHeightAt(_level, region, x, y),
+            LevelTopology.CeilingHeightAt(_level, nextRegion, x, y));
         return eyeHeight > openingFloor && eyeHeight < openingCeiling;
     }
 

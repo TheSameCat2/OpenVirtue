@@ -250,3 +250,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   rounded down to even and clamped to 0…30 (16 grades over a 32-colour range): inverse-distance
   falloff, `AMBIENT` 0.5 brightening by 16 levels, `PLAYER_LIGHT` 0 giving level 30. Fifteen DOSBox-X
   runs; implemented in `PaletteShading` and the GL backend's indexed path.
+
+## Slopes (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-slope.md` — vertex heights tilt a region only with its slope flags: `FLOOR_ASCEND`
+  and `FLOOR_LIFTED` raise the floor by them, `FLOOR_DESCEND` lowers it, `CEIL_ASCEND` raises the
+  ceiling, and `CEIL_DESCEND` and `CEIL_LIFTED` lower it; without a flag the surface is flat. Sixteen
+  DOSBox-X runs (eight failed to compile in round 1); implemented in `LevelTopology.SlopeSign`.

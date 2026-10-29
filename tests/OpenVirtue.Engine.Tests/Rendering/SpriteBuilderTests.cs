@@ -73,6 +73,7 @@ public class SpriteBuilderTests
             "BMAP plantMap,<plant.pcx>,0,0,16,32; BMAP shadowMap,<shadow.pcx>,0,0,16,16; " +
             "TEXTURE plantTex { BMAPS plantMap; } " +
             "TEXTURE shadowTex { BMAPS shadowMap; FLAGS SHADOW; } " +
+            "REGION room { FLAGS FLOOR_ASCEND; } " +
             "THING plant { TEXTURE plantTex; ATTACH shadowTex; }");
 
         IReadOnlyList<SpriteBillboard> sprites = SpriteBuilder.Build(level);

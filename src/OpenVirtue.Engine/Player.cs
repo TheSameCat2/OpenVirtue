@@ -105,14 +105,17 @@ public sealed class Player : AcknexObject
         get
         {
             const float SampleDistance = 0.01f;
-            if (!TryGetSurfaceHeightOffset(_region, _position.X, _position.Z, out double center))
+            double sign = (uint)_region < (uint)_level.Regions.Count
+                ? LevelTopology.SlopeSign(_level.Regions[_region], ceiling: false)
+                : 0;
+            if (sign == 0 || !TryGetSurfaceHeightOffset(_region, _position.X, _position.Z, out double center))
             {
                 return Vector2.Zero;
             }
 
             float x = SampleSlopeAxis(_position.X, _position.Z, SampleDistance, 0, center);
             float y = SampleSlopeAxis(_position.X, _position.Z, 0, SampleDistance, center);
-            return new Vector2(x, y);
+            return new Vector2(x, y) * (float)sign;
         }
     }
 
@@ -690,7 +693,8 @@ public sealed class Player : AcknexObject
             return _position.Y - EyeHeight;
         }
 
-        double offset = TryGetSurfaceHeightOffset(region, x, z, out double value) ? value : 0;
+        double sign = LevelTopology.SlopeSign(_level.Regions[region], ceiling: false);
+        double offset = sign != 0 && TryGetSurfaceHeightOffset(region, x, z, out double value) ? sign * value : 0;
         return (float)(_level.Regions[region].FloorHeight + offset);
     }
 
@@ -701,7 +705,8 @@ public sealed class Player : AcknexObject
             return _position.Y;
         }
 
-        double offset = TryGetSurfaceHeightOffset(region, _position.X, _position.Z, out double value) ? value : 0;
+        double sign = LevelTopology.SlopeSign(_level.Regions[region], ceiling: true);
+        double offset = sign != 0 && TryGetSurfaceHeightOffset(region, _position.X, _position.Z, out double value) ? sign * value : 0;
         return (float)(_level.Regions[region].CeilHeight + offset);
     }
 

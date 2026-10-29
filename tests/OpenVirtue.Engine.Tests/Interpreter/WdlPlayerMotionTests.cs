@@ -231,7 +231,8 @@ public sealed class WdlPlayerMotionTests
             "WALL a 0 1 0 -1 0 0;#0\nWALL b 1 2 0 -1 0 0;#1\n" +
             "WALL c 2 3 0 -1 0 0;#2\nWALL d 3 0 0 -1 0 0;#3\n" +
             "PLAYER_START 5 5 0 0;#4";
-        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>;");
+        // The vertex heights tilt the region only with its slope flags (OV-20261029-slope).
+        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>; REGION ramp { FLAGS FLOOR_ASCEND, CEIL_ASCEND; }");
 
         WdlPlayerMotion.Synchronize(runtime, player);
 

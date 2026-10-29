@@ -422,7 +422,7 @@ public class PlayerTests
             "WALL a 0 1 0 -1 0 0;#0\nWALL b 1 2 0 -1 0 0;#1\n" +
             "WALL c 2 3 0 -1 0 0;#2\nWALL d 3 0 0 -1 0 0;#3\n" +
             "PLAYER_START 5 5 0 0;#4";
-        var player = new Player(Load(map));
+        var player = new Player(Load(map, "MAPFILE <m.wmp>; REGION ramp { FLAGS FLOOR_ASCEND, CEIL_ASCEND; }"));
 
         Assert.Equal(7, player.FloorHeight, 3);
         Assert.Equal(17, player.CeilingHeight, 3);

@@ -43,7 +43,8 @@ internal sealed record TraceProbeCase(
 /// is the room's <c>CEIL_TEX</c> in place of the plain ceiling (a sky texture, say); <c>Textures</c>
 /// holds <c>BMAP</c>/<c>TEXTURE</c> declarations placed before the regions, since a texture must be
 /// declared before a region uses it (Genesis "Error(137): Texture unknown"). <c>PaletteBody</c> goes
-/// into the palette's definition after its <c>PALFILE</c> (<c>RANGE</c>s, <c>FLAGS</c>).
+/// into the palette's definition after its <c>PALFILE</c> (<c>RANGE</c>s, <c>FLAGS</c>). <c>PadZ</c>, when
+/// set, gives the pad's four corner vertices (−12,12), (−4,12), (−4,20), (−12,20) these WMP heights.
 /// </summary>
 internal sealed record TraceProbeMap(
     string RoomBody = "",
@@ -55,7 +56,8 @@ internal sealed record TraceProbeMap(
     int? PadCeiling = null,
     string? RoomCeiling = null,
     string? Textures = null,
-    string? PaletteBody = null);
+    string? PaletteBody = null,
+    IReadOnlyList<double>? PadZ = null);
 
 /// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
 internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);
