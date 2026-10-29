@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using OpenVirtue.Engine;
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wrs;
@@ -185,6 +186,14 @@ internal static class OracleReplay
         var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25, firstStep);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
+        if (carrierCase.Autotype is { } typed)
+        {
+            foreach ((InkeyKey, char) key in HeadlessWindow.ParseAutotype(typed))
+            {
+                window.TypedKeys.Enqueue(key);
+            }
+        }
+
         int frames = 0;
         double ticks;
         var audio = new TimedAudioSink();
@@ -318,7 +327,11 @@ internal static class OracleReplay
         {
             sb.Append(", the replay never printed the timing token");
         }
-        if (result.Case.ScriptedInput)
+        if (result.Case.Autotype is not null)
+        {
+            sb.Append(", AUTOTYPE keys typed into INKEY at once (their wall-clock timing and other key hooks not replayed)");
+        }
+        else if (result.Case.ScriptedInput)
         {
             sb.Append(", scripted input NOT replayed");
         }
@@ -426,7 +439,7 @@ internal static class OracleReplay
         IReadOnlyDictionary<string, string> ReplayFiles);
 
     /// <summary>The parts of a carrier's <c>case.json</c> the replay needs.</summary>
-    private sealed record CarrierCase(string? TraceFile, bool ScriptedInput)
+    private sealed record CarrierCase(string? TraceFile, bool ScriptedInput, string? Autotype = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -442,8 +455,8 @@ internal static class OracleReplay
             using JsonDocument json = JsonDocument.Parse(File.ReadAllText(path));
             JsonElement root = json.RootElement;
             string? trace = root.TryGetProperty("trace_file", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
-            bool autotype = root.TryGetProperty("autotype", out JsonElement a) && a.ValueKind == JsonValueKind.String;
-            return new CarrierCase(trace, autotype || click);
+            string? autotype = root.TryGetProperty("autotype", out JsonElement a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype);
         }
     }
 
@@ -535,7 +548,7 @@ internal static class OracleReplay
 
             // Both runs' TICKS are 22.10 values printed to three decimals: keep the offset on the
             // 1/1024 grid so every later step is one of the original's exactly.
-            Offset = Math.Round((replayTicks - cycleTicks[0]) * 1024) / 1024;
+            Offset = Math.Round((OracleTrace.SnapTicks(replayTicks) - cycleTicks[0]) * 1024) / 1024;
             Anchored = true;
             _next = 0;
         }
@@ -545,9 +558,26 @@ internal static class OracleReplay
         {
             if (!Anchored)
             {
-                // Before the first sampled cycle the original's frame times are unknown: run steady
-                // cycles at the first sampled rate, so the frame before the anchor lasts as long as
-                // the ones after it.
+                // Before the first sampled cycle the original's frame times are unknown. Run steady
+                // cycles at the first sampled rate, but plan them to reach the original's first sample
+                // exactly: arrive at its TICKS less the first cycle's step, then take that step. The
+                // carriers' start-up WAITT resumes in the first cycle after TICKS passes 13, so landing
+                // there makes the replay print its first sample at the original's TICKS.
+                if (cycleTicks.Count > 0)
+                {
+                    double last = firstStep ?? _startup;
+                    double remaining = cycleTicks[0] - last - ticks;
+                    if (remaining > Epsilon)
+                    {
+                        return PlannedStep(remaining) / Timing.TicksPerSecond;
+                    }
+
+                    if (remaining > -Epsilon)
+                    {
+                        return last / Timing.TicksPerSecond;
+                    }
+                }
+
                 return _startup / Timing.TicksPerSecond;
             }
 
@@ -567,6 +597,33 @@ internal static class OracleReplay
             }
 
             return step / Timing.TicksPerSecond;
+        }
+
+        /// <summary>
+        /// The next start-up step toward a target <paramref name="remaining"/> ticks away: whole 1/32
+        /// ticks around the start-up rate (the original's frames last 8/32 or 9/32 at 60 Hz), split
+        /// evenly so they add up exactly; an off-grid remainder goes into the last step.
+        /// </summary>
+        private double PlannedStep(double remaining)
+        {
+            double unit = 1.0 / 32;
+            int typical = Math.Max(1, (int)Math.Floor((_startup / unit) + 1e-9));
+            int left = (int)Math.Round(remaining / unit);
+            if (Math.Abs((left * unit) - remaining) > 1e-6 || left < typical)
+            {
+                return remaining < 1.5 * _startup ? remaining : _startup;
+            }
+
+            // n steps of `typical` or `typical + 1` units: the fewest steps that can reach `left`.
+            int steps = Math.Max(1, (int)Math.Ceiling(left / (double)(typical + 1)));
+            while (steps * typical > left)
+            {
+                steps--;
+            }
+
+            steps = Math.Max(1, steps);
+            int step = left / steps; // the first steps take the floor, the last ones the extra unit
+            return step * unit;
         }
 
         private static double? Median(IReadOnlyList<double> ticks)
@@ -608,6 +665,57 @@ internal static class OracleReplay
         }
 
         public string? Prompt(string label, string initialValue, int capacity) => null;
+
+        /// <summary>The carrier's AUTOTYPE keys, typed into the first INKEY the replay opens.</summary>
+        public Queue<(InkeyKey Key, char Character)> TypedKeys { get; } = new();
+
+        public bool BeginTextInput() => true;
+
+        public IReadOnlyList<(InkeyKey Key, char Character)> ConsumeTextKeys()
+        {
+            var keys = TypedKeys.ToArray();
+            TypedKeys.Clear();
+            return keys;
+        }
+
+        /// <summary>
+        /// The keys of a DOSBox-X <c>AUTOTYPE</c> argument list (options such as <c>-w 10</c> skipped), as
+        /// INKEY keys: single characters, <c>space</c>, <c>enter</c>, <c>esc</c>, <c>bspace</c>, <c>up</c>,
+        /// <c>down</c>, <c>left</c>, <c>right</c>, <c>pageup</c>, <c>pagedown</c>.
+        /// </summary>
+        public static IEnumerable<(InkeyKey Key, char Character)> ParseAutotype(string autotype)
+        {
+            string[] words = autotype.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < words.Length; i++)
+            {
+                string word = words[i];
+                if (word.StartsWith('-'))
+                {
+                    i++; // the option's value
+                    continue;
+                }
+
+                (InkeyKey, char)? key = word.ToLowerInvariant() switch
+                {
+                    "space" => (InkeyKey.Character, ' '),
+                    "enter" => (InkeyKey.Return, '\0'),
+                    "esc" => (InkeyKey.Escape, '\0'),
+                    "bspace" => (InkeyKey.Backspace, '\0'),
+                    "up" => (InkeyKey.Up, '\0'),
+                    "down" => (InkeyKey.Down, '\0'),
+                    "left" => (InkeyKey.Left, '\0'),
+                    "right" => (InkeyKey.Right, '\0'),
+                    "pageup" => (InkeyKey.PageUp, '\0'),
+                    "pagedown" => (InkeyKey.PageDown, '\0'),
+                    { Length: 1 } single => (InkeyKey.Character, single[0]),
+                    _ => null,
+                };
+                if (key is { } k)
+                {
+                    yield return k;
+                }
+            }
+        }
     }
 
     private sealed class HeadlessInput : IInputSource

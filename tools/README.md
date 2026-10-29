@@ -122,6 +122,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   without a per-cycle timing column is anchored on the template's start-up stamp (`TCK=` in
   `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line;
   `KEY=value` lines compare their numbers, the stamp within one start-up cycle.
+  Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
+  original's first sample at the original's `TICKS`. A carrier's `AUTOTYPE` keys are typed into the
+  first `INKEY` it opens; clicks and key hooks are still not replayed.
   `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
