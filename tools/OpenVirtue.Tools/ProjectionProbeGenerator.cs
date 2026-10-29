@@ -54,6 +54,7 @@ internal static class ProjectionProbeGenerator
     public const string ActorStepProbeName = "actor-step";
     public const string InkeyProbeName = "inkey";
     public const string UiLayoutProbeName = "ui-layout";
+    public const string UiWidgetsProbeName = "ui-widgets";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -89,6 +90,7 @@ internal static class ProjectionProbeGenerator
     private const string ActorStepProbeId = "OV-20261029-actor-step";
     private const string InkeyProbeId = "OV-20261029-inkey";
     private const string UiLayoutProbeId = "OV-20261029-ui-layout";
+    private const string UiWidgetsProbeId = "OV-20261029-ui-widgets";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -367,6 +369,7 @@ internal static class ProjectionProbeGenerator
         ActorStepProbeName => ActorStepProbeId,
         InkeyProbeName => InkeyProbeId,
         UiLayoutProbeName => UiLayoutProbeId,
+        UiWidgetsProbeName => UiWidgetsProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -497,6 +500,7 @@ internal static class ProjectionProbeGenerator
             case ActorStepProbeName:
             case InkeyProbeName:
             case UiLayoutProbeName:
+            case UiWidgetsProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -543,6 +547,7 @@ internal static class ProjectionProbeGenerator
         ActorStepProbeName => ActorStepProbeCases.Set,
         InkeyProbeName => InkeyProbeCases.Set,
         UiLayoutProbeName => UiLayoutProbeCases.Set,
+        UiWidgetsProbeName => UiWidgetsProbeCases.Set,
         _ => null,
     };
 
@@ -642,6 +647,14 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.FontFile), SyntheticPcx.Write(128, 64, UiLayoutProbeCases.FontPixel, palette));
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.DigitFile), SyntheticPcx.Write(88, 8, UiLayoutProbeCases.DigitPixel, palette));
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.PanelFile), SyntheticPcx.Solid(64, 24, 250, palette));
+        }
+
+        if (plan.ProbeName == UiWidgetsProbeName)
+        {
+            foreach ((string file, int width, int height, Func<int, int, byte> pixel) in UiWidgetsProbeCases.Bitmaps)
+            {
+                WriteValidated(Path.Combine(workDir, file), SyntheticPcx.Write(width, height, pixel, palette));
+            }
         }
 
         if (plan.ProbeName == AudioProbeName)

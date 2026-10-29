@@ -198,7 +198,8 @@ What works today:
 
 Not yet complete:
 - exact UI behaviour beyond `INKEY` editing (OV-20261029-inkey) and `DIGITS`/`TEXT` layout
-  (OV-20261029-ui-layout): panel widgets other than `DIGITS`, multi-line text, the mouse pointer;
+  (OV-20261029-ui-layout) and panel widgets (OV-20261029-ui-widgets): sliders, multi-line text,
+  where a click lands relative to the pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
 - writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original

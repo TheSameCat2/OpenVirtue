@@ -314,3 +314,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261029-ui-layout.md` — `DIGITS` rounds the value and right-aligns it with drawn spaces, keeps
   the last `len` digits and draws a digit font's missing minus as a space; `CONDENSED`/`NARROW`
   shorten only the advance. Nine DOSBox-X screenshots.
+
+## Panel widgets and the pointer (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-ui-widgets.md`:
+  - bars show from `trunc(fac·skill)` and wrap past their range;
+  - `WINDOW` Y counts from the bitmap's bottom and X stops one pixel short;
+  - `PICTURE` 0 is side 1;
+  - the pointer is drawn at `MOUSE_X`/`MOUSE_Y`.
+
+  Five DOSBox-X screenshots.
