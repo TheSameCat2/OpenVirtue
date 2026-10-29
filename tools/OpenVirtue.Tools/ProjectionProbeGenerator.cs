@@ -52,6 +52,7 @@ internal static class ProjectionProbeGenerator
     public const string SaveBodyProbeName = "save-body";
     public const string BelowViewProbeName = "below-view";
     public const string ActorStepProbeName = "actor-step";
+    public const string InkeyProbeName = "inkey";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -85,6 +86,7 @@ internal static class ProjectionProbeGenerator
     private const string SaveBodyProbeId = "OV-20261029-save-body";
     private const string BelowViewProbeId = "OV-20261029-below-view";
     private const string ActorStepProbeId = "OV-20261029-actor-step";
+    private const string InkeyProbeId = "OV-20261029-inkey";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -361,6 +363,7 @@ internal static class ProjectionProbeGenerator
         SaveBodyProbeName => SaveBodyProbeId,
         BelowViewProbeName => BelowViewProbeId,
         ActorStepProbeName => ActorStepProbeId,
+        InkeyProbeName => InkeyProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -489,6 +492,7 @@ internal static class ProjectionProbeGenerator
             case SaveBodyProbeName:
             case BelowViewProbeName:
             case ActorStepProbeName:
+            case InkeyProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -533,6 +537,7 @@ internal static class ProjectionProbeGenerator
         SaveBodyProbeName => SaveBodyProbeCases.Set,
         BelowViewProbeName => BelowViewProbeCases.Set,
         ActorStepProbeName => ActorStepProbeCases.Set,
+        InkeyProbeName => InkeyProbeCases.Set,
         _ => null,
     };
 

@@ -57,6 +57,8 @@ public sealed partial class RuntimeHost : IDisposable
     private bool _geometryReady;
     private bool _startupRan;
     private bool _handlingInputRequest;
+    private InkeyEditor? _inkey;
+    private WdlInputRequest? _inkeyRequest;
     private bool _exitRequested;
     private bool _shading;
     private double _lastFrameSeconds;

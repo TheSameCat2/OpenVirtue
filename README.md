@@ -197,7 +197,8 @@ What works today:
   original's format.
 
 Not yet complete:
-- exact UI behaviour (panels, texts, the mouse pointer, `INKEY`);
+- exact UI behaviour: panel, text and pointer drawing (`INKEY` editing is measured,
+  OV-20261029-inkey);
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
 - writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original

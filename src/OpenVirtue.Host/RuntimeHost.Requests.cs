@@ -697,6 +697,12 @@ public sealed partial class RuntimeHost
 
     private void HandleRuntimeInputRequests()
     {
+        if (_inkey is not null || (_runtime.PendingInputRequests.Count > 0 && !_handlingInputRequest && _window.BeginTextInput()))
+        {
+            EditInkey();
+            return;
+        }
+
         if (_handlingInputRequest || _runtime.PendingInputRequests.Count == 0)
         {
             return;
@@ -727,6 +733,41 @@ public sealed partial class RuntimeHost
                 _frameClock.Restart();
             }
         }
+    }
+
+    /// <summary>
+    /// One frame of a running <c>INKEY</c> (OV-20261029-inkey): the window's keys edit the string in
+    /// place, the world goes on, and Return or an abort key completes the waiting action.
+    /// </summary>
+    private void EditInkey()
+    {
+        if (_inkey is null)
+        {
+            WdlInputRequest request = _runtime.PendingInputRequests[0];
+            _inkey = new InkeyEditor(request.InitialValue, request.Capacity);
+            _inkeyRequest = request;
+        }
+
+        foreach ((InkeyKey key, char character) in _window.ConsumeTextKeys())
+        {
+            if (_inkey.Press(key, character))
+            {
+                break;
+            }
+        }
+
+        WdlInputRequest active = _inkeyRequest!.Value;
+        _runtime.SetString(active.StringName, _inkey.Text);
+        if (_inkey.Result is not { } result)
+        {
+            return;
+        }
+
+        string text = _inkey.Text;
+        _inkey = null;
+        _inkeyRequest = null;
+        _window.EndTextInput();
+        _runtime.CompleteInput(active.Id, text, result);
     }
 
     private void HandleRuntimePersistenceRequests()

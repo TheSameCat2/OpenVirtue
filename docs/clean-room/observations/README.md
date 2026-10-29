@@ -302,3 +302,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 
 - `OV-20261029-actor-step.md` — a `MOVE`/`BULLET` step is `SPEED·TIME_CORR` in 22.10, split into
   `round(step·cos θ)` and `round(step·sin θ)` raw units. Ten DOSBox-X runs; six replay line for line.
+
+## INKEY editing (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-inkey.md` — the input edits the old content with the cursor at its start, inserting
+  and cutting to the declared length (the last character is replaced at the end); BackSpace deletes
+  before the cursor; the world keeps running. Eleven DOSBox-X runs with scripted keys.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Engine.Interpreter;
+
 namespace OpenVirtue.Host;
 
 /// <summary>The window the frame loop presents into. Pixel size, not logical points.</summary>
@@ -35,4 +37,19 @@ public interface IPlatformWindow
     /// the user cancels.
     /// </summary>
     string? Prompt(string label, string initialValue, int capacity);
+
+    /// <summary>
+    /// Starts sending typed characters and editing keys to <see cref="ConsumeTextKeys"/> instead of
+    /// the game keys, so an <c>INKEY</c> input runs while the world goes on (OV-20261029-inkey).
+    /// <c>false</c> when the window offers only the blocking <see cref="Prompt"/>.
+    /// </summary>
+    bool BeginTextInput() => false;
+
+    /// <summary>Ends what <see cref="BeginTextInput"/> started.</summary>
+    void EndTextInput()
+    {
+    }
+
+    /// <summary>The characters and editing keys typed since the last call.</summary>
+    IReadOnlyList<(InkeyKey Key, char Character)> ConsumeTextKeys() => [];
 }
