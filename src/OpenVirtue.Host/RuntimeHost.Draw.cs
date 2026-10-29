@@ -517,7 +517,9 @@ public sealed partial class RuntimeHost
                 return codePoint - '0';
             }
 
-            return codePoint == ' ' ? 10 : -1;
+            // The minus of a negative DIGITS value has no cell in a digit font: the original draws
+            // the space there (OV-20261029-ui-layout).
+            return codePoint is ' ' or '-' ? 10 : -1;
         }
 
         return codePoint;

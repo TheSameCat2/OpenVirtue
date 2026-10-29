@@ -137,10 +137,37 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
-        Assert.Equal(7, glyphs[0].DrawWidth);
+        // The advance shrinks; each character is still drawn whole, over the one before
+        // (OV-20261029-ui-layout).
+        Assert.Equal(8, glyphs[0].DrawWidth);
         Assert.Equal(7, glyphs[1].X);
-        Assert.Equal(6, glyphs[2].DrawWidth);
+        Assert.Equal(8, glyphs[2].DrawWidth);
         Assert.Equal(6, glyphs[3].X);
+    }
+
+    [Theory]
+    [InlineData(7, "    7")]
+    [InlineData(1234, " 1234")]
+    [InlineData(-56, "  -56")]
+    [InlineData(3.7, "    4")]
+    [InlineData(123456, "23456")]
+    [InlineData(0, "    0")]
+    public void Build_PanelDigits_ShowTheMeasuredLayout(double value, string shown)
+    {
+        // OV-20261029-ui-layout: rounded, right-aligned in len places, the last len digits kept.
+        Level level = Load(
+            """
+            MAPFILE <test.wmp>;
+            SKILL v { VAL 0; }
+            FONT f, <f.pcx>, 8, 8;
+            PANEL p { POS_X 100; POS_Y 60; DIGITS 4,14,5,f,1,v; FLAGS VISIBLE; }
+            """);
+        var skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase) { ["v"] = value };
+
+        IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level, skills: skills);
+
+        Assert.Equal(shown, new string([.. glyphs.Select(g => (char)g.CodePoint)]));
+        Assert.Equal([104f, 112f, 120f, 128f, 136f], glyphs.Select(g => g.X));
     }
 
     [Fact]

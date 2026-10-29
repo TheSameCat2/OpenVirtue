@@ -197,8 +197,8 @@ What works today:
   original's format.
 
 Not yet complete:
-- exact UI behaviour: panel, text and pointer drawing (`INKEY` editing is measured,
-  OV-20261029-inkey);
+- exact UI behaviour beyond `INKEY` editing (OV-20261029-inkey) and `DIGITS`/`TEXT` layout
+  (OV-20261029-ui-layout): panel widgets other than `DIGITS`, multi-line text, the mouse pointer;
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
 - writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original

@@ -278,10 +278,11 @@ public static class UiTextBuilder
         return font.Width;
     }
 
-    private static int TextDrawWidth(FontDef font, WdlUiElement element) =>
-        HasFlag(element, "NARROW") || HasFlag(element, "CONDENSED")
-            ? TextAdvance(font, element)
-            : font.Width;
+    /// <summary>
+    /// A character's drawn width: the whole font cell. <c>CONDENSED</c> and <c>NARROW</c> shorten only
+    /// the advance, so each character overlaps the one before (OV-20261029-ui-layout).
+    /// </summary>
+    private static int TextDrawWidth(FontDef font, WdlUiElement element) => font.Width;
 
     private static float TextLineWidth(int characterCount, int drawWidth, int advance) =>
         characterCount <= 0 ? 0 : ((characterCount - 1) * advance) + drawWidth;
@@ -314,9 +315,12 @@ public static class UiTextBuilder
 
     private static string FormatDigits(double skill, float factor, int length)
     {
+        // OV-20261029-ui-layout: the value is rounded (3.7 shows 4), right-aligned in len places with
+        // spaces before it, and a longer number keeps its last len digits.
         double scaled = skill * factor;
-        bool negative = scaled < 0;
-        string digits = Math.Abs((long)Math.Truncate(scaled)).ToString(CultureInfo.InvariantCulture);
+        long rounded = (long)Math.Round(scaled, MidpointRounding.AwayFromZero);
+        bool negative = rounded < 0;
+        string digits = Math.Abs(rounded).ToString(CultureInfo.InvariantCulture);
         if (negative)
         {
             digits = "-" + digits;
