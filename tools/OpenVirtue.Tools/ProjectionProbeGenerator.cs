@@ -56,6 +56,7 @@ internal static class ProjectionProbeGenerator
     public const string UiLayoutProbeName = "ui-layout";
     public const string UiWidgetsProbeName = "ui-widgets";
     public const string UiTextProbeName = "ui-text";
+    public const string OverlapProbeName = "overlap";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -93,6 +94,7 @@ internal static class ProjectionProbeGenerator
     private const string UiLayoutProbeId = "OV-20261029-ui-layout";
     private const string UiWidgetsProbeId = "OV-20261029-ui-widgets";
     private const string UiTextProbeId = "OV-20261029-ui-text";
+    private const string OverlapProbeId = "OV-20261029-overlap";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -373,6 +375,7 @@ internal static class ProjectionProbeGenerator
         UiLayoutProbeName => UiLayoutProbeId,
         UiWidgetsProbeName => UiWidgetsProbeId,
         UiTextProbeName => UiTextProbeId,
+        OverlapProbeName => OverlapProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -505,6 +508,7 @@ internal static class ProjectionProbeGenerator
             case UiLayoutProbeName:
             case UiWidgetsProbeName:
             case UiTextProbeName:
+            case OverlapProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -553,6 +557,7 @@ internal static class ProjectionProbeGenerator
         UiLayoutProbeName => UiLayoutProbeCases.Set,
         UiWidgetsProbeName => UiWidgetsProbeCases.Set,
         UiTextProbeName => UiTextProbeCases.Set,
+        OverlapProbeName => OverlapProbeCases.Set,
         _ => null,
     };
 

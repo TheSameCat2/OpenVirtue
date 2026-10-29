@@ -329,3 +329,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 
 - `OV-20261029-ui-text.md` — lines are drawn whole or not at all within `POS_Y…POS_Y+SIZE_Y`
   after `OFFSET_Y`; `CENTER_Y` centres the first line, `CENTER_X` each line. Six DOSBox-X screenshots.
+
+## Overlapping the player start (2026-10-29 — partly implemented)
+
+- `OV-20261029-overlap.md` — a player exactly on an object's centre is not pushed; off centre it is
+  pushed out along the centre line at start-up, to 2.225 for a 2.2 contact (the extra is open).

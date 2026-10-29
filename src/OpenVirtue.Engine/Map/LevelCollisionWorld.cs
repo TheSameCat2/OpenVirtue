@@ -266,11 +266,16 @@ public sealed class LevelCollisionWorld
             }
 
             Vector2 previousOffset = from - center;
+            if (offset.LengthSquared() <= float.Epsilon && previousOffset.LengthSquared() <= float.Epsilon)
+            {
+                // OV-20261029-overlap: exactly on an object's centre there is no way out, and the
+                // original leaves the player where it is.
+                continue;
+            }
+
             Vector2 normal = offset.LengthSquared() > float.Epsilon && Vector2.Dot(offset, previousOffset) >= 0
                 ? Vector2.Normalize(offset)
-                : previousOffset.LengthSquared() > float.Epsilon
-                    ? Vector2.Normalize(previousOffset)
-                    : Vector2.UnitX;
+                : Vector2.Normalize(previousOffset);
             desired = center + (normal * combinedRadius);
             adjusted = true;
             if (touched is not null && !touched.Contains(entity))
