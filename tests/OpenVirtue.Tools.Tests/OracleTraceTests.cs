@@ -47,6 +47,17 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void CycleTicks_GapOfWholeThirtySeconds_FillsWithWholeThirtySecondSteps()
+    {
+        // 26/32 over three cycles: 8, 9 and 9 thirty-seconds, so no cycle lands off the original's grid.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("TK 24.000 1.000\nTK 24.813 4.000\n");
+
+        IReadOnlyList<double> ticks = OracleTrace.CycleTicks(lines, new OracleTimingColumn("TK", 0));
+
+        Assert.Equal([24.0, 24.25, 24.53125, 24.8125], ticks);
+    }
+
+    [Fact]
     public void CycleTicks_NoCounter_KeepsTheDistinctSamples()
     {
         IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("C 1.5 x\nC 1.5 y\nC 2.25 z\n");

@@ -208,9 +208,11 @@ Not yet complete:
 - writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original
   reads, and loads the skills and object state of the original's full saves, but not their
   waiting actions);
-- sub-unit position differences in actor steps toward points and at wall stops (steps along an
-  `ANGLE` match the original unit for unit, OV-20261029-actor-step);
-- the fractional `HIT_X` of shots (`HIT_Y` matches);
+- sub-unit position differences in actor steps toward points and in `CAREFULLY` slides (steps
+  along an `ANGLE`, cos and sin cut to 22.10, match the original unit for unit,
+  OV-20261029-actor-step);
+- shots at mirrored sprites and walls: their `HIT_X` (a sprite's fractional `HIT_X` matches,
+  OV-20261009-shoot-mapping);
 - start-up `TICKS` timing, which keeps many timed probes from matching line for line
   (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the

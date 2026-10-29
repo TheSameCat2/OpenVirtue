@@ -209,8 +209,12 @@ internal static class OracleTrace
     /// <summary>
     /// The original's <c>TICKS</c> at each cycle, from a timing column. When the same token also
     /// prints a cycle counter (a whole-number column that goes up by at least one whenever
-    /// <c>TICKS</c> does), a sampler that prints only every few cycles is filled in: a gap of
-    /// <c>n</c> counted cycles becomes <c>n</c> equal steps.
+    /// <c>TICKS</c> does), a sampler that prints only every few cycles is filled in. (Other tokens'
+    /// counters can belong to another phase of the cycle, so only the sampler's count.) A gap of
+    /// <c>n</c> counted cycles becomes <c>n</c> steps of
+    /// whole 1/32 ticks, as close to equal as they can be (the original's <c>TIME_CORR</c> is
+    /// always a whole number of 1/32 ticks); a gap that is not a whole number of them becomes
+    /// <c>n</c> equal steps.
     /// </summary>
     public static IReadOnlyList<double> CycleTicks(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
     {
@@ -219,34 +223,67 @@ internal static class OracleTrace
             .Where(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
             .ToList();
         int? counter = CounterColumn(tokenLines, timing.Column);
-        var ticks = new List<double>();
-        double? lastCount = null;
-        foreach (OracleTraceLine line in tokenLines)
+        if (counter is not { } counterColumn)
         {
-            double value = SnapTicks(line.Value(timing.Column)!.Value);
-            if (ticks.Count > 0 && value <= ticks[^1])
+            var distinct = new List<double>();
+            foreach (OracleTraceLine line in tokenLines)
             {
-                continue;
+                double value = SnapTicks(line.Value(timing.Column)!.Value);
+                if (distinct.Count == 0 || value > distinct[^1])
+                {
+                    distinct.Add(value);
+                }
             }
 
-            if (counter is { } c && line.Value(c) is { } count && lastCount is { } previousCount && ticks.Count > 0)
+            return distinct;
+        }
+
+        var samples = new SortedDictionary<long, double>();
+        foreach (OracleTraceLine line in tokenLines)
+        {
+            AddSample(samples, line, timing.Column, counterColumn);
+        }
+
+        var ticks = new List<double>();
+        long? lastCount = null;
+        foreach ((long count, double value) in samples)
+        {
+            if (lastCount is { } previousCount)
             {
-                int cycles = (int)Math.Round(count - previousCount);
                 double start = ticks[^1];
-                for (int k = 1; k < cycles; k++)
+                long cycles = count - previousCount;
+                double units = (value - start) * 32;
+                long wholeUnits = (long)Math.Round(units);
+                bool whole = Math.Abs(units - wholeUnits) < 1e-6;
+                for (long k = 1; k < cycles; k++)
                 {
-                    ticks.Add(start + ((value - start) * k / cycles));
+                    ticks.Add(whole
+                        ? start + ((wholeUnits * k / cycles) / 32.0)
+                        : start + ((value - start) * k / cycles));
                 }
             }
 
             ticks.Add(value);
-            if (counter is { } column)
-            {
-                lastCount = line.Value(column);
-            }
+            lastCount = count;
         }
 
         return ticks;
+    }
+
+    /// <summary>Adds a sampler line's (cycle count, <c>TICKS</c>) sample when both go up.</summary>
+    private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn)
+    {
+        if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0)
+        {
+            return;
+        }
+
+        long count = (long)countValue;
+        double value = SnapTicks(line.Value(timingColumn)!.Value);
+        if (!samples.ContainsKey(count) && (samples.Count == 0 || (count > samples.Keys.Last() && value > samples.Values.Last())))
+        {
+            samples[count] = value;
+        }
     }
 
     /// <summary>
