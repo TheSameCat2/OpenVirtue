@@ -80,7 +80,7 @@ public sealed class WdlViewActivityTests
 
         runtime.Tick(Cycle);
 
-        Assert.Equal(expected * 0.2, mover.X, 6);
+        Assert.Equal(expected * WdlFixed.Literal(0.2), mover.X, 6); // SPEED 0.2 is held as 0.1992
     }
 
     // The player at the origin facing +X; a walker 22 behind it walking straight at it, and a pacer

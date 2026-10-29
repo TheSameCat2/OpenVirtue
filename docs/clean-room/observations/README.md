@@ -202,3 +202,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   kind from the last placed to the first, each object's `EACH_TICK` before its animation step and
   `EACH_CYCLE`. A `SET EACH_TICK` counts in the same cycle. Four DOSBox-X runs; implemented in
   `WdlRuntime`.
+
+## Number format (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-numeric-edge.md` — skills are 22.10 fixed point (steps of 1/1024, ±2097152). Literals
+  truncate and saturate, `+ − *` wrap in 32 bits, `INT` rounds down, `%` and the bitwise operators act
+  on the raw bits, functions truncate their results and read −2097151.999 when undefined, and a
+  division by zero is fatal in the original. Seven DOSBox-X runs; implemented in `WdlFixed`.

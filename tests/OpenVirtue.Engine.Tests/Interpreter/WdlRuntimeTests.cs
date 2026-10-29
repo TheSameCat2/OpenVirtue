@@ -1658,7 +1658,8 @@ public class WdlRuntimeTests
 
             string outputPath = Path.Combine(outputDir, "OVSTA7.TXT");
             string text = File.ReadAllText(outputPath);
-            const string expectedRun = "12.346hello\nworlddone\n";
+            // 12.3456 is held as 12641/1024 = 12.3447 (OV-20261029-numeric-edge).
+            const string expectedRun = "12.345hello\nworlddone\n";
             Assert.Equal(expectedRun + expectedRun, text);
         }
         finally
@@ -1799,8 +1800,8 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("dropIt"));
 
-        Assert.Equal(5, pickup.X, 6);
-        Assert.Equal(9, pickup.Y, 6);
+        Assert.Equal(5, pickup.X, 2); // the angle literal is held as 1.5703 (OV-20261029-numeric-edge)
+        Assert.Equal(9, pickup.Y, 2);
         Assert.Equal(0, pickup.Region);
         Assert.Equal("pickup", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
@@ -2282,15 +2283,17 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("turn"));
 
-        Assert.Equal(10, level.Vertices[0].X, 6);
-        Assert.Equal(0, level.Vertices[0].Y, 6);
-        Assert.Equal(10, level.Vertices[1].X, 6);
-        Assert.Equal(10, level.Vertices[1].Y, 6);
-        Assert.Equal(5, pickup.X, 6);
-        Assert.Equal(7, pickup.Y, 6);
-        Assert.Equal(1.5707963267948966, pickup.Angle, 12);
-        Assert.Equal(5f, player.Position.X, 6);
-        Assert.Equal(7f, player.Position.Z, 6);
+        // The literal angle is held as 1.5703 (fixed point, OV-20261029-numeric-edge), a quarter
+        // turn to within 0.0005 rad.
+        Assert.Equal(10, level.Vertices[0].X, 2);
+        Assert.Equal(0, level.Vertices[0].Y, 2);
+        Assert.Equal(10, level.Vertices[1].X, 2);
+        Assert.Equal(10, level.Vertices[1].Y, 2);
+        Assert.Equal(5, pickup.X, 2);
+        Assert.Equal(7, pickup.Y, 2);
+        Assert.Equal(1.5707963267948966, pickup.Angle, 2);
+        Assert.Equal(5f, player.Position.X, 2);
+        Assert.Equal(7f, player.Position.Z, 2);
         Assert.Equal("room", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
 
@@ -2659,7 +2662,7 @@ public class WdlRuntimeTests
         Assert.Equal(2, room["CYCLE"]);
         Assert.Equal(1, gate["CYCLE"]);
         Assert.Equal(0.25, room["POSITION"]);
-        Assert.Equal(0.9, gate["POSITION"]);
+        Assert.Equal(WdlFixed.Literal(0.9), gate["POSITION"]); // 0.8994: fixed point (OV-20261029-numeric-edge)
         Assert.Empty(runtime.ShakeRequests);
 
         runtime.Tick(1.0 / 16);
@@ -3444,8 +3447,10 @@ public class WdlRuntimeTests
             runtime.Tick(1.0 / 16);
         }
 
+        // SPEED 1.6 is held as 1.5996 (fixed point, OV-20261029-numeric-edge), so the halved steps
+        // land a little differently than with an exact 1.6.
         double gap = player.Position.X - pusher.X;
-        Assert.InRange(gap, 1 + player.Width, 1 + player.Width + 0.15);
+        Assert.InRange(gap, 1 + player.Width, 1 + player.Width + 0.16);
         Assert.Equal(10.05, player.Position.X, 3);
         Assert.True(runtime.GetSkill("near_count") >= 1);
     }

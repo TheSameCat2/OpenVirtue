@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
@@ -336,11 +337,12 @@ public static class LevelLoader
         }
     }
 
+    /// <summary>Applies a definition's numeric properties, held in fixed point like any literal (OV-20261029-numeric-edge).</summary>
     private static void ApplySkills(AcknexObject obj, IReadOnlyDictionary<string, double> skills)
     {
         foreach ((string name, double value) in skills)
         {
-            obj[name] = value;
+            obj[name] = WdlFixed.Literal(value);
         }
     }
 
@@ -490,7 +492,8 @@ public static class LevelLoader
                 {
                     if (property.Keyword.Equals("VAL", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedVal)
                     {
-                        value = parsedVal;
+                        // Held in the original's fixed point, like any literal (OV-20261029-numeric-edge).
+                        value = WdlFixed.Literal(parsedVal);
                         hasExplicitValue = true;
                     }
                     else if (property.Keyword.Equals("MIN", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedMin)

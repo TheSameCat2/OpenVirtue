@@ -993,7 +993,7 @@ public sealed class WdlInterpreter(IWdlContext context)
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
         if (timeCorrected)
         {
-            value *= context.GetSkill(Timing.TimeCorrectionSkill);
+            value = WdlFixed.Multiply(value, WdlFixed.Quantize(context.GetSkill(Timing.TimeCorrectionSkill)));
         }
 
         Assign(item.Header, 0, comma, "+=", value);
@@ -2033,10 +2033,10 @@ public sealed class WdlInterpreter(IWdlContext context)
     private static double Apply(string op, double current, double rvalue) => op switch
     {
         "=" => rvalue,
-        "+=" => current + rvalue,
-        "-=" => current - rvalue,
-        "*=" => current * rvalue,
-        "/=" => rvalue != 0 ? current / rvalue : throw new WdlExpressionException("Division by zero."),
+        "+=" => WdlFixed.Add(current, rvalue),
+        "-=" => WdlFixed.Subtract(current, rvalue),
+        "*=" => WdlFixed.Multiply(current, rvalue),
+        "/=" => WdlFixed.Divide(current, rvalue),
         _ => rvalue,
     };
 

@@ -926,7 +926,9 @@ public sealed class WdlRuntime :
         double delta = NormalizeAngle(angle - entity.FacingAngleRadians);
         if (range > 0 &&
             distance <= range &&
-            Math.Abs(delta) <= sector / 2 &&
+            // The original compares fixed-point angles: a full circle given as 6.2832 (truncated to
+            // 6.2822) still takes in an object straight behind (OV-20261029-numeric-edge).
+            Math.Abs(delta) <= (sector / 2) + (1 / WdlFixed.Scale) &&
             HasPortalLineOfSight(
                 entity.X,
                 entity.Y,
@@ -1716,12 +1718,29 @@ public sealed class WdlRuntime :
             WdlExecutionResult result = _interpreter.Continue(state);
             StoreSuspendedAction(state, result, CaptureActionScope());
         }
+        catch (WdlExpressionException ex)
+        {
+            AbortAction(actionName, ex);
+        }
         finally
         {
             _callDepth--;
         }
 
         return true;
+    }
+
+    /// <summary>The last action stopped by an arithmetic or execution-limit error, and why; <c>null</c> if none.</summary>
+    public string? LastActionError { get; private set; }
+
+    /// <summary>
+    /// Stops an action that hit a division by zero (which crashes the DOS runtime,
+    /// OV-20261029-numeric-edge) or a runaway-loop limit; its caller and the cycle go on.
+    /// </summary>
+    private void AbortAction(string actionName, WdlExpressionException ex)
+    {
+        LastActionError = $"{actionName}: {ex.Message}";
+        Console.Error.WriteLine($"WDL action stopped: {LastActionError}");
     }
 
     private bool IsPlayerMovementAction(string? name) =>
@@ -1828,8 +1847,15 @@ public sealed class WdlRuntime :
                 continue;
             }
 
-            WdlExecutionResult result = ContinueWithScope(action);
-            StoreSuspendedAction(action.State, result, action.Scope);
+            try
+            {
+                WdlExecutionResult result = ContinueWithScope(action);
+                StoreSuspendedAction(action.State, result, action.Scope);
+            }
+            catch (WdlExpressionException ex)
+            {
+                AbortAction("(resumed action)", ex);
+            }
         }
     }
 
