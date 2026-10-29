@@ -297,3 +297,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261029-below-view.md` — a sight line passes walls only through openings between storeys and
   keeps to one storey across a stack's footprint, so the underpass shows through the opening beside
   it and the slab hides it from above. Four DOSBox-X runs; `VISIBLE` matches in every view.
+
+## Actor steps along ANGLE (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-actor-step.md` — a `MOVE`/`BULLET` step is `SPEED·TIME_CORR` in 22.10, split into
+  `round(step·cos θ)` and `round(step·sin θ)` raw units. Ten DOSBox-X runs; six replay line for line.

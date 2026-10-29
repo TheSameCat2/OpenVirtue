@@ -137,6 +137,76 @@ internal static class OracleTrace
     }
 
     /// <summary>
+    /// The <c>TIME_CORR</c> of the cycle that printed the first sample, when the timing token also
+    /// prints it: a column that, scaled by 1 or 1024, equals the step between consecutive samples
+    /// on (nearly) every line. <c>null</c> when there is none.
+    /// </summary>
+    public static double? FirstCycleStep(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        List<OracleTraceLine> tokenLines = lines
+            .Where(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
+            .ToList();
+        if (tokenLines.Count < 4)
+        {
+            return null;
+        }
+
+        int columns = tokenLines.Min(static l => l.Fields.Count);
+        foreach (double scale in new[] { 1.0, 1024.0 })
+        {
+            for (int column = 0; column < columns; column++)
+            {
+                if (column == timing.Column)
+                {
+                    continue;
+                }
+
+                int checks = 0;
+                int hits = 0;
+                for (int i = 1; i < tokenLines.Count; i++)
+                {
+                    double step = SnapTicks(tokenLines[i].Value(timing.Column)!.Value) - SnapTicks(tokenLines[i - 1].Value(timing.Column)!.Value);
+                    if (step <= 0 || tokenLines[i].Value(column) is not { } printed)
+                    {
+                        continue;
+                    }
+
+                    checks++;
+                    hits += Math.Abs((printed / scale) - step) <= 0.002 ? 1 : 0;
+                }
+
+                if (checks >= 3 && hits >= checks * 0.9 && tokenLines[0].Value(column) is { } first && first > 0)
+                {
+                    return first / scale;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A printed <c>TICKS</c> value back on the 22.10 grid, so the replay's <c>TIME_CORR</c> is the
+    /// original's exactly (0.28125, not 0.282). Three decimals leave two raw values possible; the
+    /// original's frames last whole 1/32 ticks (0.25, 0.28125, 1.09375), so a multiple of 1/32 wins.
+    /// </summary>
+    public static double SnapTicks(double printed)
+    {
+        long low = (long)Math.Ceiling((printed - 0.0005) * 1024);
+        long high = (long)Math.Floor((printed + 0.0005) * 1024);
+        for (long raw = low; raw <= high; raw++)
+        {
+            if (raw % 32 == 0)
+            {
+                return raw / 1024.0;
+            }
+        }
+
+        return Math.Round(printed * 1024) / 1024;
+    }
+
+    /// <summary>
     /// The original's <c>TICKS</c> at each cycle, from a timing column. When the same token also
     /// prints a cycle counter (a whole-number column that goes up by at least one whenever
     /// <c>TICKS</c> does), a sampler that prints only every few cycles is filled in: a gap of
@@ -153,7 +223,7 @@ internal static class OracleTrace
         double? lastCount = null;
         foreach (OracleTraceLine line in tokenLines)
         {
-            double value = line.Value(timing.Column)!.Value;
+            double value = SnapTicks(line.Value(timing.Column)!.Value);
             if (ticks.Count > 0 && value <= ticks[^1])
             {
                 continue;
@@ -374,7 +444,7 @@ internal static class OracleTrace
         while (lo <= hi)
         {
             int mid = (lo + hi) / 2;
-            double d = sorted[mid] - value;
+            double d = sorted[mid] - SnapTicks(value);
             if (Math.Abs(d) <= 0.0005)
             {
                 return true;

@@ -145,4 +145,12 @@ public sealed class OracleTraceTests
 
         Assert.Equal(match, OracleTrace.LinesMatch(a, b, OracleTrace.DefaultTolerance));
     }
+
+    [Theory]
+    [InlineData(13.688, 13.6875)]
+    [InlineData(13.406, 13.40625)]
+    [InlineData(13.438, 13.4375)]
+    [InlineData(0.001, 0.0009765625)]
+    public void SnapTicks_PrefersWholeThirtySecondsWithinThePrintedRounding(double printed, double raw) =>
+        Assert.Equal(raw, OracleTrace.SnapTicks(printed));
 }

@@ -55,6 +55,8 @@ scripts set those with `SET x.TARGET, …` (23 `MOVE`, 10 `BULLET`, 7 `VERTEX`),
 ## Invariant
 - An actor heading for a point (`WAY`, `VERTEX`, an object, `FOLLOW`) or along its `ANGLE` (`MOVE`,
   `BULLET`) steps `SPEED·TIME_CORR` measured as \|dx\| + \|dy\| (times its `SKIP_FRAMES` cycles).
+  Correction (OV-20261029-actor-step): a step along the actor's `ANGLE` (`MOVE`, `BULLET`) is split
+  with cos and sin and each part rounded to 1/1024; only steps toward a point use \|dx\| + \|dy\|.
 - If the step reaches the point it lands on it and arrives; otherwise it arrives once less than
   about 1/8 (\|dx\| + \|dy\|) is left, where it stands.
 - On a `WAY` arrival `WAYPOINT` advances (wrapping to 1) before `IF_ARRIVED` runs; `TARGET_X/Y` show

@@ -53,7 +53,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.AudioProbeName or
             ProjectionProbeGenerator.AutorangeProbeName or
             ProjectionProbeGenerator.SaveBodyProbeName or
-            ProjectionProbeGenerator.BelowViewProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.BelowViewProbeName or
+            ProjectionProbeGenerator.ActorStepProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

@@ -411,6 +411,28 @@ public sealed class WdlActorMotionTests
         Assert.Equal(0, actor["TARGET_Y"], 6);
     }
 
+    [Theory]
+    [InlineData(1, 0.25, 69, 108)]
+    [InlineData(1, 0.28125, 78, 121)]
+    [InlineData(0.78515625, 0.25, 91, 90)]
+    [InlineData(2, 0.28125, -60, 131)]
+    public void Tick_Bullet_StepsByRoundedCosineAndSineOfItsAngle(double angle, double timeCorrection, int dxRaw, int dyRaw)
+    {
+        // OV-20261029-actor-step: SPEED 0.5 · TIME_CORR, split by cos and sin of the 22.10 angle,
+        // each part rounded to a whole 1/1024 step (the measured raw steps).
+        (WdlRuntime runtime, Level level) = Create("ACTOR mover { SPEED 0.5; }");
+        Actor actor = Assert.Single(level.Actors);
+        actor.Angle = angle - (actor.PlacementAngleDegrees * Math.PI / 180);
+        actor.Target = "BULLET";
+        runtime.Tick(1.0 / 16); // the first cycle runs at TIME_CORR 1
+        (double x, double y) = (actor.X, actor.Y);
+
+        runtime.Tick(timeCorrection / 16);
+
+        Assert.Equal(dxRaw, Math.Round((actor.X - x) * 1024), 6);
+        Assert.Equal(dyRaw, Math.Round((actor.Y - y) * 1024), 6);
+    }
+
     private static (WdlRuntime Runtime, Level Level) Create(string declarations, string map = Map)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

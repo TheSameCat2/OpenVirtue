@@ -181,7 +181,8 @@ internal static class OracleReplay
         string archive = Path.Combine(replayDirectory, WorldName + ".WRS");
         WrsArchive.WriteFile(archive, CarrierFiles(work));
 
-        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25);
+        double? firstStep = timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null;
+        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25, firstStep);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
         int frames = 0;
@@ -508,13 +509,14 @@ internal static class OracleReplay
     /// the following frames land <c>TICKS</c> on the original's sampled values, whatever the start-up
     /// took. With no samples every frame lasts <c>fallbackTicks</c>.
     /// </summary>
-    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks)
+    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null)
     {
         private const double Epsilon = 0.0005;
         private readonly double _typical = Median(cycleTicks) ?? fallbackTicks;
 
-        // DOSBox-X's rate drifts within a run, so the start-up runs at the first sampled cycles' rate.
-        private readonly double _startup = (cycleTicks.Count >= 3 ? Median([cycleTicks[0], cycleTicks[1], cycleTicks[2]]) : null) ?? Median(cycleTicks) ?? fallbackTicks;
+        // DOSBox-X's rate drifts within a run, so the start-up runs at the first sampled cycles' rate,
+        // or at the step the first sample's own TIME_CORR column gives (FirstCycleStep).
+        private readonly double _startup = firstStep ?? (cycleTicks.Count >= 3 ? Median([cycleTicks[0], cycleTicks[1], cycleTicks[2]]) : null) ?? Median(cycleTicks) ?? fallbackTicks;
         private int _next;
 
         /// <summary>True once <see cref="Anchor"/> has run.</summary>
@@ -531,7 +533,9 @@ internal static class OracleReplay
                 return;
             }
 
-            Offset = replayTicks - cycleTicks[0];
+            // Both runs' TICKS are 22.10 values printed to three decimals: keep the offset on the
+            // 1/1024 grid so every later step is one of the original's exactly.
+            Offset = Math.Round((replayTicks - cycleTicks[0]) * 1024) / 1024;
             Anchored = true;
             _next = 0;
         }
