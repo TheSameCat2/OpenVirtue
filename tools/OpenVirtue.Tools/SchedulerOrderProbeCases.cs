@@ -139,6 +139,24 @@ internal static class SchedulerOrderProbeCases
                 ("same cycle", "ARM, then G2 and TA with so_n 5 in the same cycle; DIS, then no G2 with so_n 9"),
                 ("next cycle", "first G2/TA with so_n 6; a last G2 with so_n 9")),
             Map: new TraceProbeMap(Placements: ["THING so_ta 20 0 0 0"])),
+        new TraceProbeCase(
+            "regions",
+            "Round 2. The room and the pad island both have an EACH_TICK (the map lists the room first): in which order do the two regions run?",
+            Skills + Counter + Action("so_reg", W("R")) + Action("so_pad", W("P")),
+            "    SET EACH_TICK.1, so_g1;\n" + L("GO") + Window + ClearSlots + P("RET"),
+            Predict(
+                ("the last region first, like the other kinds", "per cycle G1, P, R"),
+                ("map order", "per cycle G1, R, P")),
+            Map: new TraceProbeMap(RoomBody: "EACH_TICK so_reg;", PadBody: "EACH_TICK so_pad;")),
+        new TraceProbeCase(
+            "start-wait",
+            "Round 2. Does a frame-count WAIT 3 armed in IF_START count IF_START as one of its cycles? The slot counts cycles from 1.",
+            Skills + Action("so_y", "    RULE so_n = so_n + 1;\n    IF (so_n < 12) {\n" + Indent(L("Y")) + "    }\n"),
+            L("W16") + "    SET EACH_TICK.1, NULL;\n" + P("RET"),
+            Predict(
+                ("IF_START counts", "W3 with so_n 2 (resumed in cycle 3)"),
+                ("IF_START does not count", "W3 with so_n 3 (resumed in cycle 4)")),
+            Prelude: "    PRINTFILE \"" + TraceFile + "\", 0;\n    SET EACH_TICK.1, so_y;\n" + L("S0") + "    WAIT 3;\n" + L("W3")),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
