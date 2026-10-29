@@ -39,6 +39,10 @@ internal static class ProjectionProbeGenerator
     public const string ClipDetailProbeName = "clip-detail";
     public const string ViewActivityProbeName = "view-activity";
     public const string DistanceRefreshProbeName = "distance-refresh";
+    public const string SchedulerOrderProbeName = "scheduler-order";
+    public const string ActorEventsProbeName = "actor-events";
+    public const string NumericEdgeProbeName = "numeric-edge";
+    public const string MotionTimingProbeName = "motion-timing";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -59,6 +63,10 @@ internal static class ProjectionProbeGenerator
     private const string ClipDetailProbeId = "OV-20261019-clip-detail";
     private const string ViewActivityProbeId = "OV-20261020-view-activity";
     private const string DistanceRefreshProbeId = "OV-20261021-distance-refresh";
+    private const string SchedulerOrderProbeId = "OV-20261029-scheduler-order";
+    private const string ActorEventsProbeId = "OV-20261029-actor-events";
+    private const string NumericEdgeProbeId = "OV-20261029-numeric-edge";
+    private const string MotionTimingProbeId = "OV-20261029-motion-timing";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -321,6 +329,10 @@ internal static class ProjectionProbeGenerator
         ClipDetailProbeName => ClipDetailProbeId,
         ViewActivityProbeName => ViewActivityProbeId,
         DistanceRefreshProbeName => DistanceRefreshProbeId,
+        SchedulerOrderProbeName => SchedulerOrderProbeId,
+        ActorEventsProbeName => ActorEventsProbeId,
+        NumericEdgeProbeName => NumericEdgeProbeId,
+        MotionTimingProbeName => MotionTimingProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -436,6 +448,10 @@ internal static class ProjectionProbeGenerator
             case ClipDetailProbeName:
             case ViewActivityProbeName:
             case DistanceRefreshProbeName:
+            case SchedulerOrderProbeName:
+            case ActorEventsProbeName:
+            case NumericEdgeProbeName:
+            case MotionTimingProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -467,6 +483,10 @@ internal static class ProjectionProbeGenerator
         ClipDetailProbeName => ClipDetailProbeCases.Set,
         ViewActivityProbeName => ViewActivityProbeCases.Set,
         DistanceRefreshProbeName => DistanceRefreshProbeCases.Set,
+        SchedulerOrderProbeName => SchedulerOrderProbeCases.Set,
+        ActorEventsProbeName => ActorEventsProbeCases.Set,
+        NumericEdgeProbeName => NumericEdgeProbeCases.Set,
+        MotionTimingProbeName => MotionTimingProbeCases.Set,
         _ => null,
     };
 
@@ -647,7 +667,7 @@ internal static class ProjectionProbeGenerator
             {
                 PRINTFILE "ovsta", 0;
                 PRINT_STRING "START\n";
-                SET PLAYER_ARC, {{Num(variant.Arc)}};
+            {{variant.Trace?.Prelude ?? ""}}    SET PLAYER_ARC, {{Num(variant.Arc)}};
                 SET PLAYER_TILT, {{Num(variant.Tilt)}};
                 SET PLAYER_SIZE, {{variant.Room.EyeHeight}};
                 SET PLAYER_Z, {{variant.Room.EyeHeight}};

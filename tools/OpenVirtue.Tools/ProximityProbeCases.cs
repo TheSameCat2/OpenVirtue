@@ -239,7 +239,4 @@ internal static class ProximityProbeCases
         "(room 1, pad 2). Read the trace, compare it with `case.json` → `predictions`, and check `OVCON.TXT`\n" +
         "for compile errors.",
         All);
-
-    internal static string Indent(string lines) =>
-        string.Concat(lines.Split('\n').Select(static l => l.Length == 0 ? "" : "    " + l + "\n"));
 }

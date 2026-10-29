@@ -15,7 +15,8 @@ using System.Text;
 /// key presses, e.g. <c>-w 15 space</c>). <c>Map</c>, when set, adds objects and a second region to
 /// the carrier's room. <c>ClickAfterSeconds</c>, when set, makes <c>run.sh</c> send one left
 /// mouse click to the DOSBox-X window that many seconds after launch (DOSBox-X <c>AUTOTYPE</c> only
-/// presses keys).
+/// presses keys). <c>Prelude</c>, when set, goes at the top of <c>probe_start</c>, right after the
+/// <c>START</c> marker and before the settling <c>WAITT 16</c>, for cases about the start-up itself.
 /// </summary>
 internal sealed record TraceProbeCase(
     string Label,
@@ -25,7 +26,8 @@ internal sealed record TraceProbeCase(
     IReadOnlyDictionary<string, string> Predictions,
     string? Autotype = null,
     TraceProbeMap? Map = null,
-    double? ClickAfterSeconds = null);
+    double? ClickAfterSeconds = null,
+    string? Prelude = null);
 
 /// <summary>
 /// Additions to a trace carrier's room. <c>RoomBody</c> goes into the <c>room</c> region's WDL
@@ -89,6 +91,10 @@ internal static class TraceProbeWdl
         sb.Append("    PRINT_STRING \"\\n\";\n");
         return sb.ToString();
     }
+
+    /// <summary>Indents every line of <paramref name="lines"/> by four spaces (for nesting in an <c>IF</c> block).</summary>
+    public static string Indent(string lines) =>
+        string.Concat(lines.Split('\n').Select(static l => l.Length == 0 ? "" : "    " + l + "\n"));
 
     public static string Action(string name, string body) =>
         new StringBuilder().Append("ACTION ").Append(name).Append("\n{\n").Append(body).Append("}\n").ToString();

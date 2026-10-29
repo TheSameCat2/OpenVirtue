@@ -91,6 +91,14 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   a THING's `DIST`, let a FOLLOW actor approach a player who stands still, and beam into the pad
   island with and without `LOCATE`. Every line in `OVPRX0.TXT` is a token followed by `TICKS`
   and the sampler's run count; `N`/`F` lines are `IF_NEAR`/`IF_FAR` runs with `MY.DISTANCE`.
+- `oracle prepare scheduler-order | actor-events | numeric-edge | motion-timing` — the
+  OV-20261029 trace probes. `scheduler-order` samples `TICKS`/`TIME_CORR` in every cycle from the top
+  of `IF_START` (through `TraceProbeCase.Prelude`) and records the order of global, region, wall,
+  thing and actor `EACH_TICK`, `EACH_CYCLE`, `EACH_SEC` and resumed `WAIT`s within a cycle.
+  `actor-events` follows `WAY`, `VERTEX`, object, `FOLLOW`/`MOVE` with `CAREFULLY` and `BULLET`
+  actors and their `IF_ARRIVED`/`IF_HIT`. `numeric-edge` reads the number format, rounding and what
+  division by zero and out-of-domain functions do. `motion-timing` fits `ACCEL` with `FRICTION` and
+  `INERTIA` and times texture animation (`DELAY`, `RANDOM`, `ONESHOT`).
 - `oracle replay | diff <carrier-or-probe-dir>` — the oracle-diff harness. `replay` packs a carrier's
   `work/` files (not `VRUN.EXE` or the original's `OV*` outputs) into `<carrier>/ov-replay/TITLE.WRS`
   and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the
