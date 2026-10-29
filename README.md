@@ -174,6 +174,8 @@ What works today:
   - The sky panorama.
   - Palette-index shading by distance and `PLAYER_LIGHT`.
   - Which slope flags tilt a region.
+  - How sounds take the eight channels: lowest free, then the oldest; `SLOOP` channels are
+    kept; skipped sounds; when channels read free, and `STOP_SOUND`.
 - **Oracle-diff harness** — `ovtool oracle diff <probe>` replays a probe carrier through the
   headless `RuntimeHost`, in step with the original run's per-cycle `TICKS`, and compares every
   trace file the DOS runtime wrote with OpenVirtue's line by line. The static probes (projection,
@@ -183,7 +185,7 @@ What works today:
 Not yet complete: the exact `AUTORANGE` shade table the retail palettes use (the distance and light
 curve is measured and drawn by palette index),
 the remaining `BELOW` details above, actor animation phase timing,
-exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
+how floor and texture-cycle sounds take channels, exact UI behavior,
 the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads
 the skills and player position of the original's full saves), and making every recorded probe match
 under the oracle-diff harness.

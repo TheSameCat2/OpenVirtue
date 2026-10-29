@@ -37,7 +37,7 @@ public class WdlRuntimeTests
         Assert.Equal(0, runtime.GetSkill("WAVE"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_VOL"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_TONE"));
-        Assert.Equal(-1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL")); // OV-20261029-audio
         for (int channel = 0; channel < 8; channel++)
         {
             Assert.Equal(0, runtime.GetSkill($"CHANNEL_{channel}"));
@@ -529,29 +529,121 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_SoundChannels_SaturateSynchronouslyAndReuseCompletedSlot()
+    public void Runtime_SoundChannels_NinthSoundTakesTheOldestChannel()
     {
+        // OV-20261029-audio: nine sounds in one cycle take channels 0-7, then 0 again; one cycle
+        // apart, the ninth and tenth take channels 0 and 1.
         Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
         var runtime = new WdlRuntime(level);
 
-        for (int i = 0; i < 9; i++)
+        for (int i = 0; i < 8; i++)
+        {
+            runtime.PlaySound("alert", null, 1, null, null);
+            Assert.Equal(i, runtime.GetSkill("CHANNEL"));
+        }
+
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.AudioRequests[^1].Sound.Channel);
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(10, runtime.AudioRequests.Count);
+        Assert.All(Enumerable.Range(0, 8), channel =>
+            Assert.Equal(1, runtime.GetSkill($"CHANNEL_{channel}")));
+    }
+
+    [Fact]
+    public void Runtime_SoundChannels_LoopsAreNeverTakenAndAllLoopsGiveMinusOne()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlayTextureSound("alert", 1, loop: true);
+        for (int i = 0; i < 7; i++)
         {
             runtime.PlaySound("alert", null, 1, null, null);
         }
 
-        Assert.Equal(8, runtime.AudioRequests.Count);
-        Assert.Equal(-1, runtime.GetSkill("CHANNEL"));
-        Assert.All(Enumerable.Range(0, 8), channel =>
-            Assert.Equal(1, runtime.GetSkill($"CHANNEL_{channel}")));
-
-        Assert.True(runtime.CompleteSound(3));
-        Assert.False(runtime.CompleteSound(3));
         runtime.PlaySound("alert", null, 1, null, null);
 
-        Assert.Equal(9, runtime.AudioRequests.Count);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
+
+        var loops = new WdlRuntime(level);
+        for (int i = 0; i < 8; i++)
+        {
+            loops.PlayTextureSound("alert", 1, loop: true);
+        }
+
+        loops.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(-1, loops.GetSkill("CHANNEL"));
+    }
+
+    [Fact]
+    public void Runtime_CompletedSound_FreesItsChannelAtTheNextWorldCycleOnly()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        Assert.True(runtime.CompleteSound(0));
+        Assert.False(runtime.CompleteSound(0));
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        runtime.TickFlic(0.07);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_0"));
+
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL"));
+    }
+
+    [Fact]
+    public void Runtime_StopSound_FreesNormalChannelsTwoCyclesLaterAndKeepsLoops()
+    {
+        // OV-20261029-audio stop-lag and stop-sloop.
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlayTextureSound("alert", 1, loop: true);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        runtime.StopSounds();
+        runtime.PlaySound("alert", null, 1, null, null);
+
         Assert.Equal(3, runtime.GetSkill("CHANNEL"));
-        Assert.Equal(3, runtime.AudioRequests[^1].Sound.Channel);
+        Assert.Equal([WdlSoundOperation.StopChannel, WdlSoundOperation.StopChannel], runtime.AudioRequests.Skip(3).Take(2).Select(r => r.Operation));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_1"));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_1"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_2"));
         Assert.Equal(1, runtime.GetSkill("CHANNEL_3"));
+    }
+
+    [Theory]
+    [InlineData("ACTION play { PLAY_SOUND alert, 0; }")]
+    [InlineData("ACTION play { SET SOUND_VOL, 0; PLAY_SOUND alert, 1; }")]
+    [InlineData("ACTION play { PLAY_SOUND alert, 1, source; }")]
+    public void Runtime_InaudibleSound_IsSkippedAndKeepsChannel(string action)
+    {
+        // OV-20261029-audio skip-channel: the thing is 25 steps away and its texture has SDIST 5.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING source 25 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>; BMAP b,<B.PCX>; TEXTURE t { BMAPS b; SDIST 5; } THING source { TEXTURE t; } " + action);
+        var runtime = new WdlRuntime(level);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        Assert.True(runtime.RunAction("play"));
+
+        Assert.Equal(2, runtime.SoundRequests.Count);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_2"));
     }
 
     [Fact]
@@ -569,7 +661,7 @@ public class WdlRuntimeTests
         Assert.Equal(0.4, play.Sound.Volume);
         Assert.Equal(-0.25, play.Sound.Balance);
         Assert.True(play.Sound.Loop);
-        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
 
         Assert.True(runtime.StopSoundChannel(channel));
         Assert.False(runtime.StopSoundChannel(channel));
@@ -643,8 +735,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.StopSoundCount);
         Assert.Equal(1, runtime.GetSkill("after"));
         Assert.Empty(runtime.SoundRequests);
-        WdlAudioRequest request = Assert.Single(runtime.AudioRequests);
-        Assert.Equal(WdlSoundOperation.StopAll, request.Operation);
+        Assert.Empty(runtime.AudioRequests); // nothing was playing
     }
 
     [Fact]
@@ -667,7 +758,8 @@ public class WdlRuntimeTests
             },
             request =>
             {
-                Assert.Equal(WdlSoundOperation.StopAll, request.Operation);
+                Assert.Equal(WdlSoundOperation.StopChannel, request.Operation);
+                Assert.Equal(0, request.Channel);
             },
             request =>
             {

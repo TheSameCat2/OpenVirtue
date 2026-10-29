@@ -257,3 +257,14 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   and `FLOOR_LIFTED` raise the floor by them, `FLOOR_DESCEND` lowers it, `CEIL_ASCEND` raises the
   ceiling, and `CEIL_DESCEND` and `CEIL_LIFTED` lower it; without a flag the surface is flat. Sixteen
   DOSBox-X runs (eight failed to compile in round 1); implemented in `LevelTopology.SlopeSign`.
+
+## Sound channels (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-audio.md` — channel allocation and timing as scripts see them:
+  - a sound takes the lowest free channel, or else the oldest normal sound's channel;
+  - `SLOOP` channels (2) are never taken;
+  - inaudible sounds are skipped and leave `CHANNEL` alone;
+  - a channel frees at the first world cycle after its sound ends, and not during a flic;
+  - `STOP_SOUND` frees the normal channels two cycles later and leaves loops playing.
+
+  Eighteen DOSBox-X runs; implemented in `WdlRuntime`.

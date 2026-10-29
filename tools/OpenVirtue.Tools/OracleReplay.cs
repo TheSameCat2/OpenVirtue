@@ -160,9 +160,11 @@ internal static class OracleReplay
         var window = new HeadlessWindow();
         int frames = 0;
         double ticks;
-        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), new NullAudioSink(), new HeadlessRender()))
+        var audio = new TimedAudioSink();
+        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender()))
         {
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
+            audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
             host.Boot();
             string? replayPrimary = primary is null ? null : Path.Combine(replayDirectory, "openvirtue-prints", WorldName, primary);
             while (!host.ExitRequested && frames < options.MaxFrames && host.Runtime.GetSkill(Timing.TicksSkill) <= stopTicks + clock.Offset)
@@ -532,6 +534,45 @@ internal static class OracleReplay
         public bool WasReleased(MouseButton button) => false;
 
         public Vector2 ConsumeMotion() => Vector2.Zero;
+    }
+
+    /// <summary>
+    /// Plays nothing but keeps each voice busy for its length in engine time (16 <c>TICKS</c> a
+    /// second), so channels free up when the original's would (OV-20261029-audio).
+    /// </summary>
+    private sealed class TimedAudioSink : IAudioSink
+    {
+        private readonly double[] _ends = new double[8];
+
+        public Func<double> Now { get; set; } = static () => 0;
+
+        public void StartVoice(int channel, ReadOnlyMemory<float> monoSamples, int sampleRate, float volume, float pan, bool looping)
+        {
+            if (channel is >= 0 and < 8 && sampleRate > 0)
+            {
+                _ends[channel] = looping ? double.PositiveInfinity : Now() + (monoSamples.Length / (double)sampleRate);
+            }
+        }
+
+        public void UpdateVoice(int channel, float volume, float pan)
+        {
+        }
+
+        public void StopChannel(int channel)
+        {
+            if (channel is >= 0 and < 8)
+            {
+                _ends[channel] = 0;
+            }
+        }
+
+        public void StopAll() => Array.Clear(_ends);
+
+        public bool IsChannelPlaying(int channel) => channel is >= 0 and < 8 && Now() < _ends[channel];
+
+        public void PlayBeep()
+        {
+        }
     }
 
     private sealed class HeadlessRender : IRenderBackend

@@ -49,7 +49,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.SaveFormatProbeName or
             ProjectionProbeGenerator.SkyProbeName or
             ProjectionProbeGenerator.ShadingProbeName or
-            ProjectionProbeGenerator.SlopeProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.SlopeProbeName or
+            ProjectionProbeGenerator.AudioProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

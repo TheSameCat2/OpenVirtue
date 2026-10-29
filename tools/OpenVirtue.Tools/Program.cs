@@ -639,7 +639,7 @@ internal static class Cli
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
               ovtool oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
               ovtool oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
-              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope|audio [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
               ovtool oracle replay <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--extra-ticks n] [--max-ticks n]
               ovtool oracle diff   <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--tolerance x] [--context n]
 

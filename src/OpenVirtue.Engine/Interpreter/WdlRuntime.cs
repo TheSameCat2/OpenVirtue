@@ -131,6 +131,14 @@ public sealed class WdlRuntime :
     private readonly IReadOnlyDictionary<string, string> _sounds;
     private readonly IReadOnlyDictionary<string, string> _palettes;
     private readonly List<WdlSoundRequest> _soundRequests = [];
+
+    /// <summary>When each sound channel's current sound started, to find the oldest one (OV-20261029-audio).</summary>
+    private readonly long[] _channelStarted = new long[8];
+
+    /// <summary>World cycles until a finished or stopped channel reads free; 0 when none is pending.</summary>
+    private readonly int[] _channelRelease = new int[8];
+
+    private long _soundSequence;
     private readonly List<WdlAudioRequest> _audioRequests = [];
     private readonly List<WdlTextureSoundRequest> _textureSoundRequests = [];
     private readonly List<WdlPaletteFadeRequest> _paletteFadeRequests = [];
@@ -425,6 +433,7 @@ public sealed class WdlRuntime :
         for (int channel = 0; channel < 8; channel++)
         {
             SetSkill($"CHANNEL_{channel}", 0);
+            _channelRelease[channel] = 0;
         }
 
         RestoreStrings(snapshot.Strings);
@@ -596,7 +605,12 @@ public sealed class WdlRuntime :
             fileName = _sounds.GetValueOrDefault(soundName);
         }
 
-        int channel = ReserveSoundChannel();
+        if (!IsSoundAudible(volume, emitterName))
+        {
+            return;
+        }
+
+        int channel = ReserveSoundChannel(loop: false);
         if (channel < 0)
         {
             return;
@@ -618,7 +632,12 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public void PlaySoundFile(string fileName, double volume, double? balance)
     {
-        int channel = ReserveSoundChannel();
+        if (!IsSoundAudible(volume, emitterName: null))
+        {
+            return;
+        }
+
+        int channel = ReserveSoundChannel(loop: false);
         if (channel < 0)
         {
             return;
@@ -638,22 +657,35 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Stops the normal sounds and leaves <c>SLOOP</c> loops playing. The stopped channels still read
+    /// busy for the rest of this cycle and the next one and free from the cycle after
+    /// (OV-20261029-audio).
+    /// </remarks>
     public void StopSounds()
     {
         StopSoundCount++;
         for (int channel = 0; channel < 8; channel++)
         {
-            SetSkill($"CHANNEL_{channel}", 0);
-        }
+            if (GetSkill($"CHANNEL_{channel}") != 1)
+            {
+                continue;
+            }
 
-        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopAll, default));
+            if (_channelRelease[channel] == 0)
+            {
+                _channelRelease[channel] = 2;
+            }
+
+            _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopChannel, default, channel));
+        }
     }
 
     /// <summary>Requests playback for a floor or ceiling texture sound.</summary>
     public int PlayTextureSound(string soundName, double volume, bool loop, double? balance = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(soundName);
-        int channel = ReserveSoundChannel();
+        int channel = ReserveSoundChannel(loop);
         if (channel < 0)
         {
             return -1;
@@ -682,38 +714,115 @@ public sealed class WdlRuntime :
         }
 
         SetSkill($"CHANNEL_{channel}", 0);
+        _channelRelease[channel] = 0;
         _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopChannel, default, channel));
         return true;
     }
 
-    /// <summary>Releases a script-visible sound channel after host playback stops.</summary>
+    /// <summary>
+    /// Notes that host playback on <paramref name="channel"/> has ended. The channel reads free from
+    /// the next world cycle on, not during a flic (OV-20261029-audio).
+    /// </summary>
     public bool CompleteSound(int channel)
     {
-        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0)
+        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0 || _channelRelease[channel] != 0)
         {
             return false;
         }
 
-        SetSkill($"CHANNEL_{channel}", 0);
+        _channelRelease[channel] = 1;
         return true;
     }
 
-    private int ReserveSoundChannel()
+    /// <summary>Frees the channels whose sounds ended or were stopped, at the start of a world cycle.</summary>
+    private void ReleaseFinishedChannels()
     {
         for (int channel = 0; channel < 8; channel++)
         {
-            if (GetSkill($"CHANNEL_{channel}") != 0)
+            if (_channelRelease[channel] > 0 && --_channelRelease[channel] == 0)
             {
-                continue;
+                SetSkill($"CHANNEL_{channel}", 0);
             }
+        }
+    }
 
-            SetSkill($"CHANNEL_{channel}", 1);
-            SetSkill("CHANNEL", channel);
-            return channel;
+    /// <summary>
+    /// Whether a sound is played at all. At volume 0, at <c>SOUND_VOL</c> 0, or from an object
+    /// beyond its texture's <c>SDIST</c>, the original skips it: no channel, and <c>CHANNEL</c>
+    /// keeps its value (OV-20261029-audio).
+    /// </summary>
+    private bool IsSoundAudible(double volume, string? emitterName)
+    {
+        if (volume <= 0 || GetSkill("SOUND_VOL") <= 0)
+        {
+            return false;
         }
 
-        SetSkill("CHANNEL", -1);
-        return -1;
+        if (emitterName is null || GetObject(emitterName) is not { } emitter)
+        {
+            return true;
+        }
+
+        (double x, double y, string? texture) = emitter switch
+        {
+            MapEntity entity => (entity.X, entity.Y, entity.Texture),
+            Wall wall when wall.Vertex1 >= 0 && wall.Vertex1 < _level.Vertices.Count &&
+                           wall.Vertex2 >= 0 && wall.Vertex2 < _level.Vertices.Count =>
+                ((_level.Vertices[wall.Vertex1].X + _level.Vertices[wall.Vertex2].X) * 0.5,
+                 (_level.Vertices[wall.Vertex1].Y + _level.Vertices[wall.Vertex2].Y) * 0.5,
+                 wall.Texture),
+            _ => (double.NaN, double.NaN, null),
+        };
+        if (double.IsNaN(x))
+        {
+            return true;
+        }
+
+        double audible = _level.FindTexture(texture) is { } entry ? entry.Texture.SoundDistance : 100;
+        double dx = x - GetSkill("PLAYER_X");
+        double dy = y - GetSkill("PLAYER_Y");
+        return Math.Sqrt((dx * dx) + (dy * dy)) < audible;
+    }
+
+    /// <summary>
+    /// Takes the lowest free channel. With none free a normal sound takes the channel of the oldest
+    /// normal sound; <c>SLOOP</c> channels (2) are never taken, and when all are loops
+    /// <c>CHANNEL</c> becomes −1 (manual p.109, OV-20261029-audio). A loop needs a free channel.
+    /// </summary>
+    private int ReserveSoundChannel(bool loop)
+    {
+        int channel = -1;
+        for (int candidate = 0; candidate < 8 && channel < 0; candidate++)
+        {
+            if (GetSkill($"CHANNEL_{candidate}") == 0)
+            {
+                channel = candidate;
+            }
+        }
+
+        if (channel < 0 && !loop)
+        {
+            for (int candidate = 0; candidate < 8; candidate++)
+            {
+                if (GetSkill($"CHANNEL_{candidate}") == 1 &&
+                    (channel < 0 || _channelStarted[candidate] < _channelStarted[channel]))
+                {
+                    channel = candidate;
+                }
+            }
+        }
+
+        if (channel < 0)
+        {
+            SetSkill("CHANNEL", -1);
+            return -1;
+        }
+
+        SetSkill($"CHANNEL_{channel}", loop ? 2 : 1);
+        SetSkill("CHANNEL", channel);
+        _channelStarted[channel] = ++_soundSequence;
+        _channelRelease[channel] = 0;
+        return channel;
     }
 
     /// <inheritdoc/>
@@ -1484,6 +1593,7 @@ public sealed class WdlRuntime :
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
+        ReleaseFinishedChannels();
         RefreshView();
         RefreshWallDistances();
         ResumeWaitingActions();
@@ -1869,7 +1979,7 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("WAVE", 0);
         EnsureSkillDefault("PSOUND_VOL", 1);
         EnsureSkillDefault("PSOUND_TONE", 1);
-        EnsureSkillDefault("CHANNEL", -1);
+        EnsureSkillDefault("CHANNEL", 0);
         for (int channel = 0; channel < 8; channel++)
         {
             EnsureSkillDefault($"CHANNEL_{channel}", 0);
