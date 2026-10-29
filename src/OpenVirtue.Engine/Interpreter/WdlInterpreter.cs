@@ -968,18 +968,24 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        // OV-20261029-motion-timing: each tick adds (a - FRICTION·v) / INERTIA, so the speed settles at
+        // a / FRICTION whatever the inertia; a cycle longer than a tick is taken a tick at a time.
         double acceleration = Evaluate(item.Header, comma + 1, item.Header.Count);
-        double timeCorrection = context.GetSkill(Timing.TimeCorrectionSkill);
-        double friction = context.GetSkill("FRICTION");
-        double inertia = context.GetSkill("INERTIA");
-        if (inertia == 0)
+        double timeCorrection = WdlFixed.Quantize(context.GetSkill(Timing.TimeCorrectionSkill));
+        double friction = WdlFixed.Quantize(context.GetSkill("FRICTION"));
+        double inertia = WdlFixed.Quantize(context.GetSkill("INERTIA"));
+        if (inertia <= 0)
         {
             inertia = 1;
         }
 
-        double value = ((1 - (timeCorrection * friction)) * velocity) +
-                       ((timeCorrection * acceleration) / inertia);
-        Assign(item.Header, 0, comma, "=", value);
+        double value = WdlFixed.Quantize(velocity);
+        for (double left = timeCorrection; left > 0; left -= 1)
+        {
+            value += Math.Min(1, left) * (acceleration - (friction * value)) / inertia;
+        }
+
+        Assign(item.Header, 0, comma, "=", WdlFixed.Result(value));
     }
 
     private void ExecuteAdd(WdlItem item, bool timeCorrected)

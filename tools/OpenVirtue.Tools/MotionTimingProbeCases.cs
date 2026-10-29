@@ -44,7 +44,8 @@ internal static class MotionTimingProbeCases
         Skills + AccelTick(acceleration),
         setup + "    SET EACH_TICK.1, mt_tick;\n" + L("GO", "FRICTION", "INERTIA") + "    WAITT 24;\n    SET EACH_TICK.1, NULL;\n" + P("RET"),
         Predict(
-            ("v' = (1 - TIME_CORR·FRICTION)·v + TIME_CORR·a/INERTIA (OpenVirtue's guess)", "every C line satisfies it with its own TIME_CORR"),
+            ("v' = (1 - TIME_CORR·FRICTION)·v + TIME_CORR·a/INERTIA (OpenVirtue's first guess)", "every C line satisfies it with its own TIME_CORR"),
+            ("per tick v ← (1 - F)·v + a/I, compounded over TIME_CORR ticks", "v' = q·v + a/(I·F)·(1 - q) with q = (1 - F)^TIME_CORR"),
             ("not scaled by TIME_CORR", "v' = (1 - FRICTION)·v + a/INERTIA whatever TIME_CORR is"),
             ("exponential friction", "v' = v·(1 - FRICTION)^TIME_CORR + …")));
 
@@ -79,6 +80,10 @@ internal static class MotionTimingProbeCases
         Accel("accel-inertia4", "    SET INERTIA, 4;\n", "1", "ACCEL with INERTIA 4: is the acceleration divided by the inertia, and is the friction too?"),
         Accel("accel-decay", "    RULE mt_v = 10;\n", "0", "ACCEL with a = 0 from v = 10: how does friction alone shrink v per call and per tick?"),
         Accel("accel-negative", "    RULE mt_v = 2;\n    RULE mt_a = 0 - 1;\n", "mt_a", "ACCEL with a = -1 from v = 2: does friction act toward zero symmetrically, and does v cross zero?"),
+        Accel("accel-friction-half", "    SET FRICTION, 0.5;\n", "1", "ACCEL with FRICTION 0.5 and a = 1 from v = 0, about 0.27 ticks a cycle: per tick (1 - F)·v + a/I compounded over TIME_CORR, or linear in TIME_CORR?"),
+        Accel("accel-friction-quarter", "    SET FRICTION, 0.25;\n", "1", "ACCEL with FRICTION 0.25 and a = 1 from v = 0: where does v settle (a/(I·F) = 4?) and how fast?"),
+        Accel("accel-decay-half", "    SET FRICTION, 0.5;\n    RULE mt_v = 10;\n", "0", "ACCEL with FRICTION 0.5 and a = 0 from v = 10: the decay per call against that cycle's TIME_CORR."),
+        Accel("accel-inertia-friction", "    SET FRICTION, 0.5;\n    SET INERTIA, 4;\n", "1", "ACCEL with FRICTION 0.5, INERTIA 4, a = 1: does the inertia divide only the acceleration (settling at a/(I·F) = 0.5)?"),
         new TraceProbeCase(
             "anim-delay",
             "A thing texture with CYCLES 3, DELAY 1, 2, 3: in which cycles does CYCLE change and EACH_CYCLE run? Does a phase last its ticks exactly (leftover carried), at least one frame, or whole frames rounded up?",

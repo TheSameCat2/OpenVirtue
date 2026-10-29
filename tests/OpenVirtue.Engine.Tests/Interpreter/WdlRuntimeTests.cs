@@ -50,7 +50,7 @@ public class WdlRuntimeTests
         WdlRuntime runtime = new(Load(
             "MAPFILE <m.wmp>; SKILL FRICTION; SKILL INERTIA { VAL 0; } SKILL PLAYER_ARC;"));
 
-        Assert.Equal(0.5, runtime.GetSkill("FRICTION"));
+        Assert.Equal(0, runtime.GetSkill("FRICTION")); // not the manual's 0.5 (OV-20261029-motion-timing)
         Assert.Equal(0, runtime.GetSkill("INERTIA"));
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
     }
@@ -2429,7 +2429,7 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("accelRunner"));
 
-        Assert.Equal(5, runner["SPEED"], 9);
+        Assert.Equal(5.25, runner["SPEED"], 9); // 4 + 0.5·(6 - 0.25·4) / 2 (OV-20261029-motion-timing)
     }
 
     [Fact]

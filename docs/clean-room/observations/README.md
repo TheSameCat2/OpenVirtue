@@ -209,3 +209,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   truncate and saturate, `+ − *` wrap in 32 bits, `INT` rounds down, `%` and the bitwise operators act
   on the raw bits, functions truncate their results and read −2097151.999 when undefined, and a
   division by zero is fatal in the original. Seven DOSBox-X runs; implemented in `WdlFixed`.
+
+## Motion timing (2026-10-29 — ACCEL confirmed and implemented; animation phases open)
+
+- `OV-20261029-motion-timing.md` — `FRICTION` defaults to 0 (not 0.5). `ACCEL v, a` integrates
+  `(a − FRICTION·v)/INERTIA` per tick over `TIME_CORR`, a tick at a time, so the speed tends to
+  `a/FRICTION`; it fits all 247 traced calls. `CYCLE` counts from 1, an object's `EACH_TICK` runs
+  before its animation step, and a `ONESHOT` rests on its last phase. Phase lengths follow a
+  frame-rate estimate that is not yet understood. Fourteen DOSBox-X runs; `ACCEL` implemented in
+  `WdlInterpreter`.

@@ -1751,7 +1751,8 @@ public sealed class WdlRuntime :
 
     private void InitializePredefinedSkillDefaults()
     {
-        EnsureSkillDefault("FRICTION", 0.5);
+        // The manual says 0.5 (p.112); patched V3.963 reads 0 (OV-20261029-motion-timing).
+        EnsureSkillDefault("FRICTION", 0);
         EnsureSkillDefault("INERTIA", 1);
         EnsureSkillDefault("SHOOT_RANGE", 500);
         EnsureSkillDefault("SHOOT_FAC", 1);
