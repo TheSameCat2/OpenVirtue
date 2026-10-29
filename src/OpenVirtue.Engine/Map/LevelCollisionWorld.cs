@@ -25,10 +25,18 @@ public sealed class LevelCollisionWorld
         _level = level;
         for (int i = 0; i < level.Walls.Count; i++)
         {
-            Index(level.Walls[i].LeftRegion, i);
+            // A wall bounds every region of a BELOW stack, not only the map's top region.
+            foreach (int member in LevelTopology.Stack(level, level.Walls[i].LeftRegion))
+            {
+                Index(member, i);
+            }
+
             if (level.Walls[i].RightRegion != level.Walls[i].LeftRegion)
             {
-                Index(level.Walls[i].RightRegion, i);
+                foreach (int member in LevelTopology.Stack(level, level.Walls[i].RightRegion))
+                {
+                    Index(member, i);
+                }
             }
         }
     }
@@ -298,6 +306,7 @@ public sealed class LevelCollisionWorld
 
             int entered = RegionOnSide(wall, region, a, b, to);
             if (entered == region ||
+                (entered >= 0 && LevelTopology.Footprint(_level, entered) == LevelTopology.Footprint(_level, region)) ||
                 entered < 0 ||
                 !canCross(wall, region, entered) ||
                 !CrossesPortal(from, to, a, b))
@@ -312,8 +321,9 @@ public sealed class LevelCollisionWorld
         return region;
     }
 
-    private static int OtherRegion(Wall wall, int region) =>
-        wall.LeftRegion == region ? wall.RightRegion : wall.LeftRegion;
+    /// <summary>The map region across <paramref name="wall"/> from <paramref name="region"/> or from its <c>BELOW</c> stack.</summary>
+    private int OtherRegion(Wall wall, int region) =>
+        wall.LeftRegion == LevelTopology.Footprint(_level, region) ? wall.RightRegion : wall.LeftRegion;
 
     /// <summary>
     /// The region on the side of the wall that <paramref name="point"/> lies on: the WMP's first
@@ -322,7 +332,7 @@ public sealed class LevelCollisionWorld
     /// LOCATE) keeps it when it crosses onto the stale region's side
     /// (OV-20261019-proximity-events, case region-beam-walk).
     /// </summary>
-    private static int RegionOnSide(Wall wall, int region, Vector2 a, Vector2 b, Vector2 point)
+    private int RegionOnSide(Wall wall, int region, Vector2 a, Vector2 b, Vector2 point)
     {
         Vector2 edge = b - a;
         Vector2 offset = point - a;

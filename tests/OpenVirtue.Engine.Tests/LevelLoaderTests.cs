@@ -964,7 +964,10 @@ public class LevelLoaderTests
         Level level = LevelLoader.Load(archive, "APATHY.WDL");
 
         Assert.Equal(5192, level.Vertices.Count);
-        Assert.Equal(1073, level.Regions.Count);
+        // 1073 map regions, then the 69 BELOW regions the map stacks under 69 of them.
+        Assert.Equal(1073 + 69, level.Regions.Count);
+        Assert.Equal(69, level.Regions.Count(static r => r.AboveRegion >= 0));
+        Assert.All(level.Regions.Skip(1073), static r => Assert.InRange(r.FootprintRegion, 0, 1072));
         Assert.Equal(5894, level.Walls.Count);
         Assert.Equal(492, level.Things.Count);
         Assert.Equal(138, level.Actors.Count);

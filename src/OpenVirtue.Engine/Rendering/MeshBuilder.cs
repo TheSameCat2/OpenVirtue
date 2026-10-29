@@ -51,6 +51,12 @@ public static class MeshBuilder
 
             Region? left = RegionAt(level, wall.LeftRegion);
             Region? right = RegionAt(level, wall.RightRegion);
+            if ((left?.BelowRegion ?? -1) >= 0 || (right?.BelowRegion ?? -1) >= 0)
+            {
+                AddStackedWall(level, accumulator, wall, v1, v2);
+                continue;
+            }
+
             if (left is not null && right is not null && !ReferenceEquals(left, right))
             {
                 float leftFloor = (float)left.FloorHeight;
@@ -70,6 +76,94 @@ public static class MeshBuilder
             {
                 EmitWallSegment(level, accumulator, wall, v1, v2,
                     (float)region.FloorHeight, (float)region.CeilHeight);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A wall beside a <c>BELOW</c> stack (manual p.59): each side's column is open over its
+    /// regions' spans and solid in between (the slab of a bridge or balcony). The wall covers what is
+    /// open on one side and solid on the other, so it shows a slab's edge to a neighbour, closes a
+    /// storey that the other column does not continue, and leaves shared openings as portals. A wall
+    /// with a column on one side only, or the same column on both, covers each of its storeys.
+    /// </summary>
+    private static void AddStackedWall(Level level, Accumulator accumulator, Wall wall, Vertex v1, Vertex v2)
+    {
+        List<(float Floor, float Ceiling)> left = OpenSpans(level, wall.LeftRegion);
+        List<(float Floor, float Ceiling)> right = OpenSpans(level, wall.RightRegion);
+        if (left.Count == 0 || right.Count == 0 || wall.LeftRegion == wall.RightRegion)
+        {
+            foreach ((float floor, float ceiling) in left.Count > 0 ? left : right)
+            {
+                EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling);
+            }
+
+            return;
+        }
+
+        foreach ((float floor, float ceiling) in Uncovered(left, right).Concat(Uncovered(right, left)))
+        {
+            EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling);
+        }
+    }
+
+    /// <summary>The open spans of the stack at a map region, top first.</summary>
+    private static List<(float Floor, float Ceiling)> OpenSpans(Level level, int regionIndex)
+    {
+        var spans = new List<(float, float)>();
+        if (RegionAt(level, regionIndex) is null)
+        {
+            return spans;
+        }
+
+        foreach (int member in LevelTopology.Stack(level, regionIndex))
+        {
+            Region region = level.Regions[member];
+            if (region.CeilHeight > region.FloorHeight)
+            {
+                spans.Add(((float)region.FloorHeight, (float)region.CeilHeight));
+            }
+        }
+
+        return spans;
+    }
+
+    /// <summary>The parts of <paramref name="spans"/> that none of <paramref name="cover"/> overlaps.</summary>
+    private static IEnumerable<(float Floor, float Ceiling)> Uncovered(
+        List<(float Floor, float Ceiling)> spans,
+        List<(float Floor, float Ceiling)> cover)
+    {
+        foreach ((float floor, float ceiling) in spans)
+        {
+            var pieces = new List<(float Floor, float Ceiling)> { (floor, ceiling) };
+            foreach ((float coverFloor, float coverCeiling) in cover)
+            {
+                var next = new List<(float Floor, float Ceiling)>();
+                foreach ((float f, float c) in pieces)
+                {
+                    if (coverCeiling <= f || coverFloor >= c)
+                    {
+                        next.Add((f, c));
+                        continue;
+                    }
+
+                    if (coverFloor > f)
+                    {
+                        next.Add((f, coverFloor));
+                    }
+
+                    if (coverCeiling < c)
+                    {
+                        next.Add((coverCeiling, c));
+                    }
+                }
+
+                pieces = next;
+            }
+
+            foreach ((float Floor, float Ceiling) piece in pieces)
+            {
+                yield return piece;
             }
         }
     }
@@ -125,7 +219,7 @@ public static class MeshBuilder
     {
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            List<int>? loop = TraceRegionLoop(level, regionIndex);
+            List<int>? loop = LevelTopology.TraceRegionLoop(level, regionIndex);
             if (loop is null)
             {
                 continue;
@@ -214,82 +308,6 @@ public static class MeshBuilder
             (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
             ambient);
-    }
-
-    /// <summary>
-    /// Traces the boundary of a region into a single ordered vertex loop, or returns null
-    /// when the region's walls don't form one clean simple polygon (it is then skipped).
-    /// </summary>
-    private static List<int>? TraceRegionLoop(Level level, int regionIndex)
-    {
-        var adjacency = new Dictionary<int, List<int>>();
-        var edges = new HashSet<(int, int)>();
-
-        foreach (Wall wall in level.Walls)
-        {
-            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2)
-            {
-                continue;
-            }
-
-            (int, int) key = wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1);
-            if (!edges.Add(key))
-            {
-                continue;
-            }
-
-            Connect(adjacency, wall.Vertex1, wall.Vertex2);
-            Connect(adjacency, wall.Vertex2, wall.Vertex1);
-        }
-
-        if (edges.Count < 3)
-        {
-            return null;
-        }
-
-        foreach (List<int> neighbours in adjacency.Values)
-        {
-            if (neighbours.Count != 2)
-            {
-                return null; // a junction or dangling edge — not a simple loop
-            }
-        }
-
-        int start = edges.First().Item1;
-        var loop = new List<int> { start };
-        int previous = -1;
-        int current = start;
-        while (true)
-        {
-            List<int> neighbours = adjacency[current];
-            int next = neighbours[0] != previous ? neighbours[0] : neighbours[1];
-            if (next == start)
-            {
-                break;
-            }
-
-            loop.Add(next);
-            if (loop.Count > edges.Count)
-            {
-                return null;
-            }
-
-            previous = current;
-            current = next;
-        }
-
-        return loop.Count == edges.Count ? loop : null; // must be one loop covering every edge
-    }
-
-    private static void Connect(Dictionary<int, List<int>> adjacency, int from, int to)
-    {
-        if (!adjacency.TryGetValue(from, out List<int>? list))
-        {
-            list = [];
-            adjacency[from] = list;
-        }
-
-        list.Add(to);
     }
 
     private static bool TryVertex(Level level, int index, out Vertex vertex)

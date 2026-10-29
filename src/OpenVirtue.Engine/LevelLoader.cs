@@ -88,6 +88,7 @@ public static class LevelLoader
         double defaultRegionClipDistance = FindNumber(program, "CLIP_DIST") ?? DefaultRegionClipDistance;
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
+        StackBelowRegions(regions, declarations, defaultRegionClipDistance);
         var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
@@ -165,6 +166,65 @@ public static class LevelLoader
         }
 
         return region;
+    }
+
+    /// <summary>
+    /// The deepest <c>BELOW</c> chain followed; a longer one is taken for a cycle in the declarations.
+    /// </summary>
+    private const int MaxBelowDepth = 16;
+
+    /// <summary>
+    /// Adds the regions that <c>BELOW</c> stacks under the map's regions (manual p.59–61). The map
+    /// lists only the top region of a stack, so every map region whose type names a <c>BELOW</c>
+    /// region gets its own instance of that region type, and of the type's own <c>BELOW</c> and so
+    /// on, with the heights and properties of its WDL declaration and the top region's footprint.
+    /// They follow the map's regions, so map indices stay valid. A map that does list a region of the
+    /// <c>BELOW</c> name (the retail maps never do) is linked to that region instead.
+    /// </summary>
+    private static void StackBelowRegions(List<Region> regions, WdlDeclarations declarations, double defaultClipDistance)
+    {
+        int mapRegions = regions.Count;
+        for (int top = 0; top < mapRegions; top++)
+        {
+            regions[top].FootprintRegion = top;
+            regions[top].Top = regions[top];
+        }
+
+        for (int top = 0; top < mapRegions; top++)
+        {
+            Region topRegion = regions[top];
+            if (topRegion.BelowName is { } listedName &&
+                regions.FindIndex(0, mapRegions, r => r.Name.Equals(listedName, StringComparison.OrdinalIgnoreCase)) is >= 0 and int listed)
+            {
+                topRegion.BelowRegion = listed;
+                if (regions[listed].AboveRegion < 0)
+                {
+                    regions[listed].AboveRegion = top;
+                }
+
+                continue;
+            }
+
+            int upper = top;
+            for (int depth = 0; depth < MaxBelowDepth && regions[upper].BelowName is { } belowName; depth++)
+            {
+                if (declarations.GetRegionTextures(belowName) is not { } definition)
+                {
+                    break;
+                }
+
+                // A BELOW region without its own heights hangs under its upper region with no headroom.
+                double floor = definition.FloorHeight ?? regions[upper].FloorHeight;
+                double ceiling = definition.CeilHeight ?? floor;
+                Region lower = BuildRegion(new WmpRegion(belowName, (float)floor, (float)ceiling), declarations, defaultClipDistance);
+                lower.FootprintRegion = top;
+                lower.Top = topRegion;
+                lower.AboveRegion = upper;
+                regions[upper].BelowRegion = regions.Count;
+                regions.Add(lower);
+                upper = regions.Count - 1;
+            }
+        }
     }
 
     private static Wall BuildWall(WmpWall w, WdlDeclarations declarations)

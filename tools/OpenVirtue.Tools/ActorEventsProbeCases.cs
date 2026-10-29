@@ -25,7 +25,7 @@ internal static class ActorEventsProbeCases
     public const string TraceFile = "ovaev";
 
     private const string Skills =
-        "SKILL ae_n { VAL 0; }\nSKILL ae_on { VAL 0; }\n" +
+        "SKILL ae_n { VAL 0; }\nSKILL ae_on { VAL 0; }\nSYNONYM ae_s { TYPE ACTOR; }\n" +
         "TEXTURE ae_tex { SCALE_X 32; SCALE_Y 32; BMAPS yel_map; }\n";
 
     private static readonly string Counter = Action("ae_g1", "    RULE ae_n = ae_n + 1;\n");
@@ -37,9 +37,15 @@ internal static class ActorEventsProbeCases
     private static readonly string Hooks =
         Action("ae_tick", A("A")) + Action("ae_arr", A("ARR")) + Action("ae_hit", A("HIT"));
 
-    /// <summary>Arms the counter, opens the window for <paramref name="ticks"/> ticks, closes it.</summary>
-    private static string Run(int ticks) =>
-        "    SET EACH_TICK.1, ae_g1;\n    RULE ae_on = 1;\n" + V("GO", "TICKS", "ae_n") +
+    /// <summary>
+    /// Arms the counter, runs <paramref name="setup"/> on the actor (through the synonym <c>ae_s</c>),
+    /// opens the window for <paramref name="ticks"/> ticks, closes it. The compiler accepts only
+    /// <c>NULL</c>, <c>FOLLOW</c>, <c>REPEL</c>, a way or an object as a declared <c>TARGET</c>; the retail
+    /// scripts, like these cases, set <c>MOVE</c>, <c>BULLET</c> and <c>VERTEX</c> with <c>SET</c> (Error 111
+    /// otherwise, OV-20261029-actor-events).
+    /// </summary>
+    private static string Run(int ticks, string setup = "") =>
+        "    SET ae_s, ae_a;\n    SET EACH_TICK.1, ae_g1;\n" + setup + "    RULE ae_on = 1;\n" + V("GO", "TICKS", "ae_n") +
         $"    WAITT {ticks};\n    RULE ae_on = 0;\n    SET EACH_TICK.1, NULL;\n" + P("RET");
 
     /// <summary>The actor, its properties in the manual's order (p.64–71): movement, hooks, flags.</summary>
@@ -63,8 +69,8 @@ internal static class ActorEventsProbeCases
         new TraceProbeCase(
             "vertex",
             "TARGET VERTEX toward (20, 6) at SPEED 0.5: when does IF_ARRIVED run, once or in every cycle after arrival, and does the actor stop on the point?",
-            Actor("TARGET VERTEX; TARGET_X 20; TARGET_Y 6; SPEED 0.5;"),
-            Run(64),
+            Actor("SPEED 0.5;"),
+            Run(64, "    SET ae_s.TARGET_X, 20;\n    SET ae_s.TARGET_Y, 6;\n    SET ae_s.TARGET, VERTEX;\n"),
             Predict(
                 ("once, then stands", "one ARR; later A lines at (20, 6)"),
                 ("every cycle once there", "an ARR in every cycle after arrival"),
@@ -91,8 +97,8 @@ internal static class ActorEventsProbeCases
         new TraceProbeCase(
             "move-border",
             "A CAREFULLY MOVE actor starts on the pad (-8, 16) facing -Y (angle 270): IF_ARRIVED at the pad border, and what happens at the room's wall at y = -24 (stop, slide, IF_HIT)?",
-            Actor("TARGET MOVE; SPEED 0.5;", "CAREFULLY"),
-            Run(112),
+            Actor("SPEED 0.5;", "CAREFULLY"),
+            Run(112, "    SET ae_s.TARGET, MOVE;\n"),
             Predict(
                 ("ARR at the border, stops at the wall", "ARR near y 12, then Y stays near -24 + its half width"),
                 ("IF_HIT at the wall", "a HIT line near y -24")),
@@ -100,8 +106,8 @@ internal static class ActorEventsProbeCases
         new TraceProbeCase(
             "bullet",
             "A CAREFULLY BULLET actor at (10, 0) facing +X (angle 0) flies to the far wall at x = 48: when does IF_HIT run, where is it then, and does it keep moving or keep hitting?",
-            Actor("TARGET BULLET; SPEED 0.5;", "CAREFULLY"),
-            Run(112),
+            Actor("SPEED 0.5;", "CAREFULLY"),
+            Run(112, "    SET ae_s.TARGET, BULLET;\n"),
             Predict(
                 ("one hit, then it stops", "one HIT near x 47; A lines stand still after"),
                 ("hits in every cycle", "a HIT line in every cycle after the first")),

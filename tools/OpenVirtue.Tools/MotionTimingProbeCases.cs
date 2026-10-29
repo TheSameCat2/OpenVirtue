@@ -27,6 +27,7 @@ internal static class MotionTimingProbeCases
 
     private const string Skills =
         "SKILL mt_n { VAL 0; }\nSKILL mt_v { VAL 0; }\nSKILL mt_v0 { VAL 0; }\nSKILL mt_on { VAL 0; }\n" +
+        "SKILL mt_a { VAL 0; }\nSKILL mt_p { VAL 0; }\n" +
         "SYNONYM mt_st { TYPE THING; }\n";
 
     private static string L(string token, params string[] extra) => V(token, ["TICKS", "TIME_CORR", "mt_n", .. extra]);
@@ -50,11 +51,17 @@ internal static class MotionTimingProbeCases
     /// <summary>The counting slot-1 action for the animation cases.</summary>
     private static readonly string CounterTick = Action("mt_tick", "    RULE mt_n = mt_n + 1;\n");
 
+    /// <summary>
+    /// <c>PLAY</c> as a number in <c>mt_p</c>: a flag cannot be printed (<c>PRINT_VALUE MY.PLAY</c> is
+    /// "Error(66): Wrong typ … FIXED FLAGS", OV-20261029-motion-timing), but it can be compared.
+    /// </summary>
+    private const string ReadPlay = "    RULE mt_p = 0;\n    IF (MY.PLAY == 1) { RULE mt_p = 1; }\n";
+
     /// <summary>A thing with <paramref name="texture"/> whose EACH_TICK prints its CYCLE (and PLAY) and whose EACH_CYCLE prints E, while mt_on.</summary>
     private static string AnimThing(string texture) =>
         Skills + CounterTick +
-        Action("mt_at", "    IF (mt_on > 0) {\n" + Indent(L("A", "MY.CYCLE", "MY.PLAY")) + "    }\n") +
-        Action("mt_ae", "    IF (mt_on > 0) {\n" + Indent(L("E", "MY.CYCLE", "MY.PLAY")) + "    }\n") +
+        Action("mt_at", "    IF (mt_on > 0) {\n" + Indent(ReadPlay + L("A", "MY.CYCLE", "mt_p")) + "    }\n") +
+        Action("mt_ae", "    IF (mt_on > 0) {\n" + Indent(ReadPlay + L("E", "MY.CYCLE", "mt_p")) + "    }\n") +
         texture +
         "THING mt_t { TEXTURE mt_tex; EACH_CYCLE mt_ae; EACH_TICK mt_at; }\n";
 
@@ -71,7 +78,7 @@ internal static class MotionTimingProbeCases
         Accel("accel-friction1", "    SET FRICTION, 1;\n", "1", "ACCEL with FRICTION 1: does v settle where TIME_CORR·a balances the friction, or reset to the acceleration each call?"),
         Accel("accel-inertia4", "    SET INERTIA, 4;\n", "1", "ACCEL with INERTIA 4: is the acceleration divided by the inertia, and is the friction too?"),
         Accel("accel-decay", "    RULE mt_v = 10;\n", "0", "ACCEL with a = 0 from v = 10: how does friction alone shrink v per call and per tick?"),
-        Accel("accel-negative", "    RULE mt_v = 2;\n", "0 - 1", "ACCEL with a = -1 from v = 2: does friction act toward zero symmetrically, and does v cross zero?"),
+        Accel("accel-negative", "    RULE mt_v = 2;\n    RULE mt_a = 0 - 1;\n", "mt_a", "ACCEL with a = -1 from v = 2: does friction act toward zero symmetrically, and does v cross zero?"),
         new TraceProbeCase(
             "anim-delay",
             "A thing texture with CYCLES 3, DELAY 1, 2, 3: in which cycles does CYCLE change and EACH_CYCLE run? Does a phase last its ticks exactly (leftover carried), at least one frame, or whole frames rounded up?",

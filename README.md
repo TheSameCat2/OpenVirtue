@@ -151,6 +151,13 @@ What works today:
   refreshed only when the view changes or an actor in front of the player walks
   (OV-20261021-distance-refresh).
 
+- **Stacked (`BELOW`) regions** — the retail maps list only the top region of a stack; the 617
+  lower storeys across the four levels exist only as WDL declarations. The loader now builds each
+  one under its map region with the declared heights and the top region's footprint (manual p.59–61),
+  so they get floors, ceilings and walls (a wall covers what is open on one side and solid on the
+  other, such as a bridge's slab), the player walks into the storey it fits, and underwater
+  `IF_DIVE`/`IF_ARISE` links resolve. Still open: the extra wall texture sides of lower storeys,
+  `GROUND` placement of things and actors, and occlusion by slabs in the view test.
 - **Oracle-diff harness** — `ovtool oracle diff <probe>` replays a probe carrier through the
   headless `RuntimeHost`, in step with the original run's per-cycle `TICKS`, and compares every
   trace file the DOS runtime wrote with OpenVirtue's line by line. The static probes (projection,
@@ -158,7 +165,7 @@ What works today:
   timing, sub-percent movement steps, details the notes left open).
 
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
-Acknex-parity `each_cycle` discovery/dispatch order, slopes, stacked (`BELOW`) regions, and exact actor AI/path event ordering,
+Acknex-parity `each_cycle` discovery/dispatch order, slopes, the remaining `BELOW` details above, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
 legacy-compatible save/load, and making every recorded probe match under the oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the

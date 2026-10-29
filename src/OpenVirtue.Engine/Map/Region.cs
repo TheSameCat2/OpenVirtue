@@ -30,6 +30,21 @@ public sealed class Region : AcknexObject
     public string? GeniusName { get; set; }
     public string? BelowName { get; set; }
 
+    /// <summary>
+    /// The index of the WMP region whose walls bound this one. A region is its own footprint; a
+    /// <c>BELOW</c> region, which the map does not list, shares its top region's (manual p.59).
+    /// </summary>
+    public int FootprintRegion { get; set; } = -1;
+
+    /// <summary>The index of the region stacked under this one by <c>BELOW</c>, or −1.</summary>
+    public int BelowRegion { get; set; } = -1;
+
+    /// <summary>The index of the region this one is the <c>BELOW</c> region of, or −1 for a top region.</summary>
+    public int AboveRegion { get; set; } = -1;
+
+    /// <summary>The uppermost region of this region's <c>BELOW</c> chain (<c>#TOP</c>, p.59); itself for a top region.</summary>
+    public Region? Top { get; set; }
+
     /// <summary>The action declared by region-level <c>EACH_TICK</c>, run after each frame cycle.</summary>
     public string? EachTickAction { get; set; }
 
@@ -61,6 +76,7 @@ public sealed class Region : AcknexObject
             case "ceil_tex": value = CeilTexture; return true;
             case "genius": value = GeniusName; return true;
             case "below": value = BelowName; return true;
+            case "top": value = (Top ?? this).Name; return true;
             case "each_tick": value = EachTickAction; return true;
             case "each_cycle": value = EachCycleAction; return true;
         }

@@ -129,8 +129,15 @@ public sealed class Player : AcknexObject
 
         for (int i = 0; i < level.Walls.Count; i++)
         {
-            Index(level.Walls[i].LeftRegion, i);
-            Index(level.Walls[i].RightRegion, i);
+            foreach (int member in LevelTopology.Stack(level, level.Walls[i].LeftRegion))
+            {
+                Index(member, i);
+            }
+
+            foreach (int member in LevelTopology.Stack(level, level.Walls[i].RightRegion))
+            {
+                Index(member, i);
+            }
         }
 
         if (level.PlayerStart is { } start)
@@ -195,7 +202,7 @@ public sealed class Player : AcknexObject
             ignored,
             _touchedObjects,
             WallClearance);
-        _region = result.Region;
+        _region = result.Region == _region ? _region : StoreyFor(result.Region);
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
     }
@@ -258,12 +265,37 @@ public sealed class Player : AcknexObject
         }
 
         if (wall["IMPASSABLE"] > 0 ||
-            otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+            otherRegion < 0 || otherRegion >= _level.Regions.Count ||
+            LevelTopology.Footprint(_level, otherRegion) == LevelTopology.Footprint(_level, currentRegion))
         {
             return false;
         }
 
-        return Enterable(otherRegion);
+        return Enterable(StoreyFor(otherRegion));
+    }
+
+    /// <summary>
+    /// The region of <paramref name="region"/>'s <c>BELOW</c> stack the player walks into: the
+    /// uppermost storey it may enter (<see cref="Enterable"/>), else the one that holds its feet.
+    /// A region without a stack is its own storey.
+    /// </summary>
+    private int StoreyFor(int region)
+    {
+        if ((uint)region >= (uint)_level.Regions.Count ||
+            (_level.Regions[region].BelowRegion < 0 && _level.Regions[region].AboveRegion < 0))
+        {
+            return region;
+        }
+
+        foreach (int member in LevelTopology.Stack(_level, region))
+        {
+            if (Enterable(member))
+            {
+                return member;
+            }
+        }
+
+        return LevelTopology.StackRegionAt(_level, region, _position.Y - EyeHeight);
     }
 
     private float EntityCollisionRadius(MapEntity entity)
@@ -386,14 +418,14 @@ public sealed class Player : AcknexObject
                 continue;
             }
 
-            _region = other;
+            _region = StoreyFor(other);
             return;
         }
     }
 
     private bool CanCross(Wall wall, out int other)
     {
-        other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
+        other = wall.LeftRegion == LevelTopology.Footprint(_level, _region) ? wall.RightRegion : wall.LeftRegion;
         return CanCross(wall, _region, other);
     }
 
@@ -596,7 +628,9 @@ public sealed class Player : AcknexObject
             return false;
         }
 
-        below = FindRegionIndex(candidate => candidate.Name.Equals(belowName, StringComparison.OrdinalIgnoreCase));
+        below = upper.BelowRegion >= 0
+            ? upper.BelowRegion
+            : FindRegionIndex(candidate => candidate.Name.Equals(belowName, StringComparison.OrdinalIgnoreCase));
         return below >= 0 &&
                HasAction(_level.Regions[below], "IF_ARISE") &&
                Math.Abs(upper.FloorHeight - _level.Regions[below].CeilHeight) <= 0.001;
@@ -614,6 +648,13 @@ public sealed class Player : AcknexObject
         if (!HasAction(lower, "IF_ARISE"))
         {
             return false;
+        }
+
+        if (lower.AboveRegion >= 0)
+        {
+            above = lower.AboveRegion;
+            Region upper = _level.Regions[above];
+            return HasAction(upper, "IF_DIVE") && Math.Abs(upper.FloorHeight - lower.CeilHeight) <= 0.001;
         }
 
         above = FindRegionIndex(candidate =>

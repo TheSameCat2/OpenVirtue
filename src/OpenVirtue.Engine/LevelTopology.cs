@@ -83,10 +83,60 @@ public static class LevelTopology
         return false;
     }
 
+    /// <summary>
+    /// The index of the map region whose walls bound <paramref name="regionIndex"/>: the region
+    /// itself, or for a <c>BELOW</c> region the top of its stack (<see cref="Region.FootprintRegion"/>).
+    /// </summary>
+    public static int Footprint(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        return (uint)regionIndex < (uint)level.Regions.Count && level.Regions[regionIndex].FootprintRegion >= 0
+            ? level.Regions[regionIndex].FootprintRegion
+            : regionIndex;
+    }
+
+    /// <summary>
+    /// The regions stacked at <paramref name="regionIndex"/>'s footprint, top first: the map region
+    /// and the chain of <c>BELOW</c> regions under it (manual p.59).
+    /// </summary>
+    public static IEnumerable<int> Stack(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        int current = Footprint(level, regionIndex);
+        for (int depth = 0; (uint)current < (uint)level.Regions.Count && depth <= level.Regions.Count; depth++)
+        {
+            yield return current;
+            current = level.Regions[current].BelowRegion;
+        }
+    }
+
+    /// <summary>
+    /// The region of <paramref name="regionIndex"/>'s stack that holds <paramref name="height"/>: the
+    /// uppermost one whose floor is at or below it, else the lowest. A region without a
+    /// <c>BELOW</c> chain is its own answer.
+    /// </summary>
+    public static int StackRegionAt(Level level, int regionIndex, double height)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        int found = Footprint(level, regionIndex);
+        foreach (int member in Stack(level, regionIndex))
+        {
+            found = member;
+            if (level.Regions[member].FloorHeight <= height + 1e-4)
+            {
+                break;
+            }
+        }
+
+        return found;
+    }
+
     /// <summary>Traces the boundary of a region into a single ordered vertex loop, if possible.</summary>
     public static List<int>? TraceRegionLoop(Level level, int regionIndex)
     {
         ArgumentNullException.ThrowIfNull(level);
+        // A BELOW region has no walls of its own; its stack's top region bounds it.
+        regionIndex = Footprint(level, regionIndex);
 
         var adjacency = new Dictionary<int, List<int>>();
         var edges = new HashSet<(int, int)>();

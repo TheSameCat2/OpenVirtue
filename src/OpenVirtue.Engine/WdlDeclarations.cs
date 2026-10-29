@@ -342,6 +342,7 @@ public sealed class WdlDeclarations
         string? floor = null, ceiling = null;
         string? genius = null;
         string? below = null;
+        double? floorHeight = null, ceilHeight = null;
         double ambient = 0;
         double floorOffsetX = 0, floorOffsetY = 0, ceilOffsetX = 0, ceilOffsetY = 0;
         string? eachTickAction = null;
@@ -365,6 +366,16 @@ public sealed class WdlDeclarations
             else if (property.Keyword.Equals("BELOW", StringComparison.OrdinalIgnoreCase))
             {
                 below = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("FLOOR_HGT", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedFloorHeight)
+            {
+                floorHeight = parsedFloorHeight;
+            }
+            else if (property.Keyword.Equals("CEIL_HGT", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedCeilHeight)
+            {
+                ceilHeight = parsedCeilHeight;
             }
             else if (property.Keyword.Equals("AMBIENT", StringComparison.OrdinalIgnoreCase) &&
                      FirstNumber(property.Header) is { } parsedAmbient)
@@ -419,7 +430,7 @@ public sealed class WdlDeclarations
 
         _regions[item.Header[0].Text] = new RegionTextures(
             floor, ceiling, genius, below, ambient, floorOffsetX, floorOffsetY, ceilOffsetX, ceilOffsetY,
-            eachTickAction, eachCycleAction, actionHooks, skills);
+            eachTickAction, eachCycleAction, actionHooks, skills, floorHeight, ceilHeight);
     }
 
     private void IndexWall(WdlItem item)
@@ -746,7 +757,9 @@ public sealed class WdlDeclarations
         string? EachTickAction,
         string? EachCycleAction,
         IReadOnlyDictionary<string, string?> ActionHooks,
-        IReadOnlyDictionary<string, double> Skills);
+        IReadOnlyDictionary<string, double> Skills,
+        double? FloorHeight = null,
+        double? CeilHeight = null);
 
     /// <summary>The sprite texture name, height, and WDL radian angle offset declared for a THING/ACTOR type.</summary>
     public readonly record struct EntityDef(
