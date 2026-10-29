@@ -45,6 +45,22 @@ public class BelowRegionTests
         Assert.Equal("bridge", top);
     }
 
+    [Theory]
+    [InlineData("", 0, 1)]
+    [InlineData("FLAGS GROUND;", 2, 2)]
+    [InlineData("FLAGS GROUND;", 12, 1)]
+    public void LoadCore_ThingUnderABridge_StartsOnTheStoreyTheManualNames(string flags, double height, int region)
+    {
+        // Manual p.61: without GROUND the uppermost region; with GROUND the lowest region whose
+        // ceiling is above the thing's feet (the underpass's ceiling is 8).
+        string map = Map.Replace("PLAYER_START", "THING crate 15 5 0 1;#7\nPLAYER_START", StringComparison.Ordinal);
+        string main = Main + FormattableString.Invariant($" THING crate {{ HEIGHT {height}; {flags} }}");
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(region, Assert.Single(level.Things).Region);
+    }
+
     [Fact]
     public void TraceRegionLoop_BelowRegion_UsesItsTopRegionsWalls()
     {

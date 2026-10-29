@@ -93,6 +93,11 @@ public static class LevelLoader
         var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
+        foreach (MapEntity entity in things.Concat<MapEntity>(actors))
+        {
+            entity.Region = PlacementStorey(regions, entity);
+        }
+
         var ways = map.Ways.ToDictionary(
             way => way.Name,
             way => new LevelWay(
@@ -323,6 +328,46 @@ public static class LevelLoader
         }
 
         return entity;
+    }
+
+    /// <summary>
+    /// The storey of a stack a thing or actor starts in (manual p.61). Without <c>GROUND</c> it is
+    /// the uppermost region. With <c>GROUND</c> it is the lowest region whose ceiling is above the
+    /// object's feet (its <c>HEIGHT</c>, absolute with <c>GROUND</c>).
+    /// </summary>
+    private static int PlacementStorey(List<Region> regions, MapEntity entity)
+    {
+        int region = entity.Region;
+        if ((uint)region >= (uint)regions.Count)
+        {
+            return region;
+        }
+
+        for (int depth = 0; regions[region].AboveRegion >= 0 && depth < regions.Count; depth++)
+        {
+            region = regions[region].AboveRegion;
+        }
+
+        if (entity["GROUND"] <= 0)
+        {
+            return region;
+        }
+
+        var stack = new List<int>();
+        for (int current = region; (uint)current < (uint)regions.Count && stack.Count <= regions.Count; current = regions[current].BelowRegion)
+        {
+            stack.Add(current);
+        }
+
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            if (regions[stack[i]].CeilHeight > entity.Z)
+            {
+                return stack[i];
+            }
+        }
+
+        return region;
     }
 
     private static void ApplyActionHooks(AcknexObject obj, IReadOnlyDictionary<string, string?> actionHooks)

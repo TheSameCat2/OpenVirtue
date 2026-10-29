@@ -158,8 +158,9 @@ What works today:
   one under its map region with the declared heights and the top region's footprint (manual p.59–61),
   so they get floors, ceilings and walls (a wall covers what is open on one side and solid on the
   other, such as a bridge's slab), the player walks into the storey it fits, and underwater
-  `IF_DIVE`/`IF_ARISE` links resolve. Still open: the extra wall texture sides of lower storeys,
-  `GROUND` placement of things and actors, and occlusion by slabs in the view test.
+  `IF_DIVE`/`IF_ARISE` links resolve. Things and actors start on the uppermost storey, or with
+  `GROUND` on the lowest storey whose ceiling is above their feet (manual p.61). Still open: the
+  extra wall texture sides of lower storeys and occlusion by slabs in the view test.
 - **Engine rules measured on 2026-10-29** — eight oracle notes (OV-20261029-*):
   - The cycle order: resumed waits, then `EACH_SEC`, the global slots, and the regions, actors,
     things and walls, each kind in reverse map order. `IF_START` and the first cycle have
