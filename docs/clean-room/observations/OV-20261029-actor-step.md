@@ -44,21 +44,37 @@ A sub-unit difference grows over a level.
 Every step of the ten cases fits. A bullet set to angle 0 does not drift. The 4-unit drift in
 the actor-events bullet came with `CAREFULLY` and the WMP placement angle, not with this step.
 
+### Round 3: `CAREFULLY`
+Five more cases repeat angles 0, π/2, π, 3π/2 and 1 with `FLAGS CAREFULLY`.
+- **Axis-aligned steps.** The step that has no X part (or no Y part) moves the actor 4/1024 along
+  that axis, always positive. East and west steps gain +4 in Y, north and south steps +4 in X.
+- **Diagonal steps.** At angle 1 the steps are those of round 2.
+- **Wall stops.** Where a wall stops a `CAREFULLY` step, the 4 units still come (Y 232 → 236 at the
+  stop), and the stopping coordinate is one unit nearer zero than OpenVirtue's rounded contact
+  point.
+
+This is the 4-unit drift of the actor-events bullet and of the border-climb and wall-distance
+walkers.
+
 ## Invariant
 A step along an actor's `ANGLE` has the length `SPEED·TIME_CORR` in 22.10 fixed point. Its X part
 is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where θ is the 22.10 `ANGLE`.
-Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events).
+Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events). A
+`CAREFULLY` actor whose step has no X (or no Y) part is then moved 4/1024 along that axis, in the
+positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero.
 
 ## Open Questions
-- When a bullet stops at a wall, its stopping position differs from OpenVirtue's by one raw unit
-  (the original truncates).
-- The sideways drift of the `CAREFULLY` bullet placed at WMP angle 0 in OV-20261029-actor-events.
+- The long step of a bullet skipping frames out of view (six steps at once, 0.84 steps) is split
+  one unit differently (467, 726 against OpenVirtue's 467, 727). Four of the round-2 carriers end on
+  it.
+- How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by
   `WdlActorMotionTests.Tick_Bullet_StepsByRoundedCosineAndSineOfItsAngle`.
-- `ovtool oracle diff` replays six of the ten carriers line for line. The other four differ only
-  in the wall stop.
+- The `CAREFULLY` rules are in `WdlRuntime.MoveActor`.
+- `ovtool oracle diff` replays 13 of the 25 carriers line for line; the others differ from the
+  skipped-frame step or a later slide on.
 - The harness gained two things for this:
   - it puts printed `TICKS` back on the 1/1024 grid, preferring whole 1/32 ticks;
   - it takes the first sampled cycle's step from a printed `TIME_CORR` column.

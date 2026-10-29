@@ -2860,6 +2860,27 @@ public sealed class WdlRuntime :
                     wallClearance: Player.WallClearance);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
+            if (result.Collided)
+            {
+                // OV-20261029-actor-step: where a wall stops the step, the original's position is
+                // the contact point cut to 1/1024 toward zero.
+                actor.X = Math.Truncate(actor.X * 1024) / 1024;
+                actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
+            }
+
+            // OV-20261029-actor-step: after a CAREFULLY step with no X part (or no Y part), the
+            // original moves the actor 4/1024 along that axis, always positive, even when a wall
+            // stopped the step, so axis-aligned walkers creep 4 units a step.
+            const double Nudge = 4.0 / 1024;
+            if (Math.Abs(requestedX) < 1e-9 && Math.Abs(requestedY) >= 1e-9)
+            {
+                actor.X += Nudge;
+            }
+            else if (Math.Abs(requestedY) < 1e-9 && Math.Abs(requestedX) >= 1e-9)
+            {
+                actor.Y += Nudge;
+            }
+
             actor.Region = result.Region;
             actor["IMPACT_VX"] = result.Displacement.X - requestedX;
             actor["IMPACT_VY"] = result.Displacement.Y - requestedY;

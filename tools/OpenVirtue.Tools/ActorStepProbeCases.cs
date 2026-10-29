@@ -29,10 +29,11 @@ internal static class ActorStepProbeCases
             "        RULE as_ang = MY.ANGLE * 1024;\n        RULE as_t = TIME_CORR * 1024;\n" +
             Indent(V("A", "TICKS", "as_n", "as_x", "as_y", "as_ang", "as_t")) + "    }\n");
 
-    private static TraceProbeCase Step(string label, double angle, double speed) => new(
+    private static TraceProbeCase Step(string label, double angle, double speed, string flags = "") => new(
         label,
-        string.Create(CultureInfo.InvariantCulture, $"A BULLET at angle {angle}, SPEED {speed}: how do X and Y step, unit by unit?"),
-        Skills + Hooks + "ACTOR as_a { TEXTURE as_tex; SPEED " + speed.ToString(CultureInfo.InvariantCulture) + "; EACH_TICK as_tick; }\n",
+        string.Create(CultureInfo.InvariantCulture, $"A BULLET at angle {angle}, SPEED {speed}{(flags.Length > 0 ? ", FLAGS " + flags : "")}: how do X and Y step, unit by unit?"),
+        Skills + Hooks + "ACTOR as_a { TEXTURE as_tex; SPEED " + speed.ToString(CultureInfo.InvariantCulture) + "; EACH_TICK as_tick;" +
+            (flags.Length > 0 ? " FLAGS " + flags + ";" : "") + " }\n",
         "    SET as_s, as_a;\n    SET EACH_TICK.1, as_g1;\n" +
         string.Create(CultureInfo.InvariantCulture, $"    SET as_s.ANGLE, {angle};\n") +
         "    SET as_s.TARGET, BULLET;\n    RULE as_on = 1;\n" + V("GO", "TICKS", "as_n") +
@@ -54,6 +55,11 @@ internal static class ActorStepProbeCases
         Step("a-pi", 3.1416, 0.5),
         Step("a-neg-half-pi", 4.7124, 0.5),
         Step("a-0.1", 0.1, 0.5),
+        Step("c-0", 0, 0.5, "CAREFULLY"),
+        Step("c-half-pi", 1.5708, 0.5, "CAREFULLY"),
+        Step("c-pi", 3.1416, 0.5, "CAREFULLY"),
+        Step("c-neg-half-pi", 4.7124, 0.5, "CAREFULLY"),
+        Step("c-1", 1, 0.5, "CAREFULLY"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

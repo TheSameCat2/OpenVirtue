@@ -294,7 +294,7 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
 
         // OV-20261019-border-kinds: a CAREFULLY actor stops 0.05 beyond its radius, like the player.
-        Assert.Equal(9.45, actor.X, 3);
+        Assert.Equal(Math.Truncate((9.45) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
         Assert.Equal(-10.55, actor["IMPACT_VX"], 3);
         Assert.Equal(0, runtime.GetSkill("hits"));
     }
@@ -353,7 +353,7 @@ public sealed class WdlActorMotionTests
         }
         else
         {
-            Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
+            Assert.Equal(Math.Truncate((10 - 1 - Player.WallClearance) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
             Assert.Equal(0, actor.Region);
         }
     }
@@ -374,7 +374,7 @@ public sealed class WdlActorMotionTests
             runtime.Tick(1.0 / 16);
         }
 
-        Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
+        Assert.Equal(Math.Truncate((10 - 1 - Player.WallClearance) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
     }
 
     [Fact]

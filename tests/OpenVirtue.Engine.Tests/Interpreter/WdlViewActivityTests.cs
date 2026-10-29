@@ -190,7 +190,7 @@ public sealed class WdlViewActivityTests
 
         Assert.Equal(1 + 9, jumper.Y, 4); // 1.5 x 6 from y 1 to 10, beyond the pad (y 4..8)
         Assert.Equal(0, jumper.Region);
-        Assert.Equal(4 - 1 - Player.WallClearance, stopper.Y, 3); // 6 from y -1 would end at 5, inside
+        Assert.Equal(Math.Truncate((4 - 1 - Player.WallClearance) * 1024) / 1024, stopper.Y, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step) // 6 from y -1 would end at 5, inside
     }
 
     // ---- BERKELEY walls ----------------------------------------------------------------------
