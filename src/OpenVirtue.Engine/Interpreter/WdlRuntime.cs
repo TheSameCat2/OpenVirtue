@@ -1406,12 +1406,6 @@ public sealed class WdlRuntime :
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
-        AdvanceActorTargets(timeCorrection);
-        if (_frontActorMoved)
-        {
-            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
-            RefreshEntityDistances(force: true);
-        }
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(elapsedSeconds))
         {
@@ -2285,95 +2279,101 @@ public sealed class WdlRuntime :
             _ => false,
         };
 
-    private void AdvanceActorTargets(double cycleCorrection)
+    /// <summary>
+    /// Moves one actor toward its target, in its own turn of the object pass, before its
+    /// <c>EACH_TICK</c>: a <c>WAY</c> actor's <c>IF_ARRIVED</c> runs after the global slot actions
+    /// and before the actor's <c>EACH_TICK</c> in the same cycle (OV-20261029-actor-events).
+    /// </summary>
+    private void AdvanceActorTarget(Actor actor, double cycleCorrection)
     {
-        foreach (Actor actor in _level.Actors)
+        MoveActorTowardTarget(actor, cycleCorrection);
+        _longSkippedStep = false;
+    }
+
+    private void MoveActorTowardTarget(Actor actor, double cycleCorrection)
+    {
+        double timeCorrection = cycleCorrection;
+        _longSkippedStep = false;
+        actor["MOVED"] = 0;
+        actor["IMPACT_VX"] = 0;
+        actor["IMPACT_VY"] = 0;
+        actor["IMPACT_VZ"] = 0;
+        actor["IMPACT_VROT"] = 0;
+        string? target = actor.Target;
+        LevelWay? way = null;
+        // A TARGET naming a way assigns it (p.66), like the WAY property.
+        bool followsWay = (target ?? actor.WayName) is { } wayName &&
+                          _level.Ways.TryGetValue(wayName, out way) &&
+                          way.Points.Count > 0;
+        if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
         {
-            double timeCorrection = cycleCorrection;
-            _longSkippedStep = false;
-            actor["MOVED"] = 0;
-            actor["IMPACT_VX"] = 0;
-            actor["IMPACT_VY"] = 0;
-            actor["IMPACT_VZ"] = 0;
-            actor["IMPACT_VROT"] = 0;
-            string? target = actor.Target;
-            LevelWay? way = null;
-            // A TARGET naming a way assigns it (p.66), like the WAY property.
-            bool followsWay = (target ?? actor.WayName) is { } wayName &&
-                              _level.Ways.TryGetValue(wayName, out way) &&
-                              way.Points.Count > 0;
-            if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
-            {
-                _arrivedTargets.Remove(actor);
-                _actorTargetStates.Remove(actor);
-                continue;
-            }
-
-            // OV-20261019-clip-contact: an actor outside its CLIP_DIST border does not move.
-            if (!IsWithinClipDistance(actor))
-            {
-                continue;
-            }
-
-            int cycles = SkipFramesMultiplier(actor);
-            if (cycles == 0)
-            {
-                continue;
-            }
-
-            timeCorrection = cycleCorrection * cycles;
-            _longSkippedStep = cycles > 1;
-            double startX = actor.X;
-            double startY = actor.Y;
-
-            string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
-            bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
-                                 !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
-            _actorTargetStates[actor] = targetState;
-            if (targetChanged && targetState.Equals("STICK", StringComparison.OrdinalIgnoreCase))
-            {
-                InitializeStickTarget(actor);
-            }
-
-            if (followsWay)
-            {
-                if (AdvanceActorWay(actor, way!, timeCorrection))
-                {
-                    TriggerObjectActionHook(actor, "IF_ARRIVED");
-                }
-
-                _arrivedTargets.Remove(actor);
-                NoteFrontMove(actor, startX, startY);
-                continue;
-            }
-
-            bool arrived = target!.ToUpperInvariant() switch
-            {
-                "MOVE" or "BULLET" => AdvanceActorForward(actor, timeCorrection),
-                "FOLLOW" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: false),
-                "REPEL" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: true),
-                "VERTEX" => AdvanceActorToward(actor, actor["TARGET_X"], actor["TARGET_Y"], timeCorrection),
-                "STICK" => AdvanceStickActor(actor, timeCorrection),
-                "HOLD" or "NODE1" or "NODE2" => false,
-                _ => AdvanceActorTowardNamedTarget(actor, target, timeCorrection),
-            };
-
-            if (arrived)
-            {
-                if (_arrivedTargets.Add(actor))
-                {
-                    TriggerObjectActionHook(actor, "IF_ARRIVED");
-                }
-            }
-            else
-            {
-                _arrivedTargets.Remove(actor);
-            }
-
-            NoteFrontMove(actor, startX, startY);
+            _arrivedTargets.Remove(actor);
+            _actorTargetStates.Remove(actor);
+            return;
         }
 
-        _longSkippedStep = false;
+        // OV-20261019-clip-contact: an actor outside its CLIP_DIST border does not move.
+        if (!IsWithinClipDistance(actor))
+        {
+            return;
+        }
+
+        int cycles = SkipFramesMultiplier(actor);
+        if (cycles == 0)
+        {
+            return;
+        }
+
+        timeCorrection = cycleCorrection * cycles;
+        _longSkippedStep = cycles > 1;
+        double startX = actor.X;
+        double startY = actor.Y;
+
+        string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
+        bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
+                             !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
+        _actorTargetStates[actor] = targetState;
+        if (targetChanged && targetState.Equals("STICK", StringComparison.OrdinalIgnoreCase))
+        {
+            InitializeStickTarget(actor);
+        }
+
+        if (followsWay)
+        {
+            if (AdvanceActorWay(actor, way!, timeCorrection))
+            {
+                TriggerObjectActionHook(actor, "IF_ARRIVED");
+            }
+
+            _arrivedTargets.Remove(actor);
+            NoteFrontMove(actor, startX, startY);
+            return;
+        }
+
+        bool arrived = target!.ToUpperInvariant() switch
+        {
+            "MOVE" or "BULLET" => AdvanceActorForward(actor, timeCorrection),
+            "FOLLOW" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: false),
+            "REPEL" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: true),
+            "VERTEX" => AdvanceActorToward(actor, actor["TARGET_X"], actor["TARGET_Y"], timeCorrection),
+            "STICK" => AdvanceStickActor(actor, timeCorrection),
+            "HOLD" or "NODE1" or "NODE2" => false,
+            _ => AdvanceActorTowardNamedTarget(actor, target, timeCorrection),
+        };
+
+        // A VERTEX or object target triggers IF_ARRIVED in every cycle the actor is there
+        // (OV-20261029-actor-events).
+        if (arrived)
+        {
+            _arrivedTargets.Add(actor);
+            TriggerObjectActionHook(actor, "IF_ARRIVED");
+        }
+        else
+        {
+            _arrivedTargets.Remove(actor);
+        }
+
+        NoteFrontMove(actor, startX, startY);
     }
 
     private bool AdvanceActorWay(Actor actor, LevelWay way, double timeCorrection)
@@ -2396,11 +2396,9 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        int nextWaypoint = (waypoint % way.Points.Count) + 1;
-        actor["WAYPOINT"] = nextWaypoint;
-        LevelWayPoint next = way.Points[nextWaypoint - 1];
-        actor["TARGET_X"] = next.X;
-        actor["TARGET_Y"] = next.Y;
+        // WAYPOINT moves on before IF_ARRIVED runs; TARGET_X/Y still show the point reached until the
+        // next step (OV-20261029-actor-events).
+        actor["WAYPOINT"] = (waypoint % way.Points.Count) + 1;
         return true;
     }
 
@@ -2437,10 +2435,14 @@ public sealed class WdlRuntime :
             return false;
         }
 
+        // The step is SPEED·TIME_CORR in |dx| + |dy|, like a step toward a point (OV-20261029-actor-events).
         double angle = actor.FacingAngleRadians;
+        double cos = Math.Cos(angle);
+        double sin = Math.Sin(angle);
+        double norm = Math.Abs(cos) + Math.Abs(sin);
         double previousX = actor.X;
         double previousY = actor.Y;
-        MoveActor(actor, actor.X + (Math.Cos(angle) * distance), actor.Y + (Math.Sin(angle) * distance));
+        MoveActor(actor, actor.X + (cos / norm * distance), actor.Y + (sin / norm * distance));
         double actualDistance = Math.Sqrt(
             ((actor.X - previousX) * (actor.X - previousX)) +
             ((actor.Y - previousY) * (actor.Y - previousY)));
@@ -2475,9 +2477,10 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        bool arrived = AdvanceActorToward(actor, targetX, targetY, timeCorrection);
+        // FOLLOW triggers IF_ARRIVED only at region borders with CAREFULLY (p.66, MoveActor), not at the player.
+        AdvanceActorToward(actor, targetX, targetY, timeCorrection);
         AdjustActorHeightTowardPlayer(actor, player, timeCorrection);
-        return arrived;
+        return false;
     }
 
     private void InitializeStickTarget(Actor actor)
@@ -2515,13 +2518,24 @@ public sealed class WdlRuntime :
         return false;
     }
 
+    /// <summary>
+    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point. Patched
+    /// V3.963 arrived at 0.098 and not at 0.134 at steps of 0.125 to 0.14 (OV-20261029-actor-events);
+    /// whether the limit is this constant or the cycle's step is unmeasured.
+    /// </summary>
+    private const double ArrivalDistance = 0.125;
+
     private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
     {
         actor["TARGET_X"] = targetX;
         actor["TARGET_Y"] = targetY;
+        // OV-20261029-actor-events: the step and the distance left are both |dx| + |dy|, so an actor
+        // covers SPEED·TIME_CORR of it per cycle (diagonally, 1/√2 of that as the crow flies). It
+        // arrives on the point when the step would reach it, or where it is once less than
+        // ArrivalDistance is left (measured between 0.098, arrived, and 0.134, not).
         double dx = targetX - actor.X;
         double dy = targetY - actor.Y;
-        double remaining = Math.Sqrt((dx * dx) + (dy * dy));
+        double remaining = Math.Abs(dx) + Math.Abs(dy);
         if (remaining <= 0.000001)
         {
             return true;
@@ -2541,7 +2555,7 @@ public sealed class WdlRuntime :
         }
 
         MoveActor(actor, actor.X + ((dx / remaining) * distance), actor.Y + ((dy / remaining) * distance));
-        return false;
+        return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
     }
 
     private bool AdvanceActorTowardNamedTarget(Actor actor, string target, double timeCorrection)
@@ -2948,8 +2962,19 @@ public sealed class WdlRuntime :
             order.Add(_level.Walls[i]);
         }
 
+        bool actorsDone = false;
         foreach (AcknexObject target in order)
         {
+            if (target is Actor actor)
+            {
+                AdvanceActorTarget(actor, timeCorrection);
+            }
+            else if (!actorsDone && target is not Region)
+            {
+                actorsDone = true;
+                FinishActorMoves();
+            }
+
             RunObjectEachTick(target);
             if (timeCorrection > 0)
             {
@@ -2957,7 +2982,21 @@ public sealed class WdlRuntime :
             }
         }
 
+        if (!actorsDone)
+        {
+            FinishActorMoves();
+        }
+
         order.Clear();
+    }
+
+    private void FinishActorMoves()
+    {
+        if (_frontActorMoved)
+        {
+            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
+            RefreshEntityDistances(force: true);
+        }
     }
 
     private void RunObjectEachTick(AcknexObject target)
@@ -3868,6 +3907,13 @@ public sealed class WdlRuntime :
                     TestRegionView(region);
                     break;
             }
+        }
+        else if (_frontActorMoved && target is MapEntity && memberName.Equals("DISTANCE", StringComparison.OrdinalIgnoreCase))
+        {
+            // Actors now move in their turn of the object pass (OV-20261029-actor-events); a script
+            // that reads DISTANCE after an actor in front moved sees it refreshed, as the moves and
+            // the refreshed distances show together (OV-20261020-view-activity round 9).
+            RefreshEntityDistances(force: true);
         }
 
         return target[memberName];

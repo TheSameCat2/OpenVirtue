@@ -97,7 +97,7 @@ public sealed class WdlActorMotionTests
     }
 
     [Fact]
-    public void Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalOnce()
+    public void Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalInEveryCycleThere()
     {
         (WdlRuntime runtime, Level level) = Create(
             "SKILL arrivals { VAL 0; } ACTION arrived { ADD arrivals,1; } " +
@@ -107,9 +107,10 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
         runtime.Tick(1.0 / 16);
 
+        // Arrived in the first cycle and still there in the second (OV-20261029-actor-events).
         Assert.Equal(3, actor.X, 6);
         Assert.Equal(4, actor.Y, 6);
-        Assert.Equal(1, runtime.GetSkill("arrivals"));
+        Assert.Equal(2, runtime.GetSkill("arrivals"));
     }
 
     [Fact]
@@ -130,7 +131,9 @@ public sealed class WdlActorMotionTests
         Assert.Equal(2, actor.X, 6);
         Assert.Equal(0, actor.Z, 6);
         Assert.Equal(2, actor["WAYPOINT"]);
-        Assert.Equal(4, actor["TARGET_X"]);
+        // WAYPOINT moves on before IF_ARRIVED; TARGET_X still shows the point reached until the next
+        // step (OV-20261029-actor-events).
+        Assert.Equal(2, actor["TARGET_X"]);
         Assert.Equal(1, runtime.GetSkill("arrivals"));
 
         runtime.Tick(1.0 / 16);
@@ -185,7 +188,10 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(4, Assert.Single(level.Actors).Z, 6);
-        Assert.Equal(1, runtime.GetSkill("arrivals"));
+        double arrivals = runtime.GetSkill("arrivals");
+        Assert.True(arrivals >= 1);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(arrivals + 1, runtime.GetSkill("arrivals")); // again in every cycle there
     }
 
     [Fact]

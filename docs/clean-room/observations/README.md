@@ -218,3 +218,12 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   before its animation step, and a `ONESHOT` rests on its last phase. Phase lengths follow a
   frame-rate estimate that is not yet understood. Fourteen DOSBox-X runs; `ACCEL` implemented in
   `WdlInterpreter`.
+
+## Actor events (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-actor-events.md` — actors step `SPEED·TIME_CORR` in \|dx\| + \|dy\| toward a point or
+  along their angle, land on the point when the step reaches it or arrive within about 1/8, advance
+  `WAYPOINT` before `IF_ARRIVED` (with `TARGET_X/Y` still the point reached), trigger `IF_ARRIVED` in
+  every cycle at a `VERTEX` or object target and `IF_HIT` in every cycle a `BULLET` is blocked, and
+  move in their own turn of the object pass. Six DOSBox-X runs (three more failed to compile on a
+  declared `TARGET MOVE/BULLET/VERTEX`); implemented in `WdlRuntime`.
