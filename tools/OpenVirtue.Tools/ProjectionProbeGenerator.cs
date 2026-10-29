@@ -45,6 +45,7 @@ internal static class ProjectionProbeGenerator
     public const string MotionTimingProbeName = "motion-timing";
     public const string SaveFormatProbeName = "save-format";
     public const string SkyProbeName = "sky";
+    public const string ShadingProbeName = "shading";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -71,6 +72,7 @@ internal static class ProjectionProbeGenerator
     private const string MotionTimingProbeId = "OV-20261029-motion-timing";
     private const string SaveFormatProbeId = "OV-20261029-save-format";
     private const string SkyProbeId = "OV-20261029-sky";
+    private const string ShadingProbeId = "OV-20261029-shading";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -339,6 +341,7 @@ internal static class ProjectionProbeGenerator
         MotionTimingProbeName => MotionTimingProbeId,
         SaveFormatProbeName => SaveFormatProbeId,
         SkyProbeName => SkyProbeId,
+        ShadingProbeName => ShadingProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -460,6 +463,7 @@ internal static class ProjectionProbeGenerator
             case MotionTimingProbeName:
             case SaveFormatProbeName:
             case SkyProbeName:
+            case ShadingProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -497,6 +501,7 @@ internal static class ProjectionProbeGenerator
         MotionTimingProbeName => MotionTimingProbeCases.Set,
         SaveFormatProbeName => SaveFormatProbeCases.Set,
         SkyProbeName => SkyProbeCases.Set,
+        ShadingProbeName => ShadingProbeCases.Set,
         _ => null,
     };
 
@@ -555,9 +560,26 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
         }
 
-        WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
+        if (plan.ProbeName == ShadingProbeName)
+        {
+            // The side walls and the floor in the ramp's brightest colour, which shading darkens.
+            WriteValidated(Path.Combine(workDir, "PRBBLU.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
+        }
+        else
+        {
+            WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
+        }
+
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
+        if (plan.ProbeName == ShadingProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
+        }
+        else
+        {
+            WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
+        }
+
         WriteTexture(workDir, "PRBCEL.PCX", Ink.Ceiling, palette);
         WriteValidated(Path.Combine(workDir, "PRBPAL.PCX"), SyntheticPcx.Swatch(palette));
 
@@ -633,8 +655,23 @@ internal static class ProjectionProbeGenerator
         palette.Set((int)Ink.TargetRight, 240, 130, 40);
         palette.Set((int)Ink.Mark, 170, 190, 255);
         palette.Set((int)Ink.White, 255, 255, 255);
+
+        // A gray ramp from bright to black at ShadeRampStart for the shading probe's RANGE (p.34);
+        // the other probes do not use these indices.
+        for (int i = 0; i < ShadeRampLength; i++)
+        {
+            int level = 248 - (i * 8);
+            palette.Set(ShadeRampStart + i, (byte)level, (byte)level, (byte)level);
+        }
+
         return palette;
     }
+
+    /// <summary>The first palette index of the shading probe's gray ramp.</summary>
+    public const int ShadeRampStart = 16;
+
+    /// <summary>The number of colours in the gray ramp (brightest first).</summary>
+    public const int ShadeRampLength = 32;
 
     private static string Wdl(Plan plan, Variant variant)
     {
@@ -650,7 +687,7 @@ internal static class ProjectionProbeGenerator
             MAPFILE <TITLE.WMP>;
             BIND <TITLE.WDL>;
 
-            PALETTE probe_pal { PALFILE <PRBPAL.PCX>; }
+            PALETTE probe_pal { PALFILE <PRBPAL.PCX>; {{variant.Trace?.Map?.PaletteBody ?? ""}}}
 
             BMAP red_map,<PRBRED.PCX>;
             BMAP grn_map,<PRBGRN.PCX>;
@@ -668,6 +705,7 @@ internal static class ProjectionProbeGenerator
             TEXTURE flr_tex { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; }
             TEXTURE cel_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; }
 
+            {{variant.Trace?.Map?.Textures ?? ""}}
             WALL red_wall { TEXTURE red_tex; }
             WALL grn_wall { TEXTURE grn_tex; }
             WALL yel_wall { TEXTURE yel_tex; }

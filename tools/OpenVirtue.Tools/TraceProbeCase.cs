@@ -40,7 +40,10 @@ internal sealed record TraceProbeCase(
 /// <c>PadWall</c>, when set, replaces the pad's invisible passable boundary wall with that WALL
 /// keyword (defined in the case's declarations), <c>PadFloor</c> raises (or lowers) the pad's
 /// floor and <c>PadCeiling</c>, when set, replaces its ceiling height. <c>RoomCeiling</c>, when set,
-/// is the room's <c>CEIL_TEX</c> in place of the plain ceiling (a sky texture, say).
+/// is the room's <c>CEIL_TEX</c> in place of the plain ceiling (a sky texture, say); <c>Textures</c>
+/// holds <c>BMAP</c>/<c>TEXTURE</c> declarations placed before the regions, since a texture must be
+/// declared before a region uses it (Genesis "Error(137): Texture unknown"). <c>PaletteBody</c> goes
+/// into the palette's definition after its <c>PALFILE</c> (<c>RANGE</c>s, <c>FLAGS</c>).
 /// </summary>
 internal sealed record TraceProbeMap(
     string RoomBody = "",
@@ -50,7 +53,9 @@ internal sealed record TraceProbeMap(
     string? PadWall = null,
     int PadFloor = 0,
     int? PadCeiling = null,
-    string? RoomCeiling = null);
+    string? RoomCeiling = null,
+    string? Textures = null,
+    string? PaletteBody = null);
 
 /// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
 internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);

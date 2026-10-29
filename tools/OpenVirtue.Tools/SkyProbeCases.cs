@@ -35,12 +35,12 @@ internal static class SkyProbeCases
         "BMAP sky_a,<" + SideFile(0) + ">;\nBMAP sky_b,<" + SideFile(1) + ">;\nBMAP sky_c,<" + SideFile(2) + ">;\nBMAP sky_d,<" + SideFile(3) + ">;\n" +
         "TEXTURE sky_tex { SIDES 4; BMAPS sky_a, sky_b, sky_c, sky_d; FLAGS SKY; }\n";
 
-    private static readonly TraceProbeMap SkyRoom = new(RoomCeiling: "sky_tex");
+    private static readonly TraceProbeMap SkyRoom = new(RoomCeiling: "sky_tex", Textures: Declarations);
 
     private static TraceProbeCase View(string label, string question, string setup) => new(
         label,
         question,
-        Declarations,
+        "",
         setup + "    WAIT 2;\n" +
         V("VIEW", "PLAYER_ANGLE", "PLAYER_TILT", "PLAYER_ARC", "SKY_OFFS_X", "SKY_OFFS_Y", "SCREEN_WIDTH", "SCREEN_HGT"),
         Predict(
@@ -64,7 +64,14 @@ internal static class SkyProbeCases
         View("offs-x", "SKY_OFFS_X 16: which way do the boundaries move, and by 16 screen columns or 16 bitmap pixels scaled?", Angle(0) + "    SET SKY_OFFS_X, 16;\n"),
         View("offs-y", "SKY_OFFS_Y 8: which way does the band move?", Angle(0) + "    SET SKY_OFFS_Y, 8;\n"),
         View("arc-2", "PLAYER_ARC 2: is the sky scaled with the field of view or fixed in pixels per angle?", Angle(0) + "    SET PLAYER_ARC, 2;\n"),
+        View("high", "Round 3. The eye raised to 15 in the 16-high room, so the far wall's top sits just above the horizon and the band shows: where is it, how tall?", Angle(0) + High),
+        View("high-tilt-up", "Round 3. Eye at 15, PLAYER_TILT -0.1: does the band move with the world's y-shear (48 rows down)?", Angle(0) + High + "    SET PLAYER_TILT, -0.1;\n"),
+        View("high-tilt-down", "Round 3. Eye at 15, PLAYER_TILT 0.1.", Angle(0) + High + "    SET PLAYER_TILT, 0.1;\n"),
+        View("high-offs-y", "Round 3. Eye at 15, SKY_OFFS_Y 8: which way does the band move, and by 8 rows?", Angle(0) + High + "    SET SKY_OFFS_Y, 8;\n"),
     ];
+
+    /// <summary>Raises the eye to 15 (the room is 16 high), so the band clears the far wall's top.</summary>
+    private const string High = "    SET PLAYER_SIZE, 15;\n    SET PLAYER_Z, 15;\n";
 
     /// <summary>The probe as the generator consumes it.</summary>
     public static readonly TraceProbeSet Set = new(

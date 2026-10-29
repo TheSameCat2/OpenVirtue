@@ -235,3 +235,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   OpenVirtue writes `SAVE_INFO` files byte-identical to the original's, `LOAD_INFO` restores the
   `GLOBAL` and `LOCAL` skills at once, and a full original `SAVE` yields its `GLOBAL`/`PLAYER` skills
   and player position. Seven DOSBox-X runs; implemented in `AcknexSaveFile` and `WdlRuntime`.
+
+## Sky (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-sky.md` — the sky's sides spread over the full turn at `SCREEN_WIDTH/PLAYER_ARC`
+  pixels per radian, half a field of view off the world (the right edge shows the view angle),
+  `SKY_OFFS_X` moving it right; vertically unscaled, its last row on the tilted eye line, `SKY_OFFS_Y`
+  moving it down, edge rows repeated. Fourteen DOSBox-X runs (ten failed to compile in round 1);
+  implemented in `SkyPanorama`.

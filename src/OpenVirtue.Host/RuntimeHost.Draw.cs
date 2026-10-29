@@ -84,37 +84,70 @@ public sealed partial class RuntimeHost
             return;
         }
 
-        // The panorama side is a compass selection from the map heading, numbered clockwise
-        // like directional sprite sides. Which side the original anchors at angle 0 is unprobed.
-        double normalizedHeading = ((-_runtime.GetSkill("PLAYER_ANGLE") / Math.Tau) % 1 + 1) % 1;
-        int side = (int)Math.Floor(normalizedHeading * Math.Max(1, texture.Sides));
-        string? renderTexture = TextureAnimation.ResolveRenderTexture(texture, cycle: 1, side);
-        if (renderTexture is null)
+        // The measured panorama (OV-20261029-sky): sides spread over the full turn at
+        // SCREEN_WIDTH / PLAYER_ARC pixels per radian, offset half a field of view, the bitmap
+        // unscaled vertically with its last row on the eye line and its edge rows repeated.
+        double width = Math.Max(1, _runtime.GetSkill("SCREEN_WIDTH"));
+        double height = Math.Max(1, _runtime.GetSkill("SCREEN_HGT"));
+        int bitmapHeight = Math.Max(1, texture.Height);
+        double top = SkyPanorama.TopRow(height, _runtime.GetSkill("PLAYER_TILT"), bitmapHeight, _runtime.GetSkill("SKY_OFFS_Y"));
+        double bottom = top + bitmapHeight;
+        float halfRow = 0.5f / bitmapHeight;
+        Matrix4x4 transform = Matrix4x4.CreateOrthographicOffCenter(0, (float)width, (float)height, 0, 0, 1);
+        foreach (SkySpan span in SkyPanorama.Columns(
+                     width,
+                     _runtime.GetSkill("PLAYER_ARC"),
+                     _runtime.GetSkill("PLAYER_ANGLE"),
+                     Math.Max(1, texture.Sides),
+                     _runtime.GetSkill("SKY_OFFS_X")))
+        {
+            if (TextureAnimation.ResolveRenderTexture(texture, cycle: 1, span.Side) is not { } renderTexture)
+            {
+                continue;
+            }
+
+            var vertices = new List<RenderVertex>(18);
+            AddSkyBand(vertices, span, 0, top, halfRow, halfRow);
+            AddSkyBand(vertices, span, top, bottom, 0, 1);
+            AddSkyBand(vertices, span, bottom, height, 1 - halfRow, 1 - halfRow);
+            if (vertices.Count == 0)
+            {
+                continue;
+            }
+
+            AddBatch(
+                frame,
+                vertices.ToArray(),
+                transform,
+                viewport,
+                renderTexture,
+                TextureSlot.World,
+                alphaTest: false,
+                depthTest: false,
+                ambient: 1);
+        }
+    }
+
+    /// <summary>One quad of a sky span between two rows, clipped to the window, with texture rows v0…v1.</summary>
+    private static void AddSkyBand(List<RenderVertex> vertices, SkySpan span, double y0, double y1, float v0, float v1)
+    {
+        if (y1 <= y0)
         {
             return;
         }
 
-        float offsetU = texture.Width > 0 ? (float)(_runtime.GetSkill("SKY_OFFS_X") / texture.Width) : 0;
-        float offsetV = texture.Height > 0 ? (float)(_runtime.GetSkill("SKY_OFFS_Y") / texture.Height) : 0;
-        RenderVertex[] vertices =
-        [
-            new(0, 1, 0, offsetU, 1 + offsetV),
-            new(1, 1, 0, 1 + offsetU, 1 + offsetV),
-            new(1, 0, 0, 1 + offsetU, offsetV),
-            new(0, 1, 0, offsetU, 1 + offsetV),
-            new(1, 0, 0, 1 + offsetU, offsetV),
-            new(0, 0, 0, offsetU, offsetV),
-        ];
-        AddBatch(
-            frame,
-            vertices,
-            Matrix4x4.CreateOrthographicOffCenter(0, 1, 1, 0, 0, 1),
-            viewport,
-            renderTexture,
-            TextureSlot.World,
-            alphaTest: false,
-            depthTest: false,
-            ambient: 1);
+        float x0 = (float)span.X0;
+        float x1 = (float)span.X1;
+        float u0 = (float)span.U0;
+        float u1 = (float)span.U1;
+        float top = (float)y0;
+        float bottom = (float)y1;
+        vertices.Add(new RenderVertex(x0, bottom, 0, u0, v1));
+        vertices.Add(new RenderVertex(x1, bottom, 0, u1, v1));
+        vertices.Add(new RenderVertex(x1, top, 0, u1, v0));
+        vertices.Add(new RenderVertex(x0, bottom, 0, u0, v1));
+        vertices.Add(new RenderVertex(x1, top, 0, u1, v0));
+        vertices.Add(new RenderVertex(x0, top, 0, u0, v0));
     }
 
     private void AddWorldBatches(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
