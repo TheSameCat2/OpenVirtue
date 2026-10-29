@@ -45,11 +45,12 @@ public class WdlRuntimeEachSecTests
     {
         // The probe's phase trace: in the frame where the second completes, an action resuming from
         // WAITT still reads the old SECS, and the EACH_SEC action that runs later in that frame
-        // reads the new one; an EACH_TICK action after it reads the new one too. Armed before the
-        // first frame, the WAITT 15 counts frames 1-15 and resumes in frame 16.
+        // reads the new one; an EACH_TICK action after it reads the new one too. Armed in IF_START,
+        // the WAITT 17 counts IF_START and the start-up cycle (TIME_CORR 1 each,
+        // OV-20261029-scheduler-order), then frames 1-15, and resumes in frame 16.
         WdlRuntime runtime = Start(
             "SKILL resumed_secs { VAL -1; } SKILL sec_secs { VAL -1; } SKILL tick_secs { VAL -1; } " +
-            "ACTION boot { SET EACH_SEC.1, sec; WAITT 15; SET resumed_secs, SECS; } " +
+            "ACTION boot { SET EACH_SEC.1, sec; WAITT 17; SET resumed_secs, SECS; } " +
             "ACTION sec { SET sec_secs, SECS; SET EACH_SEC.1, NULL; SET EACH_TICK.1, tick; } " +
             "ACTION tick { SET tick_secs, SECS; SET EACH_TICK.1, NULL; } " +
             "IF_START boot;");
@@ -315,6 +316,9 @@ public class WdlRuntimeEachSecTests
             n => resources.GetValueOrDefault(Path.GetFileName(n)));
         var runtime = new WdlRuntime(level);
         runtime.RunStartup();
+        // The start-up cycle: TIME_CORR stays 1 and TICKS and the second stay at 0
+        // (OV-20261029-scheduler-order), so the ticks below count from 0.
+        runtime.Tick(OneTick);
         return runtime;
     }
 

@@ -2338,9 +2338,27 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_FirstCycle_KeepsTimeCorrAtOneAndTicksAtZero()
+    {
+        // OV-20261029-scheduler-order: IF_START and the first cycle read TIME_CORR 1; TICKS counts
+        // from the second cycle on, whatever the first cycle lasted.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+
+        double tc = runtime.Tick(0.5);
+
+        Assert.Equal(1.0, tc, 9);
+        Assert.Equal(1.0, runtime.GetSkill("TIME_FAC"), 9);
+        Assert.Equal(0.0, runtime.GetSkill("TICKS"), 9);
+        Assert.Equal(0.25, runtime.Tick(1.0 / 64), 9);
+        Assert.Equal(0.25, runtime.GetSkill("TICKS"), 9);
+    }
+
+    [Fact]
     public void Tick_SetsTimeCorrectionSkill()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        runtime.Tick(0); // the start-up cycle
 
         double tc = runtime.Tick(1.0 / 16); // a 16 fps frame
 
@@ -2357,8 +2375,9 @@ public class WdlRuntimeTests
         Level level = Load(
             "MAPFILE <m.wmp>; SKILL observed { VAL 0; } " +
             "EACH_TICK probe; " +
-            "ACTION probe { SET observed, TIME_FAC * 100 + TICKS * 10 + SECS; SET EACH_TICK.1, NULL; }");
+            "ACTION probe { SET observed, TIME_FAC * 100 + TICKS * 10 + SECS; IF (TICKS > 0) { SET EACH_TICK.1, NULL; } }");
         var runtime = new WdlRuntime(level);
+        runtime.Tick(0); // the start-up cycle
 
         runtime.Tick(1.0 / 32);
 

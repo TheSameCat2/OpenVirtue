@@ -153,7 +153,11 @@ public class WdlRuntimeWaitCountTests
             "x",
             "MAPFILE <m.wmp>; SKILL done { VAL 0; } " + declarations,
             n => resources.GetValueOrDefault(Path.GetFileName(n)));
-        return new WdlRuntime(level);
+        var runtime = new WdlRuntime(level);
+        // The start-up cycle (TIME_CORR 1, TICKS stays 0, OV-20261029-scheduler-order), so the
+        // frames below are steady ones.
+        runtime.Tick(QuarterTick);
+        return runtime;
     }
 
     private static void Ticks(WdlRuntime runtime, int count, double deltaSeconds)

@@ -37,12 +37,15 @@ public sealed class RuntimeHostFrameClockTests : IDisposable
         host.FrameClock = () => steps.Dequeue() / 16;
         host.Boot();
 
+        // The first cycle keeps TIME_CORR 1 and TICKS 0 (OV-20261029-scheduler-order).
         host.Frame(present: false);
+        Assert.Equal(1, host.Runtime.GetSkill("TIME_CORR"), 6);
+        Assert.Equal(0, host.Runtime.GetSkill("TICKS"), 6);
         host.Frame(present: false);
         Assert.Equal(0.28125, host.Runtime.GetSkill("TIME_CORR"), 6);
         host.Frame(present: false);
 
-        Assert.Equal(0.78125, host.Runtime.GetSkill("TICKS"), 6);
+        Assert.Equal(0.53125, host.Runtime.GetSkill("TICKS"), 6);
     }
 
     [Fact]

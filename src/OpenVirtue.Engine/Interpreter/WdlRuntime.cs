@@ -211,7 +211,8 @@ public sealed class WdlRuntime :
     private string _printBaseName = "PRINT";
 
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
-    private List<(AcknexObject Target, string ActionName)>? _schedulerActionBuffer;
+    private readonly List<AcknexObject> _objectPassBuffer = [];
+    private bool _firstCycleRun;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -255,6 +256,9 @@ public sealed class WdlRuntime :
         InitializeActionHooks(level);
         RefreshView();
         InitializeAnimationCycles();
+        // IF_START and the first cycle read TIME_CORR 1 (OV-20261029-scheduler-order).
+        _skills[Timing.TimeCorrectionSkill] = 1;
+        _skills[Timing.TimeFactorSkill] = 1;
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -1332,7 +1336,17 @@ public sealed class WdlRuntime :
 
     /// <summary>Runs the level's <c>IF_START</c> startup action, if one is defined.</summary>
     /// <returns><c>true</c> if a startup action existed and ran.</returns>
-    public bool RunStartup() => _startupAction is not null && Run(_startupAction);
+    /// <remarks>
+    /// <c>IF_START</c> counts as a cycle of its own with <c>TIME_CORR</c> 1 for the time waits it
+    /// arms: a <c>WAITT 16</c> has 15 left when the first cycle starts (OV-20261029-scheduler-order).
+    /// Whether a frame-count <c>WAIT</c> armed there counts it too is unmeasured; it does not here.
+    /// </remarks>
+    public bool RunStartup()
+    {
+        bool ran = _startupAction is not null && Run(_startupAction);
+        CountDownWaitingActions(GetSkill(Timing.TimeCorrectionSkill), timeWaitsOnly: true);
+        return ran;
+    }
 
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
@@ -1384,13 +1398,12 @@ public sealed class WdlRuntime :
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
-        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
         RefreshView();
         RefreshWallDistances();
         ResumeWaitingActions();
         DispatchPlayerRegionEvents();
         DispatchProximityEvents();
-        AdvanceAnimationCycles(timeCorrection);
         AdvanceActorTargets(timeCorrection);
         if (_frontActorMoved)
         {
@@ -1398,29 +1411,13 @@ public sealed class WdlRuntime :
             RefreshEntityDistances(force: true);
         }
         ResetGlobalSchedulerDiagnostics();
-        if (AdvanceSecond(deltaSeconds))
+        if (AdvanceSecond(elapsedSeconds))
         {
             DispatchGlobalEachSecActions();
         }
 
         DispatchGlobalEachTickActions();
-
-        List<(AcknexObject Target, string ActionName)> scheduled = CurrentObjectSchedulerActions(eachCycle: false);
-        foreach ((AcknexObject target, string actionName) in scheduled)
-        {
-            // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
-            if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target) || IsDormantBerkeleyWall(target))
-            {
-                continue;
-            }
-
-            PrepareActorTickSkills(target);
-            RunForActionTarget(target, actionName);
-        }
-
-        scheduled.Clear();
-        _schedulerActionBuffer = scheduled;
-
+        RunObjectPass(timeCorrection);
         CountDownWaitingActions(timeCorrection);
         return timeCorrection;
     }
@@ -1436,10 +1433,10 @@ public sealed class WdlRuntime :
     /// </summary>
     public double TickFlic(double deltaSeconds)
     {
-        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds, flic: true);
         ResumeWaitingActions();
         ResetGlobalSchedulerDiagnostics();
-        if (AdvanceSecond(deltaSeconds))
+        if (AdvanceSecond(elapsedSeconds))
         {
             DispatchGlobalEachSecActions();
         }
@@ -1449,8 +1446,31 @@ public sealed class WdlRuntime :
         return timeCorrection;
     }
 
-    private double UpdateTimingSkills(double deltaSeconds)
+    /// <summary>
+    /// Sets <c>TIME_CORR</c>, <c>TIME_FAC</c> and <c>TICKS</c> for a cycle lasting
+    /// <paramref name="deltaSeconds"/>. The first cycle keeps <c>TIME_CORR</c> at the 1 that
+    /// <c>IF_START</c> saw and leaves <c>TICKS</c> (and the second) at 0, as patched V3.963 does;
+    /// <c>TICKS</c> counts from the second cycle on (OV-20261029-scheduler-order).
+    /// </summary>
+    /// <param name="deltaSeconds">The cycle's duration.</param>
+    /// <param name="elapsedSeconds">The time that counts toward <c>SECS</c>: 0 in the first cycle.</param>
+    /// <param name="flic">
+    /// A flic cycle, whose <c>TIME_CORR</c> comes from the frame delay; it is never the start-up
+    /// cycle (whether a flic started in <c>IF_START</c> sees one is unmeasured).
+    /// </param>
+    private double UpdateTimingSkills(double deltaSeconds, out double elapsedSeconds, bool flic = false)
     {
+        bool firstCycle = !_firstCycleRun;
+        _firstCycleRun = true;
+        if (firstCycle && !flic)
+        {
+            _skills[Timing.TimeCorrectionSkill] = 1;
+            _skills[Timing.TimeFactorSkill] = 1;
+            elapsedSeconds = 0;
+            return 1;
+        }
+
+        elapsedSeconds = deltaSeconds;
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
         _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
@@ -1819,11 +1839,12 @@ public sealed class WdlRuntime :
     /// action armed during the frame (or by a hook or a host call before it) counts that frame too
     /// (OV-20261015-flic-scheduler-detail). Actions of inactive entities do not count down.
     /// </summary>
-    private void CountDownWaitingActions(double timeCorrection)
+    private void CountDownWaitingActions(double timeCorrection, bool timeWaitsOnly = false)
     {
         foreach (ActiveAction action in _waitingActions)
         {
-            if (!IsInactiveEntity(action.Scope.Target))
+            if (!IsInactiveEntity(action.Scope.Target) &&
+                !(timeWaitsOnly && action.Mode == WdlWaitMode.FrameCycles))
             {
                 action.Remaining -= action.Mode == WdlWaitMode.FrameCycles ? 1 : timeCorrection;
             }
@@ -2862,31 +2883,71 @@ public sealed class WdlRuntime :
         _shakeRequests.Add(new WdlShakeRequest(target.Name));
     }
 
-    private void AdvanceAnimationCycles(double timeCorrection)
+    /// <summary>
+    /// The objects' part of a cycle, after the global slots, in the original's order
+    /// (OV-20261029-scheduler-order): the regions, then the actors, the things and the walls, each
+    /// kind from the last the map places to the first (the region order is assumed, one region was
+    /// measured). Each object runs its <c>EACH_TICK</c>, read when its turn comes so a <c>SET</c>
+    /// earlier in the cycle counts, and then steps its texture animation, which runs its
+    /// <c>EACH_CYCLE</c> when a cycle ends.
+    /// </summary>
+    private void RunObjectPass(double timeCorrection)
     {
-        if (timeCorrection <= 0)
+        List<AcknexObject> order = _objectPassBuffer;
+        order.Clear();
+        for (int i = _regions.Count - 1; i >= 0; i--)
+        {
+            order.Add(_regions[i]);
+        }
+
+        for (int i = _levelObjects.Count - 1; i >= 0; i--)
+        {
+            if (_levelObjects[i] is Actor)
+            {
+                order.Add(_levelObjects[i]);
+            }
+        }
+
+        for (int i = _levelObjects.Count - 1; i >= 0; i--)
+        {
+            if (_levelObjects[i] is MapEntity and not Actor)
+            {
+                order.Add(_levelObjects[i]);
+            }
+        }
+
+        for (int i = _level.Walls.Count - 1; i >= 0; i--)
+        {
+            order.Add(_level.Walls[i]);
+        }
+
+        foreach (AcknexObject target in order)
+        {
+            RunObjectEachTick(target);
+            if (timeCorrection > 0)
+            {
+                AdvanceAnimationCycle(target, timeCorrection);
+            }
+        }
+
+        order.Clear();
+    }
+
+    private void RunObjectEachTick(AcknexObject target)
+    {
+        // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
+        if (IsInactiveEntity(target) ||
+            !TryGetObjectSchedulerAction(target, eachCycle: false, out string? actionName) ||
+            string.IsNullOrWhiteSpace(actionName) ||
+            (target is Wall && target["INVISIBLE"] > 0) ||
+            !IsWithinClipDistance(target) ||
+            IsDormantBerkeleyWall(target))
         {
             return;
         }
 
-        // The order of CurrentCycleTargets, without its iterator: regions, walls, things and actors.
-        foreach (Region region in _regions)
-        {
-            AdvanceAnimationCycle(region, timeCorrection);
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            AdvanceAnimationCycle(wall, timeCorrection);
-        }
-
-        foreach (AcknexObject levelObject in _levelObjects)
-        {
-            if (levelObject is MapEntity entity)
-            {
-                AdvanceAnimationCycle(entity, timeCorrection);
-            }
-        }
+        PrepareActorTickSkills(target);
+        RunForActionTarget(target, actionName);
     }
 
     private void AdvanceAnimationCycle(AcknexObject target, double timeCorrection)
@@ -3054,45 +3115,6 @@ public sealed class WdlRuntime :
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
             yield return entity;
-        }
-    }
-
-    /// <summary>
-    /// A snapshot of the objects' scheduler actions, in a list taken from
-    /// <see cref="_schedulerActionBuffer"/> when one is free; the caller may hand it back cleared.
-    /// </summary>
-    private List<(AcknexObject Target, string ActionName)> CurrentObjectSchedulerActions(bool eachCycle)
-    {
-        List<(AcknexObject Target, string ActionName)> actions = _schedulerActionBuffer ?? [];
-        _schedulerActionBuffer = null;
-        foreach (Region region in _regions)
-        {
-            AddIfPresent(region);
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            AddIfPresent(wall);
-        }
-
-        foreach (AcknexObject levelObject in _levelObjects)
-        {
-            if (levelObject is MapEntity entity)
-            {
-                AddIfPresent(entity);
-            }
-        }
-
-        return actions;
-
-        void AddIfPresent(AcknexObject target)
-        {
-            if (!IsInactiveEntity(target) &&
-                TryGetObjectSchedulerAction(target, eachCycle, out string? actionName) &&
-                !string.IsNullOrWhiteSpace(actionName))
-            {
-                actions.Add((target, actionName));
-            }
         }
     }
 
