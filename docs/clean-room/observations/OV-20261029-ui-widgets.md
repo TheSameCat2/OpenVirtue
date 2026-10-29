@@ -66,10 +66,35 @@ and the pointer.
 - **Buttons.** An idle button shows its off bitmap.
 - **The pointer.** It is drawn with its corner at `MOUSE_X`/`MOUSE_Y`.
 
+## Addendum: sliders (round 2, 2026-10-29)
+- Carriers: `HSLIDER 4,20,40` and `VSLIDER 60,4,40`, both on `ui_s` (`MIN` 2, `MAX` 6), with a
+  4 × 4 knob (index 150) on the panel at (100, 300). `ui_s` was set to 0, 2, 3, 4.5, 6 and 8.
+  The run artifacts are in `_research/oracle-runs/OV-20261029-ui-widgets/round2/`.
+- Observations:
+
+  | `ui_s` set | read back | `HSLIDER` knob x | `VSLIDER` knob y |
+  |---|---|---|---|
+  | 0 | 2 | 104 | 304 |
+  | 2 | 2 | 104 | 304 |
+  | 3 | 3 | 113 | 313 |
+  | 4.5 | 4.5 | 126 | 326 |
+  | 6 | 6 | 140 | 340 |
+  | 8 | 6 | 140 | 340 |
+
+- Invariant:
+  - The knob's offset is `(value − MIN)/(MAX − MIN)` of the slider's length less the knob's own
+    width (height), cut to a whole pixel (22.5 → 22).
+  - `MIN` is at the left or the top.
+  - A `SET` outside `MIN`/`MAX` is clamped.
+- Implementation:
+  - `UiSliderTarget.Travel`/`OffsetFor`, and the inverse `ValueAtOffset` for dragging.
+  - Tested by `UiHitTesterTests.SliderOffset_MeasuredSliders_TravelLengthLessKnobCutToAPixel`.
+
 ## Open Questions
 - Whether a click happens at the hot spot (`MOUSE_X + POS_X`); OpenVirtue clicks at the pointer
-  position.
-- Bars past twice the free range (wrap or subtract once), negative values, and sliders.
+  position. A headless DOSBox-X run cannot click, so this needs a visible run.
+- How dragging a slider maps the pointer to a value (OpenVirtue inverts the drawing rule).
+- Bars past twice the free range (wrap or subtract once), and negative values.
 
 ## Implementation
 `UiOverlayBuilder` (bars, windows, the mouse sprite); tests in `UiOverlayBuilderTests` updated to

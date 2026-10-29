@@ -43,8 +43,31 @@ internal static class ActorStepProbeCases
             ("a lateral unit per step", "Y grows by 4 per step at angle 0")),
         Map: new TraceProbeMap(Placements: ["ACTOR as_a 10 0 0 0"]));
 
+    /// <summary>
+    /// Round 4: an actor walking a way from (10, 0) to <paramref name="to"/>, plain or
+    /// <c>CAREFULLY</c>. The border-kinds actors showed a <c>CAREFULLY</c> one drifting 4–8 units off
+    /// its way and losing 1–2 units a step against a plain one; which rule splits a step toward a point?
+    /// </summary>
+    private static TraceProbeCase WayStep(string label, string to, double speed, string flags = "") => new(
+        label,
+        string.Create(CultureInfo.InvariantCulture, $"Round 4. An actor on a way (10, 0) → ({to.Replace(' ', ',')}), SPEED {speed}{(flags.Length > 0 ? ", FLAGS " + flags : "")}: how do X and Y step toward the point?"),
+        Skills + Hooks + "WAY as_w;\nACTOR as_a { TEXTURE as_tex; TARGET as_w; SPEED " + speed.ToString(CultureInfo.InvariantCulture) + "; EACH_TICK as_tick;" +
+            (flags.Length > 0 ? " FLAGS " + flags + ";" : "") + " }\n",
+        "    SET as_s, as_a;\n    SET EACH_TICK.1, as_g1;\n    RULE as_on = 1;\n" + V("GO", "TICKS", "as_n") +
+        "    WAITT 24;\n    RULE as_on = 0;\n    SET EACH_TICK.1, NULL;\n" + P("RET"),
+        Predict(
+            ("both split the step by |dx| + |dy|", "the CAREFULLY actor's X stays within 4 units of 10"),
+            ("CAREFULLY drifts", "its X wanders 4–8 units and its Y falls behind")),
+        Map: new TraceProbeMap(Placements: ["ACTOR as_a 10 0 0 0", "WAY as_w 10 0 " + to]));
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        WayStep("w-p-y", "10 30", 2),
+        WayStep("w-c-y", "10 30", 2, "CAREFULLY"),
+        WayStep("w-c-y-fast", "10 60", 6.4, "CAREFULLY"),
+        WayStep("w-c-y-slow", "10 30", 0.5, "CAREFULLY"),
+        WayStep("w-p-diag", "30 7", 2),
+        WayStep("w-c-diag", "30 7", 2, "CAREFULLY"),
         Step("a0", 0, 0.5),
         Step("a0-s1", 0, 1),
         Step("a0-s025", 0, 0.25),

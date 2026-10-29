@@ -39,6 +39,7 @@ internal static class UiWidgetsProbeCases
         ("PRBUB0.PCX", 8, 8, static (x, y) => 130),
         ("PRBUB1.PCX", 8, 8, static (x, y) => 131),
         ("PRBUMS.PCX", 8, 8, static (x, y) => 140),
+        ("PRBUKN.PCX", 4, 4, static (x, y) => 150),
     ];
 
     private const string Declarations =
@@ -62,8 +63,29 @@ internal static class UiWidgetsProbeCases
             ("a bar shows its bitmap from fac·skill on", "HBAR columns ui_v … ui_v + 15"),
             ("the pointer's hot spot at MOUSE_X/Y", "pointer bitmap at (398, 197)")));
 
+    /// <summary>
+    /// Round 2: an <c>HSLIDER 4,20,40</c> and a <c>VSLIDER 60,4,40</c> (knob 4 × 4, index 150) on the
+    /// panel at (100, 300), both on <c>ui_s</c> with <c>MIN</c> 2 and <c>MAX</c> 6 (p.127: the start
+    /// position is <c>MIN</c>, the end position <c>MAX</c>). Where is the knob for a value?
+    /// </summary>
+    private static TraceProbeCase Slider(string label, double value) => new(
+        label,
+        string.Create(CultureInfo.InvariantCulture, $"Round 2. Sliders at ui_s {value} (MIN 2, MAX 6, 40 pixels): where are the knobs, and is the skill clamped?"),
+        "SKILL ui_s { VAL 2; MIN 2; MAX 6; }\nBMAP ui_pan,<PRBUPN.PCX>;\nBMAP ui_kn,<PRBUKN.PCX>;\n" +
+        "PANEL ui_q { PAN_MAP ui_pan; POS_X 100; POS_Y 300; HSLIDER 4,20,40,ui_kn,ui_s; VSLIDER 60,4,40,ui_kn,ui_s; FLAGS VISIBLE, REFRESH; }\n",
+        string.Create(CultureInfo.InvariantCulture, $"    SET ui_s, {value};\n    WAIT 3;\n") + V("V", "ui_s"),
+        Predict(
+            ("the knob moves (value − MIN)/(MAX − MIN) · len", "HSLIDER knob at x 104 + 10·(ui_s − 2)"),
+            ("the slider range excludes the knob", "the knob reaches 104 + 36 at MAX")));
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        Slider("s2", 2),
+        Slider("s3", 3),
+        Slider("s4.5", 4.5),
+        Slider("s6", 6),
+        Slider("s8", 8),
+        Slider("s0", 0),
         Show("v0", 0),
         Show("v1", 1),
         Show("v3", 3),

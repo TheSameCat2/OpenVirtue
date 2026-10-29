@@ -213,7 +213,7 @@ public static class UiOverlayBuilder
                 continue;
             }
 
-            var slider = new UiSliderTarget(skillName, vertical, panelX + localX, panelY + localY, length, range.Min, range.Max);
+            var slider = new UiSliderTarget(skillName, vertical, panelX + localX, panelY + localY, length, range.Min, range.Max, vertical ? size.Height : size.Width);
             double value = skills.GetValueOrDefault(skillName, range.Min);
             float offset = slider.OffsetFor(value);
             sprites.Add(new UiOverlaySprite(

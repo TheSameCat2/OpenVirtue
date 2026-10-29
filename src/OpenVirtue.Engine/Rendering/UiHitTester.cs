@@ -19,15 +19,26 @@ public readonly record struct UiSliderTarget(
     float StartY,
     float Length,
     double Min,
-    double Max)
+    double Max,
+    float KnobSize = 0)
 {
-    /// <summary>Returns the thumb offset along the slider range for a skill value.</summary>
+    /// <summary>
+    /// How far the knob travels: the slider's length less the knob's own width (height for a
+    /// <c>VSLIDER</c>). A 40-pixel slider with a 4-pixel knob put it 36 pixels on at <c>MAX</c>
+    /// (OV-20261029-ui-widgets, round 2).
+    /// </summary>
+    public float Travel => Math.Max(0, Length - KnobSize);
+
+    /// <summary>
+    /// Returns the knob's offset for a skill value: (value − MIN)/(MAX − MIN) of the travel, cut to
+    /// a whole pixel (22.5 drew at 22), MIN at the left or top.
+    /// </summary>
     public float OffsetFor(double value) =>
-        (float)(Math.Clamp((value - Min) / (Max - Min), 0, 1) * Length);
+        MathF.Floor((float)(Math.Clamp((value - Min) / (Max - Min), 0, 1) * Travel));
 
     /// <summary>Returns the bounded skill value represented by a thumb offset.</summary>
     public double ValueAtOffset(double offset) =>
-        Min + (Math.Clamp(offset / Length, 0, 1) * (Max - Min));
+        Travel <= 0 ? Min : Min + (Math.Clamp(offset / Travel, 0, 1) * (Max - Min));
 }
 
 /// <summary>A screen-space UI region with a WDL click action.</summary>
@@ -294,7 +305,7 @@ public static class UiHitTester
 
             float startX = panelX + localX;
             float startY = panelY + localY;
-            var slider = new UiSliderTarget(skillName, vertical, startX, startY, length, range.Min, range.Max);
+            var slider = new UiSliderTarget(skillName, vertical, startX, startY, length, range.Min, range.Max, vertical ? size.Height : size.Width);
             double value = skills.GetValueOrDefault(skillName, range.Min);
             float offset = slider.OffsetFor(value);
             targets.Add(new UiHitTarget(

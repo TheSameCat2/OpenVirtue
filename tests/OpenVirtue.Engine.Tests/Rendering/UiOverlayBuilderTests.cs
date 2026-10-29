@@ -298,7 +298,7 @@ public sealed class UiOverlayBuilderTests
         UiOverlaySprite slider = Assert.Single(UiOverlayBuilder.BuildPanelWidgets(level, skills));
 
         Assert.Equal("thumb", slider.Bitmap);
-        Assert.Equal(34, slider.X);
+        Assert.Equal(30, slider.X); // 50% of the 32-pixel travel (40 less the 8-wide knob), OV-20261029-ui-widgets
         Assert.Equal(25, slider.Y);
         Assert.Equal(8, slider.Width);
         Assert.Equal(6, slider.Height);
@@ -322,7 +322,7 @@ public sealed class UiOverlayBuilderTests
         UiOverlaySprite slider = Assert.Single(UiOverlayBuilder.BuildPanelWidgets(level, level.Skills, sizes));
 
         Assert.Equal(12, slider.X);
-        Assert.Equal(38, slider.Y);
+        Assert.Equal(31, slider.Y); // 75% of the 11-pixel travel, cut to 8
         Assert.Equal(7, slider.Width);
         Assert.Equal(9, slider.Height);
     }

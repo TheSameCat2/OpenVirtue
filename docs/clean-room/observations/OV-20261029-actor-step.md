@@ -77,6 +77,19 @@ All three are what cos and sin give when first cut toward zero to 22.10: 553 and
 the exact-trig rule explains, and these seven more. The rest are wall stops and nudges, which
 neither rule covers.
 
+## Round 4: steps toward a way point (2026-10-29, inconclusive)
+Six carriers ran: a plain or `CAREFULLY` actor on a way from (10, 0) along +Y or toward (30, 7), at
+`SPEED` 0.5, 2 and 6.4. The border-kinds actors (3-cycle samples at a very slow frame rate) showed
+a `CAREFULLY` one 4–8 units off its way and losing 1–2 units a cycle against a plain one. No
+rounding rule for the split by \|dx\| + \|dy\| fitted those samples.
+- At `SPEED` 0.5 (`w-c-y-slow`) the `CAREFULLY` actor's X stays on a 4-unit grid and wobbles ±4
+  per cycle, drifting about −1 a cycle. Its Y steps are 1–2 units short of the plain step
+  (126/127 for 128, 142 for 144). It had already moved 188 units off the way before sampling began.
+- The other carriers hit the room's walls or skipped frames out of view (`SKIP_FRAMES`), so they
+  do not show single steps.
+
+The probe needs `SKIP_FRAMES` 0 and a longer room before it can settle the rule.
+
 ## Open Questions
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
 
