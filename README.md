@@ -196,12 +196,18 @@ What works today:
   details the notes left open, and full `SAVE` files, which OpenVirtue does not write in the
   original's format.
 
-Not yet complete: the palette `HARD` flag,
-the remaining `BELOW` details above,
-how floor and texture-cycle sounds take channels, exact UI behavior,
-writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original reads,
-and loads the skills and object state of the original's full saves, but not their waiting actions), and making every recorded probe match
-under the oracle-diff harness.
+Not yet complete:
+- exact UI behaviour (panels, texts, the mouse pointer, `INKEY`);
+- how floor and texture-cycle sounds take channels;
+- two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
+- writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original
+  reads, and loads the skills and object state of the original's full saves, but not their
+  waiting actions);
+- the original's fixed-point trigonometry in actor steps, which the oracle-diff harness shows as
+  sub-percent position differences;
+- the fractional `HIT_X` of shots;
+- start-up `TICKS` timing, which keeps many timed probes from matching line for line
+  (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in
