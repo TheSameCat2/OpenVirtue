@@ -2719,6 +2719,7 @@ public class WdlRuntimeTests
             "ACTION object_cycle { RULE my.x += 2; RULE cycles += 1; }");
         Thing runner = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
 
@@ -2754,6 +2755,7 @@ public class WdlRuntimeTests
             "TEXTURE loopTex { CYCLES 2; BMAPS p1,p2; DELAY 1,1; SOUND step; FLAGS SLOOP; } " +
             "THING normal { TEXTURE normalTex; } THING looped { TEXTURE loopTex; }");
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
         Assert.Empty(runtime.TextureSoundRequests);
@@ -2784,6 +2786,7 @@ public class WdlRuntimeTests
         Region room = Assert.Single(level.Regions);
         Wall gate = Assert.Single(level.Walls);
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
 
@@ -2861,8 +2864,9 @@ public class WdlRuntimeTests
         var runtime = new WdlRuntime(level);
         double seconds = timeCorrection / 16;
 
-        // The first loop counts with the first cycle's TIME_CORR of 1: 1 + 2 + 3 frames.
-        for (int i = 0; i < 6; i++)
+        // The first loop counts with the first cycle's TIME_CORR of 1: 1 + 2 + 3 frames, from the cycle
+        // after the one that starts it.
+        for (int i = 0; i < 7; i++)
         {
             runtime.Tick(seconds);
         }

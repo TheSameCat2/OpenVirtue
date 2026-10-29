@@ -59,7 +59,7 @@ public sealed class WdlActorMotionTests
         Assert.Equal(2, actor.X, 6);
         Assert.Equal(1, runtime.GetSkill("objectTicks"));
         Assert.Equal(1, actor["VISIBLE"]);
-        Assert.Equal(2, actor["CYCLE"]);
+        Assert.Equal(1, actor["CYCLE"]); // its first phase counts from the next cycle (OV-20261029-anim-timing)
         Assert.Single(SpriteBuilder.Build(level));
     }
 

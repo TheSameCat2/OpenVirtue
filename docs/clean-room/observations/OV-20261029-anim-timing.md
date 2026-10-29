@@ -64,6 +64,13 @@ set.
 
 ## Implementation
 `WdlRuntime.AdvanceAnimationTarget` counts frames. `StartAnimationLoop` and `AnimationFrames` fix a
-loop's step and random factor. `ovtool oracle diff` reproduces all 19 anim-delay phases. Tests:
+loop's step and random factor. The first loop's first phase counts from the cycle after the object's
+first animation step.
+- **Evidence for that.** The scheduler-order `order` carrier ran at 8 ticks a cycle, where every
+  `DELAY 1` phase lasts one frame, so the loop's alignment shows directly: the original's
+  `EACH_CYCLE` ran on the even cycles, and now OpenVirtue's does too.
+- **What the replay can check.** `ovtool oracle diff` reproduces the anim-delay phase lengths and
+  their alternation. Which loop is under way at the first sample depends on the start-up cycles,
+  whose `TIME_CORR` the replay only estimates. Tests:
 `WdlRuntimeTests.Tick_AnimationLoop_FixesPhaseFramesFromTheWrapCyclesTimeCorr` and
 `Tick_OneShotTexture_RequiresPlayAndStopsOnLastPhase`.

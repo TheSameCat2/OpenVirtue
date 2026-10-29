@@ -3236,6 +3236,7 @@ public sealed class WdlRuntime :
             state = new TextureAnimationState();
             StartAnimationLoop(entry.Texture, state, timeCorrection);
             _textureAnimationStates[target] = state;
+            return; // the first phase counts from the next cycle
         }
 
         AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
