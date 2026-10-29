@@ -115,11 +115,12 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
+        // CENTER_Y centres the first line on POS_Y; CENTER_X centres each line (OV-20261029-ui-text).
         Assert.Equal(42, glyphs[0].X);
-        Assert.Equal(30, glyphs[0].Y);
+        Assert.Equal(35, glyphs[0].Y);
         Assert.Equal(50, glyphs[1].X);
         Assert.Equal(46, glyphs[2].X);
-        Assert.Equal(40, glyphs[2].Y);
+        Assert.Equal(45, glyphs[2].Y);
     }
 
     [Fact]
@@ -171,7 +172,7 @@ public sealed class UiTextBuilderTests
     }
 
     [Fact]
-    public void Build_SizeYAndOffsetY_CropsScrolledTextVertically()
+    public void Build_SizeYAndOffsetY_ShowOnlyWholeLines()
     {
         Level level = Load(
             """
@@ -183,14 +184,13 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
-        Assert.Equal(['A', 'B'], glyphs.Select(glyph => (char)glyph.CodePoint).ToArray());
-        Assert.Equal(20, glyphs[0].Y);
-        Assert.Equal(5, glyphs[0].SourceY);
-        Assert.Equal(5, glyphs[0].SourceHeight);
-        Assert.Equal(5, glyphs[0].DrawHeight);
-        Assert.Equal(25, glyphs[1].Y);
-        Assert.Equal(0, glyphs[1].SourceY);
-        Assert.Equal(10, glyphs[1].DrawHeight);
+        // Only whole lines between POS_Y and POS_Y + SIZE_Y are drawn: A (15…25) sticks out above,
+        // C (35…45) below (OV-20261029-ui-text).
+        UiTextGlyph b = Assert.Single(glyphs);
+        Assert.Equal('B', (char)b.CodePoint);
+        Assert.Equal(25, b.Y);
+        Assert.Equal(0, b.SourceY);
+        Assert.Equal(10, b.DrawHeight);
     }
 
     [Fact]

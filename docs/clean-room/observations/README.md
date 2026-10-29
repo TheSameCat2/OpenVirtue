@@ -324,3 +324,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - the pointer is drawn at `MOUSE_X`/`MOUSE_Y`.
 
   Five DOSBox-X screenshots.
+
+## Multi-line TEXT (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-ui-text.md` — lines are drawn whole or not at all within `POS_Y…POS_Y+SIZE_Y`
+  after `OFFSET_Y`; `CENTER_Y` centres the first line, `CENTER_X` each line. Six DOSBox-X screenshots.

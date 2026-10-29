@@ -55,6 +55,7 @@ internal static class ProjectionProbeGenerator
     public const string InkeyProbeName = "inkey";
     public const string UiLayoutProbeName = "ui-layout";
     public const string UiWidgetsProbeName = "ui-widgets";
+    public const string UiTextProbeName = "ui-text";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -91,6 +92,7 @@ internal static class ProjectionProbeGenerator
     private const string InkeyProbeId = "OV-20261029-inkey";
     private const string UiLayoutProbeId = "OV-20261029-ui-layout";
     private const string UiWidgetsProbeId = "OV-20261029-ui-widgets";
+    private const string UiTextProbeId = "OV-20261029-ui-text";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -370,6 +372,7 @@ internal static class ProjectionProbeGenerator
         InkeyProbeName => InkeyProbeId,
         UiLayoutProbeName => UiLayoutProbeId,
         UiWidgetsProbeName => UiWidgetsProbeId,
+        UiTextProbeName => UiTextProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -501,6 +504,7 @@ internal static class ProjectionProbeGenerator
             case InkeyProbeName:
             case UiLayoutProbeName:
             case UiWidgetsProbeName:
+            case UiTextProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -548,6 +552,7 @@ internal static class ProjectionProbeGenerator
         InkeyProbeName => InkeyProbeCases.Set,
         UiLayoutProbeName => UiLayoutProbeCases.Set,
         UiWidgetsProbeName => UiWidgetsProbeCases.Set,
+        UiTextProbeName => UiTextProbeCases.Set,
         _ => null,
     };
 
@@ -642,7 +647,7 @@ internal static class ProjectionProbeGenerator
                 SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
         }
 
-        if (plan.ProbeName == UiLayoutProbeName)
+        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName)
         {
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.FontFile), SyntheticPcx.Write(128, 64, UiLayoutProbeCases.FontPixel, palette));
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.DigitFile), SyntheticPcx.Write(88, 8, UiLayoutProbeCases.DigitPixel, palette));
