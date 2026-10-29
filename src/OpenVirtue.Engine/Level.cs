@@ -118,6 +118,12 @@ public sealed class Level
     /// <summary>Skills declared with <c>TYPE GLOBAL</c>, whose values survive a <c>LEVEL</c> change.</summary>
     public IReadOnlySet<string> GlobalSkills { get; }
 
+    /// <summary>Skills declared with <c>TYPE LOCAL</c>, which <c>SAVE_INFO</c> keeps and <c>SAVE</c> does not (p.111).</summary>
+    public IReadOnlySet<string> LocalSkills { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The declared skills in declaration order (the last declaration of a name counts).</summary>
+    public IReadOnlyList<string> SkillDeclarationOrder { get; init; } = [];
+
     /// <summary>Skills whose declarations supplied an explicit <c>VAL</c> initializer.</summary>
     public IReadOnlySet<string> ExplicitlyInitializedSkills { get; }
 

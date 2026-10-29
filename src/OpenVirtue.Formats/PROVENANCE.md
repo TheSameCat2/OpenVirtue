@@ -124,3 +124,20 @@ and validate against real game data used only locally (never committed).
 - **Writer:** emits the same fixed records with big-endian size fields and
   literal-only LZSS payloads. It is intended for generated synthetic fixtures and
   local tooling, not for redistributing game data.
+
+## Save files (`Save/AcknexSaveFile.cs`)
+
+- **Source of truth:** black-box byte comparison of the `.SAV` files the patched DOS
+  runtime (V3.963) wrote for synthetic levels that differ in one known value each
+  (OV-20261029-save-format: `SAVE_INFO` with a `GLOBAL` skill of 1234.5 or 4321.25, a
+  `LOCAL` skill of 77 or 99, a `PLAYER` skill of 5 or 6; full `SAVE`s with the player
+  at (5, 3) or (6, 3)). The manual (p.94, p.111) gives only the file name, the
+  instruction semantics and that `LOAD` "decompresses and decodes". The container was
+  recognised as the WRS entry framing (big-endian sizes, then the LZSS stream above);
+  the body's little-endian words, the self-locating sections and the skill records
+  were read off the decompressed bytes. Not ported from any third-party source.
+- **Confirmed against real data:** re-encoding the skills read from each DOS-written
+  `SAVE_INFO` file reproduces its body byte for byte (guarded test
+  `AcknexSaveFileTests.ReadSkills_SavesTheDosRuntimeWrote_HoldTheirSkills`, local-only
+  data), and `ovtool oracle diff` compares OpenVirtue's `SAVE_INFO` bodies with the
+  original's. Only the skill sections of a full `SAVE` are understood so far.

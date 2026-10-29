@@ -9,6 +9,7 @@ using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Flic;
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wrs;
 
@@ -735,7 +736,9 @@ public sealed partial class RuntimeHost
             WdlPersistenceRequest request = _runtime.PersistenceRequests[_handledPersistenceRequests++];
             if (request.InfoOnly)
             {
-                _lastPersistenceStatus = $"{PersistenceVerb(request)} info {PersistenceSlotName(request)} noted";
+                // The runtime reads and writes the original's file itself, in the instruction
+                // (OV-20261029-save-format).
+                _lastPersistenceStatus = $"{PersistenceVerb(request)} info {PersistenceSlotName(request)}";
                 continue;
             }
 
@@ -818,6 +821,12 @@ public sealed partial class RuntimeHost
         string path = RuntimeSavePath(request);
         if (!File.Exists(path))
         {
+            if (_runtime.SaveFilePath(request) is { } original && File.Exists(original))
+            {
+                ImportOriginalSave(request, original);
+                return;
+            }
+
             _lastPersistenceStatus = $"missing {PersistenceSlotName(request)}";
             return;
         }
@@ -838,6 +847,21 @@ public sealed partial class RuntimeHost
         RebuildWorldResources();
         ApplyRuntimePlayerState();
         _lastPersistenceStatus = $"loaded {PersistenceSlotName(request)}";
+    }
+
+    /// <summary>
+    /// Loads what OpenVirtue can read of a full save the original wrote: its <c>GLOBAL</c> and
+    /// <c>PLAYER</c> skills, the predefined ones and so the player's position included
+    /// (OV-20261029-save-format). The rest of the original's world state is not read yet.
+    /// </summary>
+    private void ImportOriginalSave(WdlPersistenceRequest request, string path)
+    {
+        IReadOnlyList<SaveSkill> skills = AcknexSaveFile.ReadSkills(AcknexSaveFile.Unpack(File.ReadAllBytes(path)));
+        int restored = _runtime.RestoreSavedSkills(skills, name => !_level.LocalSkills.Contains(name));
+        _hasPlayerRuntimeSnapshot = false;
+        ApplyRuntimePlayerState();
+        AdoptRuntimeHeading();
+        _lastPersistenceStatus = $"loaded {restored} skills of {PersistenceSlotName(request)} (original save)";
     }
 
     private string RuntimeSavePath(WdlPersistenceRequest request)

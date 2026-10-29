@@ -106,7 +106,9 @@ public static class LevelLoader
         (Dictionary<string, double> skillValues,
             HashSet<string> globalSkills,
             HashSet<string> explicitlyInitializedSkills,
-            Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
+            Dictionary<string, SkillRange> skillBounds,
+            HashSet<string> localSkills,
+            List<string> skillOrder) = GatherSkills(program);
         return new Level(
             name, vertices, regions, walls, things, actors, ways, start,
             FindVideoMode(program),
@@ -115,7 +117,11 @@ public static class LevelLoader
             GatherSounds(program), GatherPalettes(program), GatherUiElements(program), BuildBitmaps(declarations),
             BuildTextures(declarations), declarations.Actions,
             GatherSchedulerSlotActions(program, "EACH_TICK"), GatherActionHooks(program), FindActionName(program, "IF_START"),
-            GatherSchedulerSlotActions(program, "EACH_SEC"));
+            GatherSchedulerSlotActions(program, "EACH_SEC"))
+        {
+            LocalSkills = localSkills,
+            SkillDeclarationOrder = skillOrder,
+        };
     }
 
     private static LevelVideoMode? FindVideoMode(WdlProgram program)
@@ -467,10 +473,14 @@ public static class LevelLoader
         Dictionary<string, double> Values,
         HashSet<string> Global,
         HashSet<string> ExplicitlyInitialized,
-        Dictionary<string, SkillRange> Bounds) GatherSkills(WdlProgram program)
+        Dictionary<string, SkillRange> Bounds,
+        HashSet<string> Local,
+        List<string> Order) GatherSkills(WdlProgram program)
     {
         var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         var global = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var local = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
         var explicitlyInitialized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var bounds = new Dictionary<string, SkillRange>(StringComparer.OrdinalIgnoreCase);
 
@@ -484,6 +494,7 @@ public static class LevelLoader
             double value = 0;
             bool hasExplicitValue = false;
             bool isGlobal = false;
+            bool isLocal = false;
             double? min = null;
             double? max = null;
             if (item.Body is { } body)
@@ -509,11 +520,27 @@ public static class LevelLoader
                     {
                         isGlobal = true;
                     }
+                    else if (property.Keyword.Equals("TYPE", StringComparison.OrdinalIgnoreCase) &&
+                        property.Header.Any(token => token.Text.Equals("LOCAL", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        isLocal = true;
+                    }
                 }
             }
 
             string name = item.Header[0].Text;
             values[name] = value;
+            order.RemoveAll(existing => existing.Equals(name, StringComparison.OrdinalIgnoreCase));
+            order.Add(name);
+            if (isLocal)
+            {
+                local.Add(name);
+            }
+            else
+            {
+                local.Remove(name);
+            }
+
             if (isGlobal)
             {
                 global.Add(name);
@@ -536,7 +563,7 @@ public static class LevelLoader
             }
         }
 
-        return (values, global, explicitlyInitialized, bounds);
+        return (values, global, explicitlyInitialized, bounds, local, order);
     }
 
     private static Dictionary<string, WdlString> GatherStrings(WdlProgram program)

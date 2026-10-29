@@ -45,7 +45,9 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.SchedulerOrderProbeName or
             ProjectionProbeGenerator.ActorEventsProbeName or
             ProjectionProbeGenerator.NumericEdgeProbeName or
-            ProjectionProbeGenerator.MotionTimingProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.MotionTimingProbeName or
+            ProjectionProbeGenerator.SaveFormatProbeName or
+            ProjectionProbeGenerator.SkyProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

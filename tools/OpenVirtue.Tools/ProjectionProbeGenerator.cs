@@ -43,6 +43,8 @@ internal static class ProjectionProbeGenerator
     public const string ActorEventsProbeName = "actor-events";
     public const string NumericEdgeProbeName = "numeric-edge";
     public const string MotionTimingProbeName = "motion-timing";
+    public const string SaveFormatProbeName = "save-format";
+    public const string SkyProbeName = "sky";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -67,6 +69,8 @@ internal static class ProjectionProbeGenerator
     private const string ActorEventsProbeId = "OV-20261029-actor-events";
     private const string NumericEdgeProbeId = "OV-20261029-numeric-edge";
     private const string MotionTimingProbeId = "OV-20261029-motion-timing";
+    private const string SaveFormatProbeId = "OV-20261029-save-format";
+    private const string SkyProbeId = "OV-20261029-sky";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -333,6 +337,8 @@ internal static class ProjectionProbeGenerator
         ActorEventsProbeName => ActorEventsProbeId,
         NumericEdgeProbeName => NumericEdgeProbeId,
         MotionTimingProbeName => MotionTimingProbeId,
+        SaveFormatProbeName => SaveFormatProbeId,
+        SkyProbeName => SkyProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -452,6 +458,8 @@ internal static class ProjectionProbeGenerator
             case ActorEventsProbeName:
             case NumericEdgeProbeName:
             case MotionTimingProbeName:
+            case SaveFormatProbeName:
+            case SkyProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -487,6 +495,8 @@ internal static class ProjectionProbeGenerator
         ActorEventsProbeName => ActorEventsProbeCases.Set,
         NumericEdgeProbeName => NumericEdgeProbeCases.Set,
         MotionTimingProbeName => MotionTimingProbeCases.Set,
+        SaveFormatProbeName => SaveFormatProbeCases.Set,
+        SkyProbeName => SkyProbeCases.Set,
         _ => null,
     };
 
@@ -517,6 +527,26 @@ internal static class ProjectionProbeGenerator
         else
         {
             WriteTexture(workDir, "PRBYEL.PCX", Ink.Yellow, palette);
+        }
+
+        if (plan.ProbeName == SkyProbeName)
+        {
+            // Four sky sides (SkyProbeCases): the left half in the side's colour, the right half
+            // yellow, and a band in the marker colour over rows 16-47, whose edges show where the
+            // bitmap sits and how tall it is drawn (rows 0 and 63 are the side colour, which the
+            // runtime repeats above and below the bitmap, p.38).
+            Ink[] sides = [Ink.Red, Ink.Green, Ink.Blue, Ink.Magenta];
+            for (int side = 0; side < sides.Length; side++)
+            {
+                byte left = (byte)sides[side];
+                WriteValidated(
+                    Path.Combine(workDir, SkyProbeCases.SideFile(side)),
+                    SyntheticPcx.Write(
+                        SkyProbeCases.SideWidth,
+                        SkyProbeCases.SideHeight,
+                        (x, y) => y is >= 16 and < 48 ? (byte)Ink.Mark : x < SkyProbeCases.SideWidth / 2 ? left : (byte)Ink.Yellow,
+                        palette));
+            }
         }
 
         if (plan.ProbeName == ViewActivityProbeName)
@@ -649,7 +679,7 @@ internal static class ProjectionProbeGenerator
                 FLOOR_HGT 0;
                 CEIL_HGT {{variant.Room.CeilingHeight}};
                 FLOOR_TEX flr_tex;
-                CEIL_TEX cel_tex;
+                CEIL_TEX {{variant.Trace?.Map?.RoomCeiling ?? "cel_tex"}};
                 {{variant.Trace?.Map?.RoomBody ?? ""}}
             }
             {{(variant.Trace?.Map is { PadBody: not null } padMap ? PadRegionWdl(variant.Room, padMap) : "")}}

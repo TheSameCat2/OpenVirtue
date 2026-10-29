@@ -1642,6 +1642,37 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_SaveInfoAndLoadInfo_UseTheOriginalsFileAndKeepGlobalAndLocalSkills()
+    {
+        // OV-20261029-save-format: SAVE_INFO writes NAME<n>.SAV with the GLOBAL and LOCAL skills;
+        // LOAD_INFO brings those back in the instruction and leaves PLAYER skills alone.
+        string saveDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-save-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; SKILL g { TYPE GLOBAL; VAL 1234.5; } SKILL l { TYPE LOCAL; VAL 77; } SKILL p { VAL 5; } " +
+                "SKILL after { VAL 0; } " +
+                "ACTION run { SAVE_INFO \"ovsav\", 3; RULE g = 1; RULE l = 1; RULE p = 1; LOAD_INFO \"ovsav\", 3; RULE after = g + l + p; }");
+            var runtime = new WdlRuntime(level) { SaveDirectory = saveDir };
+
+            Assert.True(runtime.RunAction("run"));
+
+            Assert.True(File.Exists(Path.Combine(saveDir, "OVSAV3.SAV")));
+            Assert.Equal(1234.5, runtime.GetSkill("g"));
+            Assert.Equal(77, runtime.GetSkill("l"));
+            Assert.Equal(1, runtime.GetSkill("p"));
+            Assert.Equal(1234.5 + 77 + 1, runtime.GetSkill("after"));
+        }
+        finally
+        {
+            if (Directory.Exists(saveDir))
+            {
+                Directory.Delete(saveDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Runtime_PrintInstructions_AppendToSelectedTextFile()
     {
         string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));

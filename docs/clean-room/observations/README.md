@@ -227,3 +227,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   every cycle at a `VERTEX` or object target and `IF_HIT` in every cycle a `BULLET` is blocked, and
   move in their own turn of the object pass. Six DOSBox-X runs (three more failed to compile on a
   declared `TARGET MOVE/BULLET/VERTEX`); implemented in `WdlRuntime`.
+
+## Save files (2026-10-29 — SAVE_INFO confirmed and implemented; full SAVE partly read)
+
+- `OV-20261029-save-format.md` — a save is the WRS entry framing (big-endian sizes, LZSS) around a
+  little-endian body of self-locating sections; skill records are name, raw value, raw min, raw max.
+  OpenVirtue writes `SAVE_INFO` files byte-identical to the original's, `LOAD_INFO` restores the
+  `GLOBAL` and `LOCAL` skills at once, and a full original `SAVE` yields its `GLOBAL`/`PLAYER` skills
+  and player position. Seven DOSBox-X runs; implemented in `AcknexSaveFile` and `WdlRuntime`.

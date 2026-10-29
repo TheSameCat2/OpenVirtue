@@ -347,6 +347,7 @@ public sealed partial class RuntimeHost : IDisposable
         _runtime = new WdlRuntime(level, RuntimePrintDirectory(), textures)
         {
             FlicFileExists = HasArchiveEntry,
+            SaveDirectory = _contentRoot,
         };
         _clearColor = ChooseBackgroundColor();
         _booted = false;

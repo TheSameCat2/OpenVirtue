@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using OpenVirtue.Engine;
 using OpenVirtue.Engine.Rendering;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wrs;
 using OpenVirtue.Host;
 
@@ -193,10 +194,16 @@ internal static class OracleReplay
     {
         foreach (string file in Directory.EnumerateFiles(work).Order(StringComparer.Ordinal))
         {
+            // The carrier's inputs are DOS 8.3 names; the original's outputs (OV*.TXT/PCX/SAV) and
+            // anything else left beside them are not packed.
             string name = Path.GetFileName(file);
             bool output = name.StartsWith("OV", StringComparison.OrdinalIgnoreCase) &&
-                (name.EndsWith(".TXT", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".PCX", StringComparison.OrdinalIgnoreCase));
-            if (output || name.EndsWith(".EXE", StringComparison.OrdinalIgnoreCase))
+                (name.EndsWith(".TXT", StringComparison.OrdinalIgnoreCase) ||
+                 name.EndsWith(".PCX", StringComparison.OrdinalIgnoreCase) ||
+                 name.EndsWith(".SAV", StringComparison.OrdinalIgnoreCase));
+            string stem = Path.GetFileNameWithoutExtension(name);
+            bool dosName = stem.Length is > 0 and <= 8 && Path.GetExtension(name).Length <= 4;
+            if (output || !dosName || name.EndsWith(".EXE", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -273,7 +280,46 @@ internal static class OracleReplay
             sb.AppendLine(CultureInfo.InvariantCulture, $"  {extra}: only in the replay");
         }
 
+        ok &= CompareSaves(result, sb);
+
         Console.Write(sb.ToString());
+        return ok;
+    }
+
+    /// <summary>
+    /// Compares every save file the original wrote (<c>OV*.SAV</c> in <c>work/</c>) with the replay's
+    /// (in its content root), by their unpacked bodies, since the two runtimes compress differently.
+    /// </summary>
+    private static bool CompareSaves(CarrierResult result, StringBuilder sb)
+    {
+        bool ok = true;
+        string work = Path.Combine(Path.GetDirectoryName(result.ReplayDirectory)!, "work");
+        foreach (string original in Directory.EnumerateFiles(work, "OV*.SAV").Order(StringComparer.Ordinal))
+        {
+            string name = Path.GetFileName(original).ToUpperInvariant();
+            string? replay = Directory.EnumerateFiles(result.ReplayDirectory, "*.SAV")
+                .FirstOrDefault(f => Path.GetFileName(f).Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (replay is null)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: MISSING in the replay");
+                ok = false;
+                continue;
+            }
+
+            byte[] a = AcknexSaveFile.Unpack(File.ReadAllBytes(original));
+            byte[] b = AcknexSaveFile.Unpack(File.ReadAllBytes(replay));
+            int first = a.AsSpan().CommonPrefixLength(b);
+            if (first == a.Length && a.Length == b.Length)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: match ({a.Length}-byte body)");
+            }
+            else
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: DIFFERS at body byte {first} ({a.Length} original, {b.Length} replay)");
+                ok = false;
+            }
+        }
+
         return ok;
     }
 

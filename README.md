@@ -167,7 +167,9 @@ What works today:
 Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
 Acknex-parity `each_cycle` discovery/dispatch order, slopes, the remaining `BELOW` details above, and exact actor AI/path event ordering,
 exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
-legacy-compatible save/load, and making every recorded probe match under the oracle-diff harness.
+the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads
+the skills and player position of the original's full saves), and making every recorded probe match
+under the oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in

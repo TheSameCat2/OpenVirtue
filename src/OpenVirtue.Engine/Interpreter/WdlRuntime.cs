@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Text;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine.Interpreter;
@@ -1032,20 +1033,102 @@ public sealed class WdlRuntime :
         _screenshotRequests.Add(new WdlScreenshotRequest(NormalizePrintBaseName(baseName), Math.Clamp(number, 0, 999)));
 
     /// <inheritdoc/>
-    public void SaveGame(string baseName, int number, bool infoOnly) =>
-        _persistenceRequests.Add(new WdlPersistenceRequest(
+    /// <remarks>
+    /// <c>SAVE_INFO</c> writes the original's file at once when <see cref="SaveDirectory"/> is set
+    /// (OV-20261029-save-format); a full <c>SAVE</c> is left to the host.
+    /// </remarks>
+    public void SaveGame(string baseName, int number, bool infoOnly)
+    {
+        var request = new WdlPersistenceRequest(
             WdlPersistenceOperation.Save,
             NormalizePrintBaseName(baseName),
             Math.Clamp(number, 0, 999),
-            infoOnly));
+            infoOnly);
+        _persistenceRequests.Add(request);
+        if (infoOnly && SaveFilePath(request) is { } path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, AcknexSaveFile.Pack(AcknexSaveFile.WriteInfo(CaptureInfoSkills())));
+        }
+    }
 
     /// <inheritdoc/>
-    public void LoadGame(string baseName, int number, bool infoOnly) =>
-        _persistenceRequests.Add(new WdlPersistenceRequest(
+    /// <remarks>
+    /// <c>LOAD_INFO</c> restores the <c>GLOBAL</c> and <c>LOCAL</c> skills from the original's file at
+    /// once, and the action goes on (OV-20261029-save-format); a full <c>LOAD</c> is left to the host.
+    /// </remarks>
+    public void LoadGame(string baseName, int number, bool infoOnly)
+    {
+        var request = new WdlPersistenceRequest(
             WdlPersistenceOperation.Load,
             NormalizePrintBaseName(baseName),
             Math.Clamp(number, 0, 999),
-            infoOnly));
+            infoOnly);
+        _persistenceRequests.Add(request);
+        if (infoOnly && SaveFilePath(request) is { } path && File.Exists(path))
+        {
+            RestoreSavedSkills(
+                AcknexSaveFile.ReadSkills(AcknexSaveFile.Unpack(File.ReadAllBytes(path))),
+                name => _level.GlobalSkills.Contains(name) || _level.LocalSkills.Contains(name));
+        }
+    }
+
+    /// <summary>
+    /// The directory the original's save files go to (the game directory, p.94); <c>null</c> keeps
+    /// <c>SAVE_INFO</c>/<c>LOAD_INFO</c> from touching the disk.
+    /// </summary>
+    public string? SaveDirectory { get; set; }
+
+    /// <summary>The original's file for a save slot: the base name in upper case, the number unpadded, <c>.SAV</c>.</summary>
+    public string? SaveFilePath(WdlPersistenceRequest request) =>
+        SaveDirectory is null
+            ? null
+            : Path.Combine(SaveDirectory, string.Create(CultureInfo.InvariantCulture, $"{request.BaseName.ToUpperInvariant()}{request.Number}.SAV"));
+
+    /// <summary>
+    /// The skills <c>SAVE_INFO</c> keeps: the <c>GLOBAL</c> and <c>LOCAL</c> ones, in reverse
+    /// declaration order as the original lists them, with their raw fixed-point values and bounds.
+    /// </summary>
+    public IReadOnlyList<SaveSkill> CaptureInfoSkills()
+    {
+        var skills = new List<SaveSkill>();
+        for (int i = _level.SkillDeclarationOrder.Count - 1; i >= 0; i--)
+        {
+            string name = _level.SkillDeclarationOrder[i];
+            if (!_level.GlobalSkills.Contains(name) && !_level.LocalSkills.Contains(name))
+            {
+                continue;
+            }
+
+            SkillRange? range = _level.SkillBounds.TryGetValue(name, out SkillRange bounds) ? bounds : null;
+            skills.Add(new SaveSkill(
+                name,
+                WdlFixed.ToRaw(GetSkill(name)),
+                range is { } r && !double.IsInfinity(r.Min) ? WdlFixed.ToRaw(r.Min) : SaveSkill.NoMin,
+                range is { } q && !double.IsInfinity(q.Max) ? WdlFixed.ToRaw(q.Max) : SaveSkill.NoMax));
+        }
+
+        return skills;
+    }
+
+    /// <summary>Sets the saved skills that <paramref name="accept"/> takes and this runtime knows.</summary>
+    /// <returns>How many were set.</returns>
+    public int RestoreSavedSkills(IEnumerable<SaveSkill> skills, Func<string, bool> accept)
+    {
+        ArgumentNullException.ThrowIfNull(skills);
+        ArgumentNullException.ThrowIfNull(accept);
+        int restored = 0;
+        foreach (SaveSkill skill in skills)
+        {
+            if (accept(skill.Name) && _skills.ContainsKey(skill.Name))
+            {
+                SetSkill(skill.Name, skill.RawValue / WdlFixed.Scale);
+                restored++;
+            }
+        }
+
+        return restored;
+    }
 
     /// <inheritdoc/>
     public bool IsKeywordReference(string name) => _keywordReferences.ContainsKey(name);
