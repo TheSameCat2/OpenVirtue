@@ -291,3 +291,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   178-byte wall records in reverse map order, with fixed offsets for position, angle, speeds, `DIST`,
   `CYCLE`, targets, offsets and skills; regions are not saved; the 672-byte section holds the action
   slots. Original saves now load object state too.
+
+## BELOW stacks in the view test (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-below-view.md` — a sight line passes walls only through openings between storeys and
+  keeps to one storey across a stack's footprint, so the underpass shows through the opening beside
+  it and the slab hides it from above. Four DOSBox-X runs; `VISIBLE` matches in every view.

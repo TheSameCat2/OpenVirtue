@@ -65,7 +65,21 @@ the skills.
 - **Global slots.** Setting `EACH_TICK.3` changed 4 bytes of the 672-byte section (168 words)
   from −1 to 12, at word 141. So that section holds the action slots, as action numbers, and
   `EACH_TICK.1` is word 139.
-- **Waiting actions.** A `CALL`ed action waiting in `WAITT 200` made the body a different length.
+- **Action numbers.** Actions are numbered from 11 in declaration order: `probe_start` was 11 when
+  it was the only action, and 13 after `sb_wait` (11) and `sb_slot` (12). Numbers 0–10 are the
+  engine's own actions. The base slot table holds them at words 11–13, 15, 27, 53, 60, 61, 63, 64,
+  68 and 88 (likely default key hooks).
+- **Running and waiting actions.** The 44-byte section (the tenth) grew to 68 bytes with a
+  `CALL`ed action waiting in `WAITT 200`. Each action is a 7-word record:
+  - a 1;
+  - the action number;
+  - the remaining wait as a raw value (204000 = 199.22 ticks of `sb_wait`'s `WAITT 200`);
+  - two words that look like instruction positions (57, 58 for `probe_start` at its `SAVE`; 58, 59
+    with one more instruction before it; 0, 0 for `sb_wait` at its first instruction);
+  - `MY` and `YOU` (−1).
+
+  The list ends with a 0. The words before the first record were 0, 0, 0 in `base` and 0, 0 in
+  `wait`, so the header is not settled.
 - **Volatile bytes.** `base` and `base2` differ only in a few bytes of the skill section.
 - **`AMBIENT` crash.** Writing `AMBIENT` on a thing or wall crashed the original at the
   instruction ("Engine crash at SET DO_ACTION"). On an actor it was accepted but not saved.
@@ -80,8 +94,10 @@ the skills.
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.
-- The rest of each record (texture, flags, region, way state), the 200-, 96- and 44-byte
-  sections, the waiting-action layout, and whether `SAVE_ALL` regions are saved.
+- The rest of each record (texture, flags, region, way state), the 200- and 96-byte sections,
+  the action list's header, how the instruction positions count, and whether `SAVE_ALL`
+  regions are saved. Resuming a saved action needs the instruction positions to match the
+  original's.
 - Wall `SKILL5`–`SKILL8` (not probed).
 
 ## Implementation

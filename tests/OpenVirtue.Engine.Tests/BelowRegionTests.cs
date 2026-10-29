@@ -133,6 +133,21 @@ public class BelowRegionTests
         Assert.Equal(0, player.Region);
     }
 
+    [Theory]
+    [InlineData(5, 4, 15, 2, 0, 2, true)] // from the street, under the bridge
+    [InlineData(5, 4, 15, 1, 10, 12, false)] // from the street at eye 4, the bridge deck's edge hides it
+    [InlineData(12, 14, 18, 2, 0, 2, false)] // from the bridge, the slab hides the underpass
+    [InlineData(12, 14, 18, 1, 10, 12, true)] // from the bridge, on the bridge
+    public void ViewTest_BelowStack_SeesThroughStoreysAndNotThroughSlabs(
+        double eyeX, double eyeHeight, double x, int region, double bottom, double top, bool visible)
+    {
+        Level level = Load();
+        var view = new ViewTest(level);
+        var viewer = new Viewer(eyeX, 5, eyeHeight, 0, ProjectionModel.Default(640, 480));
+
+        Assert.Equal(visible, view.IsSpriteVisible(viewer, x, 5, 0.5, bottom, top, region));
+    }
+
     private static Level Load()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };

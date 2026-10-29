@@ -4210,8 +4210,8 @@ public sealed class WdlRuntime :
     {
         double bottom = EntityFeetHeight(entity);
         return MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size)
-            ? test.IsSpriteVisible(viewer, entity.X, entity.Y, size.Width * 0.5, bottom, bottom + size.Height)
-            : test.IsSpriteVisible(viewer, entity.X, entity.Y, 0, bottom, bottom + 1);
+            ? test.IsSpriteVisible(viewer, entity.X, entity.Y, size.Width * 0.5, bottom, bottom + size.Height, entity.Region)
+            : test.IsSpriteVisible(viewer, entity.X, entity.Y, 0, bottom, bottom + 1, entity.Region);
     }
 
     /// <summary>

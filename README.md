@@ -159,8 +159,9 @@ What works today:
   so they get floors, ceilings and walls (a wall covers what is open on one side and solid on the
   other, such as a bridge's slab), the player walks into the storey it fits, and underwater
   `IF_DIVE`/`IF_ARISE` links resolve. Things and actors start on the uppermost storey, or with
-  `GROUND` on the lowest storey whose ceiling is above their feet (manual p.61). Still open: the
-  extra wall texture sides of lower storeys and occlusion by slabs in the view test.
+  `GROUND` on the lowest storey whose ceiling is above their feet (manual p.61). The view test
+  sees through the openings between storeys and not through the slabs (OV-20261029-below-view).
+  Still open: the extra wall texture sides of lower storeys.
 - **Engine rules measured on 2026-10-29** — eight oracle notes (OV-20261029-*):
   - The cycle order: resumed waits, then `EACH_SEC`, the global slots, and the regions, actors,
     things and walls, each kind in reverse map order. `IF_START` and the first cycle have
