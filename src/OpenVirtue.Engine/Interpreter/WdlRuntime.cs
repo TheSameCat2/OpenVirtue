@@ -3639,7 +3639,9 @@ public sealed class WdlRuntime :
                         }
 
                         hitX = pixelX;
-                        hitY = pixelY;
+                        // OV-20261009-shoot-mapping: the original's HIT_Y is one row below the sampled
+                        // pixel row (129 on the eye line's row 128, 64 for a hit at row 63.9).
+                        hitY = pixelY + 1;
                     }
 
                     bestEntity = Nearer(

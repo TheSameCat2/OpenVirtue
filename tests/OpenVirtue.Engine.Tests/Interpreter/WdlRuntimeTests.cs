@@ -1988,7 +1988,7 @@ public class WdlRuntimeTests
         Assert.Same(level.Things.Single(thing => thing.Name == "far"), runtime.GetObject("hit"));
         Assert.Equal(7, runtime.GetSkill("HIT_DIST"), 6);
         Assert.Equal(1, runtime.GetSkill("HIT_X"));
-        Assert.Equal(3, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -2015,7 +2015,7 @@ public class WdlRuntimeTests
 
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(1, runtime.GetSkill("HIT_X"));
-        Assert.Equal(3, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -2047,7 +2047,7 @@ public class WdlRuntimeTests
         // (HIT_Y 5). HIT_DIST is the depth along the line of sight (4), not the ray length.
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(6, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -2078,7 +2078,7 @@ public class WdlRuntimeTests
         // and the same SHOOT_Y would pass under the sprite.)
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(4, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(5, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -2109,7 +2109,7 @@ public class WdlRuntimeTests
         // the hit 3.2 steps at 44 steps).
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(6, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]

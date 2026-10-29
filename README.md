@@ -205,7 +205,7 @@ Not yet complete:
   waiting actions);
 - sub-unit position differences in actor steps toward points and at wall stops (steps along an
   `ANGLE` match the original unit for unit, OV-20261029-actor-step);
-- the fractional `HIT_X` of shots;
+- the fractional `HIT_X` of shots (`HIT_Y` matches);
 - start-up `TICKS` timing, which keeps many timed probes from matching line for line
   (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the

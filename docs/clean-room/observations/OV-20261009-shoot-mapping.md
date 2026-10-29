@@ -221,4 +221,9 @@ names the whole image, and the loader left such a texture's size at 0, so the th
 at all. The archive loader now takes a whole-image bitmap's size from its PCX header. The texels then
 differ from the original's by one or two: the original reports a fractional `HIT_X` (32.832 at the
 centre, 33.176, 32.488, 51.193) and `HIT_Y` one row lower (129 where OpenVirtue gives 128), where
-OpenVirtue floors the sampled pixel. Modelling the original's screen-pixel shot ray is open.
+OpenVirtue floors the sampled pixel.
+- **`HIT_Y`.** All eight readings (129, 64, 193, 180, 77) are the sampled row plus one, and
+  OpenVirtue now reports that.
+- **`HIT_X`.** It stays open. OpenVirtue's unrounded columns are 32.00, 32.29, 31.71 and 50.63
+  against the original's 32.83, 33.18, 32.49 and 51.19; the gap is not constant, so it is not a
+  plain offset.
