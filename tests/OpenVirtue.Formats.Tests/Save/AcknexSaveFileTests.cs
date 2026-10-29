@@ -67,4 +67,57 @@ public class AcknexSaveFileTests
         Assert.Contains(fullSkills, s => s.Name == "PLAYER_X" && s.RawValue == 5 * 1024);
         Assert.DoesNotContain(fullSkills, s => s.Name == "sv_l"); // LOCAL skills are not in a full SAVE
     }
+
+    [Fact]
+    public void ReadObjects_ReadsTheFourthSectionsEntityAndWallRecords()
+    {
+        // OV-20261029-save-body: a header, three sections, then the object section with one
+        // 170-byte entity record and one 178-byte wall record.
+        byte[] objects = new byte[AcknexSaveFile.EntityRecordSize + AcknexSaveFile.WallRecordSize];
+        BitConverter.TryWriteBytes(objects.AsSpan(110), 21 * 1024 + 512); // X 21.5
+        BitConverter.TryWriteBytes(objects.AsSpan(114), -8 * 1024); // Y -8
+        BitConverter.TryWriteBytes(objects.AsSpan(8), 768); // ANGLE 0.75
+        BitConverter.TryWriteBytes(objects.AsSpan(88), 7 * 1024); // SKILL8 7
+        BitConverter.TryWriteBytes(objects.AsSpan(AcknexSaveFile.EntityRecordSize + 12), 3 * 1024 + 512); // OFFSET_X 3.5
+        using var body = new MemoryStream();
+        body.Write([0x9a, 0x06, 0, 0, (byte)'T', 0, 0, 0]);
+        foreach (byte[] payload in new[] { new byte[80], [], [], objects, new byte[4] })
+        {
+            body.Write(BitConverter.GetBytes(payload.Length));
+            body.Write(BitConverter.GetBytes((int)body.Position));
+            body.Write(payload);
+        }
+
+        var saved = AcknexSaveFile.ReadObjects(body.ToArray(), entityCount: 1, wallCount: 1);
+
+        Assert.NotNull(saved);
+        SaveObjectState entity = Assert.Single(saved.Value.Entities);
+        Assert.Equal(21 * 1024 + 512, entity.RawSkills["X"]);
+        Assert.Equal(-8 * 1024, entity.RawSkills["Y"]);
+        Assert.Equal(768, entity.RawSkills["ANGLE"]);
+        Assert.Equal(7 * 1024, entity.RawSkills["SKILL8"]);
+        Assert.Equal(3 * 1024 + 512, Assert.Single(saved.Value.Walls).RawSkills["OFFSET_X"]);
+        Assert.Null(AcknexSaveFile.ReadObjects(body.ToArray(), entityCount: 2, wallCount: 1));
+    }
+
+    [Fact]
+    public void ReadObjects_SavesTheDosRuntimeWrote_HoldTheMovedThing()
+    {
+        // Guarded: the save-body probe's thing-a save (the thing's Y, Z and ANGLE set to 0.501,
+        // 0.563, 0.626), when present locally.
+        string? root = ResearchData.Directory;
+        string path = root is null ? "" : Path.Combine(root, "oracle-runs", "OV-20261029-save-body", "round6", "thing-a", "work", "OVSAV2.SAV");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        var saved = AcknexSaveFile.ReadObjects(AcknexSaveFile.Unpack(File.ReadAllBytes(path)), entityCount: 2, wallCount: 13);
+
+        Assert.NotNull(saved);
+        Assert.Equal(20 * 1024, saved.Value.Entities[0].RawSkills["X"]); // the actor first
+        Assert.Equal(0x201, saved.Value.Entities[1].RawSkills["Y"]);
+        Assert.Equal(0x241, saved.Value.Entities[1].RawSkills["Z"]);
+        Assert.Equal(0x281, saved.Value.Entities[1].RawSkills["ANGLE"]);
+    }
 }

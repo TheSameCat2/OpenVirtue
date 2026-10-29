@@ -850,18 +850,65 @@ public sealed partial class RuntimeHost
     }
 
     /// <summary>
-    /// Loads what OpenVirtue can read of a full save the original wrote: its <c>GLOBAL</c> and
-    /// <c>PLAYER</c> skills, the predefined ones and so the player's position included
-    /// (OV-20261029-save-format). The rest of the original's world state is not read yet.
+    /// Loads what OpenVirtue can read of a full save the original wrote:
+    /// <list type="bullet">
+    /// <item>its <c>GLOBAL</c> and <c>PLAYER</c> skills, the predefined ones and so the player's
+    /// position included (OV-20261029-save-format);</item>
+    /// <item>the things', actors' and walls' positions, angles, speeds, offsets and skills
+    /// (OV-20261029-save-body).</item>
+    /// </list>
+    /// Regions keep their level values, as the original's saves do. Waiting actions and the global
+    /// slots are not read yet.
     /// </summary>
     private void ImportOriginalSave(WdlPersistenceRequest request, string path)
     {
-        IReadOnlyList<SaveSkill> skills = AcknexSaveFile.ReadSkills(AcknexSaveFile.Unpack(File.ReadAllBytes(path)));
+        byte[] body = AcknexSaveFile.Unpack(File.ReadAllBytes(path));
+        IReadOnlyList<SaveSkill> skills = AcknexSaveFile.ReadSkills(body);
         int restored = _runtime.RestoreSavedSkills(skills, name => !_level.LocalSkills.Contains(name));
+        int objects = ImportOriginalObjects(body);
+        if (objects > 0)
+        {
+            RebuildWorldResources();
+        }
+
         _hasPlayerRuntimeSnapshot = false;
         ApplyRuntimePlayerState();
         AdoptRuntimeHeading();
-        _lastPersistenceStatus = $"loaded {restored} skills of {PersistenceSlotName(request)} (original save)";
+        _lastPersistenceStatus = $"loaded {restored} skills and {objects} objects of {PersistenceSlotName(request)} (original save)";
+    }
+
+    /// <summary>
+    /// Copies the object records of an original full save onto the level's things, actors and walls.
+    /// The save lists actors, then things, then walls, each in reverse map order.
+    /// </summary>
+    private int ImportOriginalObjects(byte[] body)
+    {
+        if (AcknexSaveFile.ReadObjects(body, _level.Things.Count + _level.Actors.Count, _level.Walls.Count) is not { } saved)
+        {
+            return 0;
+        }
+
+        AcknexObject[] entities = [.. _level.Actors.Reverse(), .. _level.Things.Reverse()];
+        AcknexObject[] walls = [.. _level.Walls.Reverse()];
+        for (int i = 0; i < entities.Length; i++)
+        {
+            Apply(entities[i], saved.Entities[i]);
+        }
+
+        for (int i = 0; i < walls.Length; i++)
+        {
+            Apply(walls[i], saved.Walls[i]);
+        }
+
+        return entities.Length + walls.Length;
+
+        static void Apply(AcknexObject target, SaveObjectState state)
+        {
+            foreach ((string name, int raw) in state.RawSkills)
+            {
+                target[name] = raw / 1024.0;
+            }
+        }
     }
 
     private string RuntimeSavePath(WdlPersistenceRequest request)

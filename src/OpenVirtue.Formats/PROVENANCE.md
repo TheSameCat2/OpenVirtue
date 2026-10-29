@@ -140,4 +140,11 @@ and validate against real game data used only locally (never committed).
   `SAVE_INFO` file reproduces its body byte for byte (guarded test
   `AcknexSaveFileTests.ReadSkills_SavesTheDosRuntimeWrote_HoldTheirSkills`, local-only
   data), and `ovtool oracle diff` compares OpenVirtue's `SAVE_INFO` bodies with the
-  original's. Only the skill sections of a full `SAVE` are understood so far.
+  original's.
+- **Object section** (OV-20261029-save-body): the fourth section of a full `SAVE` was located
+  and laid out the same way, by comparing full saves of one synthetic world in which a single
+  object skill was changed. A second set wrote each skill of a thing, actor or wall to its own
+  raw bit pattern, and the patterns were searched for in the bytes. Thing/actor records are 170
+  bytes and wall records 178. The skill sections, the object section and the global action
+  slots are understood; the regions are not saved (only `SAVE_ALL` regions might be), and the
+  waiting actions are not yet read. Not ported from any third-party source.

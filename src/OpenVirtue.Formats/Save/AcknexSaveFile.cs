@@ -17,6 +17,9 @@ public sealed record SaveSkill(string Name, int RawValue, int RawMin = SaveSkill
     public const int NoMax = int.MaxValue;
 }
 
+/// <summary>One world object of a full save: its skills by name, as raw 22.10 fixed-point values.</summary>
+public sealed record SaveObjectState(IReadOnlyDictionary<string, int> RawSkills);
+
 /// <summary>
 /// The save files the original writes with <c>SAVE</c> and <c>SAVE_INFO</c> (<c>NAME&lt;n&gt;.SAV</c>),
 /// as measured in OV-20261029-save-format. A file is a WRS-style container — big-endian compressed
@@ -133,6 +136,112 @@ public static class AcknexSaveFile
         }
 
         return [];
+    }
+
+    /// <summary>The size of a thing's or actor's record in a full save's object section.</summary>
+    public const int EntityRecordSize = 170;
+
+    /// <summary>The size of a wall's record in a full save's object section.</summary>
+    public const int WallRecordSize = 178;
+
+    /// <summary>Where the skills of a thing's or actor's record lie (OV-20261029-save-body).</summary>
+    private static readonly (string Name, int Offset)[] EntityFields =
+    [
+        ("ANGLE", 8), ("TARGET_X", 12), ("TARGET_Y", 16), ("HEIGHT", 36), ("SPEED", 40), ("VSPEED", 44), ("DIST", 52),
+        ("SKILL1", 60), ("SKILL2", 64), ("SKILL3", 68), ("SKILL4", 72), ("SKILL5", 76), ("SKILL6", 80), ("SKILL7", 84),
+        ("SKILL8", 88), ("CYCLE", 102), ("X", 110), ("Y", 114), ("Z", 118),
+    ];
+
+    /// <summary>Where the skills of a wall's record lie (OV-20261029-save-body).</summary>
+    private static readonly (string Name, int Offset)[] WallFields =
+    [
+        ("OFFSET_X", 12), ("OFFSET_Y", 16), ("DIST", 52), ("SKILL1", 60), ("SKILL2", 64), ("SKILL3", 68), ("SKILL4", 72),
+    ];
+
+    /// <summary>
+    /// The things, actors and walls of a full <c>SAVE</c> body. Its fourth section holds one record per
+    /// thing and actor, then one per wall, each kind in reverse map order (the order the scheduler visits
+    /// them). <paramref name="entityCount"/> and <paramref name="wallCount"/> are the level's counts;
+    /// <c>null</c> when the body has no object section of that size.
+    /// </summary>
+    public static (IReadOnlyList<SaveObjectState> Entities, IReadOnlyList<SaveObjectState> Walls)? ReadObjects(
+        ReadOnlySpan<byte> body,
+        int entityCount,
+        int wallCount)
+    {
+        if (Sections(body) is not { Count: > 3 } sections)
+        {
+            return null;
+        }
+
+        (int payload, int size) = sections[3];
+        if (size != (entityCount * EntityRecordSize) + (wallCount * WallRecordSize))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<byte> objects = body.Slice(payload, size);
+        var entities = new List<SaveObjectState>(entityCount);
+        for (int i = 0; i < entityCount; i++)
+        {
+            entities.Add(ReadRecord(objects.Slice(i * EntityRecordSize, EntityRecordSize), EntityFields));
+        }
+
+        var walls = new List<SaveObjectState>(wallCount);
+        int wallsStart = entityCount * EntityRecordSize;
+        for (int i = 0; i < wallCount; i++)
+        {
+            walls.Add(ReadRecord(objects.Slice(wallsStart + (i * WallRecordSize), WallRecordSize), WallFields));
+        }
+
+        return (entities, walls);
+    }
+
+    private static SaveObjectState ReadRecord(ReadOnlySpan<byte> record, (string Name, int Offset)[] fields)
+    {
+        var skills = new Dictionary<string, int>(fields.Length, StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, int offset) in fields)
+        {
+            skills[name] = BinaryPrimitives.ReadInt32LittleEndian(record[offset..]);
+        }
+
+        return new SaveObjectState(skills);
+    }
+
+    /// <summary>
+    /// The sections of a body in order, as (payload offset, size): the chain that starts at the first
+    /// section whose offset field names itself, each next section following the last one's payload.
+    /// </summary>
+    private static List<(int Payload, int Size)>? Sections(ReadOnlySpan<byte> body)
+    {
+        for (int offsetField = 4; offsetField + 4 <= body.Length; offsetField++)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(body[offsetField..]) != offsetField)
+            {
+                continue;
+            }
+
+            var sections = new List<(int, int)>();
+            int field = offsetField;
+            while (field + 4 <= body.Length && BinaryPrimitives.ReadUInt32LittleEndian(body[field..]) == field)
+            {
+                uint size = BinaryPrimitives.ReadUInt32LittleEndian(body[(field - 4)..]);
+                if (size > body.Length - field - 4)
+                {
+                    break;
+                }
+
+                sections.Add((field + 4, (int)size));
+                field += 4 + (int)size + 4;
+            }
+
+            if (sections.Count > 1)
+            {
+                return sections;
+            }
+        }
+
+        return null;
     }
 
     private static bool TryReadSkillRecords(ReadOnlySpan<byte> payload, out List<SaveSkill> skills)

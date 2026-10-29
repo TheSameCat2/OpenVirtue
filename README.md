@@ -169,8 +169,8 @@ What works today:
   - The `ACCEL` formula, and a default `FRICTION` of 0.
   - Actors step by |dx| + |dy|, arrive within 0.125, and fire `IF_ARRIVED`/`IF_HIT` in the
     measured order.
-  - Save files: OpenVirtue writes `SAVE_INFO` files byte for byte and reads the skills of
-    full saves.
+  - Save files: OpenVirtue writes `SAVE_INFO` files byte for byte. It reads the skills and the
+    things', actors' and walls' state of full saves.
   - The sky panorama.
   - Palette-index shading by distance and `PLAYER_LIGHT`, and the shade table for sorted
     ranges and `AUTORANGE`.
@@ -188,8 +188,8 @@ What works today:
 Not yet complete: the palette `HARD` flag,
 the remaining `BELOW` details above,
 how floor and texture-cycle sounds take channels, exact UI behavior,
-the rest of a full legacy `SAVE` (OpenVirtue writes `SAVE_INFO` files the original reads and loads
-the skills and player position of the original's full saves), and making every recorded probe match
+writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original reads,
+and loads the skills and object state of the original's full saves, but not their waiting actions), and making every recorded probe match
 under the oracle-diff harness.
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan

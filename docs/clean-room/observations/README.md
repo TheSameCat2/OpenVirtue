@@ -284,3 +284,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
     then takes the nearest range colour.
 
   Thirty-two DOSBox-X screenshots, every cell reproduced; implemented in `PaletteShading.BuildTable`.
+
+## Full-save objects (2026-10-29 — confirmed and implemented for reading)
+
+- `OV-20261029-save-body.md` — a full `SAVE`'s fourth section holds 170-byte thing/actor records and
+  178-byte wall records in reverse map order, with fixed offsets for position, angle, speeds, `DIST`,
+  `CYCLE`, targets, offsets and skills; regions are not saved; the 672-byte section holds the action
+  slots. Original saves now load object state too.
