@@ -59,23 +59,33 @@ to −7.992 in two steps. OpenVirtue applies the rule to the player too.
 
 ## Invariant
 A step along an actor's `ANGLE` has the length `SPEED·TIME_CORR` in 22.10 fixed point. Its X part
-is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where θ is the 22.10 `ANGLE`.
+is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where θ is the 22.10 `ANGLE`
+and cos θ and sin θ are themselves cut toward zero to 22.10 (sin 90° is 1023/1024).
 Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events). A
 `CAREFULLY` actor whose step has no X (or no Y) part is then moved 4/1024 along that axis, in the
 positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero.
 
+## Addendum: the long step out of view (2026-10-29)
+Bullets skipping frames out of view take six cycles' steps at once. Three of those long steps
+could not come from exact cosines and sines:
+- at angle 1 (1024 raw), 864 units gave (467, 726); no step length gives that with exact trig;
+- at 0.785 (804 raw), 768 units gave (543, 542);
+- at 90° (1608 raw), 768 units gave (0, 767).
+
+All three are what cos and sin give when first cut toward zero to 22.10: 553 and 861, 724 and
+723, 0 and 1023 raw. Over all 1977 recorded steps of rounds 2 and 3, this rule explains every step
+the exact-trig rule explains, and these seven more. The rest are wall stops and nudges, which
+neither rule covers.
+
 ## Open Questions
-- The long step of a bullet skipping frames out of view (six steps at once, 0.84 steps) is split
-  one unit differently (467, 726 against OpenVirtue's 467, 727). Four of the round-2 carriers end on
-  it.
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by
   `WdlActorMotionTests.Tick_Bullet_StepsByRoundedCosineAndSineOfItsAngle`.
 - The `CAREFULLY` rules are in `WdlRuntime.MoveActor`.
-- `ovtool oracle diff` replays 13 of the 25 carriers line for line; the others differ from the
-  skipped-frame step or a later slide on.
+- `ovtool oracle diff` replays 20 of the 25 carriers line for line. One differs from a `CAREFULLY`
+  slide; the others differ in the printed `TIME_CORR` of the last cycles.
 - The harness gained two things for this:
   - it puts printed `TICKS` back on the 1/1024 grid, preferring whole 1/32 ticks;
   - it takes the first sampled cycle's step from a printed `TIME_CORR` column.

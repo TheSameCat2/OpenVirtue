@@ -301,7 +301,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 ## Actor steps along ANGLE (2026-10-29 — confirmed and implemented)
 
 - `OV-20261029-actor-step.md` — a `MOVE`/`BULLET` step is `SPEED·TIME_CORR` in 22.10, split into
-  `round(step·cos θ)` and `round(step·sin θ)` raw units. Ten DOSBox-X runs; six replay line for line.
+  `round(step·cos θ)` and `round(step·sin θ)` raw units. cos and sin are first cut toward zero to
+  22.10, which the long out-of-view steps show. 20 of 25 carriers replay line for line.
 
 ## INKEY editing (2026-10-29 — confirmed and implemented)
 

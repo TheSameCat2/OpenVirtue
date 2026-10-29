@@ -2633,8 +2633,9 @@ public sealed class WdlRuntime :
     private bool AdvanceActorForward(Actor actor, double timeCorrection)
     {
         // OV-20261029-actor-step: a step along the actor's angle is SPEED·TIME_CORR in 22.10 fixed point,
-        // split with the cosine and sine of the angle (itself a 22.10 value), each part rounded to a
-        // whole 1/1024 step. Unlike a step toward a point, it is not measured in |dx| + |dy|.
+        // split with the cosine and sine of the angle (itself a 22.10 value), each cut toward zero to
+        // 22.10 and each part rounded to a whole 1/1024 step. Unlike a step toward a point, it is not
+        // measured in |dx| + |dy|.
         double distance = WdlFixed.Multiply(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
@@ -2642,8 +2643,10 @@ public sealed class WdlRuntime :
         }
 
         double angle = WdlFixed.Quantize(actor.FacingAngleRadians);
-        double stepX = Math.Round(distance * 1024 * Math.Cos(angle), MidpointRounding.AwayFromZero) / 1024;
-        double stepY = Math.Round(distance * 1024 * Math.Sin(angle), MidpointRounding.AwayFromZero) / 1024;
+        double cos = Math.Truncate(Math.Cos(angle) * 1024) / 1024;
+        double sin = Math.Truncate(Math.Sin(angle) * 1024) / 1024;
+        double stepX = Math.Round(distance * 1024 * cos, MidpointRounding.AwayFromZero) / 1024;
+        double stepY = Math.Round(distance * 1024 * sin, MidpointRounding.AwayFromZero) / 1024;
         double previousX = actor.X;
         double previousY = actor.Y;
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);

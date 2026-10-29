@@ -416,10 +416,14 @@ public sealed class WdlActorMotionTests
     [InlineData(1, 0.28125, 78, 121)]
     [InlineData(0.78515625, 0.25, 91, 90)]
     [InlineData(2, 0.28125, -60, 131)]
+    [InlineData(1, 1.6875, 467, 726)] // six skipped cycles at once: exact trig would give 727
+    [InlineData(0.78515625, 1.5, 543, 542)]
+    [InlineData(1.5703125, 1.5, 0, 767)]
     public void Tick_Bullet_StepsByRoundedCosineAndSineOfItsAngle(double angle, double timeCorrection, int dxRaw, int dyRaw)
     {
         // OV-20261029-actor-step: SPEED 0.5 · TIME_CORR, split by cos and sin of the 22.10 angle,
-        // each part rounded to a whole 1/1024 step (the measured raw steps).
+        // themselves cut toward zero to 22.10, each part rounded to a whole 1/1024 step (the
+        // measured raw steps).
         (WdlRuntime runtime, Level level) = Create("ACTOR mover { SPEED 0.5; }");
         Actor actor = Assert.Single(level.Actors);
         actor.Angle = angle - (actor.PlacementAngleDegrees * Math.PI / 180);
