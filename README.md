@@ -147,6 +147,9 @@ What works today:
   `LIBER`, `BERKELEY` things, `IMPASSABLE` and `INVISIBLE` walls are handled. The player climbs
   region borders from the feet with a clamped eye. Actors without `CAREFULLY` push the player,
   and `CAREFULLY` ones stop short of it, honour `IMPASSABLE` and climb below `ACTOR_CLIMB`.
+  The player's contact distance with an object is √(c² + 0.093), where c is half the object's
+  width plus `PLAYER_WIDTH`. A player starting or beamed inside objects is pushed out of the last
+  placed overlapping one only (OV-20261029-overlap).
   A headless view test (ADR-0010, OV-20261020-view-activity) sets `VISIBLE` and `SEEN` on things,
   actors, walls and regions, lets unseen actors skip frames (`SKIP_FRAMES`) and puts unseen
   `BERKELEY` walls to sleep. Things' and actors' `DISTANCE`, which the `DIST` test reads, is

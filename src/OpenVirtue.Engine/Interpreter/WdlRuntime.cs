@@ -2905,7 +2905,10 @@ public sealed class WdlRuntime :
             UpdateActorRegion(actor);
             // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it.
             if (blocked is not null &&
-                blocked.PushAway(actor, new Vector2((float)actor.X, (float)actor.Y), ActorCollisionRadius(actor) + blocked.Width))
+                blocked.PushAway(
+                    actor,
+                    new Vector2((float)actor.X, (float)actor.Y),
+                    LevelCollisionWorld.ContactDistance(ActorCollisionRadius(actor) + blocked.Width)))
             {
                 FireActorContact(actor);
             }

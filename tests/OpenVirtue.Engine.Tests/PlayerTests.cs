@@ -389,7 +389,9 @@ public class PlayerTests
 
         blocked.MoveHorizontal(-10, 0);
 
-        Assert.Equal(2.2f, blocked.Position.X, 3);
+        // √(2.2² + 0.093): the original stops the player about 0.02 beyond (OV-20261029-overlap).
+        Assert.Equal(LevelCollisionWorld.ContactDistance(2.2f), blocked.Position.X, 3);
+        Assert.Equal(2.221f, blocked.Position.X, 3);
 
         level.Things[0]["passable"] = 1;
         var passable = new Player(level);

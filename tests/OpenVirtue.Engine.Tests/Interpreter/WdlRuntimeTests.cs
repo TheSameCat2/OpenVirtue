@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Numerics;
 using System.Text.Json;
 using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
@@ -3508,7 +3509,7 @@ public class WdlRuntimeTests
 
         player.MoveHorizontal(4, 0);
         runtime.Tick(1.0 / 16);
-        Assert.Equal(7.8f, player.Position.X, 3);
+        Assert.Equal(10 - LevelCollisionWorld.ContactDistance(2.2f), player.Position.X, 3);
         Assert.Equal(1, runtime.GetSkill("near_count"));
         player.MoveHorizontal(1, 0);
         runtime.Tick(1.0 / 16);
@@ -3605,7 +3606,7 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.True(MapEntitySizing.TryGetSize(level, pusher, out MapEntitySize size));
         Assert.Equal(3, pusher.X, 3);
-        Assert.Equal(3 + (size.Width / 2) + player.Width, player.Position.X, 3);
+        Assert.Equal(3 + LevelCollisionWorld.ContactDistance((size.Width / 2) + player.Width), player.Position.X, 3);
         Assert.Equal(2, runtime.GetSkill("near_count"));
     }
 
@@ -3654,10 +3655,42 @@ public class WdlRuntimeTests
         WdlPlayerMotion.Apply(runtime, player, 1);
         runtime.Tick(1.0 / 16);
 
-        float contact = 1 + player.Width;
+        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
         Assert.Equal(10 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
         Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
         Assert.Equal(1, runtime.GetSkill("near_count"));
+    }
+
+    [Theory]
+    [InlineData(10f, 0.5f, false)]
+    [InlineData(11f, 0f, true)]
+    public void Apply_PlayerInsideTwoActors_IsPushedOutOfTheLastPlacedOnlyAndOnlyOnce(float x, float y, bool onCentre)
+    {
+        // OV-20261029-overlap: the first overlapping object in reverse map order decides; on its exact
+        // centre the player stays, and it is not pushed out of the other one afterwards either.
+        Level level = LoadWithMap(
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR first 9 0 0 0;#0\nACTOR last 11 0 0 0;#1\nPLAYER_START 5 0 0 0;#2",
+            "MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex { BMAPS postMap; } " +
+            "ACTOR first { TEXTURE postTex; } ACTOR last { TEXTURE postTex; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        player.MoveTo(0, x, y);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        if (onCentre)
+        {
+            Assert.Equal(new Vector2(x, y), new Vector2(player.Position.X, player.Position.Z));
+            return;
+        }
+
+        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
+        Assert.Equal(11 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
+        Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
+        Assert.True(Vector2.Distance(new Vector2(9, 0), new Vector2(player.Position.X, player.Position.Z)) < contact);
     }
 
     [Fact]

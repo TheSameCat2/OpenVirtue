@@ -46,7 +46,30 @@ internal static class OverlapProbeCases
         Case("still-walk", "A still actor at (0.4, -0.1); the player walks with PLAYER_VX 0.01 from the probe start: pushed out then?",
             "ACTOR ov_a { TEXTURE ov_tex; SPEED 0; }\nSKILL ov_vx { VAL 0.01; }\n", ["ACTOR ov_a 0.4 -0.1 0 0"],
             "    SET PLAYER_VX, ov_vx;\n"),
+        Push("w1-axis", 64, "0.3 0"),
+        Push("w2-axis", 32, "0.3 0"),
+        Push("w4-axis", 16, "0.3 0"),
+        Push("w8-axis", 8, "0.3 0"),
+        Push("w2-diag", 32, "0.3 -0.3"),
+        Push("w4-diag", 16, "0.3 -0.3"),
+        Push("w4-14", 16, "0.4 -0.1"),
+        Push("w8-14", 8, "0.4 -0.1"),
+        Push("d005", 32, "0.05 0"),
+        Push("d01", 32, "0.1 0"),
+        Push("d06", 32, "0.6 0"),
+        Push("d10", 32, "1.0 0"),
+        Push("d15", 32, "1.5 0"),
+        Push("d21", 32, "2.1 0"),
+        Push("yaxis", 32, "0 0.3"),
+        Push("negx", 32, "-0.3 0"),
     ];
+
+    /// <summary>Round 2: a still actor of width 64/<paramref name="scale"/> at <paramref name="at"/>.</summary>
+    private static TraceProbeCase Push(string label, int scale, string at) => Case(
+        label,
+        $"Round 2. A still {64.0 / scale}-wide actor at ({at.Replace(' ', ',')}): how far out is the player pushed, and along which line?",
+        $"TEXTURE ov_t{scale} {{ SCALE_X {scale}; SCALE_Y {scale}; BMAPS red_map; }}\nACTOR ov_a {{ TEXTURE ov_t{scale}; SPEED 0; }}\n",
+        [$"ACTOR ov_a {at} 0 0"]);
 
     /// <summary>The probe as the generator consumes it.</summary>
     public static readonly TraceProbeSet Set = new(

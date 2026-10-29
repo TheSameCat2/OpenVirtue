@@ -31,6 +31,7 @@ public sealed class Player : AcknexObject
     private readonly Dictionary<int, List<int>> _regionWalls = [];
     private readonly Dictionary<int, RegionSurface?> _regionSurfaces = [];
     private Vector3 _position;
+    private Vector2? _settled;
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
@@ -204,21 +205,29 @@ public sealed class Player : AcknexObject
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
             ignored,
             _touchedObjects,
-            WallClearance);
+            WallClearance,
+            LevelCollisionWorld.ContactSlackSquared);
         _region = result.Region == _region ? _region : StoreyFor(result.Region);
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
     }
 
     /// <summary>
-    /// Pushes the player out of any solid thing or actor it overlaps, straight away from the
+    /// Pushes the player out of a solid thing or actor it overlaps, straight away from the
     /// object's centre to the contact distance (half the object's width plus <see cref="Width"/>),
-    /// and counts the object as touched. The original does this after a beam into an object
-    /// (OV-20261019-actor-contact).
+    /// and counts the object as touched. The original does this at the start and after a beam into
+    /// an object (OV-20261019-actor-contact), out of one object only, and leaves a player standing
+    /// on others alone (OV-20261029-overlap): there is no push unless the position was set from
+    /// outside since the last one.
     /// </summary>
     public void PushOutOfObjects()
     {
         var start = new Vector2(_position.X, _position.Z);
+        if (_settled == start)
+        {
+            return;
+        }
+
         Vector2 end = _collisionWorld.PushOutOfEntities(
             start,
             _region,
@@ -228,6 +237,9 @@ public sealed class Player : AcknexObject
             _touchedObjects);
         _position = new Vector3(end.X, _position.Y, end.Y);
     }
+
+    /// <summary>Marks the end of the player's own movement in a cycle: the next <see cref="PushOutOfObjects"/> skips an unmoved player.</summary>
+    public void Settle() => _settled = new Vector2(_position.X, _position.Z);
 
     /// <summary>
     /// Moves the player straight away from <paramref name="center"/> to

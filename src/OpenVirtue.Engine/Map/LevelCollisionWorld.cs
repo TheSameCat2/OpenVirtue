@@ -49,6 +49,8 @@ public sealed class LevelCollisionWorld
     /// solid thing or actor that pushed it back (OV-20261019-clip-contact). A step that ends on a
     /// wall's line touches it, and so does the next step off it (OV-20261019-wall-pass-clip).
     /// A solid wall holds the circle <paramref name="wallClearance"/> beyond <paramref name="radius"/>.
+    /// <paramref name="contactSlackSquared"/> is added to the square of each contact distance with
+    /// a thing or actor (<see cref="ContactSlackSquared"/> for the player).
     /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
@@ -60,7 +62,8 @@ public sealed class LevelCollisionWorld
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity = null,
         ICollection<AcknexObject>? touched = null,
-        float wallClearance = 0)
+        float wallClearance = 0,
+        float contactSlackSquared = 0)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -92,7 +95,7 @@ public sealed class LevelCollisionWorld
                 bool adjusted = ResolveWalls(
                     from, region, wallRadius, canCross, crossedWallIndex, touched, ref desired);
                 adjusted |= ResolveEntities(
-                    from, region, radius, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
+                    from, region, radius, contactSlackSquared, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
                 collided |= adjusted;
                 if (!adjusted)
                 {
@@ -112,9 +115,24 @@ public sealed class LevelCollisionWorld
     }
 
     /// <summary>
-    /// Pushes a circle that overlaps solid things or actors straight out from their centres to
-    /// the contact distance, without a move (a player beamed inside an object,
-    /// OV-20261019-actor-contact), and adds the objects to <paramref name="touched"/>.
+    /// What the original adds to the square of the player's contact distance with an object (half
+    /// the object's width plus <c>PLAYER_WIDTH</c>): the player stops, and is pushed out, about 0.02
+    /// beyond a 2.2 contact distance and 0.01 beyond a 5.2 one, √(c² + 0.093) for every width
+    /// measured (OV-20261029-overlap). Actors' contacts with things are not measured and use c.
+    /// </summary>
+    public const float ContactSlackSquared = 0.093f;
+
+    /// <summary>The distance between centres at which the player stops against an object, from their summed radii.</summary>
+    public static float ContactDistance(float combinedRadius) =>
+        MathF.Sqrt((combinedRadius * combinedRadius) + ContactSlackSquared);
+
+    /// <summary>
+    /// Pushes a circle that overlaps a solid thing or actor straight out from its centre to the
+    /// contact distance, without a move (a player beamed inside an object,
+    /// OV-20261019-actor-contact), and adds the object to <paramref name="touched"/>. Only one
+    /// object counts: the first overlapping one in reverse map order, actors before things. On its
+    /// exact centre there is no push at all; nor is there one out of the other objects the circle
+    /// still overlaps (OV-20261029-overlap).
     /// </summary>
     public Vector2 PushOutOfEntities(
         Vector2 position,
@@ -126,16 +144,48 @@ public sealed class LevelCollisionWorld
     {
         ArgumentNullException.ThrowIfNull(entityRadius);
         ArgumentNullException.ThrowIfNull(canCrossEntity);
-        Vector2 desired = position;
-        for (int pass = 0; pass < 4; pass++)
+        foreach (MapEntity entity in _level.Actors.Reverse<MapEntity>().Concat(_level.Things.Reverse<MapEntity>()))
         {
-            if (!ResolveEntities(position, region, Math.Max(0.01f, radius), entityRadius, canCrossEntity, null, touched, ref desired))
+            if (entity.Region != region || canCrossEntity(entity))
             {
-                break;
+                continue;
             }
+
+            float contact = ContactDistance(Math.Max(0.01f, radius) + Math.Max(0, entityRadius(entity)));
+            var center = new Vector2((float)entity.X, (float)entity.Y);
+            Vector2 offset = position - center;
+            if (offset.LengthSquared() >= contact * contact)
+            {
+                continue;
+            }
+
+            if (offset.LengthSquared() <= float.Epsilon)
+            {
+                return position;
+            }
+
+            // The push is a step with no part along the other axis, and the original then moves
+            // the player 4/1024 along that axis, always positive (OV-20261029-actor-step).
+            const float Nudge = 4f / 1024;
+            Vector2 end = center + (Vector2.Normalize(offset) * contact);
+            if (offset.X == 0)
+            {
+                end.X += Nudge;
+            }
+            else if (offset.Y == 0)
+            {
+                end.Y += Nudge;
+            }
+
+            if (touched is not null && !touched.Contains(entity))
+            {
+                touched.Add(entity);
+            }
+
+            return end;
         }
 
-        return desired;
+        return position;
     }
 
     private bool ResolveWalls(
@@ -241,6 +291,7 @@ public sealed class LevelCollisionWorld
         Vector2 from,
         int region,
         float radius,
+        float contactSlackSquared,
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity,
@@ -258,6 +309,7 @@ public sealed class LevelCollisionWorld
             }
 
             float combinedRadius = radius + Math.Max(0, entityRadius(entity));
+            combinedRadius = MathF.Sqrt((combinedRadius * combinedRadius) + contactSlackSquared);
             var center = new Vector2((float)entity.X, (float)entity.Y);
             Vector2 offset = desired - center;
             if (offset.LengthSquared() >= combinedRadius * combinedRadius)

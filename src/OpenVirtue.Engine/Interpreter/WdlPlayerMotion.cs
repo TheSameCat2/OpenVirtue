@@ -83,6 +83,7 @@ public static class WdlPlayerMotion
         runtime.SetSkill(
             "ACCELERATION",
             timeCorrection > 0 ? (speed - previousSpeed) / timeCorrection : 0);
+        player.Settle();
         Synchronize(runtime, player);
     }
 

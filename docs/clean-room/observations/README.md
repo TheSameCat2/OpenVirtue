@@ -330,7 +330,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261029-ui-text.md` — lines are drawn whole or not at all within `POS_Y…POS_Y+SIZE_Y`
   after `OFFSET_Y`; `CENTER_Y` centres the first line, `CENTER_X` each line. Six DOSBox-X screenshots.
 
-## Overlapping the player start (2026-10-29 — partly implemented)
+## Overlapping the player start (2026-10-29 — implemented)
 
-- `OV-20261029-overlap.md` — a player exactly on an object's centre is not pushed; off centre it is
-  pushed out along the centre line at start-up, to 2.225 for a 2.2 contact (the extra is open).
+- `OV-20261029-overlap.md` — at start-up or after a beam, the player is pushed out of one object
+  only: the first overlapping one in reverse map order, and not at all on its exact centre.
+  - The push goes along the centre line to √(c² + 0.093), the player's measured contact distance
+    with objects in general.
+  - A zero component gets the 4/1024 nudge.
+  - Off-axis residuals of up to 0.008 are open.
