@@ -1006,4 +1006,29 @@ public class LevelLoaderTests
                 $"Expected matching GLOBAL declarations; counts were {expectedGlobals.Count} and {level.GlobalSkills.Count}."));
     }
 
+
+    [Fact]
+    public void Load_WholeImageBitmap_TakesItsSizeFromThePcxHeader()
+    {
+        // BMAP tgt,<T.PCX>; names the whole image: a thing with it needs the image's 64 x 256 size
+        // to be a sprite at all (found by the shoot-mapping replay).
+        byte[] pcx = new byte[128];
+        pcx[0] = 0x0A;
+        BitConverter.TryWriteBytes(pcx.AsSpan(8), (ushort)63);
+        BitConverter.TryWriteBytes(pcx.AsSpan(10), (ushort)255);
+        const string map = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nTHING t 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        const string main = "MAPFILE <m.wmp>; BMAP tgt,<T.PCX>; TEXTURE tex { SCALE_X 16; SCALE_Y 16; BMAPS tgt; } THING t { TEXTURE tex; }";
+        WrsArchive archive = WrsArchive.Read(WrsArchive.Write(
+        [
+            new WrsFile("MAIN.WDL", System.Text.Encoding.ASCII.GetBytes(main)),
+            new WrsFile("M.WMP", System.Text.Encoding.ASCII.GetBytes(map)),
+            new WrsFile("T.PCX", pcx),
+        ]));
+
+        Level level = LevelLoader.Load(archive, "MAIN.WDL");
+
+        Assert.True(OpenVirtue.Engine.Map.MapEntitySizing.TryGetSize(level, Assert.Single(level.Things), out var size));
+        Assert.Equal(4, size.Width, 3);
+        Assert.Equal(16, size.Height, 3);
+    }
 }

@@ -214,3 +214,11 @@ report billboards' center depth and walls' trace distance × cos(deviation) as `
 (and apply `SHOOT_RANGE` to that measure); `MeshBuilder.EmitWallSegment` puts u = 0 at v2;
 `CreateWallHitCandidate` counts the wall `HIT_X` from v2. `HIT_X`/`HIT_Y` stay integer texel
 indices in OpenVirtue (sub-texel precision is not needed for parity).
+
+## Addendum (2026-10-29, oracle-diff replay)
+Replaying the eight carriers showed OpenVirtue's shots missing the targets' texels: `BMAP tgt_map,<PRBTGT.PCX>`
+names the whole image, and the loader left such a texture's size at 0, so the things were not sprites
+at all. The archive loader now takes a whole-image bitmap's size from its PCX header. The texels then
+differ from the original's by one or two: the original reports a fractional `HIT_X` (32.832 at the
+centre, 33.176, 32.488, 51.193) and `HIT_Y` one row lower (129 where OpenVirtue gives 128), where
+OpenVirtue floors the sampled pixel. Modelling the original's screen-pixel shot ray is open.

@@ -50,12 +50,30 @@ public static class LevelLoader
             throw new InvalidDataException($"Main WDL '{mainWdlName}' was not found in the archive.");
         }
 
+        var images = archive.Entries
+            .Where(static e => e.Name.EndsWith(".pcx", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(static e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.OrdinalIgnoreCase);
         return LoadCore(
             mainWdlName,
             mainSource,
             name => resources.GetValueOrDefault(Path.GetFileName(name)),
             defines,
-            mapOverrideName);
+            mapOverrideName,
+            file => images.TryGetValue(Path.GetFileName(file), out WrsEntry? entry) ? PcxSize(entry.GetData()) : null);
+    }
+
+    /// <summary>A PCX image's size from its header (window xmin, ymin, xmax, ymax at bytes 4–11).</summary>
+    private static (int Width, int Height)? PcxSize(byte[] pcx)
+    {
+        if (pcx.Length < 12 || pcx[0] != 0x0A)
+        {
+            return null;
+        }
+
+        int width = BitConverter.ToUInt16(pcx, 8) - BitConverter.ToUInt16(pcx, 4) + 1;
+        int height = BitConverter.ToUInt16(pcx, 10) - BitConverter.ToUInt16(pcx, 6) + 1;
+        return width > 0 && height > 0 ? (width, height) : null;
     }
 
     /// <summary>
@@ -69,7 +87,8 @@ public static class LevelLoader
         string mainSource,
         Func<string, string?> resolveResource,
         IEnumerable<string>? defines = null,
-        string? mapOverrideName = null)
+        string? mapOverrideName = null,
+        Func<string, (int Width, int Height)?>? measureImage = null)
     {
         ArgumentNullException.ThrowIfNull(mainSource);
         ArgumentNullException.ThrowIfNull(resolveResource);
@@ -120,7 +139,7 @@ public static class LevelLoader
             skillValues, globalSkills, explicitlyInitializedSkills, skillBounds,
             GatherStrings(program), GatherSynonyms(program), GatherSearchPaths(program),
             GatherSounds(program), GatherPalettes(program), GatherUiElements(program), BuildBitmaps(declarations),
-            BuildTextures(declarations), declarations.Actions,
+            BuildTextures(declarations, measureImage), declarations.Actions,
             GatherSchedulerSlotActions(program, "EACH_TICK"), GatherActionHooks(program), FindActionName(program, "IF_START"),
             GatherSchedulerSlotActions(program, "EACH_SEC"))
         {
@@ -268,18 +287,44 @@ public static class LevelLoader
         return wall;
     }
 
-    private static Dictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
+    private static Dictionary<string, LevelTexture> BuildTextures(
+        WdlDeclarations declarations,
+        Func<string, (int Width, int Height)?>? measureImage)
     {
         var catalog = new Dictionary<string, LevelTexture>(StringComparer.OrdinalIgnoreCase);
         foreach (string textureName in declarations.TextureNames)
         {
             if (declarations.ResolveTexture(textureName) is { } texture)
             {
-                catalog[textureName] = texture;
+                catalog[textureName] = measureImage is null ? texture : Measured(texture, measureImage);
             }
         }
 
         return catalog;
+    }
+
+    /// <summary>
+    /// A texture whose <c>BMAP</c>s name a whole image (no x, y, width, height; manual p.30) takes its
+    /// size from the image, so sprites, shots and contact see it.
+    /// </summary>
+    private static LevelTexture Measured(LevelTexture texture, Func<string, (int Width, int Height)?> measureImage)
+    {
+        LevelBitmap? Measure(LevelBitmap? frame) =>
+            frame is { } bitmap && (bitmap.Width <= 0 || bitmap.Height <= 0) && measureImage(bitmap.File) is { } size
+                ? bitmap with { Width = size.Width - bitmap.X, Height = size.Height - bitmap.Y }
+                : frame;
+
+        if ((texture.Width > 0 && texture.Height > 0) || measureImage(texture.File) is not { } whole)
+        {
+            return texture with { Frames = [.. texture.Frames.Select(Measure)] };
+        }
+
+        return texture with
+        {
+            Width = whole.Width - texture.X,
+            Height = whole.Height - texture.Y,
+            Frames = [.. texture.Frames.Select(Measure)],
+        };
     }
 
     private static Dictionary<string, LevelBitmap> BuildBitmaps(WdlDeclarations declarations)
