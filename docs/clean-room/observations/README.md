@@ -268,3 +268,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - `STOP_SOUND` frees the normal channels two cycles later and leaves loops playing.
 
   Eighteen DOSBox-X runs; implemented in `WdlRuntime`.
+
+## Animation phase timing (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-anim-timing.md` — the phase lengths of a texture animation loop are fixed in frames
+  when the loop starts: ⌊DELAY·(1 + RANDOM·u) / TIME_CORR⌋, with that cycle's `TIME_CORR` and one random
+  draw per loop. A `ONESHOT` plays with the step fixed when its last run (or the level) started. A
+  re-analysis of the motion-timing traces; implemented in `WdlRuntime.AdvanceAnimationTarget`.

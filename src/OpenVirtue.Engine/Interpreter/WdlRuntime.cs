@@ -3217,12 +3217,20 @@ public sealed class WdlRuntime :
         if (!_textureAnimationStates.TryGetValue(target, out TextureAnimationState? state))
         {
             state = new TextureAnimationState();
+            StartAnimationLoop(entry.Texture, state, timeCorrection);
             _textureAnimationStates[target] = state;
         }
 
         AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
     }
 
+    /// <summary>
+    /// Steps a texture animation by one frame. The original fixes each loop's phase lengths in frames
+    /// when the loop starts: <c>floor(DELAY · (1 + RANDOM·u) / TIME_CORR)</c>, with the
+    /// <c>TIME_CORR</c> of the cycle that starts the loop and one random draw u for the whole loop
+    /// (OV-20261029-anim-timing). A phase then lasts that many frames whatever the frame rate does,
+    /// and the first loop, started in the first cycle, counts with <c>TIME_CORR</c> 1.
+    /// </summary>
     private void AdvanceAnimationTarget(
         AcknexObject target,
         LevelTexture texture,
@@ -3236,7 +3244,6 @@ public sealed class WdlRuntime :
             if (!play)
             {
                 state.WasPlaying = false;
-                state.ElapsedTicks = 0;
                 return;
             }
 
@@ -3244,8 +3251,9 @@ public sealed class WdlRuntime :
             {
                 SetAnimationCycle(target, 1);
                 QueueAnimationTextureSound(target, texture, 1);
-                state.ElapsedTicks = 0;
+                state.FramesLeft = AnimationFrames(texture, 1, state);
                 state.WasPlaying = true;
+                return;
             }
         }
 
@@ -3255,33 +3263,44 @@ public sealed class WdlRuntime :
             SetAnimationCycle(target, cycle);
         }
 
-        state.ElapsedTicks += timeCorrection;
-        int phasesAdvanced = 0;
-        while (state.ElapsedTicks >= AnimationDelay(texture, cycle) && phasesAdvanced++ < 4096)
+        if (--state.FramesLeft > 0)
         {
-            state.ElapsedTicks -= AnimationDelay(texture, cycle);
-            if (cycle < cycles)
-            {
-                cycle++;
-                SetAnimationCycle(target, cycle);
-                QueueAnimationTextureSound(target, texture, cycle);
-                continue;
-            }
+            return;
+        }
 
-            TriggerEachCycle(target);
-            if (texture.IsOneShot)
-            {
-                target["PLAY"] = 0;
-                state.WasPlaying = false;
-                state.ElapsedTicks = 0;
-                break;
-            }
-
-            cycle = 1;
+        if (cycle < cycles)
+        {
+            cycle++;
             SetAnimationCycle(target, cycle);
             QueueAnimationTextureSound(target, texture, cycle);
+            state.FramesLeft = AnimationFrames(texture, cycle, state);
+            return;
         }
+
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
+        if (texture.IsOneShot)
+        {
+            target["PLAY"] = 0;
+            state.WasPlaying = false;
+            return;
+        }
+
+        SetAnimationCycle(target, 1);
+        QueueAnimationTextureSound(target, texture, 1);
+        state.FramesLeft = AnimationFrames(texture, 1, state);
     }
+
+    /// <summary>Fixes the frame step and the random factor of a new animation loop.</summary>
+    private void StartAnimationLoop(LevelTexture texture, TextureAnimationState state, double timeCorrection)
+    {
+        state.LoopStep = timeCorrection > 0 ? timeCorrection : 1;
+        state.LoopFactor = 1 + (texture.RandomDelayFactor * _random.NextDouble());
+        state.FramesLeft = AnimationFrames(texture, 1, state);
+    }
+
+    private static int AnimationFrames(LevelTexture texture, int cycle, TextureAnimationState state) =>
+        Math.Max(1, (int)Math.Floor((AnimationDelay(texture, cycle) * state.LoopFactor / state.LoopStep) + 1e-9));
 
     private void QueueAnimationTextureSound(AcknexObject target, LevelTexture texture, int cycle)
     {
@@ -4968,7 +4987,14 @@ public sealed class WdlRuntime :
 
     private sealed class TextureAnimationState
     {
-        public double ElapsedTicks { get; set; }
+        /// <summary>Frames left in the current phase.</summary>
+        public int FramesLeft { get; set; }
+
+        /// <summary>The <c>TIME_CORR</c> the current loop counts its phases with.</summary>
+        public double LoopStep { get; set; } = 1;
+
+        /// <summary>The current loop's <c>RANDOM</c> factor (1 without <c>RANDOM</c>).</summary>
+        public double LoopFactor { get; set; } = 1;
 
         public bool WasPlaying { get; set; }
     }

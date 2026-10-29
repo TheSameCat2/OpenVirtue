@@ -2818,7 +2818,11 @@ public class WdlRuntimeTests
         Assert.Equal(1, runner["CYCLE"]);
         Assert.Equal(0, runtime.GetSkill("cycles"));
 
+        // The loop was fixed in the first cycle (TIME_CORR 1), so the phases last 1 and 2 frames,
+        // counted from the cycle after PLAY is seen (OV-20261029-anim-timing).
         runner["PLAY"] = 1;
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runner["CYCLE"]);
         runtime.Tick(1.0 / 16);
         Assert.Equal(2, runner["CYCLE"]);
         Assert.Equal(1, runner["PLAY"]);
@@ -2830,6 +2834,52 @@ public class WdlRuntimeTests
         Assert.Equal(2, runner["CYCLE"]);
         Assert.Equal(0, runner["PLAY"]);
         Assert.Equal(1, runtime.GetSkill("cycles"));
+    }
+
+    [Theory]
+    [InlineData(0.25, new[] { 4, 8, 12 })]
+    [InlineData(0.28125, new[] { 3, 7, 10 })]
+    public void Tick_AnimationLoop_FixesPhaseFramesFromTheWrapCyclesTimeCorr(double timeCorrection, int[] frames)
+    {
+        // OV-20261029-anim-timing anim-delay: DELAY 1, 2, 3 lasted 4, 8, 12 frames in a loop that
+        // started at TIME_CORR 0.25 and 3, 7, 10 in one that started at 0.281.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; BMAP p3,<p3.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 3; BMAPS p1,p2,p3; DELAY 1,2,3; } " +
+            "THING runner { TEXTURE runnerTex; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+        double seconds = timeCorrection / 16;
+
+        // The first loop counts with the first cycle's TIME_CORR of 1: 1 + 2 + 3 frames.
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(seconds);
+        }
+
+        Assert.Equal(1, runner["CYCLE"]);
+        Assert.Equal(timeCorrection, runtime.GetSkill("TIME_CORR"), 3);
+        var lengths = new List<int>();
+        int run = 0;
+        double phase = runner["CYCLE"];
+        while (lengths.Count < 3)
+        {
+            runtime.Tick(seconds);
+            run++;
+            if (runner["CYCLE"] != phase)
+            {
+                lengths.Add(run);
+                run = 0;
+                phase = runner["CYCLE"];
+            }
+        }
+
+        Assert.Equal(frames, lengths);
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 # OV-20261029-motion-timing: ACCEL, FRICTION and texture animation timing
 Date: 2026-10-29
-Status: ACCEL confirmed (three rounds); animation phase timing partly open
+Status: ACCEL confirmed (three rounds); animation phase timing answered by OV-20261029-anim-timing
 Observer: OpenVirtue maintainers (black-box probe)
 Implementer: OpenVirtue maintainers
 
@@ -71,7 +71,8 @@ it can be compared in an `IF`).
   phase until `PLAY` is set, plays once, clears `PLAY`, runs `EACH_CYCLE` and rests on its last phase.
 
 ## Open Questions
-- The phase length. It is neither a `TIME_CORR` sum (`DELAY 8` gave 32-cycle and then 28-cycle phases
+- Answered by OV-20261029-anim-timing: each loop fixes its phases at ⌊DELAY / TIME_CORR⌋ frames with
+  the `TIME_CORR` of the cycle that starts it. The original question: the phase length. It is neither a `TIME_CORR` sum (`DELAY 8` gave 32-cycle and then 28-cycle phases
   at the same rate) nor whole ticks of `TICKS`; the counts look tied to a frame-rate estimate that
   the runtime revises (32 cycles = 8 ticks at 4 cycles a tick, 28 = 3.5). `ONESHOT` phases were much
   shorter than their `DELAY`. A probe that varies the rate during a run is needed; OpenVirtue keeps
