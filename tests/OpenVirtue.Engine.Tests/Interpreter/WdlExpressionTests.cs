@@ -88,6 +88,9 @@ public class WdlExpressionTests
     [InlineData("0.0001 * 1000000", 0)]
     [InlineData("2097151 + 2", -2097151)]
     [InlineData("1000000 * 1000", 1755648)]
+    [InlineData("(0 - 1) / 3 * 1024", -341)] // round 2: toward zero
+    [InlineData("(0 - 0.5) * 0.3 * 1024", -153)]
+    [InlineData("(0 - 0.7) * 0.3 * 1024", -214)]
     [InlineData("0 - 2097153", -2097151.9990234375)]
     [InlineData("INT(0 - 2.5)", -3)]
     [InlineData("(0 - 7) % 3", 0)]

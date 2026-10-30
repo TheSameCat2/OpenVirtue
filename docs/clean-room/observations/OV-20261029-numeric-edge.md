@@ -61,14 +61,24 @@ and prints it (negative operands are written `0 - x`); precision is read from sc
 ## Invariant
 A skill is a signed 32-bit fixed-point value with 10 fractional bits (steps of 1/1024, from −2097152
 to 2097151.999). A literal is truncated toward zero and saturates at the limits. `+`, `−` and `*` wrap
-around in 32 bits; `*` keeps the full product before dropping the low 10 bits. `/` divides the raw
-values (truncated). `%` is the remainder of the dividend's raw bits taken as unsigned by the
+around in 32 bits; `*` keeps the full product before dropping the low 10 bits toward zero. `/` divides
+the raw values (truncated toward zero). `%` is the remainder of the dividend's raw bits taken as unsigned by the
 divisor's magnitude. `&`, `|`, `^` act on the raw bits. `INT` rounds down. A function computes from the
 fixed argument and truncates its result; an undefined or out-of-range result reads −2097151.999;
 `ASIN`/`ACOS` clamp their argument. A division by zero is a fatal error.
 
+## Round 2: negative inexact results (2026-10-30)
+The `signs` carrier prints each result and its raw value (×1024). Hash `ad1916f6`.
+
+| Expression | Raw | Exact |
+|---|---|---|
+| `1/3`, `(0-1)/3`, `(0-1)/(0-3)`, `(0-2)/3` | 341, −341, 341, −682 | ±341.33, −682.67 |
+| `0.5*0.3`, `(0-0.5)*0.3`, `(0-0.5)*(0-0.3)`, `(0-0.7)*0.3` | 153, −153, 153, −214 | ±153.5, −214.66 |
+
+Both `/` and `*` cut toward zero. `INT` is the odd one out: it rounds down. `WdlFixed.Multiply`
+dropped the low bits with an arithmetic shift, which rounds down; it now divides.
+
 ## Open Questions
-- Rounding of a negative inexact division or product (−1/3).
 - Whether engine-written values (positions, distances) are truncated or rounded; OpenVirtue rounds
   them to the nearest step, since the original computes them in fixed point to begin with.
 

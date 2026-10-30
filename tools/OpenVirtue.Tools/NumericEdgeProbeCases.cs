@@ -73,8 +73,30 @@ internal static class NumericEdgeProbeCases
             ("the whole chain stops", "B 12345 only (and no OVEND0.TXT if probe_start stopped)"),
             ("a run-time error message", "an Error line in OVCON.TXT")));
 
+    /// <summary>Assigns <paramref name="expression"/> to <c>ne_a</c> and prints it and its raw value (times 1024).</summary>
+    private static string Raw(string token, string expression) =>
+        $"    RULE ne_a = {expression};\n    RULE ne_d = ne_a * 1024;\n" + V(token, "ne_a", "ne_d");
+
+    /// <summary>
+    /// Round 2: inexact results of negative operands, printed with their raw values: does a
+    /// division or product truncate toward zero or round down?
+    /// </summary>
+    private static readonly string SignsRun =
+        "    RULE ne_b = 0 - 1;\n    RULE ne_c = 0 - 0.5;\n" +
+        Raw("DP", "1 / 3") + Raw("DN", "ne_b / 3") + Raw("DNN", "ne_b / (0 - 3)") + Raw("DN2", "(0 - 2) / 3") +
+        Raw("MP", "0.5 * 0.3") + Raw("MN", "ne_c * 0.3") + Raw("MNN", "ne_c * (0 - 0.3)") + Raw("MN2", "(0 - 0.7) * 0.3") +
+        P("RET");
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        new TraceProbeCase(
+            "signs",
+            "Round 2. 1/3, −1/3, −1/−3 and −2/3; 0.5·0.3, −0.5·0.3, −0.5·−0.3 and −0.7·0.3, with their raw values: toward zero or down?",
+            Skills,
+            SignsRun,
+            Predict(
+                ("truncation toward zero", "DN raw −341, MN raw −153"),
+                ("rounding down (arithmetic shift)", "DN raw −342, MN raw −154"))),
         new TraceProbeCase(
             "values",
             "Number format and arithmetic: precision of 1/3, 0.001 and 0.0001, range past 32767/65535/2^21, rounding of negative division, INT, %, bitwise operators on fractions and negatives, SIGN(0), near-singular TAN and EXP overflow.",

@@ -57,7 +57,11 @@ public static class WdlFixed
 
     public static double Negate(double value) => FromRaw(-(long)ToRaw(value));
 
-    public static double Multiply(double left, double right) => FromRaw(((long)ToRaw(left) * ToRaw(right)) >> 10);
+    /// <summary>
+    /// The full 64-bit raw product with the low 10 bits dropped toward zero: −0.5·0.3 is −153/1024,
+    /// not −154 (OV-20261029-numeric-edge round 2).
+    /// </summary>
+    public static double Multiply(double left, double right) => FromRaw(((long)ToRaw(left) * ToRaw(right)) / 1024);
 
     /// <exception cref="WdlExpressionException">The divisor is 0 (the DOS runtime crashes).</exception>
     public static double Divide(double left, double right)
