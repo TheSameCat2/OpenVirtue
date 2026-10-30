@@ -155,6 +155,31 @@ Implementation:
 - Tests: `Runtime_ImportOriginalActions_ResumesAtTheSavedFlatPlaces`, and the guarded
   `ReadActions_TheIpProbesSave_ListsTheWaitingActionsThenTheSavingOne`.
 
+## Round 9: which bytes a load needs (2026-10-30)
+Run 1 of `load-edit` made a fresh save. Each variant copied it with the actor's X set to 25 and
+`sb_n` to 5 (to see the load), blanked some bytes, repacked it and loaded it in a second run.
+"Loads" means the sampler showed 25 and 5 afterwards and `sb_note` resumed. "Crash" means the
+original quit without its end marker, the buffered traces lost.
+
+| Blanked | Result |
+|---|---|
+| nothing | loads |
+| section 0 (80 bytes) | loads (`TICKS` came back a little different) |
+| sections 4 and 7 set to −1 | loads, but `sb_as.X` reads 0: section 7 (`13, 15, 14, −1 …`) seems to hold the three `SYNONYM`s' objects |
+| every unread byte of every thing, actor and wall record | crash |
+| thing and actor records: +0…+7, +92, +128…+169, +22…+29, one range at a time | loads |
+| thing and actor records: +20 (`0x627` actor, `0x607` thing) | crash |
+| wall records: +0…+11, +18…+35, +90…+99, +110…+129 (the wall's vertices, recomputed), +130…+177, one range at a time | loads |
+| wall records: +100…+109 (+102 holds 1.0, as in thing and actor records) | crash |
+| every unread byte except +20 and +102 | crash |
+| cumulatively: the thing and actor ranges, then wall +0…+11 and +18…+35 | loads; adding wall +90…+99 crashes |
+
+The +20 word is `0x607` for things, `0x627` for actors, and `0x602` or `0x002` for walls in every
+save. The `0x600` bits differ between walls in one save, so they look like view state. A writer
+needs at least the +20 flags and +102 = 1.0. It also needs some of wall +90…+99 (−255 at +92) together
+with other unread bytes, so it cannot write zeros for everything it does not understand. OpenVirtue
+does not write the original's format yet.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.
