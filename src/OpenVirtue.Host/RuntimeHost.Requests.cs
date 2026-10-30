@@ -130,7 +130,7 @@ public sealed partial class RuntimeHost
             }
 
             float[] mono = WavPcm.ToMono(decoded);
-            _audio.StartVoice(request.Channel, mono, decoded.SampleRate, volume, pan, request.Loop);
+            _audio.StartVoice(request.Channel, mono, SoundBlasterRate(decoded.SampleRate), volume, pan, request.Loop);
             if (request.Channel is >= 0 and < AudioMixer.VoiceCount)
             {
                 _hostedChannels.Add(request.Channel);
@@ -499,6 +499,15 @@ public sealed partial class RuntimeHost
         float volume = requestVolume * (float)Math.Clamp(_runtime.GetSkill("SOUND_VOL"), 0, 1);
         candidates.Add(new SpatialLoopCandidate(emitter, spatialTexture.SoundName, requestVolume, volume, pan));
     }
+
+    /// <summary>
+    /// The rate a Sound Blaster plays a sound at: its time constant sets the sample period in whole
+    /// microseconds, cut down, so 11025 Hz plays at 1,000,000 / 90 = 11,111 Hz and 22050 Hz at 22,222.
+    /// A one-second sound then frees its channel at TICKS 29.406 rather than at the next cycle after
+    /// 29.438 (OV-20261029-audio round 3).
+    /// </summary>
+    public static int SoundBlasterRate(int sampleRate) =>
+        sampleRate is > 3906 and <= 45454 ? 1_000_000 / (1_000_000 / sampleRate) : sampleRate;
 
     private bool HasFreeSoundChannel()
     {
