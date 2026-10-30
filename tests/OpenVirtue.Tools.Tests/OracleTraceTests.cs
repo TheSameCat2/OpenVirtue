@@ -37,6 +37,27 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void DetectTimingColumn_NoRepeatedToken_UsesEveryLineWhenOneCounterRuns()
+    {
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "BEGIN\nGO 13.438 0.000\nW1 13.688 1.000\nW15 13.969 2.000\nW05 13.969 2.000\nW25 14.469 4.000\nRET\n");
+
+        OracleTimingColumn? timing = OracleTrace.DetectTimingColumn(lines);
+
+        Assert.Equal(new OracleTimingColumn(OracleTimingColumn.AnyToken, 0), timing);
+        Assert.Equal([13.4375, 13.6875, 13.96875, 14.21875, 14.46875], OracleTrace.CycleTicks(lines, timing!.Value));
+    }
+
+    [Fact]
+    public void DetectTimingColumn_OneCountWithTwoTicks_IsNotATimingColumn()
+    {
+        // A line printed before the counting action and one after it carry counters a cycle apart.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("A 1.000 1.000\nB 1.250 1.000\nC 1.500 2.000\nD 1.750 3.000\n");
+
+        Assert.Null(OracleTrace.DetectTimingColumn(lines));
+    }
+
+    [Fact]
     public void CycleTicks_SparseSamplerWithCounter_FillsEveryCycle()
     {
         IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("TK 24.000 1.000\nTK 48.000 4.000\nTK 56.000 5.000\n");

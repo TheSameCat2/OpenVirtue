@@ -448,7 +448,7 @@ First targets:
 ### Status (2026-10-30)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces; 211 of 474 match line for line. Most of the rest differ only in the
+against the original's traces; 218 of 474 match line for line. Most of the rest differ only in the
 `TICKS` of input-timed lines or after a sampler stops.
 
 | Target | Measured and implemented | Still open |

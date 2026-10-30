@@ -23,7 +23,14 @@ internal sealed record OracleTraceLine(int Number, string Token, IReadOnlyList<s
 /// <summary>Where the replay reads the original's per-cycle <c>TICKS</c> from: one token's column.</summary>
 internal readonly record struct OracleTimingColumn(string Token, int Column)
 {
+    /// <summary>The token that stands for every line: a trace whose lines all print <c>TICKS</c> and one cycle counter.</summary>
+    public const string AnyToken = "*";
+
     public override string ToString() => Token + ":" + Column.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Whether <paramref name="line"/> is one of this column's lines and has a number there.</summary>
+    public bool Matches(OracleTraceLine line) =>
+        (Token == AnyToken || string.Equals(line.Token, Token, StringComparison.Ordinal)) && line.Value(Column) is not null;
 
     /// <summary>Parses <c>TOKEN:COLUMN</c> (column 0 is the first field after the token).</summary>
     public static bool TryParse(string text, out OracleTimingColumn timing)
@@ -133,7 +140,43 @@ internal static class OracleTrace
             }
         }
 
-        return best;
+        return best ?? AnyTokenTiming(lines);
+    }
+
+    /// <summary>
+    /// For a trace where no token repeats as a sampler: every line counts as a sample when every line
+    /// prints <c>TICKS</c> first and a cycle counter second, both never going down, at least three
+    /// distinct cycles, and each counted cycle with one <c>TICKS</c> only. The last check keeps out
+    /// traces that print from both sides of the counting action, whose counters are a cycle apart.
+    /// </summary>
+    private static OracleTimingColumn? AnyTokenTiming(IReadOnlyList<OracleTraceLine> lines)
+    {
+        List<OracleTraceLine> numbered = [.. lines.Where(static l => l.Value(0) is not null)];
+        if (numbered.Count < 3 || numbered.Count < lines.Count(static l => l.Fields.Count > 0) ||
+            numbered.Any(static l => l.Value(1) is not { } n || n != Math.Floor(n) || n < 0))
+        {
+            return null;
+        }
+
+        var ticksByCount = new Dictionary<double, double>();
+        for (int i = 0; i < numbered.Count; i++)
+        {
+            double ticks = numbered[i].Value(0)!.Value;
+            double count = numbered[i].Value(1)!.Value;
+            if (i > 0 && (ticks < numbered[i - 1].Value(0)!.Value || count < numbered[i - 1].Value(1)!.Value))
+            {
+                return null;
+            }
+
+            if (ticksByCount.TryGetValue(count, out double seen) ? Math.Abs(seen - ticks) > 1e-9 : false)
+            {
+                return null;
+            }
+
+            ticksByCount[count] = ticks;
+        }
+
+        return ticksByCount.Count >= 3 ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0) : null;
     }
 
     /// <summary>
@@ -145,7 +188,7 @@ internal static class OracleTrace
     {
         ArgumentNullException.ThrowIfNull(lines);
         List<OracleTraceLine> tokenLines = lines
-            .Where(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
+            .Where(timing.Matches)
             .ToList();
         if (tokenLines.Count < 4)
         {
@@ -220,7 +263,7 @@ internal static class OracleTrace
     {
         ArgumentNullException.ThrowIfNull(lines);
         List<OracleTraceLine> tokenLines = lines
-            .Where(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
+            .Where(timing.Matches)
             .ToList();
         int? counter = CounterColumn(tokenLines, timing.Column);
         if (counter is not { } counterColumn)

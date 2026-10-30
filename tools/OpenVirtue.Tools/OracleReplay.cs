@@ -286,7 +286,7 @@ internal static class OracleReplay
     }
 
     private static double? FirstValue(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing) =>
-        lines.FirstOrDefault(l => string.Equals(l.Token, timing.Token, StringComparison.Ordinal) && l.Value(timing.Column) is not null)
+        lines.FirstOrDefault(timing.Matches)
             ?.Value(timing.Column);
 
     private static IEnumerable<WrsFile> CarrierFiles(string work)

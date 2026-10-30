@@ -115,7 +115,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   walks every carrier below it (round sub-folders included) and skips carriers that never ran.
   Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
   detected by default: the first non-negative, never-decreasing column of the densest token; a
-  whole-number cycle counter on the same lines fills in samplers that print only every few cycles).
+  whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
+  in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
+  counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`).
   Until the replay prints its first sampled cycle every frame lasts the original's first sampled
   step; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
   offset, which is reported, and columns that print `TICKS` are compared relative to it. A carrier
