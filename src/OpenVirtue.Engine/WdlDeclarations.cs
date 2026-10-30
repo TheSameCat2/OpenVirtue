@@ -82,6 +82,8 @@ public sealed class WdlDeclarations
     private readonly Dictionary<string, EntityDef> _entities = new(Ci);
     private readonly Dictionary<string, WdlBlock> _actions = new(Ci);
     private readonly List<string> _actionOrder = [];
+    private readonly List<string> _textureDeclarations = [];
+    private readonly List<(string Kind, string Name)> _objectDeclarations = [];
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
@@ -92,8 +94,22 @@ public sealed class WdlDeclarations
     /// <summary>The body of each <c>ACTION</c> declaration, by name.</summary>
     public IReadOnlyDictionary<string, WdlBlock> Actions => _actions;
 
-    /// <summary>The actions in the order they are first declared.</summary>
+    /// <summary>
+    /// The declared actions in the order their names first appear, as a declaration or as a
+    /// reference before it (an <c>IF_NEAR</c>, a <c>CALL</c>, a slot), which is how the original
+    /// numbers them in its saves (OV-20261029-save-body round 13: all 29 numbers read from a
+    /// retail save fit this order, none the declaration order).
+    /// </summary>
     public IReadOnlyList<string> ActionOrder => _actionOrder;
+
+    /// <summary>Every <c>TEXTURE</c> declaration's name in order, repeats included.</summary>
+    public IReadOnlyList<string> TextureDeclarations => _textureDeclarations;
+
+    /// <summary>
+    /// The <c>WALL</c>, <c>THING</c> and <c>ACTOR</c> declarations with a body, as (kind, name) in
+    /// declaration order; a repeated name keeps its first place.
+    /// </summary>
+    public IReadOnlyList<(string Kind, string Name)> ObjectDeclarations => _objectDeclarations;
 
     /// <summary>Builds the index from a flattened program.</summary>
     public static WdlDeclarations Index(WdlProgram program)
@@ -117,23 +133,62 @@ public sealed class WdlDeclarations
                     break;
                 case "WALL" when item.HasBody:
                     declarations.IndexWall(item);
+                    declarations.AddObjectDeclaration(item);
                     break;
                 case "THING" when item.HasBody:
                 case "ACTOR" when item.HasBody:
                     declarations.IndexEntity(item);
+                    declarations.AddObjectDeclaration(item);
                     break;
                 case "ACTION" when item.HasBody && item.Header.Count > 0:
-                    if (!declarations._actions.ContainsKey(item.Header[0].Text))
-                    {
-                        declarations._actionOrder.Add(item.Header[0].Text);
-                    }
-
                     declarations._actions[item.Header[0].Text] = item.Body!;
                     break;
             }
         }
 
+        var seen = new HashSet<string>(Ci);
+        foreach (WdlItem item in program.Items)
+        {
+            declarations.AddActionMentions(item, seen);
+        }
+
         return declarations;
+    }
+
+    private void AddActionMentions(WdlItem item, HashSet<string> seen)
+    {
+        void Mention(string name)
+        {
+            if (_actions.ContainsKey(name) && seen.Add(name))
+            {
+                _actionOrder.Add(name);
+            }
+        }
+
+        Mention(item.Keyword);
+        foreach (WdlToken token in item.Header)
+        {
+            if (token.Kind == WdlTokenKind.Identifier)
+            {
+                Mention(token.Text);
+            }
+        }
+
+        if (item.Body is { } body)
+        {
+            foreach (WdlItem inner in body.Items)
+            {
+                AddActionMentions(inner, seen);
+            }
+        }
+    }
+
+    private void AddObjectDeclaration(WdlItem item)
+    {
+        if (item.Header.Count > 0 && !_objectDeclarations.Exists(d => d.Name.Equals(item.Header[0].Text, StringComparison.OrdinalIgnoreCase)))
+        {
+            _objectDeclarations.Add((item.Keyword.ToUpperInvariant(), item.Header[0].Text));
+        }
     }
 
     /// <summary>The floor/ceiling texture names for a region type, if defined.</summary>
@@ -245,7 +300,10 @@ public sealed class WdlDeclarations
         bool isSoundLoop = false;
         foreach (WdlItem property in body.Items)
         {
-            if (property.Keyword.Equals("BMAPS", StringComparison.OrdinalIgnoreCase) && property.Header.Count > 0)
+            // The manual names the list BMAPS; the original also takes BMAP, which Saints of Virtue's
+            // music room uses (its retail save holds those sprites' sizes, OV-20261029-save-body round 13).
+            if ((property.Keyword.Equals("BMAPS", StringComparison.OrdinalIgnoreCase) ||
+                 property.Keyword.Equals("BMAP", StringComparison.OrdinalIgnoreCase)) && property.Header.Count > 0)
             {
                 bitmaps.AddRange(IdentifierValues(property.Header));
                 bitmap = bitmaps.Count > 0 ? bitmaps[0] : property.Header[0].Text;
@@ -339,6 +397,7 @@ public sealed class WdlDeclarations
             }
         }
 
+        _textureDeclarations.Add(item.Header[0].Text);
         _textures[item.Header[0].Text] = new TextureDef(
             bitmap, bitmaps.ToArray(), scaleX, scaleY, ambient, isSky, isLightmap, isBehind, isShadow,
             sides, cycles, delays, isOneShot,

@@ -332,9 +332,68 @@ On the retail level the record "constants" are not constant: only 289 records ca
 +26 and 1.0 at +102. These words vary, most likely with the texture, and still need mapping before a
 retail level's save can be written.
 
+## Round 13: a retail level loads (2026-10-30)
+Three carriers (`events`, `unplaced`, and `base` again; save hashes `8839f28c`, `48622cb5`,
+`d4846b18`) and a field-by-field comparison with the original's own apathy save (`c063e44c`) fill
+in the records. A second patched copy of apathy saves and reloads its own save (`9724c341`) as the
+baseline for load errors. The 5894 walls and 629 of the 630 things and actors are matched by
+position.
+
+- **Unplaced objects.** The 7900 extra bytes are the walls, things and actors the WDL declares but
+  the map does not place: 46 in apathy (10 walls, 21 things, 15 actors, bullets and dropped pickups
+  among them). They open the object section in reverse declaration order, with zero positions,
+  region 0 and `INVISIBLE` set. The manual says this for things and actors (p.70); the save shows
+  walls too. An unplaced wall's view bits are clear (+20 `0x42`, +22 `0x300`). An unplaced thing holds
+  0 at +130, where every other record holds −1. The retail scripts use these objects as pools, for
+  example `IF (bullet1.INVISIBLE == 1) { SET curBullet, bullet1; … }`.
+- **Action numbers** follow the order in which each action's name first appears in the flattened
+  script, as a declaration or as an earlier reference (`IF_NEAR do_pickup` before
+  `ACTION do_pickup`). All 29 numbers read from the retail save fit this; none fits declaration order.
+- **Event block.** A thing's or actor's record holds `IF_NEAR`, `IF_FAR`, `EACH_CYCLE`, `IF_HIT`,
+  `EACH_TICK` and `IF_ARRIVED` actions at +146…+166, −1 for none. A wall's record has `ATTACH`'s texture
+  number at +146, 0 at +150, then the same six slots at +154…+174; walls take no `IF_ARRIVED`. A thing's
+  or actor's `ATTACH` is at +138. `IF_KLICK` does not compile on a thing or an actor ("Keyword unknown").
+- **Walls.**
+  - **Coordinates.** Vertices are cut toward zero to 1/1024 (8157 values fit only truncation, none
+    only rounding). +118 and +130 hold the two vertices' heights.
+  - **Length (+8)** is the square root of `dx²/1024 + dy²/1024`, each square cut to whole raw units
+    first, then cut to 1/1024. 2050 reads 2049 and 245 reads 243; all 5591 compared walls fit.
+  - **Regions.** +134 is the left region and +138 the right one.
+  - **+4** is the texture's height as (pixels·1024 − 1) / `SCALE_Y` in a 16-bit word: 128 pixels at
+    scale 2 reads −1.
+  - **OFFSET_Y** starts one raw step above the map's or the WDL's value (−30 reads −30719/1024); a
+    script's `SET` is kept exactly, and an unplaced wall gets no step.
+  - **MAP_COLOR** is +92's low byte (−255 for 1, −256 for 0).
+- **Things and actors.**
+  - **Size (+0, +4)** is the sprite's width and height in the same form as a wall's +4 (Ammo's 120
+    pixels at scale 48 read 2559).
+  - **Position.** X/Y are cut toward zero. `ANGLE` runs from 0 to 2π and is cut (270° reads 4825).
+  - **Other fields.** +48 is `ASPEED`, +126 the region, and +122 the floor's height under the object.
+  - **Height (+118)** is 0 on the `GROUND`, the ceiling less the sprite's height for a `CANDELABER`,
+    otherwise the floor.
+- **The first section.**
+  - **Player region.** +60 and +64 hold the player's region.
+  - **Palette.** +48 and +56 hold 6 in apathy, which declares six palettes (`levelPal` last), and 1 in
+    the probe level with its one palette. This is likely the palette in use.
+  - **Constants.** +32 holds 1, +52 holds 1.0 and +68 holds −1.
+  - **+36/+40** change between saves.
+- **`BMAP` in a `TEXTURE`.** The music room's textures list their bitmaps with `BMAP`, not `BMAPS`. The
+  original takes it; the saved sprite sizes prove it.
+- **Loading.** The patched level `LOAD`s OpenVirtue's capture of apathy, then runs its sampler slot for
+  61 frames with the marker skill set. Section by section, splicing OpenVirtue's sections into the
+  original's own save showed that only the first section caused the "2 Errors" the engine reported
+  at shutdown. With the palette words written, OpenVirtue's whole save loads without errors.
+  Section 4 (ways) and the per-region object order were still OpenVirtue's (200 bytes, reverse map
+  order), so the original accepts both.
+
+Left open: section 4's way records, +36/+40 of the first section, +106 (the current frame's
+`DELAY`, run-time state), the floor height on slopes (4 objects one raw step or more off), the
+original's per-region object order, and whether a `FADE_PAL` changes the palette words.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
-  one of each; OpenVirtue reads actors first, as the scheduler visits them.
+  one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups
+  them by region, and the original loads OpenVirtue's reverse map order (round 13).
 - The rest of each record (texture, flags, region, way state), the 200- and 96-byte sections,
   the action list's header, how the instruction positions count, and whether `SAVE_ALL`
   regions are saved. Resuming a saved action needs the instruction positions to match the

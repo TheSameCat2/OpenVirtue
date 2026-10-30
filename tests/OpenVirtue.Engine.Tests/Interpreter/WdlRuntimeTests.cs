@@ -823,6 +823,47 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
+    {
+        // Saints of Virtue drops pickups this way: IF (HealthUp1.INVISIBLE == 1) { SET HealthUp1.X, MY.X; … }
+        Level level = Load(
+            "MAPFILE <m.wmp>; THING drop { } SKILL was { VAL 0; } " +
+            "ACTION bring { IF (drop.INVISIBLE == 1) { SET was, 1; SET drop.X, 3; SET drop.INVISIBLE, 0; } }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("bring"));
+
+        AcknexObject drop = Assert.IsAssignableFrom<AcknexObject>(runtime.GetObject("drop"));
+        Assert.Equal(1, runtime.GetSkill("was"));
+        Assert.Equal(0, drop["INVISIBLE"]);
+        Assert.Equal(3, ((Thing)drop).X);
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_WallLengthAndVerticesAsTheOriginalComputesThem()
+    {
+        // OV-20261029-save-body round 13, a retail wall: the map's coordinates are cut toward zero
+        // (−579730.4 → −579730), and the length's squares each lose their low 10 bits before the
+        // square root, so a 245-step wall reads 243.
+        const string map =
+            "VERTEX -566.143 0 0;#0\nVERTEX -566.382 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 1 1 270 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL w { } THING t { IF_HIT hit; } ACTION hit { }");
+        var runtime = new WdlRuntime(level);
+
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        FullSaveWall wall = Assert.Single(save.Walls);
+        Assert.Equal((-579730, 0), wall.First);
+        Assert.Equal((-579975, 0), wall.Second);
+        Assert.Equal(243, wall.RawLength);
+        Assert.Equal(1, wall.RawSkills["OFFSET_Y"]); // a placed wall's OFFSET_Y starts one step up
+        FullSaveEntity thing = Assert.Single(save.Entities);
+        Assert.Equal(4825, thing.RawSkills["ANGLE"]); // 270°, from 0 to 2π and cut toward zero
+        Assert.Equal(11, thing.Events["IF_HIT"]);
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =
@@ -3159,12 +3200,12 @@ public class WdlRuntimeTests
         Assert.Equal(11, runtime.GetSkill("region_hits"));
 
         Assert.True(runtime.TriggerObjectActionHook(gate, "IF_NEAR"));
-        Assert.Equal(3, gate.OffsetY);
+        Assert.Equal(3 + (1 / 1024.0), gate.OffsetY); // a placed wall starts one raw step up
         Assert.Equal("wall_hit", gate.ActionHooks["IF_HIT"]);
         Assert.Equal(1, runtime.GetSkill("wall_hits"));
 
         Assert.True(runtime.TriggerObjectActionHook(gate, "IF_HIT"));
-        Assert.Equal(7, gate.OffsetY);
+        Assert.Equal(7 + (1 / 1024.0), gate.OffsetY);
         Assert.Equal(11, runtime.GetSkill("wall_hits"));
         Assert.Same(previousMy, runtime.GetObject("my"));
         Assert.Same(previousThere, runtime.GetObject("there"));

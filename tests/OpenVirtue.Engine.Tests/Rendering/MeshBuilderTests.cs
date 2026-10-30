@@ -185,8 +185,8 @@ public class MeshBuilderTests
 
         Assert.Equal(0, batch.Vertices.Min(v => v.U));
         Assert.Equal(1, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0, batch.Vertices.Min(v => v.V));
-        Assert.Equal(1, batch.Vertices.Max(v => v.V));
+        Assert.Equal(0, batch.Vertices.Min(v => v.V), 1e-4); // OFFSET_Y starts at 1/1024
+        Assert.Equal(1, batch.Vertices.Max(v => v.V), 1e-4);
     }
 
     [Fact]
@@ -210,8 +210,8 @@ public class MeshBuilderTests
 
         Assert.Equal(0.25f, batch.Vertices.Min(v => v.U));
         Assert.Equal(1.25f, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V));
-        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V));
+        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V), 1e-4f);
+        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V), 1e-4f);
     }
 
     [Fact]

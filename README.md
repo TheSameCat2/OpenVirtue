@@ -196,8 +196,8 @@ What works today:
   - slopes.
 
   The timed ones list what is still off: start-up `WAITT` timing, sub-percent movement steps,
-  details the notes left open, and full `SAVE` files, which OpenVirtue does not write in the
-  original's format.
+  details the notes left open, and full `SAVE` files, whose pointer words, view bits and ways
+  section OpenVirtue does not reproduce.
 
 Not yet complete:
 - exact UI behaviour beyond `INKEY` editing (OV-20261029-inkey) and `DIGITS`/`TEXT` layout
@@ -206,14 +206,14 @@ Not yet complete:
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
-- full save compatibility on more than the probe level. OpenVirtue:
+- full save compatibility in play. OpenVirtue:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
-  - can write full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default) for
-    synthetic levels. The original crashes on one for the retail `apathy` level, whose objects' flags
-    words, ways section and extra object data are not written yet;
-  - does not yet write object actions' `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY`
-    strings;
+  - writes full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default). The
+    original loads OpenVirtue's save of the retail `apathy` level at its start without errors
+    (OV-20261029-save-body round 13). A save made in the middle of play is not tested yet;
+  - does not yet write the ways section, two run-time words of the first section, object actions'
+    `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY` strings;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides
   (steps along an `ANGLE` and the split of a step toward a point match unit for unit,
   OV-20261029-actor-step);

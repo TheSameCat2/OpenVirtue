@@ -109,13 +109,17 @@ public static class LevelLoader
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
         StackBelowRegions(regions, declarations, defaultRegionClipDistance);
-        var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
+        var walls = map.Walls.Select(w => BuildWall(w, declarations, placed: true)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
         foreach (MapEntity entity in things.Concat<MapEntity>(actors))
         {
             entity.Region = PlacementStorey(regions, entity);
         }
+
+        List<AcknexObject> unplaced = BuildUnplacedObjects(map, declarations);
+        things.AddRange(unplaced.OfType<Thing>());
+        actors.AddRange(unplaced.OfType<Actor>());
 
         var ways = map.Ways.ToDictionary(
             way => way.Name,
@@ -147,6 +151,8 @@ public static class LevelLoader
             SkillDeclarationOrder = skillOrder,
             ActionOrder = declarations.ActionOrder,
             MapFileName = Path.GetFileName(mapName),
+            TextureDeclarations = declarations.TextureDeclarations,
+            UnplacedObjects = unplaced,
             MapObjects = [.. map.ObjectOrder.Select(o => o.Kind switch
             {
                 "WALL" => (AcknexObject?)walls[o.Index],
@@ -268,7 +274,7 @@ public static class LevelLoader
         }
     }
 
-    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations)
+    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations, bool placed)
     {
         var wall = new Wall(w.Name)
         {
@@ -293,7 +299,46 @@ public static class LevelLoader
             ApplySkills(wall, definition.Skills);
         }
 
+        // The original starts every placed wall's OFFSET_Y one raw step above the map's or the WDL's
+        // value (0 reads 1/1024, −30 reads −29.999); an unplaced wall's and a script's SET are kept as
+        // given (OV-20261029-save-body round 13).
+        if (placed)
+        {
+            wall.OffsetY += 1 / 1024.0;
+        }
+
         return wall;
+    }
+
+    /// <summary>
+    /// The declared walls, things and actors the map does not place, as the original keeps them: with
+    /// <c>INVISIBLE</c> set (manual p.70), at 0,0 in region 0 (OV-20261029-save-body round 13).
+    /// </summary>
+    private static List<AcknexObject> BuildUnplacedObjects(WmpMap map, WdlDeclarations declarations)
+    {
+        var placed = new HashSet<string>(
+            map.Walls.Select(static w => w.Name).Concat(map.Things.Select(static t => t.Name)).Concat(map.Actors.Select(static a => a.Name)),
+            StringComparer.OrdinalIgnoreCase);
+        var unplaced = new List<AcknexObject>();
+        foreach ((string kind, string name) in declarations.ObjectDeclarations)
+        {
+            if (placed.Contains(name))
+            {
+                continue;
+            }
+
+            AcknexObject obj = kind switch
+            {
+                "WALL" => BuildWall(new WmpWall(name, 0, 0, 0, 0, 0, 0), declarations, placed: false),
+                "ACTOR" => BuildEntity(new Actor(name), new WmpPlacement(name, 0, 0, 0, 0), declarations),
+                _ => BuildEntity(new Thing(name), new WmpPlacement(name, 0, 0, 0, 0), declarations),
+            };
+            obj["INVISIBLE"] = 1;
+            obj["VISIBLE"] = 0;
+            unplaced.Add(obj);
+        }
+
+        return unplaced;
     }
 
     private static Dictionary<string, LevelTexture> BuildTextures(

@@ -156,6 +156,49 @@ public class AcknexSaveFileTests
         Assert.Equal([-1, 14], AcknexSaveFile.ReadSynonyms(body));
     }
 
+    [Fact]
+    public void WriteFull_UnplacedEventsAndAttach_LandWhereTheOriginalKeepsThem()
+    {
+        // OV-20261029-save-body round 13: unplaced objects first; the event block at +146 of an
+        // entity (NEAR, FAR, EACH_CYCLE, HIT, EACH_TICK, ARRIVED) and 8 bytes later in a wall.
+        var events = new Dictionary<string, int> { ["IF_NEAR"] = 11, ["IF_FAR"] = 12, ["IF_ARRIVED"] = 13, ["IF_HIT"] = 14, ["EACH_TICK"] = 15, ["EACH_CYCLE"] = 16 };
+        var save = new FullSave(
+            "T.WDL", "T.WMP", "T.WRS",
+            [new FullSaveEntity(false, new Dictionary<string, int>(), 1) { Events = events, Attach = 2, MapColor = 0, Size = (2559, 2133), Region = 4 }],
+            [new FullSaveWall(new Dictionary<string, int>(), 0, 0, (0, 0), (0, 0), 3, 1) { Events = events.Where(static e => e.Key != "IF_ARRIVED").ToDictionary(), Attach = 5, LeftRegion = 6, TextureStep = 65535 }],
+            [], [], [], [])
+        {
+            Unplaced =
+            [
+                new FullSaveWall(new Dictionary<string, int>(), 0, 0, (0, 0), (0, 0), 0, 1) { Unplaced = true, OneRegion = true, Flags = ["INVISIBLE"] },
+                new FullSaveEntity(false, new Dictionary<string, int>(), 1) { Unplaced = true, Flags = ["INVISIBLE"] },
+            ],
+        };
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        Assert.Equal(4, AcknexSaveFile.ReadObjectRecords(body, [true, false, false, true])!.Count);
+        int at = FindObjects(body);
+        int Word(int offset) => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at + offset));
+        int Half(int offset) => System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(body.AsSpan(at + offset));
+        Assert.Equal(0x42, Half(20)); // the unplaced wall: never seen
+        Assert.Equal(0x300, Half(22));
+        at += 178;
+        Assert.Equal(0, Word(130)); // the unplaced thing
+        at += 170;
+        Assert.Equal([11, 12, 16, 14, 15, 13], [Word(146), Word(150), Word(154), Word(158), Word(162), Word(166)]);
+        Assert.Equal(2, Word(138));
+        Assert.Equal(-256, Half(92)); // MAP_COLOR 0
+        Assert.Equal((2559, 2133), (Half(0), Half(4)));
+        Assert.Equal(4, Word(126));
+        Assert.Equal(-1, Word(130));
+        at += 170;
+        // A wall takes no IF_ARRIVED; its slot (+174) stays −1.
+        Assert.Equal([5, 0, 11, 12, 16, 14, 15, -1], [Word(146), Word(150), Word(154), Word(158), Word(162), Word(166), Word(170), Word(174)]);
+        Assert.Equal(6, Half(134));
+        Assert.Equal(-1, Half(4)); // a 16-bit word: 65535 wraps
+    }
+
     [Theory]
     [InlineData(false, new string[0], 0x607, 0x180)]
     [InlineData(true, new string[0], 0x627, 0x180)]

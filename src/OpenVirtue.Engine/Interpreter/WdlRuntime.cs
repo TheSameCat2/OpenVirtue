@@ -570,8 +570,8 @@ public sealed class WdlRuntime :
     /// The state as the original's full <c>SAVE</c> holds it (OV-20261029-save-body rounds 7 to 9),
     /// for <see cref="AcknexFullSave.Write"/>:
     /// <list type="bullet">
-    /// <item>actors, then things, then walls, each in reverse map order, with their skills, textures
-    /// and geometry;</item>
+    /// <item>the unplaced walls, things and actors in reverse declaration order, then actors, things and
+    /// walls, each in reverse map order, with their skills, textures, events and geometry;</item>
     /// <item>the <c>EACH_TICK</c> slots;</item>
     /// <item>the synonyms' objects;</item>
     /// <item>the level's non-<c>LOCAL</c> skills and the engine's own;</item>
@@ -582,46 +582,143 @@ public sealed class WdlRuntime :
     public FullSave CaptureOriginalSave(string wdlName, string wmpName, string wrsName)
     {
         static int Raw(double value) => (int)Math.Clamp(Math.Round(value * 1024), -int.MaxValue, int.MaxValue);
-        List<string> textures = [.. _level.Textures.Keys];
+
+        // Map coordinates are cut toward zero to 1/1024, not rounded (round 13). The map writes three
+        // decimals and OpenVirtue keeps them as floats, so the decimal value is recovered first.
+        static int Vertex(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value, 3) * 1024), -int.MaxValue, int.MaxValue);
+
+        // Textures count by declaration, repeats included (apathy's walls read 18 higher than a count of
+        // names); a repeated name takes the place of its last declaration (round 12).
+        List<string> textures = _level.TextureDeclarations.Count > 0 ? [.. _level.TextureDeclarations] : [.. _level.Textures.Keys];
         int TextureNumber(string? name) =>
-            name is null ? 0 : textures.FindIndex(t => t.Equals(TextureAnimation.LogicalTextureName(name), StringComparison.OrdinalIgnoreCase)) + 1;
+            name is null ? 0 : textures.FindLastIndex(t => t.Equals(TextureAnimation.LogicalTextureName(name), StringComparison.OrdinalIgnoreCase)) + 1;
         Dictionary<string, int> Fields(AcknexObject obj, IEnumerable<string> names) =>
             names.ToDictionary(static n => n, n => Raw(obj[n]), StringComparer.OrdinalIgnoreCase);
 
-        string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4",
-            "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
-        string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
-        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CANDELABER", "IMMATERIAL", "SENSITIVE",
-            "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
-        string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
-        List<FullSaveEntity> entities =
-        [
-            .. _level.Actors.AsEnumerable().Reverse().Select(a => new FullSaveEntity(true, Fields(a, entityFields), TextureNumber(a.Texture)) { Flags = FlagsOf(a) }),
-            .. _level.Things.AsEnumerable().Reverse().Select(t => new FullSaveEntity(false, Fields(t, entityFields), TextureNumber(t.Texture)) { Flags = FlagsOf(t) }),
-        ];
-        List<FullSaveWall> walls = [];
-        foreach (Wall wall in _level.Walls.AsEnumerable().Reverse())
+        // A thing's or actor's ANGLE is saved as its absolute facing (1608 for a 90° placement), and Z as
+        // the absolute height of its foot: the floor plus OpenVirtue's Z less HEIGHT, unless it stands on
+        // the ground (round 12).
+        Dictionary<string, int> EntityFields(MapEntity entity, IEnumerable<string> names)
         {
-            Vertex a = _level.Vertices[Math.Clamp(wall.Vertex1, 0, _level.Vertices.Count - 1)];
-            Vertex b = _level.Vertices[Math.Clamp(wall.Vertex2, 0, _level.Vertices.Count - 1)];
-            double length = Math.Sqrt(((b.X - a.X) * (b.X - a.X)) + ((b.Y - a.Y) * (b.Y - a.Y)));
-            double scale = wall.Texture is { } tex && _level.Textures.TryGetValue(tex, out LevelTexture texture) && texture.ScaleX > 0 ? texture.ScaleX : 1;
-            walls.Add(new FullSaveWall(
-                Fields(wall, wallFields),
-                Raw(length),
-                Raw(length * scale),
-                (Raw(a.X), Raw(a.Y)),
-                (Raw(b.X), Raw(b.Y)),
-                Math.Max(0, wall.RightRegion),
-                TextureNumber(wall.Texture))
+            Dictionary<string, int> fields = Fields(entity, names);
+            fields["X"] = Vertex(entity.X);
+            fields["Y"] = Vertex(entity.Y);
+            // The facing runs from 0 to 2π and is cut toward zero: 270° reads 4825, 180° 3216 (round 13).
+            double facing = NormalizeAngle(entity.FacingAngleRadians);
+            fields["ANGLE"] = (int)Math.Truncate((facing < 0 ? facing + Math.Tau : facing) * 1024);
+            if (entity.Region >= 0 && entity.Region < _level.Regions.Count)
             {
-                Flags = FlagsOf(wall),
-                OneRegion = wall.LeftRegion == wall.RightRegion,
-            });
+                // Z is the foot's height: 0 on the ground, a CANDELABER's ceiling less its sprite's
+                // height, otherwise the floor (round 13).
+                double floor = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
+                fields["Z"] = entity["GROUND"] > 0
+                    ? 0
+                    : entity["CANDELABER"] > 0
+                        ? Raw(LevelTopology.CeilingHeightAt(_level, entity.Region, entity.X, entity.Y)) - SpriteHeight(entity)
+                        : Raw(floor + entity.Z - entity["HEIGHT"]);
+            }
+
+            return fields;
         }
 
         int ActionNumber(string? name) =>
             name is null ? -1 : _level.ActionOrder.ToList().FindIndex(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + FirstActionNumber : -1;
+
+        // A texture's size in world steps less one raw unit, from its first bitmap and scale, as a
+        // 16-bit word: (pixels·1024 − 1) / SCALE (round 13; 16383 without a texture).
+        LevelTexture? TextureOf(string? name) =>
+            name is not null && _level.Textures.TryGetValue(TextureAnimation.LogicalTextureName(name), out LevelTexture found) ? found : null;
+        static int Step(int pixels, double scale) =>
+            pixels <= 0 || scale <= 0 ? 16383 : (int)Math.Truncate(((pixels * 1024.0) - 1) / scale);
+        int AttachNumber(string? name) => name is null ? -1 : TextureNumber(name);
+        Dictionary<string, int> Events(AcknexObject obj) =>
+            AcknexFullSave.EventNames
+                .Select(e => (Event: e, Action: obj.TryGetString(e, out string? action) ? ActionNumber(action) : -1))
+                .Where(static e => e.Action >= 0)
+                .ToDictionary(static e => e.Event, static e => e.Action, StringComparer.OrdinalIgnoreCase);
+
+        var unplaced = new HashSet<AcknexObject>(_level.UnplacedObjects, ReferenceEqualityComparer.Instance);
+        string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "ASPEED", "DIST", "SKILL1", "SKILL2", "SKILL3",
+            "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
+        string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
+        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CANDELABER", "IMMATERIAL", "SENSITIVE",
+            "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+        string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
+
+        int SpriteHeight(MapEntity entity) =>
+            TextureOf(entity.Texture) is { } texture ? Step(texture.Height, texture.ScaleY) : 16383;
+
+        FullSaveEntity Entity(MapEntity entity)
+        {
+            // An unplaced object keeps its zero height until a script brings it in.
+            Dictionary<string, int> fields = unplaced.Contains(entity) && entity["INVISIBLE"] > 0
+                ? Fields(entity, entityFields)
+                : EntityFields(entity, entityFields);
+            LevelTexture? texture = TextureOf(entity.Texture);
+            return new FullSaveEntity(entity is Actor, fields, TextureNumber(entity.Texture))
+            {
+                Flags = FlagsOf(entity),
+                Size = (Step(texture?.Width ?? 0, texture?.ScaleX ?? 0), Step(texture?.Height ?? 0, texture?.ScaleY ?? 0)),
+                Region = Math.Max(0, entity.Region),
+                Floor = entity.Region >= 0 && entity.Region < _level.Regions.Count && !(unplaced.Contains(entity) && entity["INVISIBLE"] > 0)
+                    ? Raw(LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y))
+                    : 0,
+                Attach = AttachNumber(entity.AttachTexture),
+                Events = Events(entity),
+                MapColor = (int)entity["MAP_COLOR"],
+                Unplaced = unplaced.Contains(entity),
+            };
+        }
+
+        FullSaveWall WallRecord(Wall wall)
+        {
+            LevelTexture? texture = TextureOf(wall.Texture);
+            var record = new FullSaveWall(Fields(wall, wallFields), 0, 0, (0, 0), (0, 0), 0, TextureNumber(wall.Texture))
+            {
+                Flags = FlagsOf(wall),
+                OneRegion = wall.LeftRegion == wall.RightRegion,
+                TextureStep = Step(texture?.Height ?? 0, texture?.ScaleY ?? 0),
+                Attach = AttachNumber(wall.AttachTexture),
+                Events = Events(wall),
+                MapColor = (int)wall["MAP_COLOR"],
+                Unplaced = unplaced.Contains(wall),
+            };
+            if (record.Unplaced)
+            {
+                return record;
+            }
+
+            Vertex a = _level.Vertices[Math.Clamp(wall.Vertex1, 0, _level.Vertices.Count - 1)];
+            Vertex b = _level.Vertices[Math.Clamp(wall.Vertex2, 0, _level.Vertices.Count - 1)];
+            // The length is worked out in fixed point: dx² and dy² each lose their low 10 bits, and the
+            // square root of the sum is cut down to 1/1024, so 2050 reads 2049 and 245 reads 243. The span
+            // is that × SCALE_X (round 13, all compared retail walls).
+            long rawDx = (long)Vertex(b.X) - Vertex(a.X);
+            long rawDy = (long)Vertex(b.Y) - Vertex(a.Y);
+            int rawLength = (int)IntegerSquareRoot((((rawDx * rawDx) >> 10) + ((rawDy * rawDy) >> 10)) << 10);
+            double scale = texture is { ScaleX: > 0 } t ? t.ScaleX : 1;
+            return record with
+            {
+                RawLength = rawLength,
+                RawSpan = (int)Math.Truncate(rawLength * scale),
+                First = (Vertex(a.X), Vertex(a.Y)),
+                Second = (Vertex(b.X), Vertex(b.Y)),
+                Heights = (Vertex(a.Z), Vertex(b.Z)),
+                RightRegion = Math.Max(0, wall.RightRegion),
+                LeftRegion = Math.Max(0, wall.LeftRegion),
+            };
+        }
+
+        // Unplaced objects come first, in reverse declaration order (round 13).
+        List<FullSaveObject> prefix =
+            [.. _level.UnplacedObjects.Reverse().Select(o => o is Wall wall ? (FullSaveObject)WallRecord(wall) : Entity((MapEntity)o))];
+        List<FullSaveEntity> entities =
+        [
+            .. _level.Actors.Where(a => !unplaced.Contains(a)).Reverse().Select(Entity),
+            .. _level.Things.Where(t => !unplaced.Contains(t)).Reverse().Select(Entity),
+        ];
+        List<FullSaveWall> walls = [.. _level.Walls.AsEnumerable().Reverse().Select(WallRecord)];
+
         int[] slots = [.. Enumerable.Repeat(-1, AcknexFullSave.SlotWords)];
         foreach ((int word, int engineAction) in EngineSlotWords)
         {
@@ -692,7 +789,15 @@ public sealed class WdlRuntime :
                 .Select(r => new FullSaveRegion(Fields(r, regionFields), TextureNumber(r.FloorTexture), TextureNumber(r.CeilTexture), r["SAVE_ALL"] > 0)),
         ];
 
-        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions) { Regions = regions };
+        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions)
+        {
+            Regions = regions,
+            Unplaced = prefix,
+            PlayerRegion = (int)GetSkill("PLAYER_REGION"),
+            // Apathy's six palettes save 6 and the probe's one 1: the last declared, as far as
+            // a level start shows (round 13).
+            Palette = _level.Palettes.Count,
+        };
     }
 
     /// <summary>
@@ -732,6 +837,22 @@ public sealed class WdlRuntime :
         }
 
         return set;
+    }
+
+    private static long IntegerSquareRoot(long value)
+    {
+        long root = (long)Math.Sqrt(value);
+        while (root * root > value)
+        {
+            root--;
+        }
+
+        while ((root + 1) * (root + 1) <= value)
+        {
+            root++;
+        }
+
+        return root;
     }
 
     /// <summary>The number the original's saves give the first declared action (OV-20261029-save-body).</summary>
@@ -2144,7 +2265,7 @@ public sealed class WdlRuntime :
             RegisterNamedObject(obj);
         }
 
-        foreach (AcknexObject obj in level.Walls)
+        foreach (AcknexObject obj in level.Walls.Concat(level.UnplacedObjects.OfType<Wall>()))
         {
             RegisterNamedObject(obj);
         }
@@ -2547,6 +2668,9 @@ public sealed class WdlRuntime :
         // The WMP start heading (degrees, counter-clockwise, 0 = map +x) is the initial
         // PLAYER_ANGLE; the host's camera yaw is derived from the same value (RenderSpace).
         double angle = playerStart.AngleRadians;
+        SetSkill("PLAYER_X", playerStart.X);
+        SetSkill("PLAYER_Y", playerStart.Y);
+        SetSkill("PLAYER_REGION", playerStart.Region);
         SetSkill("PLAYER_ANGLE", angle);
         SetSkill("PLAYER_SIN", Math.Sin(angle));
         SetSkill("PLAYER_COS", Math.Cos(angle));
@@ -5390,6 +5514,7 @@ public sealed class WdlRuntime :
             .Concat(_level.Walls)
             .Concat(_level.Things)
             .Concat(_level.Actors)
+            .Concat(_level.UnplacedObjects.OfType<Wall>())
             .ToList();
 
     private static void RestoreObjectSnapshot(AcknexObject obj, WdlObjectSnapshot snapshot)

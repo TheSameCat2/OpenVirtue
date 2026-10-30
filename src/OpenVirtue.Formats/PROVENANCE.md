@@ -157,5 +157,11 @@ and validate against real game data used only locally (never committed).
   - the fields' meanings come from comparing records with the synthetic level's geometry;
   - the predefined skill names are the ones its saves list that the level does not declare;
   - checked by the original loading a save OpenVirtue wrote.
+  - Round 13 laid out the rest of the records from our own byte comparison of a retail level's save
+    with OpenVirtue's capture of the same level, matched object by object. That covers the unplaced
+    objects that open the object section, the event block, `ATTACH`, the texture size words, the
+    regions, the fixed-point wall length and the first section's player and palette words. Probe
+    carriers settled what the comparison could not. The original then loaded OpenVirtue's save of
+    that level without errors.
 
   Not ported from any third-party source.

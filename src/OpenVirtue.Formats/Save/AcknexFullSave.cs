@@ -6,15 +6,48 @@ using System.Text;
 
 namespace OpenVirtue.Formats.Save;
 
+/// <summary>A record of a full save's object section: a <see cref="FullSaveEntity"/> or a <see cref="FullSaveWall"/>.</summary>
+public abstract record FullSaveObject
+{
+    /// <summary>The object's set <c>FLAGS</c>, which the record's two flag words encode (round 12).</summary>
+    public IReadOnlyCollection<string> Flags { get; init; } = [];
+
+    /// <summary>The number of its <c>ATTACH</c> texture, −1 for none (round 13).</summary>
+    public int Attach { get; init; } = -1;
+
+    /// <summary>
+    /// Its event actions' numbers by event (<see cref="AcknexFullSave.EventNames"/>); an event left out
+    /// has none (round 13).
+    /// </summary>
+    public IReadOnlyDictionary<string, int> Events { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>Its <c>MAP_COLOR</c> (round 13).</summary>
+    public int MapColor { get; init; } = 1;
+
+    /// <summary>
+    /// Whether the WDL declares it but the map does not place it (round 13): such a wall has never been
+    /// seen (its view bits are clear), and such a thing holds 0 where other things hold −1 (+130).
+    /// </summary>
+    public bool Unplaced { get; init; }
+}
+
 /// <summary>
 /// A thing or actor as a full save's object section holds it (OV-20261029-save-body). It carries its
 /// skills at their offsets (see <see cref="AcknexSaveFile.ReadObjects"/>), whether it is an actor, and
 /// its texture's number (from 1, in declaration order).
 /// </summary>
-public sealed record FullSaveEntity(bool Actor, IReadOnlyDictionary<string, int> RawSkills, int Texture)
+public sealed record FullSaveEntity(bool Actor, IReadOnlyDictionary<string, int> RawSkills, int Texture) : FullSaveObject
 {
-    /// <summary>The object's set <c>FLAGS</c>, which the record's two flag words encode (round 12).</summary>
-    public IReadOnlyCollection<string> Flags { get; init; } = [];
+    /// <summary>
+    /// Its texture's width and height as (pixels·1024 − 1) / SCALE, 16383 without a texture (round 13).
+    /// </summary>
+    public (int Width, int Height) Size { get; init; } = (16383, 16383);
+
+    /// <summary>The region it is in (round 13).</summary>
+    public int Region { get; init; }
+
+    /// <summary>The floor's height under it (raw, round 13).</summary>
+    public int Floor { get; init; }
 }
 
 /// <summary>
@@ -29,13 +62,19 @@ public sealed record FullSaveWall(
     (int X, int Y) First,
     (int X, int Y) Second,
     int RightRegion,
-    int Texture)
+    int Texture) : FullSaveObject
 {
-    /// <summary>The wall's set <c>FLAGS</c>, which the record's two flag words encode (round 12).</summary>
-    public IReadOnlyCollection<string> Flags { get; init; } = [];
-
     /// <summary>Whether one region lies on both sides (its second flag word then holds <c>0x200</c>).</summary>
     public bool OneRegion { get; init; }
+
+    /// <summary>The region on its left (round 13).</summary>
+    public int LeftRegion { get; init; }
+
+    /// <summary>Its vertices' heights (raw, round 13).</summary>
+    public (int First, int Second) Heights { get; init; }
+
+    /// <summary>Its texture's height as (pixels·1024 − 1) / SCALE_Y, 16383 without a texture (round 13).</summary>
+    public int TextureStep { get; init; } = 16383;
 }
 
 /// <summary>
@@ -68,6 +107,22 @@ public sealed record FullSave(
 {
     /// <summary>The <c>SAVE</c> regions, in reverse map order.</summary>
     public IReadOnlyList<FullSaveRegion> Regions { get; init; } = [];
+
+    /// <summary>
+    /// The walls, things and actors the WDL declares but the map does not place, in reverse declaration
+    /// order; they open the object section (round 13).
+    /// </summary>
+    public IReadOnlyList<FullSaveObject> Unplaced { get; init; } = [];
+
+    /// <summary>The player's region, which the first section holds twice (+60, +64; round 13).</summary>
+    public int PlayerRegion { get; init; }
+
+    /// <summary>
+    /// The palette in use, numbered from 1 in declaration order, which the first section holds twice
+    /// (+48, +56). Left 0 on a retail level, the original reports two runtime errors after loading
+    /// (round 13).
+    /// </summary>
+    public int Palette { get; init; }
 }
 
 /// <summary>
@@ -110,7 +165,17 @@ public static class AcknexFullSave
         WriteName(body, save.WrsName);
         AcknexSaveFile.WriteUInt32(body, 0);
 
-        AcknexSaveFile.WriteSection(body, new byte[80]);
+        // The first section as the original's saves hold it; the words at +36 and +40, which change
+        // from save to save, are left 0, which loads (round 13).
+        byte[] first = new byte[80];
+        Int32(first, 32, 1);
+        Int32(first, 48, save.Palette);
+        Int32(first, 52, 1024);
+        Int32(first, 56, save.Palette);
+        Int32(first, 60, save.PlayerRegion);
+        Int32(first, 64, save.PlayerRegion);
+        Int32(first, 68, -1);
+        AcknexSaveFile.WriteSection(body, first);
         AcknexSaveFile.WriteSection(body, []);
         AcknexSaveFile.WriteSection(body, Regions(save.Regions));
         AcknexSaveFile.WriteSection(body, Objects(save));
@@ -137,21 +202,48 @@ public static class AcknexFullSave
 
     private static byte[] Objects(FullSave save)
     {
-        byte[] bytes = new byte[(save.Entities.Count * AcknexSaveFile.EntityRecordSize) + (save.Walls.Count * AcknexSaveFile.WallRecordSize)];
-        Span<byte> span = bytes;
-        for (int i = 0; i < save.Entities.Count; i++)
+        FullSaveObject[] records = [.. save.Unplaced, .. save.Entities, .. save.Walls];
+        byte[] bytes = new byte[records.Sum(static r => r is FullSaveWall ? AcknexSaveFile.WallRecordSize : AcknexSaveFile.EntityRecordSize)];
+        int at = 0;
+        foreach (FullSaveObject record in records)
         {
-            WriteEntity(span.Slice(i * AcknexSaveFile.EntityRecordSize, AcknexSaveFile.EntityRecordSize), save.Entities[i]);
-        }
-
-        int wallsStart = save.Entities.Count * AcknexSaveFile.EntityRecordSize;
-        for (int i = 0; i < save.Walls.Count; i++)
-        {
-            WriteWall(span.Slice(wallsStart + (i * AcknexSaveFile.WallRecordSize), AcknexSaveFile.WallRecordSize), save.Walls[i]);
+            if (record is FullSaveWall wall)
+            {
+                WriteWall(bytes.AsSpan(at, AcknexSaveFile.WallRecordSize), wall);
+                at += AcknexSaveFile.WallRecordSize;
+            }
+            else
+            {
+                WriteEntity(bytes.AsSpan(at, AcknexSaveFile.EntityRecordSize), (FullSaveEntity)record);
+                at += AcknexSaveFile.EntityRecordSize;
+            }
         }
 
         return bytes;
     }
+
+    /// <summary>The events an object record holds, in <see cref="FullSaveObject.Events"/>'s keys.</summary>
+    public static IReadOnlyList<string> EventNames { get; } = ["IF_NEAR", "IF_FAR", "IF_ARRIVED", "IF_HIT", "EACH_TICK", "EACH_CYCLE"];
+
+    /// <summary>Where a thing's or actor's record holds each event's action (round 13); a wall's are 8 bytes on.</summary>
+    private static readonly Dictionary<string, int> EntityEventOffsets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["IF_NEAR"] = 146, ["IF_FAR"] = 150, ["EACH_CYCLE"] = 154, ["IF_HIT"] = 158, ["EACH_TICK"] = 162, ["IF_ARRIVED"] = 166,
+    };
+
+    private static void WriteEvents(Span<byte> record, FullSaveObject obj, int shift)
+    {
+        foreach ((string name, int action) in obj.Events)
+        {
+            if (EntityEventOffsets.TryGetValue(name, out int offset))
+            {
+                Int32(record, offset + shift, action);
+            }
+        }
+    }
+
+    // MAP_COLOR is the low byte of the word at +92; the high byte holds 0xFF (round 13).
+    private static void MapColor(Span<byte> record, int mapColor) => Int16(record, 92, unchecked((short)(0xFF00 | (mapColor & 0xFF))));
 
     /// <summary>The size of a <c>SAVE</c> region's record.</summary>
     public const int RegionRecordSize = 156;
@@ -234,8 +326,8 @@ public static class AcknexFullSave
             second &= ~0x80;
         }
 
-        Int16(record, 0, 16383);
-        Int16(record, 4, 16383);
+        Int16(record, 0, unchecked((short)entity.Size.Width));
+        Int16(record, 4, unchecked((short)entity.Size.Height));
         Int16(record, 20, first);
         Int16(record, 22, second);
         if (Has("SENSITIVE"))
@@ -244,13 +336,21 @@ public static class AcknexFullSave
         }
 
         Int16(record, 26, 5);
-        Int16(record, 92, -255);
+        MapColor(record, entity.MapColor);
         Int32(record, 102, 1024);
-        Fill(record, 130, 134);
+        Int32(record, 126, entity.Region);
+        if (!entity.Unplaced || entity.Actor)
+        {
+            Fill(record, 130, 134);
+        }
+
         Int16(record, 134, entity.Texture);
-        Fill(record, 138, 142);
+        Int32(record, 138, entity.Attach);
         Fill(record, 146, 170);
+        WriteEvents(record, entity, 0);
         Skills(record, AcknexSaveFile.EntityFieldOffsets, entity.RawSkills);
+        Int32(record, 122, entity.Floor);
+
         if (BinaryPrimitives.ReadInt32LittleEndian(record[102..]) == 0)
         {
             Int32(record, 102, 1024); // CYCLE: a 0 here does not load
@@ -260,7 +360,7 @@ public static class AcknexFullSave
     private static void WriteWall(Span<byte> record, FullSaveWall wall)
     {
         Int32(record, 0, wall.RawSpan);
-        Int16(record, 4, 16383);
+        Int16(record, 4, unchecked((short)wall.TextureStep));
         Int32(record, 8, wall.RawLength);
         bool Has(string flag) => wall.Flags.Contains(flag, StringComparer.OrdinalIgnoreCase);
         (int first, int second) = FlagWords(wall.Flags, WallFlagBits, 0x602, wall.OneRegion ? 0x380 : 0x180);
@@ -274,6 +374,12 @@ public static class AcknexFullSave
             second &= ~0x200;
         }
 
+        if (wall.Unplaced)
+        {
+            first &= ~0x200;
+            second &= ~0x80;
+        }
+
         Int16(record, 20, first);
         Int16(record, 22, second);
         if (Has("SENSITIVE"))
@@ -282,15 +388,20 @@ public static class AcknexFullSave
         }
 
         Int16(record, 26, 5);
-        Int16(record, 92, -255);
+        MapColor(record, wall.MapColor);
         Int32(record, 102, 1024);
         Int32(record, 110, wall.First.X);
         Int32(record, 114, wall.First.Y);
+        Int32(record, 118, wall.Heights.First);
         Int32(record, 122, wall.Second.X);
         Int32(record, 126, wall.Second.Y);
+        Int32(record, 130, wall.Heights.Second);
+        Int16(record, 134, wall.LeftRegion);
         Int16(record, 138, wall.RightRegion);
         Int16(record, 142, wall.Texture);
-        Fill(record, 146, 178);
+        Int32(record, 146, wall.Attach);
+        Fill(record, 154, 178);
+        WriteEvents(record, wall, 8);
         Skills(record, AcknexSaveFile.WallFieldOffsets, wall.RawSkills);
     }
 

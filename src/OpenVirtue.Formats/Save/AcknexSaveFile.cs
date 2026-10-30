@@ -151,7 +151,7 @@ public static class AcknexSaveFile
 
     private static readonly (string Name, int Offset)[] EntityFields =
     [
-        ("ANGLE", 8), ("TARGET_X", 12), ("TARGET_Y", 16), ("HEIGHT", 36), ("SPEED", 40), ("VSPEED", 44), ("DIST", 52),
+        ("ANGLE", 8), ("TARGET_X", 12), ("TARGET_Y", 16), ("HEIGHT", 36), ("SPEED", 40), ("VSPEED", 44), ("ASPEED", 48), ("DIST", 52),
         ("SKILL1", 60), ("SKILL2", 64), ("SKILL3", 68), ("SKILL4", 72), ("SKILL5", 76), ("SKILL6", 80), ("SKILL7", 84),
         ("SKILL8", 88), ("CYCLE", 102), ("X", 110), ("Y", 114), ("Z", 118),
     ];
@@ -199,6 +199,38 @@ public static class AcknexSaveFile
         }
 
         return (entities, walls);
+    }
+
+    /// <summary>
+    /// The records of a full <c>SAVE</c> body's object section in order, sized by <paramref name="isWall"/>
+    /// (a wall's record is 178 bytes, a thing's or actor's 170). Unplaced objects open the section
+    /// with both sizes mixed (OV-20261029-save-body round 13). <c>null</c> when the section's size differs.
+    /// </summary>
+    public static IReadOnlyList<SaveObjectState>? ReadObjectRecords(ReadOnlySpan<byte> body, IReadOnlyList<bool> isWall)
+    {
+        ArgumentNullException.ThrowIfNull(isWall);
+        if (Sections(body) is not { Count: > 3 } sections)
+        {
+            return null;
+        }
+
+        (int payload, int size) = sections[3];
+        if (size != isWall.Sum(static w => w ? WallRecordSize : EntityRecordSize))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<byte> objects = body.Slice(payload, size);
+        var records = new List<SaveObjectState>(isWall.Count);
+        int at = 0;
+        foreach (bool wall in isWall)
+        {
+            int length = wall ? WallRecordSize : EntityRecordSize;
+            records.Add(ReadRecord(objects.Slice(at, length), wall ? WallFields : EntityFields));
+            at += length;
+        }
+
+        return records;
     }
 
     /// <summary>

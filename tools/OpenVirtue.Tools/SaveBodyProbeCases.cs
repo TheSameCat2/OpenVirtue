@@ -86,8 +86,48 @@ internal static class SaveBodyProbeCases
             Map: World);
     }
 
+    private const string EventActions =
+        "SKILL ev_x { VAL 0; }\n" +
+        "ACTION ev_near\n{\n    RULE ev_x = ev_x + 1;\n}\n" +
+        "ACTION ev_far\n{\n    RULE ev_x = ev_x + 2;\n}\n" +
+        "ACTION ev_arr\n{\n    RULE ev_x = ev_x + 3;\n}\n" +
+        "ACTION ev_hit\n{\n    RULE ev_x = ev_x + 4;\n}\n" +
+        "ACTION ev_tick\n{\n    RULE ev_x = ev_x + 5;\n}\n" +
+        "ACTION ev_cycle\n{\n    RULE ev_x = ev_x + 6;\n}\n" +
+        "ACTION ev_klick\n{\n    RULE ev_x = ev_x + 7;\n}\n";
+
+    /// <summary>Round 13: the objects declared with <paramref name="wall"/> and <paramref name="entity"/> added to their bodies.</summary>
+    private static TraceProbeCase Declared(string label, string question, string wall, string entity, string extra = "") => new(
+        label,
+        question,
+        EventActions + Declarations
+            .Replace("WALL sb_w { TEXTURE grn_tex; }", "WALL sb_w { TEXTURE grn_tex; " + wall + " }", StringComparison.Ordinal)
+            .Replace("THING sb_t { TEXTURE mag_tex; }", "THING sb_t { TEXTURE mag_tex; " + entity + " }", StringComparison.Ordinal)
+            .Replace("ACTOR sb_a { TEXTURE yel_tex; }", "ACTOR sb_a { TEXTURE yel_tex; " + entity + " }", StringComparison.Ordinal) + extra,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("fixed slots", "each event's action number once, in the same order in every record")),
+        Map: World);
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        Declared(
+            "events",
+            "Round 13. Every event a wall takes, and every event a thing or actor takes but IF_KLICK, each naming its own action: " +
+            "which slot of the records' event block holds which?",
+            "IF_NEAR ev_near; IF_FAR ev_far; IF_HIT ev_hit; EACH_TICK ev_tick; EACH_CYCLE ev_cycle;",
+            "IF_NEAR ev_near; IF_FAR ev_far; IF_ARRIVED ev_arr; IF_HIT ev_hit; EACH_TICK ev_tick; EACH_CYCLE ev_cycle;"),
+        Declared(
+            "events-klick",
+            "Round 13. IF_KLICK on the thing and the actor: where does it go?",
+            "",
+            "IF_KLICK ev_klick;"),
+        Declared(
+            "unplaced",
+            "Round 13. A thing, an actor and a wall declared but not placed, then ATTACH on the placed thing, actor and wall and " +
+            "MAP_COLOR 0 on the wall: where do the unplaced objects go, and where are ATTACH and MAP_COLOR?",
+            "ATTACH mag_tex; MAP_COLOR 0;",
+            "ATTACH grn_tex;",
+            "THING sb_u1 { TEXTURE mag_tex; }\nACTOR sb_u2 { TEXTURE yel_tex; }\nWALL sb_u3 { TEXTURE grn_tex; }\n"),
         .. ThingFlags.Union(WallFlags).Select(FlagSave),
         RegionFields("region-fields", ["FLOOR_HGT", "CEIL_HGT", "FLOOR_OFFS_X", "FLOOR_OFFS_Y", "CEIL_OFFS_X", "CEIL_OFFS_Y",
             "SKILL1", "SKILL2", "SKILL3", "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8"]),

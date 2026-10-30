@@ -469,7 +469,13 @@ public sealed partial class RuntimeHost
     private void AddSpatialLoopCandidate(AcknexObject emitter, List<SpatialLoopCandidate> candidates)
     {
         // Most emitters have no looping sound texture, so the texture is checked before the
-        // emitter is placed (which reads its skills).
+        // emitter is placed (which reads its skills). An INVISIBLE thing or actor is "as if it was
+        // not there" (manual p.70); the unplaced ones all are.
+        if (emitter is MapEntity { } hidden && hidden["INVISIBLE"] > 0)
+        {
+            return;
+        }
+
         if (_level.FindTexture(EmitterTextureName(emitter)) is not { } entry ||
             !entry.Texture.IsSoundLoop ||
             string.IsNullOrWhiteSpace(entry.Texture.SoundName) ||
@@ -925,12 +931,13 @@ public sealed partial class RuntimeHost
     }
 
     /// <summary>
-    /// Copies the object records of an original full save onto the level's things, actors and walls.
-    /// The save lists actors, then things, then walls, each in reverse map order.
+    /// Copies the object records of an original full save onto the level's things, actors and walls,
+    /// in <see cref="Level.SaveObjectOrder"/>.
     /// </summary>
     private int ImportOriginalObjects(byte[] body)
     {
-        if (AcknexSaveFile.ReadObjects(body, _level.Things.Count + _level.Actors.Count, _level.Walls.Count) is not { } saved)
+        IReadOnlyList<AcknexObject> order = _level.SaveObjectOrder();
+        if (AcknexSaveFile.ReadObjectRecords(body, [.. order.Select(static o => o is Wall)]) is not { } saved)
         {
             return 0;
         }
@@ -943,19 +950,12 @@ public sealed partial class RuntimeHost
             Apply(saveRegions[i], savedRegions[i]);
         }
 
-        AcknexObject[] entities = [.. _level.Actors.Reverse(), .. _level.Things.Reverse()];
-        AcknexObject[] walls = [.. _level.Walls.Reverse()];
-        for (int i = 0; i < entities.Length; i++)
+        for (int i = 0; i < order.Count; i++)
         {
-            Apply(entities[i], saved.Entities[i]);
+            Apply(order[i], saved[i]);
         }
 
-        for (int i = 0; i < walls.Length; i++)
-        {
-            Apply(walls[i], saved.Walls[i]);
-        }
-
-        return entities.Length + walls.Length;
+        return order.Count;
 
         static void Apply(AcknexObject target, SaveObjectState state)
         {

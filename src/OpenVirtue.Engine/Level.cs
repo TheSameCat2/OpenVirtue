@@ -121,6 +121,12 @@ public sealed class Level
     /// <summary>Skills declared with <c>TYPE LOCAL</c>, which <c>SAVE_INFO</c> keeps and <c>SAVE</c> does not (p.111).</summary>
     public IReadOnlySet<string> LocalSkills { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Every <c>TEXTURE</c> declaration's name in order, repeats included. The original's saves number
+    /// textures by declaration (OV-20261029-save-body round 12).
+    /// </summary>
+    public IReadOnlyList<string> TextureDeclarations { get; init; } = [];
+
     /// <summary>The map file the level's <c>MAPFILE</c> (or a <c>LEVEL</c> override) names.</summary>
     public string MapFileName { get; init; } = "";
 
@@ -129,6 +135,33 @@ public sealed class Level
     /// places: an object's original save number is its place here + 1 (OV-20261029-save-body round 9).
     /// </summary>
     public IReadOnlyList<AcknexObject?> MapObjects { get; init; } = [];
+
+    /// <summary>
+    /// The walls, things and actors the level's WDL declares but its map does not place, in
+    /// declaration order. They exist with <c>INVISIBLE</c> set (manual p.70), at 0,0 in region 0, so
+    /// scripts can bring them in: Saints of Virtue keeps its shots and dropped pickups this way. The
+    /// things and actors among them also end <see cref="Things"/> and <see cref="Actors"/>; the walls,
+    /// which have no vertices, are only here. The original's saves put them first
+    /// (OV-20261029-save-body round 13).
+    /// </summary>
+    public IReadOnlyList<AcknexObject> UnplacedObjects { get; init; } = [];
+
+    /// <summary>
+    /// The objects in the order of a full save's object records: the unplaced ones in reverse
+    /// declaration order, then the placed actors, things and walls, each in reverse map order
+    /// (OV-20261029-save-body rounds 9 and 13).
+    /// </summary>
+    public IReadOnlyList<AcknexObject> SaveObjectOrder()
+    {
+        var unplaced = new HashSet<AcknexObject>(UnplacedObjects, ReferenceEqualityComparer.Instance);
+        return
+        [
+            .. UnplacedObjects.Reverse(),
+            .. Actors.Where(a => !unplaced.Contains(a)).Reverse(),
+            .. Things.Where(t => !unplaced.Contains(t)).Reverse(),
+            .. Walls.Reverse(),
+        ];
+    }
 
     /// <summary>
     /// The actions in the order they are first declared. The original numbers them from 11 in this
