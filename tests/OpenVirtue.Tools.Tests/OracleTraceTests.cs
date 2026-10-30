@@ -156,6 +156,20 @@ public sealed class OracleTraceTests
         Assert.Equal(0.281 / 16, clock.Next(15.75), 9);
     }
 
+    [Theory]
+    [InlineData(false, 0.5)]
+    [InlineData(true, 8.0)]
+    public void ReplayClock_LongGap_IsOneFrameOnlyWhenACounterPlacedEverySample(bool consecutive, double step)
+    {
+        // view-activity near-low: a per-cycle counter shows the original's frames at 24, 32 (one frame of
+        // 8 ticks), then half a tick each; a sampler without a counter may have skipped cycles there.
+        var clock = new OracleReplay.ReplayClock([24, 32, 32.5, 33, 33.5, 34, 34.5], fallbackTicks: 0.25, consecutive: consecutive);
+
+        clock.Anchor(24);
+
+        Assert.Equal(step / 16, clock.Next(24), 9);
+    }
+
     [Fact]
     public void TimingColumn_TryParse_TokenAndColumn()
     {

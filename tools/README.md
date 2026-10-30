@@ -132,7 +132,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   or else from the step 18 cycles later: DOSBox-X's 60 Hz steps repeat every 18 cycles. This
   moved the first difference of the bullet carrier from line 3 to line 284, and added 668 matching
   lines over all carriers; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
-  offset, which is reported, and columns that print `TICKS` are compared relative to it. A carrier
+  offset, which is reported, and columns that print `TICKS` are compared relative to it. A gap of
+  more than four typical steps is taken for a sampler that skipped cycles and run at the typical
+  step, unless a cycle counter placed every sample and the typical step is a frame's (at most a
+  tick): then it is one long frame of the original's (view-activity's first frames take 8 ticks;
+  174 more lines matched over all carriers). A carrier
   without a per-cycle timing column is anchored on the template's start-up stamp (`TCK=` in
   `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line;
   `KEY=value` lines compare their numbers, the stamp within one start-up cycle.

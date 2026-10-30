@@ -285,13 +285,21 @@ internal static class OracleTrace
     /// always a whole number of 1/32 ticks); a gap that is not a whole number of them becomes
     /// <c>n</c> equal steps.
     /// </summary>
-    public static IReadOnlyList<double> CycleTicks(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
+    public static IReadOnlyList<double> CycleTicks(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing) =>
+        CycleTicks(lines, timing, out _);
+
+    /// <summary>
+    /// As <see cref="CycleTicks(IReadOnlyList{OracleTraceLine}, OracleTimingColumn)"/>; <paramref name="counted"/>
+    /// tells whether a cycle counter placed every value, so each is one cycle after the last.
+    /// </summary>
+    public static IReadOnlyList<double> CycleTicks(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing, out bool counted)
     {
         ArgumentNullException.ThrowIfNull(lines);
         List<OracleTraceLine> tokenLines = lines
             .Where(timing.Matches)
             .ToList();
         int? counter = CounterColumn(tokenLines, timing.Column);
+        counted = counter is not null;
         if (counter is not { } counterColumn)
         {
             var distinct = new List<double>();

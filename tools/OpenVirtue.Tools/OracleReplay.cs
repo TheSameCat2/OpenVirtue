@@ -171,7 +171,8 @@ internal static class OracleReplay
             : [];
         OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
             (options.FixedTimeCorrection is null && carrierCase.TimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
-        IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t) : [];
+        bool counted = false;
+        IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
 
         string replayDirectory = Path.Combine(carrier, ReplayDirectoryName);
         if (Directory.Exists(replayDirectory))
@@ -185,7 +186,7 @@ internal static class OracleReplay
 
         double? firstStep = carrierCase.StartupStep ??
             (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
-        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? 0.25, firstStep);
+        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? 0.25, firstStep, counted);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
         if (carrierCase.Autotype is { } typed)
@@ -655,7 +656,7 @@ internal static class OracleReplay
     /// the following frames land <c>TICKS</c> on the original's sampled values, whatever the start-up
     /// took. With no samples every frame lasts <c>fallbackTicks</c>.
     /// </summary>
-    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null)
+    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null, bool consecutive = false)
     {
         private const double Epsilon = 0.0005;
         private readonly double _typical = Median(cycleTicks) ?? fallbackTicks;
@@ -722,8 +723,11 @@ internal static class OracleReplay
             double step = _typical;
             if (_next < cycleTicks.Count)
             {
+                // A gap of more than a few typical steps is a sampler that skipped cycles, unless a
+                // counter placed every sample one frame apart (its typical step a frame's, at most a
+                // tick; a counter of WAITT 8 loops steps 8): then it is one long frame of the original's.
                 double gap = cycleTicks[_next] + Offset - ticks;
-                if (gap <= 4 * _typical)
+                if (gap <= 4 * _typical || (consecutive && _typical <= 1))
                 {
                     step = gap;
                 }
