@@ -230,6 +230,26 @@ internal static class OracleTrace
     }
 
     /// <summary>
+    /// The <c>TIME_CORR</c> of the first sampled cycle when no column prints it: DOSBox-X's 60 Hz frames
+    /// against the 16 Hz tick give a step pattern (0.25 or 0.28125) that repeats every 18 cycles once
+    /// start-up is over (the scheduler-order probe's <c>startup</c> trace prints it), so the first
+    /// cycle's step is the step 18 cycles later. Used only when the steps 18 and 36 cycles later agree.
+    /// </summary>
+    public static double? PeriodicFirstStep(IReadOnlyList<double> cycleTicks)
+    {
+        ArgumentNullException.ThrowIfNull(cycleTicks);
+        const int Period = 18;
+        if (cycleTicks.Count <= (2 * Period) + 1)
+        {
+            return null;
+        }
+
+        double Step(int cycle) => SnapTicks(cycleTicks[cycle]) - SnapTicks(cycleTicks[cycle - 1]);
+        double first = Step(Period);
+        return first > 0 && Math.Abs(first - Step(2 * Period)) < 1e-9 ? first : null;
+    }
+
+    /// <summary>
     /// A printed <c>TICKS</c> value back on the 22.10 grid, so the replay's <c>TIME_CORR</c> is the
     /// original's exactly (0.28125, not 0.282). Three decimals leave two raw values possible; the
     /// original's frames last whole 1/32 ticks (0.25, 0.28125, 1.09375), so a multiple of 1/32 wins.

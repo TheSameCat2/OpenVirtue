@@ -186,4 +186,19 @@ public sealed class OracleTraceTests
     [InlineData(0.001, 0.0009765625)]
     public void SnapTicks_PrefersWholeThirtySecondsWithinThePrintedRounding(double printed, double raw) =>
         Assert.Equal(raw, OracleTrace.SnapTicks(printed));
+
+    [Fact]
+    public void PeriodicFirstStep_ReadsTheStepEighteenCyclesOn()
+    {
+        // DOSBox-X's 60 Hz steps repeat every 18 cycles (scheduler-order `startup`): 8 and 9 thirty-seconds.
+        int[] pattern = [8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8];
+        var ticks = new List<double> { 13.40625 };
+        for (int i = 0; i < 40; i++)
+        {
+            ticks.Add(ticks[^1] + (pattern[(i + 1) % 18] / 32.0));
+        }
+
+        Assert.Equal(pattern[0] / 32.0, OracleTrace.PeriodicFirstStep(ticks));
+        Assert.Null(OracleTrace.PeriodicFirstStep(ticks.Take(30).ToList())); // too short to check
+    }
 }

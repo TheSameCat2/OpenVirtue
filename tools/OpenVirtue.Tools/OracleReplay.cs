@@ -182,7 +182,7 @@ internal static class OracleReplay
         string archive = Path.Combine(replayDirectory, WorldName + ".WRS");
         WrsArchive.WriteFile(archive, CarrierFiles(work));
 
-        double? firstStep = timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null;
+        double? firstStep = (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
         var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25, firstStep);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
