@@ -400,6 +400,11 @@ position.
   overlays. The original loads a save with none of them, but what that does to the screen after a
   load is not checked.
 
+Also open: a script brings an unplaced object in by setting its X/Y and clearing `INVISIBLE`, but the
+manual's `LOCATE` (p.90) says a beamed object's region is lost until `LOCATE`, and the retail drop
+scripts never call it. Whether the original re-derives the region when `INVISIBLE` clears is not
+probed; OpenVirtue keeps region 0 until `LOCATE`.
+
 Left open: section 4's screen-element records, +36/+40 of the first section, +106 (the current frame's
 `DELAY`, run-time state), the floor height on slopes (4 objects one raw step or more off), the
 original's per-region object order, and whether a `FADE_PAL` changes the palette words.
