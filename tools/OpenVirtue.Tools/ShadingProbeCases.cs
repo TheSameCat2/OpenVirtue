@@ -60,7 +60,23 @@ internal static class ShadingProbeCases
             LowEye, "AMBIENT 1;"),
         View("tex-ambient", "Round 3. Eye at 2, the floor's texture with AMBIENT 0.25 (p.37), PLAYER_LIGHT 1: the floor 8 levels brighter than the walls?",
             LowEye, "FLOOR_TEX sh_flr;", textures: "TEXTURE sh_flr { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; AMBIENT 0.25; }\n"),
+        Albedo("round4/albedo", "", "V3.963 has no LIGHT_ANGLE skill (\"Parameter unknown\")"),
     ];
+
+    /// <summary>
+    /// Round 4: the room walls' textures with <c>ALBEDO 1</c> (p.33: reflection of light from
+    /// <c>LIGHT_ANGLE</c>), lit by the region's <c>AMBIENT 0.5</c> alone (<c>PLAYER_LIGHT</c> 0), as
+    /// <c>region-ambient</c> without the albedo: how do the left, right and far walls differ?
+    /// </summary>
+    private static TraceProbeCase Albedo(string label, string setup, string angle) => new(
+        label,
+        $"Round 4. Wall textures with ALBEDO 1, {angle}, region AMBIENT 0.5 and PLAYER_LIGHT 0: does each wall's shade change with its facing?",
+        "",
+        "    SET PLAYER_LIGHT, 0;\n" + setup + "    WAIT 2;\n" + V("VIEW", "PLAYER_LIGHT", "LIGHT_DIST", "DARK_DIST"),
+        Predict(
+            ("facing matters", "the left and right side walls and the far wall take different shades"),
+            ("no effect", "every wall at region-ambient's shade")),
+        Map: new TraceProbeMap(RoomBody: "AMBIENT 0.5;", PaletteBody: Range, WallTextureBody: "ALBEDO 1; "));
 
     private const string LowEye = "    SET PLAYER_SIZE, 2;\n    SET PLAYER_Z, 2;\n";
 

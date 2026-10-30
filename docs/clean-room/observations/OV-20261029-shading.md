@@ -78,11 +78,22 @@ Three carriers ran with the eye at 2, `PLAYER_LIGHT` 1 and `LIGHT_DIST` 10, read
 - **Walls.** A wall between the room (`AMBIENT` −0.25) and the solid region (0) took the room's −0.25,
   its left region's: the brighter side does not win.
 
+## Round 4: `ALBEDO` (2026-10-30)
+`round4/albedo` (screenshot hash `737c3b69`) is `region-ambient` with `ALBEDO 1` in the room walls'
+textures: `PLAYER_LIGHT` 0, region `AMBIENT` 0.5.
+- **No effect.** Its screenshot is identical to `region-ambient`'s, pixel for pixel. Without a light
+  source `ALBEDO` changes nothing, and OpenVirtue ignores it, as before.
+- **No `LIGHT_ANGLE`.** The skill the manual names as the light's direction (p.33) does not exist
+  in V3.963: `PRINT_VALUE LIGHT_ANGLE` stops the compile with "Error(63): Parameter unknown". Cases
+  that set it could not run.
+- **Still open.** `GENIUS` light (a region's light source object) is not probed.
+
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
   then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).
 - Answered in round 3: d is the depth, texture `AMBIENT` adds, negative ambients darken.
-- `ALBEDO`/`GENIUS` light, `HARD` on an unsorted palette, and a wall seen from its right region.
+- `GENIUS` light (round 4: `ALBEDO` alone does nothing, `LIGHT_ANGLE` is unknown), `HARD` on an
+  unsorted palette, and a wall seen from its right region.
 
 ## Implementation
 `OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`), the palette `RANGE`/`FLAGS`

@@ -782,11 +782,11 @@ internal static class ProjectionProbeGenerator
             BMAP flr_map,<PRBFLR.PCX>;
             BMAP cel_map,<PRBCEL.PCX>;
 
-            TEXTURE red_tex { SCALE_X 4; SCALE_Y 4; BMAPS red_map; }
-            TEXTURE grn_tex { SCALE_X 4; SCALE_Y 4; BMAPS grn_map; }
-            TEXTURE yel_tex { SCALE_X 4; SCALE_Y 4; BMAPS yel_map; }
-            TEXTURE blu_tex { SCALE_X 4; SCALE_Y 4; BMAPS blu_map; }
-            TEXTURE mag_tex { SCALE_X 4; SCALE_Y 4; BMAPS mag_map; }
+            TEXTURE red_tex { SCALE_X 4; SCALE_Y 4; BMAPS red_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE grn_tex { SCALE_X 4; SCALE_Y 4; BMAPS grn_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE yel_tex { SCALE_X 4; SCALE_Y 4; BMAPS yel_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE blu_tex { SCALE_X 4; SCALE_Y 4; BMAPS blu_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE mag_tex { SCALE_X 4; SCALE_Y 4; BMAPS mag_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
             TEXTURE flr_tex { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; }
             TEXTURE cel_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; }
 
