@@ -220,9 +220,8 @@ Not yet complete:
     `VESA_MODE`) or `INKEY` strings. V3.963 itself hung loading its own save while an object's
     event action waited (round 17), so such saves are written as the original writes them but not
     proven to load;
-- one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides
-  (steps along an `ANGLE` and the split of a step toward a point match unit for unit,
-  OV-20261029-actor-step);
+- `CAREFULLY` actors' residuals and slides (steps along an `ANGLE` and plain steps toward a
+  point match unit for unit: the engine rounds its own products, OV-20261029-actor-step round 6);
 - shots at mirrored sprites and walls: their `HIT_X` (a sprite's fractional `HIT_X` matches,
   OV-20261009-shoot-mapping);
 - start-up `TICKS` timing, which keeps many timed probes from matching line for line
