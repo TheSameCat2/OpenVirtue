@@ -219,6 +219,37 @@ Implementation:
 - Tests: `WriteFull_ReadsBackThroughTheReaders` and
   `Runtime_CaptureOriginalSave_RoundTripsThroughTheOriginalsFormat`.
 
+## Round 10: `SAVE` regions (2026-10-30)
+Retail levels flag regions `SAVE` (their doors, for instance). With the room declared `FLAGS SAVE`, a
+full save gains a 156-byte record in its third section, which is empty otherwise. `region-fields` set
+each region skill to its own pattern (hash `da519772`); the record is:
+
+| Offset | Field |
+|---|---|
+| +0, +4 | `FLOOR_HGT`, `CEIL_HGT` |
+| +8, +12 | `CEIL_OFFS_X`, `CEIL_OFFS_Y` |
+| +16, +20 | `FLOOR_OFFS_X`, `FLOOR_OFFS_Y` |
+| +24 | `AMBIENT` |
+| +30, +32, +34 | 3, `0x702`, flags `0xf00` (`SAVE_ALL` adds `0x2000`) |
+| +36, +44, +52, +60 | 1.0 each |
+| +68…+96 | `SKILL1`…`SKILL8` |
+| +100, +104 | the floor and ceiling textures' numbers |
+| +108…+155 | −1 |
+
+- **Synonyms.** A synonym naming a region holds the region's index (the room: 0), not a map place.
+- **Load check.** `load-region` is `load-edit` with the room a `SAVE` region whose `SKILL1` is set to
+  33 before the `SAVE`, and a region synonym sampled. The original loaded its own save and then
+  OpenVirtue's: both read `SKILL1` 33 after the load. Hashes in `round10c/ov-written-load/`: the
+  save `7b48040f`, the trace `f813ad2c`.
+- **Not measured.** The order of several `SAVE` regions (written in reverse map order like the
+  other kinds), and what `SAVE_ALL` adds for the region's walls and objects.
+
+Implementation:
+- `FullSaveRegion` and `AcknexFullSave.RegionFieldOffsets` for the writer, `ReadRegions` and
+  `ReadSynonyms` for the reader;
+- `CaptureOriginalSave` writes `SAVE` regions and region synonyms;
+- the import applies region records and synonyms (`ImportOriginalSynonyms`).
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.

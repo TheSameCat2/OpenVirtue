@@ -916,6 +916,7 @@ public sealed partial class RuntimeHost
         int actions = AcknexSaveFile.ReadActions(body) is { } saved
             ? _runtime.ImportOriginalActions(saved, AcknexSaveFile.ReadSlots(body))
             : 0;
+        _runtime.ImportOriginalSynonyms(AcknexSaveFile.ReadSynonyms(body));
 
         _hasPlayerRuntimeSnapshot = false;
         ApplyRuntimePlayerState();
@@ -932,6 +933,14 @@ public sealed partial class RuntimeHost
         if (AcknexSaveFile.ReadObjects(body, _level.Things.Count + _level.Actors.Count, _level.Walls.Count) is not { } saved)
         {
             return 0;
+        }
+
+        // SAVE regions, in reverse map order (OV-20261029-save-body round 10).
+        AcknexObject[] saveRegions = [.. _level.Regions.AsEnumerable().Reverse().Where(static r => r["SAVE"] > 0 || r["SAVE_ALL"] > 0)];
+        IReadOnlyList<SaveObjectState> savedRegions = AcknexSaveFile.ReadRegions(body);
+        for (int i = 0; i < saveRegions.Length && i < savedRegions.Count; i++)
+        {
+            Apply(saveRegions[i], savedRegions[i]);
         }
 
         AcknexObject[] entities = [.. _level.Actors.Reverse(), .. _level.Things.Reverse()];

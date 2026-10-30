@@ -27,6 +27,13 @@ public sealed record FullSaveWall(
     int RightRegion,
     int Texture);
 
+/// <summary>
+/// A region with the <c>SAVE</c> flag, as a full save's third section holds it (OV-20261029-save-body
+/// round 10). It carries its skills by name (<see cref="AcknexFullSave.RegionFieldOffsets"/>), its floor
+/// and ceiling textures' numbers, and whether it is <c>SAVE_ALL</c>.
+/// </summary>
+public sealed record FullSaveRegion(IReadOnlyDictionary<string, int> RawSkills, int FloorTexture, int CeilingTexture, bool SaveAll);
+
 /// <summary>What a full save holds, as <see cref="AcknexFullSave.Write"/> lays it out.</summary>
 /// <param name="WdlName">The level's main WDL file name (up to 12 characters).</param>
 /// <param name="WmpName">Its map's file name.</param>
@@ -46,7 +53,11 @@ public sealed record FullSave(
     IReadOnlyList<int> Slots,
     IReadOnlyList<int> Synonyms,
     IReadOnlyList<SaveSkill> Skills,
-    IReadOnlyList<SaveAction> Actions);
+    IReadOnlyList<SaveAction> Actions)
+{
+    /// <summary>The <c>SAVE</c> regions, in reverse map order.</summary>
+    public IReadOnlyList<FullSaveRegion> Regions { get; init; } = [];
+}
 
 /// <summary>
 /// Writes full <c>SAVE</c> bodies the original loads (OV-20261029-save-body rounds 7 to 9). What the
@@ -90,7 +101,7 @@ public static class AcknexFullSave
 
         AcknexSaveFile.WriteSection(body, new byte[80]);
         AcknexSaveFile.WriteSection(body, []);
-        AcknexSaveFile.WriteSection(body, []);
+        AcknexSaveFile.WriteSection(body, Regions(save.Regions));
         AcknexSaveFile.WriteSection(body, Objects(save));
         AcknexSaveFile.WriteSection(body, Words([0, .. Enumerable.Repeat(-1, 49)]));
         AcknexSaveFile.WriteSection(body, new byte[4]);
@@ -126,6 +137,39 @@ public static class AcknexFullSave
         for (int i = 0; i < save.Walls.Count; i++)
         {
             WriteWall(span.Slice(wallsStart + (i * AcknexSaveFile.WallRecordSize), AcknexSaveFile.WallRecordSize), save.Walls[i]);
+        }
+
+        return bytes;
+    }
+
+    /// <summary>The size of a <c>SAVE</c> region's record.</summary>
+    public const int RegionRecordSize = 156;
+
+    /// <summary>Where a region record holds each skill (OV-20261029-save-body round 10).</summary>
+    public static IReadOnlyList<(string Name, int Offset)> RegionFieldOffsets { get; } =
+    [
+        ("FLOOR_HGT", 0), ("CEIL_HGT", 4), ("CEIL_OFFS_X", 8), ("CEIL_OFFS_Y", 12), ("FLOOR_OFFS_X", 16), ("FLOOR_OFFS_Y", 20),
+        ("AMBIENT", 24), ("SKILL1", 68), ("SKILL2", 72), ("SKILL3", 76), ("SKILL4", 80), ("SKILL5", 84), ("SKILL6", 88),
+        ("SKILL7", 92), ("SKILL8", 96),
+    ];
+
+    private static byte[] Regions(IReadOnlyList<FullSaveRegion> regions)
+    {
+        byte[] bytes = new byte[regions.Count * RegionRecordSize];
+        for (int i = 0; i < regions.Count; i++)
+        {
+            Span<byte> record = bytes.AsSpan(i * RegionRecordSize, RegionRecordSize);
+            Int16(record, 30, 3);
+            Int16(record, 32, 0x702);
+            Int16(record, 34, regions[i].SaveAll ? 0x2f00 : 0xf00);
+            Int32(record, 36, 1024);
+            Int32(record, 44, 1024);
+            Int32(record, 52, 1024);
+            Int32(record, 60, 1024);
+            Int32(record, 100, regions[i].FloorTexture);
+            Int32(record, 104, regions[i].CeilingTexture);
+            Fill(record, 108, RegionRecordSize);
+            Skills(record, RegionFieldOffsets, regions[i].RawSkills);
         }
 
         return bytes;

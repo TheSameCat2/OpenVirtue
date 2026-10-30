@@ -133,7 +133,10 @@ public class AcknexSaveFileTests
             [.. Enumerable.Repeat(-1, 139), 13],
             [-1, 14],
             [new SaveSkill("sb_n", 5 * 1024), .. AcknexPredefinedSkills.Names.Select(static n => new SaveSkill(n, 0))],
-            [new SaveAction(14, 1024, 1, 2, -1, -1, Running: false)]);
+            [new SaveAction(14, 1024, 1, 2, -1, -1, Running: false)])
+        {
+            Regions = [new FullSaveRegion(new Dictionary<string, int> { ["FLOOR_HGT"] = -2048, ["SKILL1"] = 33 * 1024 }, 6, 7, SaveAll: false)],
+        };
 
         byte[] body = AcknexFullSave.Write(save);
 
@@ -147,6 +150,10 @@ public class AcknexSaveFileTests
         Assert.Equal(239, AcknexSaveFile.ReadSkills(body).Count);
         Assert.Equal(5 * 1024, AcknexSaveFile.ReadSkills(body)[0].RawValue);
         Assert.Equal(238, AcknexPredefinedSkills.Names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        SaveObjectState region = Assert.Single(AcknexSaveFile.ReadRegions(body));
+        Assert.Equal(-2048, region.RawSkills["FLOOR_HGT"]);
+        Assert.Equal(33 * 1024, region.RawSkills["SKILL1"]);
+        Assert.Equal([-1, 14], AcknexSaveFile.ReadSynonyms(body));
     }
 
     [Fact]

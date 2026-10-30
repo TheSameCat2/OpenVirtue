@@ -245,6 +245,49 @@ public static class AcknexSaveFile
     }
 
     /// <summary>
+    /// The words of a full <c>SAVE</c> body's synonym section (its eighth): each synonym's object, the
+    /// level's synonyms in reverse declaration order then the engine's 21; a region as its index, a
+    /// wall, thing or actor as its map place + 1, −1 for none (OV-20261029-save-body rounds 9 and 10).
+    /// </summary>
+    public static IReadOnlyList<int> ReadSynonyms(ReadOnlySpan<byte> body)
+    {
+        if (Sections(body) is not { Count: > 7 } sections)
+        {
+            return [];
+        }
+
+        (int payload, int size) = sections[7];
+        int[] words = new int[size / 4];
+        for (int i = 0; i < words.Length; i++)
+        {
+            words[i] = BinaryPrimitives.ReadInt32LittleEndian(body[(payload + (i * 4))..]);
+        }
+
+        return words;
+    }
+
+    /// <summary>
+    /// The <c>SAVE</c> regions of a full <c>SAVE</c> body (its third section), in reverse map order, with
+    /// their skills by name (OV-20261029-save-body round 10); empty when there are none.
+    /// </summary>
+    public static IReadOnlyList<SaveObjectState> ReadRegions(ReadOnlySpan<byte> body)
+    {
+        if (Sections(body) is not { Count: > 2 } sections || sections[2].Size % AcknexFullSave.RegionRecordSize != 0)
+        {
+            return [];
+        }
+
+        (int payload, int size) = sections[2];
+        var regions = new List<SaveObjectState>();
+        for (int at = payload; at < payload + size; at += AcknexFullSave.RegionRecordSize)
+        {
+            regions.Add(ReadRecord(body.Slice(at, AcknexFullSave.RegionRecordSize), [.. AcknexFullSave.RegionFieldOffsets]));
+        }
+
+        return regions;
+    }
+
+    /// <summary>
     /// The 168 words of a full <c>SAVE</c> body's slot section (its seventh): action numbers, −1 for none.
     /// <c>EACH_TICK.n</c> is word 135 + 2n (OV-20261029-save-body round 9). <c>null</c> when there is no such section.
     /// </summary>

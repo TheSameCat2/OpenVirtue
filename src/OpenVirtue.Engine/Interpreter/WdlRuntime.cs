@@ -629,9 +629,16 @@ public sealed class WdlRuntime :
         List<int> synonyms = [];
         foreach (string synonym in _level.Synonyms.Keys.Reverse())
         {
+            // A region is its index (the room read 0); a wall, thing or actor its map place + 1
+            // (OV-20261029-save-body rounds 9 and 10).
             AcknexObject? target = GetObject(synonym);
-            int place = target is null ? -1 : _level.MapObjects.ToList().IndexOf(target);
-            synonyms.Add(place >= 0 ? place + 1 : -1);
+            int number = target switch
+            {
+                null => -1,
+                Region region => _level.Regions.ToList().IndexOf(region),
+                _ => _level.MapObjects.ToList().IndexOf(target) is >= 0 and int place ? place + 1 : -1,
+            };
+            synonyms.Add(number);
         }
 
         synonyms.AddRange(Enumerable.Repeat(-1, AcknexFullSave.PredefinedSynonyms));
@@ -667,7 +674,54 @@ public sealed class WdlRuntime :
             }
         }
 
-        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions);
+        string[] regionFields = [.. AcknexFullSave.RegionFieldOffsets.Select(static f => f.Name)];
+        List<FullSaveRegion> regions =
+        [
+            .. _level.Regions.AsEnumerable().Reverse()
+                .Where(static r => r["SAVE"] > 0 || r["SAVE_ALL"] > 0)
+                .Select(r => new FullSaveRegion(Fields(r, regionFields), TextureNumber(r.FloorTexture), TextureNumber(r.CeilTexture), r["SAVE_ALL"] > 0)),
+        ];
+
+        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions) { Regions = regions };
+    }
+
+    /// <summary>
+    /// Points the level's synonyms at the objects a full save the original wrote names (reverse
+    /// declaration order; a region by index, a wall, thing or actor by map place + 1, −1 for none).
+    /// Only synonyms of a known object kind are set, so a synonym of another kind is left alone.
+    /// </summary>
+    /// <returns>How many synonyms were set.</returns>
+    public int ImportOriginalSynonyms(IReadOnlyList<int> words)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        List<string> names = [.. _level.Synonyms.Keys.Reverse()];
+        int set = 0;
+        for (int i = 0; i < names.Count && i < words.Count; i++)
+        {
+            int number = words[i];
+            WdlSynonym synonym = _level.Synonyms[names[i]];
+            AcknexObject? target = synonym.Type?.ToUpperInvariant() switch
+            {
+                "REGION" => number >= 0 && number < _level.Regions.Count ? _level.Regions[number] : null,
+                "WALL" or "THING" or "ACTOR" => number >= 1 && number <= _level.MapObjects.Count ? _level.MapObjects[number - 1] : null,
+                _ => null,
+            };
+            if (target is not null || number == -1)
+            {
+                if (target is null)
+                {
+                    _objects.Remove(names[i]);
+                }
+                else
+                {
+                    SetObjectReference(names[i], target);
+                }
+
+                set++;
+            }
+        }
+
+        return set;
     }
 
     /// <summary>The number the original's saves give the first declared action (OV-20261029-save-body).</summary>

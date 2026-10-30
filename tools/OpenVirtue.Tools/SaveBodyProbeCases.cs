@@ -39,8 +39,34 @@ internal static class SaveBodyProbeCases
         Predict(("one section changes", "the unpacked body differs from base's in one place")),
         Map: World);
 
+    /// <summary>Round 10: the room region with <paramref name="flags"/>, its SKILL1 and floor changed before the save.</summary>
+    private static TraceProbeCase RegionSave(string label, string flags) => new(
+        label,
+        $"Round 10. The room declared FLAGS {flags}, its SKILL1 set to 77.25 and FLOOR_HGT to -2: where do SAVE regions go?",
+        Declarations,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    SET HERE.SKILL1, 77.25;\n    SET HERE.FLOOR_HGT, -2;\n    WAIT 2;\n" +
+        "    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("regions in the empty sections", "the second or third section holds a region record")),
+        Map: World with { RoomBody = "FLAGS " + flags + ";" });
+
+    /// <summary>Round 10: the SAVE room's listed skills, each set to its own pattern, as round 2 did for objects.</summary>
+    private static TraceProbeCase RegionFields(string label, string[] fields) => new(
+        label,
+        "Round 10. The SAVE room's skills each set to its own raw pattern 0x201 + 64·i: where is each in its record?",
+        Declarations,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n" +
+        string.Concat(fields.Select((f, i) => FormattableString.Invariant($"    SET HERE.{f}, {FieldValue(i)};\n"))) +
+        "    WAIT 2;\n" + V("F", [.. fields.Select(f => "HERE." + f)]) + "    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("fixed offsets", "each pattern once in the region's record")),
+        Map: World with { RoomBody = "FLAGS SAVE;" });
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        RegionFields("region-fields", ["FLOOR_HGT", "CEIL_HGT", "FLOOR_OFFS_X", "FLOOR_OFFS_Y", "CEIL_OFFS_X", "CEIL_OFFS_Y",
+            "SKILL1", "SKILL2", "SKILL3", "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8"]),
+        RegionFields("region-ambient", ["AMBIENT"]),
+        RegionSave("region-save", "SAVE"),
+        RegionSave("region-save-all", "SAVE, SAVE_ALL"),
         Save("base", "The baseline world.", ""),
         Save("base2", "The baseline again: which bytes differ between two saves of the same world?", ""),
         Save("region-floor", "The room's FLOOR_HGT set to -2 (raw FFFFF800): where are region heights?", "    SET HERE.FLOOR_HGT, -2;\n"),
@@ -135,6 +161,24 @@ internal static class SaveBodyProbeCases
                 ("the edit loads", "the second run prints the edited values"),
                 ("a check rejects it", "the second run prints the first run's values, or LOAD fails")),
             Map: World),
+        new TraceProbeCase(
+            "load-region",
+            "Round 10, run twice, with the room a SAVE region whose SKILL1 is set to 33 before the SAVE. The probe LOADs OVSAV2.SAV (missing on the first run), SAVEs it and prints the world. " +
+            "On the second run the LOAD resumes the saved action after its SAVE: does the original load a save edited in between, and which values does it take? " +
+            "sb_m is LOCAL (not in a full save): 2 means the LOAD failed and the action went on, 0 that it loaded.",
+            Declarations + "SYNONYM sb_rg { TYPE REGION; }\nSKILL sb_m { TYPE LOCAL; VAL 0; }\nSKILL sb_k { VAL 0; }\n" +
+            "ACTION sb_tick\n{\n    RULE sb_k = sb_k + 1;\n    IF (sb_k < 40) {\n        PRINTFILE \"ovsvt\", 1;\n" +
+            "        PRINT_STRING \"T \";\n        PRINT_VALUE TICKS;\n        PRINT_STRING \" \";\n        PRINT_VALUE sb_k;\n" +
+            "        PRINT_STRING \" \";\n        PRINT_VALUE sb_m;\n        PRINT_STRING \" \";\n        PRINT_VALUE sb_n;\n" +
+            "        PRINT_STRING \" \";\n        PRINT_VALUE sb_as.X;\n        PRINT_STRING \" \";\n        PRINT_VALUE sb_rg.SKILL1;\n        PRINT_STRING \"\\n\";\n    }\n}\n" +
+            "ACTION sb_note\n{\n    WAIT 2;\n    PRINTFILE \"ovsvn\", 0;\n    PRINT_STRING \"N \";\n    PRINT_VALUE sb_k;\n    PRINT_STRING \" \";\n    PRINT_VALUE sb_m;\n    PRINT_STRING \"\\n\";\n}\n",
+            "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    SET sb_rg, HERE;\n    SET EACH_TICK.2, sb_tick;\n    WAIT 2;\n" +
+            "    LOAD \"ovsav\", 2;\n    WAIT 3;\n    RULE sb_m = 2;\n    RULE sb_n = 7;\n    SET HERE.SKILL1, 33;\n    CALL sb_note;\n    SAVE \"ovsav\", 2;\n    PRINTFILE \"ovsvl\", 0;\n" +
+            V("L", "sb_m", "sb_n", "sb_ts.X", "sb_as.X", "sb_as.Y", "sb_ws.OFFSET_X") + P("RET"),
+            Predict(
+                ("the edit loads", "the second run prints the edited values"),
+                ("a check rejects it", "the second run prints the first run's values, or LOAD fails")),
+            Map: World with { RoomBody = "FLAGS SAVE;" }),
     ];
 
     /// <summary>The object skills round 2 sets, each to <see cref="FieldValue"/> of its place in the list.</summary>
