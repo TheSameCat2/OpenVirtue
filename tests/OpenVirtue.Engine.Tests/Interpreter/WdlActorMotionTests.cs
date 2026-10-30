@@ -430,6 +430,26 @@ public sealed class WdlActorMotionTests
     }
 
     [Theory]
+    [InlineData(-19.09375, 0.28125, 144)]  // 40032 raw left: 144·40032/1024 is 5629.5, rounded 5630, 144.01
+    [InlineData(-18.828125, 0.28125, 143)] // 39760 raw left: 5591.25 rounds to 5591, 143.99 cut to 143
+    public void Tick_WayActorAlongAnAxis_StepsByTheRoundedProductOfStepAndDistance(double startY, double timeCorrection, int dyRaw)
+    {
+        // OV-20261029-actor-step round 6: the part of a step toward a point is the step times the
+        // distance left along the axis, rounded to 1/1024, divided by |dx| + |dy| and cut toward zero;
+        // a plain actor on a way along +Y steps one short once 39760 units are left.
+        string map = FormattableString.Invariant(
+            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 10 {startY} 0 0;#0\nWAY route 10 {startY} 10 20;#1\nPLAYER_START 40 40 0 0;#2");
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(timeCorrection / 16); // arrives on the point it stands on
+        double before = actor.Y;
+
+        runtime.Tick(timeCorrection / 16);
+
+        Assert.Equal(dyRaw, Math.Round((actor.Y - before) * 1024), 6);
+    }
+
+    [Theory]
     [InlineData(1, 0.25, 69, 108)]
     [InlineData(1, 0.28125, 78, 121)]
     [InlineData(0.78515625, 0.25, 91, 90)]

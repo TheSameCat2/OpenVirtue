@@ -117,9 +117,27 @@ Implementation: `WdlRuntime.AdvanceActorWay` (no arrival at `SPEED` 0),
 `AdvanceActorToward` (raw-unit split, facing per point), `MoveActor` (the 4-unit minimum). The
 round-5 traces now match for 13 to 84 lines before the first one-unit residual (3 before).
 
+## Round 6: the one-unit residuals (2026-10-30)
+No new carriers; the round 5 traces (v-p-y `084faaf4`, v-p-d `870e40f0`) and view-activity's walkers
+were read again.
+- **`TICKS` is held more finely than `TIME_CORR`.** It goes up 287, 288 or 289 raw per cycle while
+  `TIME_CORR` reads 288. But the short steps do not follow those deltas.
+- **The split rounds once.** A part of a step toward a point is the 22.10 product of the step and
+  the distance left along that axis, rounded to 1/1024, then divided by \|dx\| + \|dy\| and cut
+  toward zero. On the +Y way the X part is 0, and 144·39760/1024 = 5591.25 rounds to 5591, giving
+  143.99 → 143. With 40032 left, 5629.5 rounds to 5630, giving 144.01 → 144. This fits all 87 steps
+  of v-p-y and all 87 of v-p-d. The exact split, cut once, fits 55 and 85.
+- **The step itself rounds.** `SPEED` 0.05 (51 raw) over six skipped cycles of 0.25 makes 76.5
+  units, and view-pillar's walker stepped 77. So the engine rounds its own products to 1/1024,
+  where a WDL `*` cuts toward zero (OV-20261029-numeric-edge). The angle step (round 2) uses the
+  same product; no carrier tells the two apart there.
+- **Result.** v-p-y and v-p-d now match in full (91 lines; 13 and 84 before), as do
+  actor-events' vertex and way-start traces and view-activity's view-cone. Over all carriers,
+  725 more lines match.
+
 ## Open Questions
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
-- The one-unit residuals of round 5.
+- The `CAREFULLY` actors' residuals (v-c-y matches to line 77, v-c-y2 to 81, v-c-d to 35).
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by

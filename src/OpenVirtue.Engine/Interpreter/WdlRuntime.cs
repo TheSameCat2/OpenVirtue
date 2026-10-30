@@ -3393,7 +3393,7 @@ public sealed class WdlRuntime :
         // split with the cosine and sine of the angle (itself a 22.10 value), each cut toward zero to
         // 22.10 and each part rounded to a whole 1/1024 step. Unlike a step toward a point, it is not
         // measured in |dx| + |dy|.
-        double distance = WdlFixed.Multiply(Math.Max(0, actor["SPEED"]), timeCorrection);
+        double distance = EngineProduct(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
             return false;
@@ -3489,6 +3489,13 @@ public sealed class WdlRuntime :
     /// </summary>
     private const double ArrivalDistance = 0.125;
 
+    /// <summary>
+    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c>: rounded to 1/1024,
+    /// where a WDL <c>*</c> cuts toward zero (OV-20261029-actor-step round 6).
+    /// </summary>
+    private static double EngineProduct(double left, double right) =>
+        Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
+
     private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
     {
         actor["TARGET_X"] = targetX;
@@ -3505,7 +3512,9 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        double distance = WdlFixed.Multiply(Math.Max(0, actor["SPEED"]), timeCorrection);
+        // The engine's own product rounds to 1/1024 (a WDL '*' cuts toward zero): SPEED 0.05 (51 raw)
+        // over six skipped cycles of 0.25 makes 76.5 units, and the original stepped 77 (round 6).
+        double distance = EngineProduct(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
             return false;
@@ -3530,13 +3539,18 @@ public sealed class WdlRuntime :
 
         // OV-20261029-actor-step round 5: each part of the step is cut toward zero to 1/1024 (40:15
         // split a 128-unit step 93 and 34), so a CAREFULLY actor 4 units off its line gets no X
-        // part, its nudge, and a Y part one short.
+        // part, its nudge, and a Y part one short. Round 6: the part is the 22.10 product of the step
+        // and the distance left along the axis, rounded to 1/1024, then divided by |dx| + |dy| and cut
+        // toward zero, which explains the one-unit short steps (143 for 144 once 39760 units are
+        // left): every step of the plain +Y and 40:15 ways fits.
         double rawX = Math.Round(dx * 1024);
         double rawY = Math.Round(dy * 1024);
         double rawRemaining = Math.Abs(rawX) + Math.Abs(rawY);
         double rawStep = Math.Round(distance * 1024);
-        double stepX = rawRemaining > 0 ? Math.Truncate(rawStep * rawX / rawRemaining) / 1024 : 0;
-        double stepY = rawRemaining > 0 ? Math.Truncate(rawStep * rawY / rawRemaining) / 1024 : 0;
+        static double Part(double step, double along, double remaining) =>
+            Math.Truncate(Math.Round(step * along / 1024, MidpointRounding.AwayFromZero) * 1024 / remaining) / 1024;
+        double stepX = rawRemaining > 0 ? Part(rawStep, rawX, rawRemaining) : 0;
+        double stepY = rawRemaining > 0 ? Part(rawStep, rawY, rawRemaining) : 0;
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);
         return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
     }
