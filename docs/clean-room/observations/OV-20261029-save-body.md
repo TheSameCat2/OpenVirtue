@@ -310,6 +310,24 @@ actors start at +20 `0x607` (`0x627` for an actor) and +22 `0x180`. Walls start 
 The writer now encodes the flags. Its words match the original's in all 25 carriers that compiled,
 for the thing, the actor and the wall.
 
+Comparing one apathy wall and two still things with OpenVirtue's records of the same objects
+(matched by position):
+- **Walls.** +8 is the length cut toward zero (11448, where OpenVirtue rounded to 11449), and +0 is that
+  length × `SCALE_X`. +142's texture number is 373 against OpenVirtue's 355. The original seems to count
+  every `TEXTURE` declaration, repeats included, where OpenVirtue keeps one per name. +16 holds 1 and
+  +134 holds 520 (unknown).
+- **Things.**
+  - +8 holds the absolute facing (1608 for the 90° placement), not one relative to the placement.
+  - +118 holds the absolute height: floor + `Z`, 16 or −8 where OpenVirtue has 0.5 or 1.
+  - +106 (3.0), +122, +126 and +146 (300) are unknown.
+- **View state.** +0/+4, the view bits of +20 (`0x600`) and +22 (`0x80`) vary at run time, as expected.
+- **Order.** Things and actors are not grouped. OpenVirtue's things come before its actors and
+  interleaved with them, with runs of wall-sized records between. apathy's map lists all walls, then
+  things, then actors, so the order is not the map's. The likeliest reading is the original's
+  per-region object lists, one region after another; the synthetic levels had all objects in one
+  region. The section is also 7900 bytes longer than 630 entity and 5894 wall records. Objects the
+  engine creates for `ATTACH` (14 shadow sprites and 40 attached wall textures in apathy) would fit.
+
 On the retail level the record "constants" are not constant: only 289 records carry 16383 at +4, 5 at
 +26 and 1.0 at +102. These words vary, most likely with the texture, and still need mapping before a
 retail level's save can be written.
