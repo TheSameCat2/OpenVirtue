@@ -72,11 +72,20 @@ ran.
   from the last the map places to the first — in which each object runs its `EACH_TICK` (read when
   its turn comes) and then steps its texture animation, running `EACH_CYCLE` when a cycle ends.
 
+## Round 2 (2026-10-30)
+- `regions`: the room (first in the WMP) and the pad island (third) each print in their
+  `EACH_TICK`. Every cycle ran `M, G1, P, R`: regions also run from the last the map places to the
+  first. Hash `609b2cfb`.
+- `start-wait`: `IF_START` arms the slot (`Y` with its cycle count) and then `WAIT 3`. `W3` printed
+  at the start of cycle 3 (`W3 0.594 2`, before that cycle's `Y`). So a frame-count `WAIT` armed in
+  `IF_START` counts `IF_START` as one of its cycles, as `WAITT` does. Hash `c004cbf2`.
+
+Implementation: `WdlRuntime.RunStartup` counts down every wait `IF_START` armed, `WAIT` and
+`WAITT` alike. `RuntimeHostRegionEventTests.Frame_LocateAfterBeam_FiresLeaveAndEnterOnce` now
+expects the `LOCATE` a cycle earlier. Both round-2 traces replay up to the last line, which is
+printed after the sampler has stopped, so the replay clock cannot place it.
+
 ## Open Questions
-- Whether a frame-count `WAIT` armed in `IF_START` counts `IF_START` as a cycle (not measured; the
-  implementation does not count it).
-- The order of several regions (one region was measured; the implementation runs them from the last
-  to the first like the other kinds).
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
   keeps the flic's delay-based `TIME_CORR`).
 - Texture animation phase lengths (see OV-20261029-motion-timing).

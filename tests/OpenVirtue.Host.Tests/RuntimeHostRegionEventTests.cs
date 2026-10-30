@@ -79,13 +79,15 @@ public sealed class RuntimeHostRegionEventTests : IDisposable
     {
         using RuntimeHost host = Open("ACTION start { WAIT 1; SET PLAYER_X, 15; SET PLAYER_Y, 15; WAIT 2; LOCATE; }");
         host.Boot();
-        for (int i = 0; i < 3; i++)
+        // IF_START counts as the WAIT 1's cycle, so the beam comes in cycle 1 and LOCATE in cycle 3
+        // (OV-20261029-scheduler-order).
+        for (int i = 0; i < 2; i++)
         {
             host.Frame(present: false);
         }
 
         Assert.Equal(0, host.Runtime.GetSkill("entered"));
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < 4; i++)
         {
             host.Frame(present: false);
         }

@@ -1548,14 +1548,14 @@ public sealed class WdlRuntime :
     /// <summary>Runs the level's <c>IF_START</c> startup action, if one is defined.</summary>
     /// <returns><c>true</c> if a startup action existed and ran.</returns>
     /// <remarks>
-    /// <c>IF_START</c> counts as a cycle of its own with <c>TIME_CORR</c> 1 for the time waits it
-    /// arms: a <c>WAITT 16</c> has 15 left when the first cycle starts (OV-20261029-scheduler-order).
-    /// Whether a frame-count <c>WAIT</c> armed there counts it too is unmeasured; it does not here.
+    /// <c>IF_START</c> counts as a cycle of its own with <c>TIME_CORR</c> 1 for the waits it arms:
+    /// a <c>WAITT 16</c> has 15 left when the first cycle starts, and a <c>WAIT 3</c> resumes at the
+    /// start of cycle 3 (OV-20261029-scheduler-order).
     /// </remarks>
     public bool RunStartup()
     {
         bool ran = _startupAction is not null && Run(_startupAction);
-        CountDownWaitingActions(GetSkill(Timing.TimeCorrectionSkill), timeWaitsOnly: true);
+        CountDownWaitingActions(GetSkill(Timing.TimeCorrectionSkill));
         return ran;
     }
 
@@ -2073,12 +2073,11 @@ public sealed class WdlRuntime :
     /// action armed during the frame (or by a hook or a host call before it) counts that frame too
     /// (OV-20261015-flic-scheduler-detail). Actions of inactive entities do not count down.
     /// </summary>
-    private void CountDownWaitingActions(double timeCorrection, bool timeWaitsOnly = false)
+    private void CountDownWaitingActions(double timeCorrection)
     {
         foreach (ActiveAction action in _waitingActions)
         {
-            if (!IsInactiveEntity(action.Scope.Target) &&
-                !(timeWaitsOnly && action.Mode == WdlWaitMode.FrameCycles))
+            if (!IsInactiveEntity(action.Scope.Target))
             {
                 action.Remaining -= action.Mode == WdlWaitMode.FrameCycles ? 1 : timeCorrection;
             }
