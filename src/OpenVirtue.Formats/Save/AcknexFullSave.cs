@@ -160,10 +160,11 @@ public static class AcknexFullSave
         ArgumentNullException.ThrowIfNull(save);
         using var body = new MemoryStream();
         AcknexSaveFile.WriteUInt32(body, FullType);
-        WriteName(body, save.WdlName);
+        WriteName(body, save.WdlName, scriptField: true);
         WriteName(body, save.WmpName);
         WriteName(body, save.WrsName);
-        AcknexSaveFile.WriteUInt32(body, 0);
+        long lengthWord = body.Position;
+        AcknexSaveFile.WriteUInt32(body, 0); // the body's length + 10000, filled in below
 
         // The first section as the original's saves hold it; the words at +36 and +40, which change
         // from save to save, are left 0, which loads (round 13).
@@ -189,14 +190,28 @@ public static class AcknexFullSave
         AcknexSaveFile.WriteSection(body, new byte[4]);
         AcknexSaveFile.WriteSection(body, []);
         body.Write([0x25, 0x26, 0x00, 0x00]);
-        return body.ToArray();
+        // The header's last word is the body's length plus 10000 in every save the original wrote
+        // (8763 → 18763, 1187701 → 1197701; round 13).
+        byte[] bytes = body.ToArray();
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan((int)lengthWord), bytes.Length + 10000);
+        return bytes;
     }
 
-    private static void WriteName(Stream body, string name)
+    private static void WriteName(Stream body, string name, bool scriptField = false)
     {
         byte[] field = new byte[NameField];
+        if (scriptField)
+        {
+            // The script's field keeps the end of a 12-character name it held before ("…DL"), which
+            // shows past a shorter name: TITLE.WDL, NUL, "DL", NUL (OV-20261029-save-body round 13).
+            field[10] = (byte)'D';
+            field[11] = (byte)'L';
+        }
+
         byte[] text = Encoding.Latin1.GetBytes(name); // as named: apathy's save holds "apathy.WMP"
-        text.AsSpan(0, Math.Min(text.Length, NameField - 1)).CopyTo(field);
+        int length = Math.Min(text.Length, NameField - 1);
+        text.AsSpan(0, length).CopyTo(field);
+        field[length] = 0;
         body.Write(field);
     }
 

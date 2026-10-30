@@ -140,6 +140,10 @@ public class AcknexSaveFileTests
 
         byte[] body = AcknexFullSave.Write(save);
 
+        // The header as the original writes it: the script's name over an older one's "…DL", and the
+        // body's length + 10000 after the archive's name (OV-20261029-save-body round 13).
+        Assert.Equal("TITLE.WDL\0DL\0"u8.ToArray(), body[4..17]);
+        Assert.Equal(body.Length + 10000, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(43)));
         var objects = AcknexSaveFile.ReadObjects(body, entityCount: 1, wallCount: 1);
         Assert.NotNull(objects);
         Assert.Equal(25 * 1024, objects.Value.Entities[0].RawSkills["X"]);

@@ -377,6 +377,15 @@ position.
     the probe level with its one palette. This is likely the palette in use.
   - **Constants.** +32 holds 1, +52 holds 1.0 and +68 holds −1.
   - **+36/+40** change between saves.
+- **The header.**
+  - **Script name.** The 13-byte script name field keeps the end of a 12-character name it held
+    before, `…DL` and a NUL. It shows past a shorter name: `TITLE.WDL`, NUL, `DL`, NUL. apathy's save
+    shows the same tail. The rest of that older name is never visible.
+  - **Length word.** The word after the archive's name is the body's length plus 10000 in all seven
+    saves compared (8763 → 18763, 1187701 → 1197701).
+  - **Section 0, +36/+40.** With these written, the save-format probe's full saves match byte for byte
+    up to these two words. +40 moves with the player (14.875 at `PLAYER_X` 5, 13.0 at 6), and +36 is
+    0 or +40 less 1.0. It looks like view state; OpenVirtue leaves both 0, which loads.
 - **`BMAP` in a `TEXTURE`.** The music room's textures list their bitmaps with `BMAP`, not `BMAPS`. The
   original takes it; the saved sprite sizes prove it.
 - **Loading.** The patched level `LOAD`s OpenVirtue's capture of apathy, then runs its sampler slot for
