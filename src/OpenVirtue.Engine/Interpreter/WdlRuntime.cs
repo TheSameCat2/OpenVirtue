@@ -261,6 +261,7 @@ public sealed class WdlRuntime :
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
+        InitializeFootHeights();
         InitializePredefinedReferences(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
@@ -606,18 +607,7 @@ public sealed class WdlRuntime :
             // The facing runs from 0 to 2π and is cut toward zero: 270° reads 4825, 180° 3216 (round 13).
             double facing = NormalizeAngle(entity.FacingAngleRadians);
             fields["ANGLE"] = (int)Math.Truncate((facing < 0 ? facing + Math.Tau : facing) * 1024);
-            if (entity.Region >= 0 && entity.Region < _level.Regions.Count)
-            {
-                // Z is the foot's height: 0 on the ground, a CANDELABER's ceiling less its sprite's
-                // height, otherwise the floor (round 13).
-                double floor = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
-                fields["Z"] = entity["GROUND"] > 0
-                    ? 0
-                    : entity["CANDELABER"] > 0
-                        ? Raw(LevelTopology.CeilingHeightAt(_level, entity.Region, entity.X, entity.Y)) - SpriteHeight(entity)
-                        : Raw(floor + entity.Z - entity["HEIGHT"]);
-            }
-
+            // Z is the script's Z (MapEntity.FootZ), which the runtime starts as the original does.
             return fields;
         }
 
@@ -644,9 +634,6 @@ public sealed class WdlRuntime :
         string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CAREFULLY", "CANDELABER", "IMMATERIAL", "SENSITIVE",
             "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
         string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
-
-        int SpriteHeight(MapEntity entity) =>
-            TextureOf(entity.Texture) is { } texture ? Step(texture.Height, texture.ScaleY) : 16383;
 
         FullSaveEntity Entity(MapEntity entity)
         {
@@ -2686,6 +2673,44 @@ public sealed class WdlRuntime :
         }
     }
 
+    /// <summary>
+    /// Starts every thing's and actor's script <c>Z</c> as the original's saves hold it: 0 on the
+    /// <c>GROUND</c>, a <c>CANDELABER</c>'s ceiling less its sprite's height, otherwise the floor under
+    /// it, and 0 for an unplaced object (OV-20261029-save-body round 13; below-view reads a thing's
+    /// <c>Z</c> 10 on a floor 10 high).
+    /// </summary>
+    private void InitializeFootHeights()
+    {
+        var unplaced = new HashSet<AcknexObject>(_level.UnplacedObjects, ReferenceEqualityComparer.Instance);
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (!unplaced.Contains(entity))
+            {
+                UpdateFootHeight(entity);
+            }
+        }
+    }
+
+    private void UpdateFootHeight(MapEntity entity)
+    {
+        if (entity.Region < 0 || entity.Region >= _level.Regions.Count || entity["GROUND"] > 0)
+        {
+            return;
+        }
+
+        if (entity["CANDELABER"] > 0)
+        {
+            int sprite = entity.Texture is { } name && _level.Textures.TryGetValue(TextureAnimation.LogicalTextureName(name), out LevelTexture texture) &&
+                texture.Height > 0 && texture.ScaleY > 0
+                ? (int)Math.Truncate(((texture.Height * 1024.0) - 1) / texture.ScaleY)
+                : 16383;
+            entity.FootZ = ((long)Math.Round(LevelTopology.CeilingHeightAt(_level, entity.Region, entity.X, entity.Y) * 1024) - sprite) / 1024.0;
+            return;
+        }
+
+        entity.FootZ = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
+    }
+
     private void InitializePredefinedReferences(Level level)
     {
         if (level.PlayerStart is not { } playerStart)
@@ -3413,6 +3438,7 @@ public sealed class WdlRuntime :
                     clearanceOnContact: true);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
+            UpdateFootHeight(actor);
             if (result.Collided)
             {
                 // OV-20261029-actor-step: where a wall stops the step, the original's position is

@@ -188,6 +188,18 @@ public sealed class ViewTest
     /// </summary>
     public bool IsSpriteVisible(Viewer viewer, double x, double y, double halfWidth, double bottom, double top, int region = -1)
     {
+        // A sprite in a storey of a BELOW stack shows only between its storey's floor and ceiling: a
+        // 16-high sprite in an 8-high underpass does not reach through the slab (OV-20261029-below-view).
+        if (region >= 0 && region < _level.Regions.Count && LevelTopology.Stack(_level, region).Skip(1).Any())
+        {
+            bottom = Math.Max(bottom, _level.Regions[region].FloorHeight);
+            top = Math.Min(top, _level.Regions[region].CeilHeight);
+            if (top <= bottom)
+            {
+                return false;
+            }
+        }
+
         double dx = x - viewer.X;
         double dy = y - viewer.Y;
         double length = Math.Sqrt((dx * dx) + (dy * dy));
@@ -478,8 +490,18 @@ public sealed class ViewTest
                 }
 
                 Region from = _level.Regions[storey];
+                // Into a stack from outside, the sight line goes on only in the storey that holds the
+                // eye's height, when one does: from the room at eye 15 the underpass under a deck
+                // (floor 10) stays hidden though a line passes under the slab, and from eye 4 the
+                // deck's things do (OV-20261029-below-view).
+                int? entered = farStack.Count > 1 && !farStack.Contains(storey) ? EyeStorey(far, eye) : null;
                 foreach (int beyond in farStack)
                 {
+                    if (entered is { } only && beyond != only)
+                    {
+                        continue;
+                    }
+
                     Region to = _level.Regions[beyond];
                     double floor = Math.Max(from.FloorHeight, to.FloorHeight);
                     double ceiling = Math.Min(from.CeilHeight, to.CeilHeight);

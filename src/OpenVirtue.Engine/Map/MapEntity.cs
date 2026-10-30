@@ -35,6 +35,14 @@ public abstract class MapEntity : AcknexObject
     /// <summary>The combined facing angle in radians.</summary>
     public double FacingAngleRadians => PlacementAngleDegrees * (Math.PI / 180.0) + Angle;
 
+    /// <summary>
+    /// The script's <c>Z</c>: the foot's world height, a skill of its own beside <c>HEIGHT</c>. A script
+    /// reads back what it set in either (OV-20261029-save-body round 6); the runtime starts it as the
+    /// original's saves hold it (<see cref="Interpreter.WdlRuntime"/>), and OpenVirtue draws by
+    /// <see cref="Height"/>.
+    /// </summary>
+    public double FootZ { get; set; }
+
     /// <summary>The documented <c>HEIGHT</c> alias for the object's feet offset (<see cref="Z"/>).</summary>
     public double Height
     {
@@ -201,7 +209,7 @@ public abstract class MapEntity : AcknexObject
         {
             case "x": value = X; return true;
             case "y": value = Y; return true;
-            case "z": value = Z; return true;
+            case "z": value = FootZ; return true;
             case "angle": value = Angle; return true;
             case "height": value = Height; return true;
             case "region": value = Region; return true;
@@ -215,7 +223,7 @@ public abstract class MapEntity : AcknexObject
         {
             case "x": X = value; return true;
             case "y": Y = value; return true;
-            case "z": Z = value; return true;
+            case "z": FootZ = value; return true;
             case "angle": Angle = value; return true;
             case "height": Height = value; return true;
             case "region": Region = (int)value; return true;

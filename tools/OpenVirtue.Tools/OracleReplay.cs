@@ -441,16 +441,13 @@ internal static class OracleReplay
         IReadOnlyDictionary<string, string> OriginalFiles,
         IReadOnlyDictionary<string, string> ReplayFiles);
 
-    /// <summary>The parts of a carrier's <c>case.json</c> the replay needs.</summary>
-    /// <param name="Timing">
-    /// The timing column a carrier names (<c>"timing": "TK:1"</c>) when detection would pick the wrong one:
-    /// the flic carriers print <c>FLIC_FRAME</c>, whole and never falling, before <c>TICKS</c>.
-    /// </param>
-    /// <param name="StartupStep">
-    /// The first sampled cycle's step a carrier names (<c>"startup_step": 0.28125</c>) where the samples
-    /// cannot show it: a trace sampled only during a flic gives 1.094-tick gaps, though its start-up ran
-    /// 60 Hz frames.
-    /// </param>
+    /// <summary>
+    /// The parts of a carrier's <c>case.json</c> the replay needs. A carrier may name its timing column
+    /// (<c>"timing": "TK:1"</c>) when detection would pick the wrong one: the flic carriers print
+    /// <c>FLIC_FRAME</c>, whole and never falling, before <c>TICKS</c>. It may name the first sampled
+    /// cycle's step (<c>"startup_step": 0.28125</c>) where the samples cannot show it: a trace sampled
+    /// only during a flic gives 1.094-tick gaps, though its start-up ran 60 Hz frames.
+    /// </summary>
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null)
     {
@@ -470,7 +467,7 @@ internal static class OracleReplay
             string? trace = root.TryGetProperty("trace_file", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
             string? autotype = root.TryGetProperty("autotype", out JsonElement a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
             OracleTimingColumn? timing = root.TryGetProperty("timing", out JsonElement tm) && tm.ValueKind == JsonValueKind.String &&
-                OracleTimingColumn.TryParse(tm.GetString(), out OracleTimingColumn parsed)
+                OracleTimingColumn.TryParse(tm.GetString() ?? "", out OracleTimingColumn parsed)
                 ? parsed
                 : null;
             double? startup = root.TryGetProperty("startup_step", out JsonElement st) && st.ValueKind == JsonValueKind.Number

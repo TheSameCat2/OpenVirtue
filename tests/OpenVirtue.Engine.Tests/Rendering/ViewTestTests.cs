@@ -137,6 +137,29 @@ public sealed class ViewTestTests
         Assert.False(view.IsSpriteVisible(Viewer(0, 0, 0), 40, 0, 1, 0, 2));
     }
 
+    // OV-20261029-below-view: a room 0..16 with a deck on x −12..−4, y 12..20: the deck's floor at 10,
+    // an underpass (BELOW) from 0 to 8 under it.
+    private const string StackMap =
+        "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+        "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+        "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 10 16;#2\n" +
+        "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+        "WALL b 4 5 2 0 0 0;#4\nWALL b 5 6 2 0 0 0;#5\nWALL b 6 7 2 0 0 0;#6\nWALL b 7 4 2 0 0 0;#7\n" +
+        "PLAYER_START 0 0 0 0;#8";
+
+    [Theory]
+    [InlineData(4, true)] // the eye in the underpass's height range sees into it
+    [InlineData(15, false)] // above it: only the deck's storey, though a line passes under the slab
+    public void IsSpriteVisible_IntoAStackFromOutside_SeesTheEyesStoreyOnly(double eye, bool expected)
+    {
+        Level level = Load(StackMap, "WALL w { } WALL b { FLAGS PASSABLE; } REGION low { FLOOR_HGT 0; CEIL_HGT 8; } REGION pad { BELOW low; }");
+        int low = level.Regions.ToList().FindIndex(static r => r.Name == "low");
+        var view = new ViewTest(level);
+
+        // A 16-high, 16-wide sprite on the underpass floor shows only up to the underpass's ceiling.
+        Assert.Equal(expected, view.IsSpriteVisible(new Viewer(-8, 2, eye, Math.PI / 2, ProjectionModel.Create(1, 1, 0, 640, 480)), -8, 17, 8, 0, 16, low));
+    }
+
     private static Viewer Viewer(double x, double y, double angle, double tilt = 0) =>
         new(x, y, 8, angle, ProjectionModel.Create(1, 1, tilt, 640, 480));
 
