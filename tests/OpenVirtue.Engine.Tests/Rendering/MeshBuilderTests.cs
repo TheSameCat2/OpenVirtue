@@ -42,6 +42,36 @@ public class MeshBuilderTests
     }
 
     [Theory]
+    [InlineData(4, 8, 0, 1)]     // west of the wall, square on: green
+    [InlineData(4, 8, -12, 0)]   // west, towards v1: red
+    [InlineData(4, 8, 12, 1)]    // west, towards v2: green
+    [InlineData(4, 40, 0, 3)]    // east, square on: blue
+    [InlineData(4, 40, -12, 2)]  // east, towards v1: yellow
+    [InlineData(4, 40, 12, 3)]   // east, towards v2: blue
+    [InlineData(2, 8, 0, 1)]
+    [InlineData(2, 8, -12, 0)]
+    [InlineData(2, 8, 12, 1)]
+    [InlineData(2, 40, 0, 1)]    // a two-sided wall shows the same pair from both faces
+    [InlineData(2, 40, -12, 0)]
+    public void BuildWalls_SidedTexture_ShowsTheSideTheViewpointPicks(int sides, double eyeX, double eyeY, int side)
+    {
+        // OV-20261030-wall-sides: a wall from v1 (24, -6) to v2 (24, 6), screenshotted in V3.963 from
+        // 16 west or east of it, square on or off towards an end.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 24 -6 0;#0\nVERTEX 24 6 0;#1\nREGION room 0 10;#0\nWALL w 0 1 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        string main = "MAPFILE <m.wmp>; BMAP a, <a.pcx>; BMAP b, <b.pcx>; BMAP c, <c.pcx>; BMAP d, <d.pcx>; " +
+            (sides == 4 ? "TEXTURE t { SIDES 4; BMAPS a, b, c, d; }" : "TEXTURE t { SIDES 2; BMAPS a, b; }") + " WALL w { TEXTURE t; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+        Wall wall = Assert.IsType<Wall>(batch.AnimationSource); // its own batch, to pick the side per frame
+        Assert.Equal(side, TextureAnimation.WallSide(level.Textures["t"], 24, -6, 24, 6, eyeX, eyeY));
+        Assert.Same(level.Walls[0], wall);
+    }
+
+    [Theory]
     [InlineData(2, 1, 0.5f)] // the lamp on the room's side: ALBEDO 1 adds 16 levels (0.5 of ambient)
     [InlineData(2, -1, 0f)] // behind the wall: nothing
     public void BuildWalls_GeniusLamp_BrightensTheFaceItStandsBefore(int lampX, int lampY, float expected)

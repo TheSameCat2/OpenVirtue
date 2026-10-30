@@ -54,6 +54,7 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.AutorangeProbeName or
             ProjectionProbeGenerator.SaveBodyProbeName or
             ProjectionProbeGenerator.BelowViewProbeName or
+            ProjectionProbeGenerator.WallSidesProbeName or
             ProjectionProbeGenerator.ActorStepProbeName or
             ProjectionProbeGenerator.InkeyProbeName or
             ProjectionProbeGenerator.UiLayoutProbeName or

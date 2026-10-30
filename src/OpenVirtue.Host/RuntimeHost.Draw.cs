@@ -3,6 +3,7 @@
 
 using System.Numerics;
 using OpenVirtue.Engine;
+using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 
 namespace OpenVirtue.Host;
@@ -160,7 +161,18 @@ public sealed partial class RuntimeHost
                 batch.Texture is not null &&
                 _level.Textures.TryGetValue(batch.Texture, out LevelTexture animated))
             {
-                renderTexture = TextureAnimation.ResolveRenderTexture(animated, source["CYCLE"]);
+                int side = source is Wall wall &&
+                    (uint)wall.Vertex1 < (uint)_level.Vertices.Count && (uint)wall.Vertex2 < (uint)_level.Vertices.Count
+                    ? TextureAnimation.WallSide(
+                        animated,
+                        _level.Vertices[wall.Vertex1].X,
+                        _level.Vertices[wall.Vertex1].Y,
+                        _level.Vertices[wall.Vertex2].X,
+                        _level.Vertices[wall.Vertex2].Y,
+                        _camera.Position.X,
+                        RenderSpace.MapYFromZ(_camera.Position.Z))
+                    : 0;
+                renderTexture = TextureAnimation.ResolveRenderTexture(animated, source["CYCLE"], side);
                 if (renderTexture is null)
                 {
                     continue;

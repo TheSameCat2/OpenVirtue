@@ -430,9 +430,11 @@ public static class MeshBuilder
         string? textureName,
         AcknexObject source)
     {
+        // A wall with a sided texture also needs its own batch: the side it shows depends on the
+        // viewpoint (OV-20261030-wall-sides).
         return textureName is not null &&
                level.Textures.TryGetValue(textureName, out LevelTexture texture) &&
-               (texture.Cycles > 1 || texture.IsOneShot)
+               (texture.Cycles > 1 || texture.IsOneShot || (source is Wall && texture.Sides >= 2))
             ? source
             : null;
     }

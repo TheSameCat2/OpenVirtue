@@ -51,6 +51,8 @@ internal static class ProjectionProbeGenerator
     public const string AutorangeProbeName = "autorange";
     public const string SaveBodyProbeName = "save-body";
     public const string BelowViewProbeName = "below-view";
+
+    public const string WallSidesProbeName = "wall-sides";
     public const string ActorStepProbeName = "actor-step";
     public const string InkeyProbeName = "inkey";
     public const string UiLayoutProbeName = "ui-layout";
@@ -89,6 +91,8 @@ internal static class ProjectionProbeGenerator
     private const string AutorangeProbeId = "OV-20261029-autorange";
     private const string SaveBodyProbeId = "OV-20261029-save-body";
     private const string BelowViewProbeId = "OV-20261029-below-view";
+
+    private const string WallSidesProbeId = "OV-20261030-wall-sides";
     private const string ActorStepProbeId = "OV-20261029-actor-step";
     private const string InkeyProbeId = "OV-20261029-inkey";
     private const string UiLayoutProbeId = "OV-20261029-ui-layout";
@@ -370,6 +374,7 @@ internal static class ProjectionProbeGenerator
         AutorangeProbeName => AutorangeProbeId,
         SaveBodyProbeName => SaveBodyProbeId,
         BelowViewProbeName => BelowViewProbeId,
+        WallSidesProbeName => WallSidesProbeId,
         ActorStepProbeName => ActorStepProbeId,
         InkeyProbeName => InkeyProbeId,
         UiLayoutProbeName => UiLayoutProbeId,
@@ -503,6 +508,7 @@ internal static class ProjectionProbeGenerator
             case AutorangeProbeName:
             case SaveBodyProbeName:
             case BelowViewProbeName:
+            case WallSidesProbeName:
             case ActorStepProbeName:
             case InkeyProbeName:
             case UiLayoutProbeName:
@@ -552,6 +558,7 @@ internal static class ProjectionProbeGenerator
         AutorangeProbeName => AutorangeProbeCases.Set,
         SaveBodyProbeName => SaveBodyProbeCases.Set,
         BelowViewProbeName => BelowViewProbeCases.Set,
+        WallSidesProbeName => WallSidesProbeCases.Set,
         ActorStepProbeName => ActorStepProbeCases.Set,
         InkeyProbeName => InkeyProbeCases.Set,
         UiLayoutProbeName => UiLayoutProbeCases.Set,

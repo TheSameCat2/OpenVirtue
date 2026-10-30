@@ -206,7 +206,8 @@ Not yet complete:
   (OV-20261029-ui-text) and slider knobs: dragging a slider, and where a click lands relative to the
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
-- two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
+- a player beamed into a `BELOW` stack, and whether a four-sided wall's back face mirrors its bitmap
+  (which side a sided wall shows is measured and drawn, OV-20261030-wall-sides);
 - full save compatibility in play. OpenVirtue:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
