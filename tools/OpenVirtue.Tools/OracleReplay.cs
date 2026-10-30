@@ -170,7 +170,7 @@ internal static class OracleReplay
             ? OracleTrace.Parse(File.ReadAllText(primaryPath, Encoding.Latin1))
             : [];
         OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
-            (options.FixedTimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
+            (options.FixedTimeCorrection is null && carrierCase.TimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t) : [];
 
         string replayDirectory = Path.Combine(carrier, ReplayDirectoryName);
@@ -185,7 +185,7 @@ internal static class OracleReplay
 
         double? firstStep = carrierCase.StartupStep ??
             (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
-        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25, firstStep);
+        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? 0.25, firstStep);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
         if (carrierCase.Autotype is { } typed)
@@ -446,10 +446,13 @@ internal static class OracleReplay
     /// (<c>"timing": "TK:1"</c>) when detection would pick the wrong one: the flic carriers print
     /// <c>FLIC_FRAME</c>, whole and never falling, before <c>TICKS</c>. It may name the first sampled
     /// cycle's step (<c>"startup_step": 0.28125</c>) where the samples cannot show it: a trace sampled
-    /// only during a flic gives 1.094-tick gaps, though its start-up ran 60 Hz frames.
+    /// only during a flic gives 1.094-tick gaps, though its start-up ran 60 Hz frames. It may ask for
+    /// fixed frames (<c>"time_corr": 0.28125</c>) when no column prints <c>TICKS</c> and detection
+    /// would take a coordinate for it.
     /// </summary>
     private sealed record CarrierCase(
-        string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null)
+        string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
+        double? TimeCorrection = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -473,7 +476,10 @@ internal static class OracleReplay
             double? startup = root.TryGetProperty("startup_step", out JsonElement st) && st.ValueKind == JsonValueKind.Number
                 ? st.GetDouble()
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup);
+            double? timeCorrection = root.TryGetProperty("time_corr", out JsonElement tc) && tc.ValueKind == JsonValueKind.Number
+                ? tc.GetDouble()
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection);
         }
     }
 

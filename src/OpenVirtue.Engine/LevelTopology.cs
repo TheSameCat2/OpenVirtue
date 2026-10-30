@@ -87,8 +87,11 @@ public static class LevelTopology
 
     /// <summary>
     /// Interpolates the WMP vertex heights of a region's footprint at a map-space point (before the
-    /// region's slope flags, see <see cref="SlopeSign"/>). The triangulation matches the rendered
-    /// floor and ceiling surface.
+    /// region's slope flags, see <see cref="SlopeSign"/>). The original scans the footprint along the
+    /// map's y: the line x = const through the point meets the edges below and above it, each edge
+    /// gives the height where it is met, and the point's height lies between the two along y. On a
+    /// square with one corner raised that is bilinear, and it fits the retail quads to 1/1024
+    /// (OV-20261029-slope round 2). The triangulation stands in where no span holds the point.
     /// </summary>
     public static bool TryGetSurfaceHeightOffset(Level level, int regionIndex, double x, double y, out double offset)
     {
@@ -113,6 +116,11 @@ public static class LevelTopology
         double y,
         out double offset)
     {
+        if (TryScanHeight(level, loop, x, y, out offset))
+        {
+            return true;
+        }
+
         offset = 0;
         for (int i = 0; i < triangles.Count; i += 3)
         {
@@ -140,6 +148,45 @@ public static class LevelTopology
         }
 
         return false;
+    }
+
+    private static bool TryScanHeight(Level level, IReadOnlyList<int> loop, double x, double y, out double offset)
+    {
+        offset = 0;
+        double below = double.NegativeInfinity;
+        double above = double.PositiveInfinity;
+        double belowZ = 0;
+        double aboveZ = 0;
+        for (int i = 0; i < loop.Count; i++)
+        {
+            Vertex a = level.Vertices[loop[i]];
+            Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+            if (a.X == b.X || (a.X - x) * (b.X - x) > 0)
+            {
+                continue;
+            }
+
+            double t = (x - a.X) / (b.X - a.X);
+            double edgeY = a.Y + (t * (b.Y - a.Y));
+            double edgeZ = a.Z + (t * (b.Z - a.Z));
+            if (edgeY <= y && edgeY > below)
+            {
+                (below, belowZ) = (edgeY, edgeZ);
+            }
+
+            if (edgeY >= y && edgeY < above)
+            {
+                (above, aboveZ) = (edgeY, edgeZ);
+            }
+        }
+
+        if (double.IsInfinity(below) || double.IsInfinity(above))
+        {
+            return false;
+        }
+
+        offset = above - below < 1e-9 ? belowZ : belowZ + ((aboveZ - belowZ) * (y - below) / (above - below));
+        return true;
     }
 
     /// <summary>

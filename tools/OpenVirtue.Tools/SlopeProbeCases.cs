@@ -54,6 +54,19 @@ internal static class SlopeProbeCases
         Slope("ceil-descend", "CEIL_DESCEND", "CEIL_DESCEND: does the ceiling sink?"),
         Slope("ceil-lifted", "CEIL_LIFTED", "CEIL_LIFTED (undocumented): what does it do to the ceiling?"),
         Slope("both-ascend", "FLOOR_ASCEND, CEIL_ASCEND", "Both ASCEND flags: floor and ceiling rise together?"),
+        new TraceProbeCase(
+            "round2/nonplanar",
+            "Round 2. FLOOR_LIFTED with corner heights 0, 10, 0, 0, which no plane holds: what floor height does each " +
+            "point of a 5 × 5 grid read? (Retail quads read heights between their two triangulations.)",
+            "",
+            string.Concat(
+                from y in new[] { 12.5, 14, 16, 18, 19.5 }
+                from x in new[] { -11.5, -10, -8, -6, -4.5 }
+                select Visit("G", x, y)) + P("RET"),
+            Predict(
+                ("two triangles", "heights linear along one diagonal, a crease along it"),
+                ("bilinear", "the centre at 2.5, no crease")),
+            Map: new TraceProbeMap(PadBody: "FLAGS FLOOR_LIFTED;", PadZ: [0, 10, 0, 0])),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
