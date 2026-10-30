@@ -182,7 +182,8 @@ internal static class OracleTrace
     /// <summary>
     /// The <c>TIME_CORR</c> of the cycle that printed the first sample, when the timing token also
     /// prints it: a column that, scaled by 1 or 1024, equals the step between consecutive samples
-    /// on (nearly) every line. <c>null</c> when there is none.
+    /// on (nearly) every line, or else whose values are all whole 1/32 ticks between 0.1 and 2.
+    /// <c>null</c> when there is none.
     /// </summary>
     public static double? FirstCycleStep(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
     {
@@ -223,6 +224,22 @@ internal static class OracleTrace
                 {
                     return first / scale;
                 }
+            }
+        }
+
+        // A sampler that prints only every so many cycles never shows one step between two samples;
+        // its TIME_CORR column is then the one whose every value is a whole number of 1/32 ticks
+        // between 0.1 and 2 (the flic-scheduler-detail TK lines print 0.25, 1.094, 0.281 …) and whose
+        // first value is a 60 Hz start-up step, 0.25 or 0.281: other columns of that shape (sizes,
+        // heights) start elsewhere.
+        for (int column = 0; column < columns; column++)
+        {
+            if (column != timing.Column &&
+                tokenLines[0].Value(column) is { } start && (Math.Abs(start - 0.25) <= 0.0015 || Math.Abs(start - 0.28125) <= 0.0015) &&
+                tokenLines.All(l => l.Value(column) is { } v && v is > 0.1 and <= 2 && Math.Abs((v * 32) - Math.Round(v * 32)) <= 0.05) &&
+                tokenLines.Select(l => l.Value(column)!.Value).Distinct().Count() > 1)
+            {
+                return tokenLines[0].Value(column);
             }
         }
 

@@ -182,6 +182,11 @@ speeds). medium for rule 6 during a flic, because the trace after the fault was 
     its start-up in 1.094-tick steps. A `startup_step` of 0.28125 in `case.json` removes the shift,
     and the `PLAY` cycle's slot then prints 0.281 as in the original. `waits` now matches 40 lines
     (was 28) and `replace` 16 (was 6).
+  - **2026-10-30.** The replay now reads that step from the `TK` lines' `TIME_CORR` column (whole
+    1/32 ticks between 0.1 and 2, starting at a 60 Hz step of 0.25 or 0.281) even though the sampler prints only every 32 ticks. Without the
+    `case.json` hints, `replace` (0.250, not 0.281) reaches line 18, `round2/near` 30 and
+    `round3/speed` 12. What remains there is the gap after the flic: the sampler's counter shows 79
+    cycles, flic frames and ordinary ones, which the replay spreads evenly.
   - **Next difference.** After the flic, the replay fills sparse samples with even cycles. The
     original spent the first of them on the flic's last frames, 1.094 each, so it ran more cycles
     (513 against 492).

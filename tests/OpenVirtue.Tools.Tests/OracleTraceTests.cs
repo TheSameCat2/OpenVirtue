@@ -87,6 +87,18 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void FirstCycleStep_SparseSampler_ReadsTheColumnOfWholeThirtySecondTicks()
+    {
+        // flic-scheduler-detail replace: TK prints FLIC_FRAME, TICKS, a cycle count and TIME_CORR every
+        // 32 ticks, so no two samples are one cycle apart; TIME_CORR is the column of whole 1/32 ticks.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "TK 1.000 13.344 1.000 0.250\nTK 30.000 46.156 31.000 1.094\nTK 16.000 78.969 61.000 1.094\n" +
+            "TK 0.000 209.425 230.000 0.281\nTK 0.000 241.644 353.000 0.250\n");
+
+        Assert.Equal(0.25, OracleTrace.FirstCycleStep(lines, new OracleTimingColumn("TK", 1)));
+    }
+
+    [Fact]
     public void Compare_NumbersWithinTolerance_Match()
     {
         IReadOnlyList<OracleTraceLine> original = OracleTrace.Parse("BEGIN\nC 1.000 2.000\nEND\n");
