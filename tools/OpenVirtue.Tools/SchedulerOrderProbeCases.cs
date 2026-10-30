@@ -95,6 +95,17 @@ internal static class SchedulerOrderProbeCases
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
         new TraceProbeCase(
+            "round5/waitt-small",
+            "Round 5. A global slot counts cycles in so_n. The probe arms WAITT 0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.99, 1 and 1.3 one after another, printing A (armed) and R (resumed) with TICKS, so_n and TIME_CORR: in which cycle does each end?",
+            Skills + Action("so_y", "    RULE so_n = so_n + 1;\n"),
+            "    SET EACH_TICK.1, so_y;\n    WAIT 2;\n" +
+            string.Concat(new[] { "0", "0.1", "0.25", "0.3", "0.5", "0.75", "0.99", "1", "1.3" }.Select(static v =>
+                L("A" + v.Replace(".", "", StringComparison.Ordinal), "TIME_CORR") + $"    WAITT {v};\n" + L("R" + v.Replace(".", "", StringComparison.Ordinal), "TIME_CORR"))) +
+            "    SET EACH_TICK.1, NULL;\n",
+            Predict(
+                ("a wait under one step resumes in the next cycle", "R one so_n after A for 0 … 0.99"),
+                ("a zero wait does not wait", "R0 in the same cycle as A0"))),
+        new TraceProbeCase(
             "startup",
             "What are TICKS and TIME_CORR in IF_START and in each of the first cycles? Does an EACH_TICK armed in IF_START run in the IF_START frame or the next? After how many cycles and ticks does a WAITT 16 armed in IF_START end, and how long do WAIT 1 and WAITT 1 armed later take?",
             Skills +

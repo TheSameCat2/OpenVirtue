@@ -145,6 +145,14 @@ values, not derived from the player's size:
 
 OpenVirtue now starts with these. The oracle summary lost no match.
 
+## Round 5: `WAITT` below one tick (2026-10-30)
+`round5/waitt-small` (`OVSDO0.TXT` `cb83adb4`): a global slot counts cycles, and the probe arms
+`WAITT` 0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.99, 1 and 1.3 one after another.
+- Every wait below 1 went straight on: its `R` line prints in the same cycle as its `A` line.
+- `WAITT 1` resumed in the next cycle, and `WAITT 1.3` two cycles later.
+- So `WAITT`, like `WAIT` (round 3), does not wait at all for less than one. OpenVirtue had waited
+  a cycle for any positive `WAITT`; it now goes straight on below 1.
+
 ## Open Questions
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
   keeps the flic's delay-based `TIME_CORR`).

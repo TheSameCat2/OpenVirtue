@@ -1364,6 +1364,22 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("after"));
     }
 
+    [Theory]
+    [InlineData("0.1")]
+    [InlineData("0.5")]
+    [InlineData("0.99")]
+    public void Runtime_WaittBelowOne_GoesStraightOn(string amount)
+    {
+        // OV-20261029-scheduler-order round 5: WAITT 0, 0.1 … 0.99 resumed in the cycle that armed them.
+        Level level = Load($"MAPFILE <m.wmp>; SKILL order {{ VAL 0; }} ACTION waitSome {{ SET order, 1; WAITT {amount}; SET order, 2; }}");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("waitSome"));
+
+        Assert.Equal(2, runtime.GetSkill("order"));
+        Assert.Equal(0, runtime.WaitingActionCount);
+    }
+
     [Fact]
     public void Runtime_WaitInstruction_SuspendsAndResumesAfterFrameCycles()
     {
