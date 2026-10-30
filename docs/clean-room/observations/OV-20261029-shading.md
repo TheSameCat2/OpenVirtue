@@ -96,6 +96,23 @@ textures: `PLAYER_LIGHT` 0, region `AMBIENT` 0.5.
     the formula; cases with a smaller `ALBEDO` and other lamp positions are needed. OpenVirtue does
     not model `GENIUS` light.
 
+## Round 5: `GENIUS` positions (2026-10-30)
+Four cases use the walls' `ALBEDO` 0.25 and move the lamp. Only the side walls' far ends (x 44–48)
+show in the screenshots. Shade levels, where region `AMBIENT` 0.5 alone gives 14:
+
+| Lamp | `ALBEDO` | Left wall (y 24) | Right wall (y −24) |
+|---|---|---|---|
+| (20, −20) | 1 (round 4) | 0 | 2 |
+| (20, −20) | 0.25 | 10 | 10 |
+| (20, 20) | 0.25 | 10 | 10 |
+| (44, 0) | 0.25 | 10 | 10 |
+| (2, −20) | 0.25 | 10 | 12 |
+
+- **Scale.** Facing the lamp, a wall gains `ALBEDO` × 16 levels.
+- **Angle.** The grazing cases gain less: the right wall with the lamp at (2, −20), and with
+  `ALBEDO` 1 at (20, −20). A cosine at each wall point does not fit them. The rule may be one value
+  a wall segment, from the segment's midpoint, but these screenshots cannot show it.
+
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
   then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).

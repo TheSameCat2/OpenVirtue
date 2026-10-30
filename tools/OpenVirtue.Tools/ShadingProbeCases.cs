@@ -76,7 +76,27 @@ internal static class ShadingProbeCases
                 WallTextureBody: "ALBEDO 1; ",
                 Textures: "TEXTURE sh_lamp_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; AMBIENT 1; }\nTHING sh_lamp { TEXTURE sh_lamp_tex; FLAGS INVISIBLE; }\n",
                 Placements: ["THING sh_lamp 20 -20 0 0"])),
+        Genius("round5/genius-r", 20, -20),
+        Genius("round5/genius-l", 20, 20),
+        Genius("round5/genius-far", 44, 0),
+        Genius("round5/genius-near", 2, -20),
     ];
+
+    /// <summary>Round 5: <c>GENIUS</c> light at <paramref name="x"/>, <paramref name="y"/> on walls with <c>ALBEDO</c> 0.25.</summary>
+    private static TraceProbeCase Genius(string label, int x, int y) => new(
+        label,
+        string.Create(CultureInfo.InvariantCulture, $"Round 5. The room's GENIUS lamp at ({x}, {y}), the walls' ALBEDO 0.25, region AMBIENT 0.5, PLAYER_LIGHT 0: each side wall's shade along its length."),
+        "",
+        "    SET PLAYER_LIGHT, 0;\n    WAIT 2;\n" + V("VIEW", "PLAYER_LIGHT", "LIGHT_DIST", "DARK_DIST"),
+        Predict(
+            ("Lambert", "each wall point brightened by ALBEDO · cos of the angle to the lamp"),
+            ("one value a wall", "a wall's shade the same along its length")),
+        Map: new TraceProbeMap(
+            RoomBody: "AMBIENT 0.5; GENIUS sh_lamp;",
+            PaletteBody: Range,
+            WallTextureBody: "ALBEDO 0.25; ",
+            Textures: "TEXTURE sh_lamp_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; AMBIENT 1; }\nTHING sh_lamp { TEXTURE sh_lamp_tex; FLAGS INVISIBLE; }\n",
+            Placements: [string.Create(CultureInfo.InvariantCulture, $"THING sh_lamp {x} {y} 0 0")]));
 
     /// <summary>
     /// Round 4: the room walls' textures with <c>ALBEDO 1</c> (p.33: reflection of light from
