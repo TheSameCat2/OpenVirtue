@@ -53,6 +53,8 @@ internal static class ProjectionProbeGenerator
     public const string BelowViewProbeName = "below-view";
 
     public const string WallSidesProbeName = "wall-sides";
+
+    public const string BelowBeamProbeName = "below-beam";
     public const string ActorStepProbeName = "actor-step";
     public const string InkeyProbeName = "inkey";
     public const string UiLayoutProbeName = "ui-layout";
@@ -93,6 +95,8 @@ internal static class ProjectionProbeGenerator
     private const string BelowViewProbeId = "OV-20261029-below-view";
 
     private const string WallSidesProbeId = "OV-20261030-wall-sides";
+
+    private const string BelowBeamProbeId = "OV-20261030-below-beam";
     private const string ActorStepProbeId = "OV-20261029-actor-step";
     private const string InkeyProbeId = "OV-20261029-inkey";
     private const string UiLayoutProbeId = "OV-20261029-ui-layout";
@@ -375,6 +379,7 @@ internal static class ProjectionProbeGenerator
         SaveBodyProbeName => SaveBodyProbeId,
         BelowViewProbeName => BelowViewProbeId,
         WallSidesProbeName => WallSidesProbeId,
+        BelowBeamProbeName => BelowBeamProbeId,
         ActorStepProbeName => ActorStepProbeId,
         InkeyProbeName => InkeyProbeId,
         UiLayoutProbeName => UiLayoutProbeId,
@@ -509,6 +514,7 @@ internal static class ProjectionProbeGenerator
             case SaveBodyProbeName:
             case BelowViewProbeName:
             case WallSidesProbeName:
+            case BelowBeamProbeName:
             case ActorStepProbeName:
             case InkeyProbeName:
             case UiLayoutProbeName:
@@ -559,6 +565,7 @@ internal static class ProjectionProbeGenerator
         SaveBodyProbeName => SaveBodyProbeCases.Set,
         BelowViewProbeName => BelowViewProbeCases.Set,
         WallSidesProbeName => WallSidesProbeCases.Set,
+        BelowBeamProbeName => BelowBeamProbeCases.Set,
         ActorStepProbeName => ActorStepProbeCases.Set,
         InkeyProbeName => InkeyProbeCases.Set,
         UiLayoutProbeName => UiLayoutProbeCases.Set,

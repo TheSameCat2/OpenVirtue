@@ -1463,6 +1463,12 @@ public sealed class WdlRuntime :
             return false;
         }
 
+        if (ReferenceEquals(target, player))
+        {
+            // In a BELOW stack, the storey that holds the eye (OV-20261030-below-beam).
+            region = LevelTopology.StoreyHoldingEye(_level, region, GetSkill("PLAYER_Z"));
+        }
+
         target["region"] = region;
         if (ReferenceEquals(target, GetObject("player")))
         {

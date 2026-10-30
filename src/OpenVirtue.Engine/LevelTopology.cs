@@ -237,6 +237,27 @@ public static class LevelTopology
         return found;
     }
 
+    /// <summary>
+    /// The storey of <paramref name="regionIndex"/>'s stack that <c>LOCATE</c> puts a player with its eye
+    /// at <paramref name="eye"/> in: the lowest whose ceiling is not below the eye, or the top when the
+    /// eye is above them all. An eye between a lower storey's ceiling and the deck's floor goes to the
+    /// deck (OV-20261030-below-beam: eye 4 → the underpass, 9 and 14 → the deck over its ceiling at 8).
+    /// </summary>
+    public static int StoreyHoldingEye(Level level, int regionIndex, double eye)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        List<int> stack = [.. Stack(level, regionIndex)];
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            if (level.Regions[stack[i]].CeilHeight >= eye - 1e-4)
+            {
+                return stack[i];
+            }
+        }
+
+        return stack.Count > 0 ? stack[0] : regionIndex;
+    }
+
     /// <summary>Traces the boundary of a region into a single ordered vertex loop, if possible.</summary>
     public static List<int>? TraceRegionLoop(Level level, int regionIndex)
     {

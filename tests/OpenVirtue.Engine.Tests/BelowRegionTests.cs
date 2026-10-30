@@ -83,6 +83,19 @@ public class BelowRegionTests
         Assert.Equal(region, Assert.Single(level.Things).Region);
     }
 
+    [Theory]
+    [InlineData(4, 2)]   // in the underpass (0…8)
+    [InlineData(9, 1)]   // above the underpass's ceiling, below the deck: the deck
+    [InlineData(14, 1)]  // on the deck
+    [InlineData(40, 1)]  // above everything: the top
+    public void StoreyHoldingEye_PicksTheLowestStoreyWhoseCeilingIsNotBelowTheEye(double eye, int storey)
+    {
+        // OV-20261030-below-beam: LOCATE puts a player beamed into a stack in this storey.
+        Level level = Load();
+
+        Assert.Equal(storey, LevelTopology.StoreyHoldingEye(level, 1, eye));
+    }
+
     [Fact]
     public void TraceRegionLoop_BelowRegion_UsesItsTopRegionsWalls()
     {
