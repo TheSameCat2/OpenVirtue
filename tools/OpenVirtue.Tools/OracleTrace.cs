@@ -246,8 +246,14 @@ internal static class OracleTrace
 
         double Step(int cycle) => SnapTicks(cycleTicks[cycle]) - SnapTicks(cycleTicks[cycle - 1]);
         double first = Step(Period);
-        return first > 0 && Math.Abs(first - Step(2 * Period)) < 1e-9 ? first : null;
+        return IsFrameStep(first) && Math.Abs(first - Step(2 * Period)) < 1e-9 ? first : null;
     }
+
+    /// <summary>
+    /// Whether a step is one of DOSBox-X's 60 Hz frames (8 to 10 thirty-seconds of a tick), not a flic's
+    /// delay-paced cycle (1.094 ticks in the flic carriers), which says nothing about the start-up.
+    /// </summary>
+    public static bool IsFrameStep(double ticks) => ticks is >= 0.25 - 1e-9 and <= 0.3125 + 1e-9;
 
     /// <summary>
     /// A printed <c>TICKS</c> value back on the 22.10 grid, so the replay's <c>TIME_CORR</c> is the

@@ -137,7 +137,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   A carrier's `case.json` may name its timing column (`"timing": "TK:1"`) where detection picks a
   wrong one: the flic carriers print `FLIC_FRAME`, whole and never falling, before `TICKS`. The
   local flic carriers carry these hints; with them the flic probes match 126 more lines and replay to
-  their end. `--timing` on the command line still wins.
+  their end. `--timing` on the command line still wins. A `"startup_step"` (ticks) names the first
+  sampled cycle's step where the samples cannot show it. A trace sampled only during a flic has
+  1.094-tick gaps, though its start-up ran 60 Hz frames; the 18-cycle rule accepts only such frames
+  (0.25 to 0.3125). With these, the flic replays no longer start one flic step late.
   `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row

@@ -201,4 +201,15 @@ public sealed class OracleTraceTests
         Assert.Equal(pattern[0] / 32.0, OracleTrace.PeriodicFirstStep(ticks));
         Assert.Null(OracleTrace.PeriodicFirstStep(ticks.Take(30).ToList())); // too short to check
     }
+
+    [Fact]
+    public void PeriodicFirstStep_FlicPacedSamples_SayNothingAboutTheStartUp()
+    {
+        // A trace sampled only during a flic steps 1.094 ticks a cycle; its start-up still ran 60 Hz frames.
+        List<double> ticks = [.. Enumerable.Range(0, 40).Select(static i => 13.4375 + (i * 1.09375))];
+
+        Assert.Null(OracleTrace.PeriodicFirstStep(ticks));
+        Assert.False(OracleTrace.IsFrameStep(1.09375));
+        Assert.True(OracleTrace.IsFrameStep(0.28125));
+    }
 }

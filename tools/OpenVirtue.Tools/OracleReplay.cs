@@ -183,7 +183,8 @@ internal static class OracleReplay
         string archive = Path.Combine(replayDirectory, WorldName + ".WRS");
         WrsArchive.WriteFile(archive, CarrierFiles(work));
 
-        double? firstStep = (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
+        double? firstStep = carrierCase.StartupStep ??
+            (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
         var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? 0.25, firstStep);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
@@ -445,7 +446,13 @@ internal static class OracleReplay
     /// The timing column a carrier names (<c>"timing": "TK:1"</c>) when detection would pick the wrong one:
     /// the flic carriers print <c>FLIC_FRAME</c>, whole and never falling, before <c>TICKS</c>.
     /// </param>
-    private sealed record CarrierCase(string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null)
+    /// <param name="StartupStep">
+    /// The first sampled cycle's step a carrier names (<c>"startup_step": 0.28125</c>) where the samples
+    /// cannot show it: a trace sampled only during a flic gives 1.094-tick gaps, though its start-up ran
+    /// 60 Hz frames.
+    /// </param>
+    private sealed record CarrierCase(
+        string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -466,7 +473,10 @@ internal static class OracleReplay
                 OracleTimingColumn.TryParse(tm.GetString(), out OracleTimingColumn parsed)
                 ? parsed
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing);
+            double? startup = root.TryGetProperty("startup_step", out JsonElement st) && st.ValueKind == JsonValueKind.Number
+                ? st.GetDouble()
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup);
         }
     }
 

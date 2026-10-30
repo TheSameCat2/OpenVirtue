@@ -178,6 +178,13 @@ speeds). medium for rule 6 during a flic, because the trace after the fault was 
     `TIME_CORR` (0.281); in OpenVirtue's replay it prints 1.094.
   - The replay anchors its clock on that line, which may cause the shift rather than the engine.
     Check the replay's start-up steps before changing the flic `TIME_CORR`.
+  - **Resolved: it was the replay.** These traces sample only during the flic, so the replay ran
+    its start-up in 1.094-tick steps. A `startup_step` of 0.28125 in `case.json` removes the shift,
+    and the `PLAY` cycle's slot then prints 0.281 as in the original. `waits` now matches 40 lines
+    (was 28) and `replace` 16 (was 6).
+  - **Next difference.** After the flic, the replay fills sparse samples with even cycles. The
+    original spent the first of them on the flic's last frames, 1.094 each, so it ran more cycles
+    (513 against 492).
 - **The animation clock.** For the scheduler-order round 4 clock, a check every other cycle adding the
   `TICKS` that passed fits at most the first 3 of 19 firings, whatever the start phase.
 
