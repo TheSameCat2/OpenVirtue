@@ -68,7 +68,8 @@ ran.
   action resumes in the next cycle, at 13.438. The same rule gives the 8-ticks-per-cycle runs of the
   earlier probes their `TICKS` 24.
 - A cycle runs: resumed waits; the `EACH_SEC` slots (when the second completes); the global
-  `EACH_TICK` slots in slot order; then one object pass — regions, actors, things, walls, each kind
+  `EACH_TICK` slots in slot order; the player's region events and the proximity events (placed
+  by OV-20261019-actor-contact round 8); then one object pass — regions, actors, things, walls, each kind
   from the last the map places to the first — in which each object runs its `EACH_TICK` (read when
   its turn comes) and then steps its texture animation, running `EACH_CYCLE` when a cycle ends.
 

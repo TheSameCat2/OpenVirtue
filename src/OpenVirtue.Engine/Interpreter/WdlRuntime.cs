@@ -2213,6 +2213,9 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
+    /// The player's region events and the proximity events come after the global slots and before
+    /// the object pass (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count
+    /// the global slot has just raised).
     /// Walls' <c>DISTANCE</c> is refreshed before the resumed actions (see <see cref="RefreshWallDistances"/>);
     /// things' and actors' only when the view changed or an actor in front of the player moved (see
     /// <see cref="RefreshEntityDistances"/>).
@@ -2225,8 +2228,6 @@ public sealed class WdlRuntime :
         RefreshView();
         RefreshWallDistances();
         ResumeWaitingActions();
-        DispatchPlayerRegionEvents();
-        DispatchProximityEvents();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(elapsedSeconds))
         {
@@ -2234,6 +2235,8 @@ public sealed class WdlRuntime :
         }
 
         DispatchGlobalEachTickActions();
+        DispatchPlayerRegionEvents();
+        DispatchProximityEvents();
         RunObjectPass(timeCorrection);
         CountDownWaitingActions(timeCorrection);
         return timeCorrection;
@@ -3086,7 +3089,7 @@ public sealed class WdlRuntime :
             return;
         }
 
-        foreach (AcknexObject target in player.TakeTouchedObjects())
+        foreach (AcknexObject target in player.TakeTouchedEntities())
         {
             if (ShouldTrackProximity(target) &&
                 (target is not MapEntity || IsWithinClipDistance(target)) &&

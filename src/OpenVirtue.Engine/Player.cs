@@ -189,6 +189,18 @@ public sealed class Player : AcknexObject
         return touched;
     }
 
+    /// <summary>
+    /// Returns the things and actors among the touched objects (see <see cref="TakeTouchedObjects"/>)
+    /// and leaves the walls for the next call of that: an object's <c>IF_NEAR</c> runs at once, a
+    /// wall's waits for the next cycle (OV-20261019-actor-contact round 8).
+    /// </summary>
+    public AcknexObject[] TakeTouchedEntities()
+    {
+        AcknexObject[] entities = [.. _touchedObjects.Where(static o => o is MapEntity)];
+        _touchedObjects.RemoveAll(static o => o is MapEntity);
+        return entities;
+    }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null);
 

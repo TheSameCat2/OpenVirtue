@@ -3315,6 +3315,30 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_PlayerRegionChange_EntersAfterTheGlobalSlots()
+    {
+        // OV-20261019-actor-contact round 8: the border-climb walkers' ENTER prints the cycle count the
+        // global EACH_TICK slot has just raised, so region events come after the global slots.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "REGION old_room 0 10;#0\nREGION new_room 5 15;#1\nPLAYER_START 1 1 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL seen { VAL 0; } REGION new_room { IF_ENTER enter_new; } " +
+            "ACTION count { RULE n = n + 1; } ACTION enter_new { RULE seen = n; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetEachTickAction(1, "count");
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(1, 1, 1);
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(2, runtime.GetSkill("seen"));
+    }
+
+    [Fact]
     public void Tick_PlayerRegionChange_TriggersLeaveAndEnterHooks()
     {
         const string map =

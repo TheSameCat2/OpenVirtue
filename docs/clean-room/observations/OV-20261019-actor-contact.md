@@ -138,6 +138,15 @@ cycle (TICKS 24), with the player already pushed out to (21.126, −8.563) and `
 - OpenVirtue fired both in the next cycle. It now fires the contact events right after the player's
   movement (`WdlRuntime.DispatchContactEvents`). beam-inside, beam-state and dist-2wide now match in
   full, beam-order up to the push-out point's last unit, and 12 carriers match further, none less.
+- **Walls wait.** In the border-climb and clip-contact traces a wall the walker passes fires its
+  `N` in the next cycle, after the region's `ENTER` and with `MY.DISTANCE` refreshed (4.359, where the
+  movement's cycle would read 5.207). Things and actors the walk pushes against fire at once, as
+  above; firing them in the next cycle instead loses dist-2wide's full match.
+- **Region and proximity events come after the global `EACH_TICK` slots.** That `ENTER` prints the
+  cycle count the global sampler has just raised (6, where OpenVirtue printed 5). OpenVirtue ran them
+  before the slots; it now runs them after, before the object pass.
+- Together these make 11 more traces match in full (pass-4, pass-10, ceil-4c, dist-inner,
+  region-locate among them) and 36 carriers match further, none less: 232 more lines.
 
 ## Open Questions
 - Whether walls have a vertical part too (wall-distance tested `DIST 6` walls successfully with the
