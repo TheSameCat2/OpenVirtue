@@ -588,6 +588,21 @@ probe save held and OpenVirtue did not:
 - Still different: two words per wall from +28 (run-time view values, falling along the wall order)
   and the walls' view bits at +20.
 
+## The screen elements' section, read so far (2026-10-30, analysis only)
+LEGALISM's section 5 (`930ff4a9`) is 2756 bytes and apathy's 2804. OpenVirtue writes 200: a 0,
+then 49 words of −1, which the original accepts.
+- The first word is the number of screen elements: 121 in LEGALISM, which is exactly its `PANEL`,
+  `TEXT` and `OVERLAY` declarations together (the numbering synonyms use, round 16), and 124 in apathy.
+- Then come 4-word records: an x and y position, a flags word (16, or 49168 = `0xC010` for
+  `ABSPOS` overlays), and 1.0. LEGALISM's first is (232, 332), the arrow overlay's run-time place.
+- Then 9-word records for the texts: 0, a kind (5 or 2), a string's number twice, `POS_X`, `POS_Y`,
+  a flags word, 1.0, `0x7FFFFFFF`. The menu texts read 240 with `POS_Y` 2, 30, 60 … 240, as declared.
+- The section ends with words of −1 and a final 43.
+- The order is not declaration order: `crosshair` (312, 207) comes near the end, not second. The
+  panels' records are not yet found.
+
+Writing this section needs a probe that changes one element of each kind at a time.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups
