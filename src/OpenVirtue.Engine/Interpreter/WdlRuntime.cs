@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Text;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wdl;
 
 namespace OpenVirtue.Engine.Interpreter;
@@ -25,6 +26,7 @@ public sealed class WdlRuntime :
     IWdlObjectGroupContext,
     IWdlObjectMutationContext,
     IWdlObjectReadContext,
+    IWdlSkillRangeContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
     IWdlInputContext,
@@ -122,7 +124,7 @@ public sealed class WdlRuntime :
 
     private readonly Level _level;
     private readonly Dictionary<string, double> _skills;
-    private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
+    private readonly Dictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, WdlUiElement> _uiElements = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
@@ -130,9 +132,22 @@ public sealed class WdlRuntime :
     private readonly IReadOnlyDictionary<string, string> _sounds;
     private readonly IReadOnlyDictionary<string, string> _palettes;
     private readonly List<WdlSoundRequest> _soundRequests = [];
+
+    /// <summary>When each sound channel's current sound started, to find the oldest one (OV-20261029-audio).</summary>
+    private readonly long[] _channelStarted = new long[8];
+
+    /// <summary>World cycles until a finished or stopped channel reads free; 0 when none is pending.</summary>
+    private readonly int[] _channelRelease = new int[8];
+
+    private long _soundSequence;
     private readonly List<WdlAudioRequest> _audioRequests = [];
     private readonly List<WdlTextureSoundRequest> _textureSoundRequests = [];
     private readonly List<WdlPaletteFadeRequest> _paletteFadeRequests = [];
+
+    // The palette a full save names, by declaration number: the last declared at the start (apathy's
+    // six palettes save 6, the probe's one 1; round 13), then the last FADE_PAL's (LEGALISM, which
+    // declares five and fades to its fourth, saves 4; round 15).
+    private int? _savedPalette;
     private readonly List<WdlShakeRequest> _shakeRequests = [];
     private readonly List<WdlFlicRequest> _flicRequests = [];
     private readonly List<WdlScreenshotRequest> _screenshotRequests = [];
@@ -159,6 +174,9 @@ public sealed class WdlRuntime :
     private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
     private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
+
+    /// <summary>The point each actor last turned toward and the facing it took then (OV-20261029-actor-step round 5).</summary>
+    private readonly Dictionary<Actor, (double X, double Y, double Facing)> _legFacings = [];
 
     /// <summary>The level's walls indexed for the view test (<see cref="ViewTest.Update"/> follows moving vertices).</summary>
     private ViewTest? _viewTest;
@@ -211,7 +229,8 @@ public sealed class WdlRuntime :
     private string _printBaseName = "PRINT";
 
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
-    private List<(AcknexObject Target, string ActionName)>? _schedulerActionBuffer;
+    private readonly List<AcknexObject> _objectPassBuffer = [];
+    private bool _firstCycleRun;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -230,7 +249,7 @@ public sealed class WdlRuntime :
         _collisionWorld = new LevelCollisionWorld(level);
         _hitTextures = hitTextures ?? new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
-        _bounds = level.SkillBounds;
+        _bounds = new Dictionary<string, SkillRange>(level.SkillBounds, StringComparer.OrdinalIgnoreCase);
         InitializePredefinedSkillDefaults();
         _printDirectory = printDirectory;
         _sounds = level.Sounds;
@@ -248,6 +267,7 @@ public sealed class WdlRuntime :
         _actions = level.Actions;
         _startupAction = level.StartupAction;
         RegisterLevelObjects(level);
+        InitializeFootHeights();
         InitializePredefinedReferences(level);
         InitializeSynonyms(level);
         InitializeEachTickActions(level);
@@ -255,6 +275,9 @@ public sealed class WdlRuntime :
         InitializeActionHooks(level);
         RefreshView();
         InitializeAnimationCycles();
+        // IF_START and the first cycle read TIME_CORR 1 (OV-20261029-scheduler-order).
+        _skills[Timing.TimeCorrectionSkill] = 1;
+        _skills[Timing.TimeFactorSkill] = 1;
         _interpreter = new WdlInterpreter(this);
     }
 
@@ -326,6 +349,13 @@ public sealed class WdlRuntime :
     /// not set, every file counts as present.
     /// </summary>
     public Func<string, bool>? FlicFileExists { get; set; }
+
+    /// <summary>
+    /// The level's WDL, map and archive file names. When set, a full <c>SAVE</c> also writes the
+    /// original's file (<see cref="CaptureOriginalSave"/>) in <see cref="SaveDirectory"/>, in the
+    /// instruction.
+    /// </summary>
+    public (string Wdl, string Wmp, string Wrs)? OriginalSaveNames { get; set; }
 
     /// <summary>Screenshot requests emitted by WDL <c>SCREENSHOT</c> instructions.</summary>
     public IReadOnlyList<WdlScreenshotRequest> ScreenshotRequests => _screenshotRequests;
@@ -410,6 +440,7 @@ public sealed class WdlRuntime :
         {
             EachSecActions = _eachSecActions.ToList(),
             SecondFraction = _secondFraction,
+            WaitingActions = CaptureWaitingActions(),
         };
 
     /// <summary>Restores a state previously captured with <see cref="CaptureSnapshot"/>.</summary>
@@ -420,6 +451,7 @@ public sealed class WdlRuntime :
         for (int channel = 0; channel < 8; channel++)
         {
             SetSkill($"CHANNEL_{channel}", 0);
+            _channelRelease[channel] = 0;
         }
 
         RestoreStrings(snapshot.Strings);
@@ -439,6 +471,618 @@ public sealed class WdlRuntime :
         _actorTargetStates.Clear();
         _textureAnimationStates.Clear();
         _observedPlayerRegion = null;
+        if (snapshot.WaitingActions is { } waiting)
+        {
+            RestoreWaitingActions(waiting);
+        }
+    }
+
+    /// <summary>
+    /// The waiting actions as <see cref="WdlWaitingActionSnapshot"/>s. An action whose blocks cannot be
+    /// traced back to a declared action (it never happens for parsed WDL) is left out.
+    /// </summary>
+    private List<WdlWaitingActionSnapshot> CaptureWaitingActions()
+    {
+        List<AcknexObject> objects = MutableLevelObjects();
+        int IndexOf(AcknexObject? obj) => obj is null ? -1 : objects.IndexOf(obj);
+        var captured = new List<WdlWaitingActionSnapshot>();
+        foreach (ActiveAction action in _waitingActions)
+        {
+            WdlExecutionFrame[] frames = [.. action.State.Frames.Reverse()];
+            if (frames.Length == 0 ||
+                _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, frames[0].Items)).Key is not { } name)
+            {
+                continue;
+            }
+
+            var saved = new List<WdlFrameSnapshot> { new([], false, frames[0].Index) };
+            var path = new List<int>();
+            bool traced = true;
+            for (int i = 1; i < frames.Length && traced; i++)
+            {
+                IReadOnlyList<WdlItem> parent = frames[i - 1].Items;
+                int item = -1;
+                for (int j = 0; j < parent.Count; j++)
+                {
+                    if (parent[j].Body is { } body && ReferenceEquals(body.Items, frames[i].Items))
+                    {
+                        item = j;
+                        break;
+                    }
+                }
+
+                traced = item >= 0;
+                path.Add(item);
+                saved.Add(new WdlFrameSnapshot([.. path], frames[i].Kind == WdlExecutionFrameKind.While, frames[i].Index));
+            }
+
+            if (traced)
+            {
+                captured.Add(new WdlWaitingActionSnapshot(
+                    name,
+                    saved,
+                    action.Mode == WdlWaitMode.FrameCycles,
+                    action.Remaining,
+                    action.Scope.HasMy ? IndexOf(action.Scope.My) : -1,
+                    action.Scope.HasThere ? IndexOf(action.Scope.There) : -1,
+                    IndexOf(action.Scope.Target)));
+            }
+        }
+
+        return captured;
+    }
+
+    /// <summary>
+    /// Takes the global <c>EACH_TICK</c> and <c>EACH_SEC</c> slots, the key hooks and the waiting actions of a full save the original wrote,
+    /// in place of the current ones (OV-20261029-save-body rounds 7 and 8). Actions are numbered from 11
+    /// in declaration order; a waiting action goes on after the instruction in its saved place. The
+    /// action that ran the <c>SAVE</c> is not resumed, as in the original. Their <c>MY</c> and
+    /// <c>YOU</c> are not read yet.
+    /// </summary>
+    /// <returns>The number of waiting actions taken.</returns>
+    public int ImportOriginalActions(IReadOnlyList<SaveAction> actions, IReadOnlyList<int>? slots)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        string? NameOf(int number) =>
+            number >= FirstActionNumber && number - FirstActionNumber < _level.ActionOrder.Count
+                ? _level.ActionOrder[number - FirstActionNumber]
+                : null;
+
+        if (slots is not null)
+        {
+            for (int slot = 1; slot <= EachTickSlotCount && EachTickSlot(slot) < slots.Count; slot++)
+            {
+                SetEachTickAction(slot, NameOf(slots[EachTickSlot(slot)]));
+            }
+
+            for (int slot = 1; slot <= EachSecSlotCount && AcknexFullSave.EachSecSlotWord(slot) < slots.Count; slot++)
+            {
+                SetEachSecAction(slot, NameOf(slots[AcknexFullSave.EachSecSlotWord(slot)]));
+            }
+
+            // Engine defaults (numbers below 11) have no WDL action, so their keys keep OpenVirtue's own handling.
+            foreach ((string hook, int word) in AcknexFullSave.KeySlotWords)
+            {
+                if (word < slots.Count && slots[word] >= FirstActionNumber && NameOf(slots[word]) is { } action)
+                {
+                    SetActionHook(hook, action);
+                }
+            }
+        }
+
+        _waitingActions.Clear();
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        bool savingAction = true;
+        foreach (SaveAction saved in actions)
+        {
+            // The second list opens with the action that ran the SAVE, which is not resumed; the actions
+            // objects' events started follow it, with their MY (round 17).
+            bool skip = saved.Running && savingAction;
+            savingAction &= !saved.Running;
+            if (skip || NameOf(saved.Action) is not { } name || !_actions.TryGetValue(name, out WdlBlock? block) ||
+                !WdlFlatPosition.TryResumeAfter(block, saved.Position, out WdlExecutionState state, out WdlItem item))
+            {
+                continue;
+            }
+
+            WdlWaitMode mode = item.Keyword.Equals("WAIT", StringComparison.OrdinalIgnoreCase) ? WdlWaitMode.FrameCycles : WdlWaitMode.Ticks;
+            AcknexObject? my = saved.Running && saved.My >= 1 && saved.My <= placedObjects.Count ? placedObjects[saved.My - 1] : null;
+            var scope = new ActionScope(my is not null, my, false, null, null);
+            _waitingActions.Add(new ActiveAction(state, new WdlWaitRequest(saved.Remaining / 1024.0, mode), scope));
+        }
+
+        return _waitingActions.Count;
+    }
+
+    /// <summary>
+    /// The state as the original's full <c>SAVE</c> holds it (OV-20261029-save-body rounds 7 to 9),
+    /// for <see cref="AcknexFullSave.Write"/>:
+    /// <list type="bullet">
+    /// <item>the unplaced walls, things and actors in reverse declaration order, then actors, things and
+    /// walls, each in reverse map order, with their skills, textures, events and geometry;</item>
+    /// <item>the <c>EACH_TICK</c> slots;</item>
+    /// <item>the synonyms' objects;</item>
+    /// <item>the level's non-<c>LOCAL</c> skills and the engine's own;</item>
+    /// <item>the waiting actions at their flat places (the action running the <c>SAVE</c> is not
+    /// among them).</item>
+    /// </list>
+    /// </summary>
+    public FullSave CaptureOriginalSave(string wdlName, string wmpName, string wrsName)
+    {
+        // Values are cut toward zero to 1/1024, as the original reads literals: AMBIENT 0.2 is saved as
+        // 204, FLOOR_HGT 26.2 as 26828 (round 15). The rounding to six places first keeps a value that is
+        // a whole number of 1/1024 steps, give or take double error, on that step.
+        static int Raw(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value * 1024, 6)), int.MinValue, int.MaxValue);
+
+        // Map coordinates are cut toward zero to 1/1024, not rounded (round 13). The map writes three
+        // decimals and OpenVirtue keeps them as floats, so the decimal value is recovered first.
+        static int Vertex(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value, 3) * 1024), -int.MaxValue, int.MaxValue);
+
+        // Textures count by declaration, repeats included (apathy's walls read 18 higher than a count of
+        // names); a repeated name takes the place of its last declaration (round 12).
+        List<string> textures = _level.TextureDeclarations.Count > 0 ? [.. _level.TextureDeclarations] : [.. _level.Textures.Keys];
+        int TextureNumber(string? name) =>
+            name is null ? 0 : textures.FindLastIndex(t => t.Equals(TextureAnimation.LogicalTextureName(name), StringComparison.OrdinalIgnoreCase)) + 1;
+        Dictionary<string, int> Fields(AcknexObject obj, IEnumerable<string> names) =>
+            names.ToDictionary(static n => n, n => Raw(obj[n]), StringComparer.OrdinalIgnoreCase);
+
+        // A thing's or actor's ANGLE is saved as its absolute facing (1608 for a 90° placement), and Z as
+        // the absolute height of its foot: the floor plus OpenVirtue's Z less HEIGHT, unless it stands on
+        // the ground (round 12).
+        Dictionary<string, int> EntityFields(MapEntity entity, IEnumerable<string> names)
+        {
+            Dictionary<string, int> fields = Fields(entity, names);
+            fields["X"] = Vertex(entity.X);
+            fields["Y"] = Vertex(entity.Y);
+            // The facing runs from 0 to 2π and is cut toward zero: 270° reads 4825, 180° 3216 (round 13).
+            double facing = NormalizeAngle(entity.FacingAngleRadians);
+            fields["ANGLE"] = (int)Math.Truncate((facing < 0 ? facing + Math.Tau : facing) * 1024);
+            // Z is the script's Z (MapEntity.FootZ), which the runtime starts as the original does.
+            return fields;
+        }
+
+        int ActionNumber(string? name) =>
+            name is null ? -1 : _level.ActionOrder.ToList().FindIndex(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + FirstActionNumber : -1;
+
+        // A texture's size in world steps less one raw unit, from its first bitmap and scale, as a
+        // 16-bit word: (pixels·1024 − 1) / SCALE (round 13; 16383 without a texture).
+        LevelTexture? TextureOf(string? name) =>
+            name is not null && _level.Textures.TryGetValue(TextureAnimation.LogicalTextureName(name), out LevelTexture found) ? found : null;
+        static int Step(int pixels, double scale) =>
+            pixels <= 0 || scale <= 0 ? 16383 : (int)Math.Truncate(((pixels * 1024.0) - 1) / scale);
+        int AttachNumber(string? name) => name is null ? -1 : TextureNumber(name);
+        Dictionary<string, int> Events(AcknexObject obj) =>
+            AcknexFullSave.EventNames
+                .Select(e => (Event: e, Action: obj.TryGetString(e, out string? action) ? ActionNumber(action) : -1))
+                .Where(static e => e.Action >= 0)
+                .ToDictionary(static e => e.Event, static e => e.Action, StringComparer.OrdinalIgnoreCase);
+
+        var unplaced = new HashSet<AcknexObject>(_level.UnplacedObjects, ReferenceEqualityComparer.Instance);
+        string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "ASPEED", "DIST", "SKILL1", "SKILL2", "SKILL3",
+            "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
+        string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
+        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CAREFULLY", "CANDELABER", "IMMATERIAL", "SENSITIVE",
+            "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+        string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
+
+        FullSaveEntity Entity(MapEntity entity)
+        {
+            // An unplaced object keeps its zero height until a script brings it in.
+            Dictionary<string, int> fields = unplaced.Contains(entity) && entity["INVISIBLE"] > 0
+                ? Fields(entity, entityFields)
+                : EntityFields(entity, entityFields);
+            LevelTexture? texture = TextureOf(entity.Texture);
+            return new FullSaveEntity(entity is Actor, fields, TextureNumber(entity.Texture))
+            {
+                Flags = FlagsOf(entity),
+                Size = (Step(texture?.Width ?? 0, texture?.ScaleX ?? 0), Step(texture?.Height ?? 0, texture?.ScaleY ?? 0)),
+                Region = Math.Max(0, entity.Region),
+                Floor = entity.Region >= 0 && entity.Region < _level.Regions.Count && !(unplaced.Contains(entity) && entity["INVISIBLE"] > 0)
+                    ? Raw(LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y))
+                    : 0,
+                Attach = AttachNumber(entity.AttachTexture),
+                Events = Events(entity),
+                MapColor = (int)entity["MAP_COLOR"],
+                Unplaced = unplaced.Contains(entity),
+            };
+        }
+
+        FullSaveWall WallRecord(Wall wall)
+        {
+            LevelTexture? texture = TextureOf(wall.Texture);
+            var record = new FullSaveWall(Fields(wall, wallFields), 0, 0, (0, 0), (0, 0), 0, TextureNumber(wall.Texture))
+            {
+                Flags = FlagsOf(wall),
+                OneRegion = wall.LeftRegion == wall.RightRegion,
+                TextureStep = Step(texture?.Height ?? 0, texture?.ScaleY ?? 0),
+                Attach = AttachNumber(wall.AttachTexture),
+                Events = Events(wall),
+                MapColor = (int)wall["MAP_COLOR"],
+                Unplaced = unplaced.Contains(wall),
+            };
+            if (record.Unplaced)
+            {
+                return record;
+            }
+
+            Vertex a = _level.Vertices[Math.Clamp(wall.Vertex1, 0, _level.Vertices.Count - 1)];
+            Vertex b = _level.Vertices[Math.Clamp(wall.Vertex2, 0, _level.Vertices.Count - 1)];
+            // The length is worked out in fixed point: dx² and dy² each lose their low 10 bits, and the
+            // square root of the sum is cut down to 1/1024, so 2050 reads 2049 and 245 reads 243. The span
+            // is that × SCALE_X (round 13, all compared retail walls).
+            long rawDx = (long)Vertex(b.X) - Vertex(a.X);
+            long rawDy = (long)Vertex(b.Y) - Vertex(a.Y);
+            int rawLength = (int)IntegerSquareRoot((((rawDx * rawDx) >> 10) + ((rawDy * rawDy) >> 10)) << 10);
+            double scale = texture is { ScaleX: > 0 } t ? t.ScaleX : 1;
+            return record with
+            {
+                RawLength = rawLength,
+                RawSpan = (int)Math.Truncate(rawLength * scale),
+                First = (Vertex(a.X), Vertex(a.Y)),
+                Second = (Vertex(b.X), Vertex(b.Y)),
+                Heights = (Vertex(a.Z), Vertex(b.Z)),
+                RightRegion = Math.Max(0, wall.RightRegion),
+                LeftRegion = Math.Max(0, wall.LeftRegion),
+            };
+        }
+
+        // Unplaced objects come first, in reverse declaration order (round 13).
+        List<FullSaveObject> prefix =
+            [.. _level.UnplacedObjects.Reverse().Select(o => o is Wall wall ? (FullSaveObject)WallRecord(wall) : Entity((MapEntity)o))];
+        List<FullSaveEntity> entities =
+        [
+            .. _level.Actors.Where(a => !unplaced.Contains(a)).Reverse().Select(Entity),
+            .. _level.Things.Where(t => !unplaced.Contains(t)).Reverse().Select(Entity),
+        ];
+        List<FullSaveWall> walls = [.. _level.Walls.AsEnumerable().Reverse().Select(WallRecord)];
+
+        int[] slots = [.. Enumerable.Repeat(-1, AcknexFullSave.SlotWords)];
+        foreach ((int word, int engineAction) in EngineSlotWords)
+        {
+            slots[word] = engineAction;
+        }
+
+        for (int slot = 1; slot <= EachTickSlotCount; slot++)
+        {
+            slots[EachTickSlot(slot)] = ActionNumber(_eachTickActions[slot - 1]);
+        }
+
+        for (int slot = 1; slot <= EachSecSlotCount; slot++)
+        {
+            slots[AcknexFullSave.EachSecSlotWord(slot)] = ActionNumber(_eachSecActions[slot - 1]);
+        }
+
+        // A key hook the script set, or cleared, replaces the engine's default at its scan code (round 16).
+        foreach ((string hook, string? action) in _actionHooks)
+        {
+            if (AcknexFullSave.KeySlotWords.TryGetValue(hook, out int word))
+            {
+                slots[word] = ActionNumber(action);
+            }
+        }
+
+        // A region is its index (the room read 0); a wall, thing or actor its map place + 1, counting
+        // the map's walls, things and actors only (rounds 9, 10 and 15). The other kinds hold their
+        // target's number (round 15, LEGALISM): an action's, a texture's, a string's among the STRING
+        // declarations and a panel's, text's or overlay's among the three kinds' declarations together.
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        int Numbered(string kind, string? name) =>
+            name is not null && _level.NumberedDeclarations.TryGetValue(kind, out List<string>? names) &&
+            names.FindIndex(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int found ? found + 1 : -1;
+        List<int> synonyms = [];
+        foreach ((string synonym, WdlSynonym declared) in _level.Synonyms.Reverse())
+        {
+            int number;
+            if (_keywordReferences.ContainsKey(synonym))
+            {
+                string? target = KeywordTarget(synonym);
+                number = declared.Type?.ToUpperInvariant() switch
+                {
+                    "ACTION" => ActionNumber(target),
+                    "TEXTURE" => target is null ? -1 : TextureNumber(target),
+                    "STRING" => Numbered("STRING", target),
+                    _ => Numbered(WdlDeclarations.ScreenElements, target),
+                };
+            }
+            else
+            {
+                number = GetObject(synonym) switch
+                {
+                    null => -1,
+                    Region region => _level.Regions.ToList().IndexOf(region),
+                    AcknexObject target => placedObjects.IndexOf(target) is >= 0 and int place ? place + 1 : -1,
+                };
+            }
+
+            synonyms.Add(number);
+        }
+
+        synonyms.AddRange(Enumerable.Repeat(-1, AcknexFullSave.PredefinedSynonyms));
+
+        SaveSkill SkillRecord(string name)
+        {
+            (int min, int max) = _bounds.TryGetValue(name, out SkillRange range)
+                ? (double.IsFinite(range.Min) ? Raw(range.Min) : SaveSkill.NoMin, double.IsFinite(range.Max) ? Raw(range.Max) : SaveSkill.NoMax)
+                : (SaveSkill.NoMin, SaveSkill.NoMax);
+            return new SaveSkill(name, Raw(GetSkill(name)), min, max);
+        }
+
+        // The level's skills, newest first, then the engine's. A level may declare an engine skill again
+        // (PLAYER_SIZE, PLAYER_TILT in move.wdl); the original lists each name once, in the engine's
+        // block at its own place, with the declared range (apathy: 633 records, not 652; LEGALISM round 16).
+        var predefined = new HashSet<string>(AcknexPredefinedSkills.Names, StringComparer.OrdinalIgnoreCase);
+        List<SaveSkill> skills =
+        [
+            .. _level.SkillDeclarationOrder.Reverse()
+                .Where(n => !_level.LocalSkills.Contains(n) && !predefined.Contains(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(SkillRecord),
+            .. AcknexPredefinedSkills.Names.Distinct(StringComparer.OrdinalIgnoreCase).Select(SkillRecord),
+        ];
+
+        // The action running the SAVE opens the second list: the waiting action being resumed, with its MY.
+        List<SaveAction> actions = [];
+        if (_resumedRecord is { } resumed)
+        {
+            actions.Add(resumed.Action.Scope.HasMy && resumed.Action.Scope.My is { } runningMy
+                ? resumed.Record with { My = placedObjects.IndexOf(runningMy) is >= 0 and int at ? at + 1 : -1, You = 0 }
+                : resumed.Record);
+        }
+        else
+        {
+            // An action that has not waited yet: any action at any place loads (round 9).
+            actions.Add(new SaveAction(FirstActionNumber, 0, 0, 1, -1, -1, Running: true));
+        }
+
+        foreach (ActiveAction action in _waitingActions)
+        {
+            if (action.State.Frames.Count == 0)
+            {
+                continue;
+            }
+
+            WdlExecutionFrame bottom = action.State.Frames.Last();
+            string? name = _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, bottom.Items)).Key;
+            if (name is not null && WdlFlatPosition.TryPositionOf(_actions[name], action.State, out int position, out int next))
+            {
+                // The original saves a wait as it stands after this cycle's count: sb_note's WAIT 2,
+                // armed in the cycle of the SAVE, was saved as 1 (round 9), and WAITT 100 armed four
+                // cycles earlier as 100 less four cycles' TIME_CORR (round 8).
+                double step = action.Mode == WdlWaitMode.FrameCycles ? 1 : GetSkill(Timing.TimeCorrectionSkill);
+                int remaining = Raw(Math.Max(0, action.Remaining - step));
+                if (action.Scope.HasMy && action.Scope.My is { } my)
+                {
+                    // An action an object's event started goes in the section's second list, with MY as the
+                    // object's map number (a thing's IF_NEAR action read 14 for the 14th object) and YOU 0
+                    // (round 17). A region's MY as its index is not measured.
+                    int myNumber = my is Region region ? _level.Regions.ToList().IndexOf(region) : placedObjects.IndexOf(my) is >= 0 and int place ? place + 1 : -1;
+                    actions.Add(new SaveAction(ActionNumber(name), remaining, position, next, myNumber, 0, Running: true));
+                }
+                else
+                {
+                    actions.Add(new SaveAction(ActionNumber(name), remaining, position, next, -1, -1, Running: false));
+                }
+            }
+        }
+
+        // A region's GENIUS is saved as the number of the first map object of that name, counting the
+        // map's walls, things and actors from 1 (round 15).
+        List<AcknexObject> mapObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        int GeniusNumber(string? name) =>
+            string.IsNullOrWhiteSpace(name) ? -1 : mapObjects.FindIndex(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int found ? found + 1 : -1;
+        string[] regionFields = [.. AcknexFullSave.RegionFieldOffsets.Select(static f => f.Name)];
+        string[] regionFlags = ["BASE", "STICKY", "FLOOR_ASCEND", "FLOOR_DESCEND", "CEIL_ASCEND", "CEIL_DESCEND",
+            "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+        int playerRegion = (int)GetSkill("PLAYER_REGION");
+        List<FullSaveRegion> regions =
+        [
+            .. _level.Regions.Select(static (r, i) => (Region: r, Index: i)).Reverse()
+                .Where(static p => p.Region["SAVE"] > 0 || p.Region["SAVE_ALL"] > 0)
+                .Select(p => new FullSaveRegion(Fields(p.Region, regionFields), TextureNumber(p.Region.FloorTexture), TextureNumber(p.Region.CeilTexture), p.Region["SAVE_ALL"] > 0)
+                {
+                    Flags = [.. regionFlags.Where(f => p.Region[f] > 0)],
+                    Here = p.Index == playerRegion,
+                    Events = AcknexFullSave.RegionEventNames
+                        .Select(e => (Event: e, Action: p.Region.TryGetString(e, out string? action) ? ActionNumber(action) : -1))
+                        .Where(static e => e.Action >= 0)
+                        .ToDictionary(static e => e.Event, static e => e.Action, StringComparer.OrdinalIgnoreCase),
+                    Genius = GeniusNumber(p.Region.GeniusName),
+                }),
+        ];
+
+        List<FullSaveTexture> saveTextures =
+        [
+            .. _level.SaveTextures.Reverse().Select(t =>
+            {
+                var words = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["AMBIENT"] = Raw(t.Ambient), ["ALBEDO"] = Raw(t.Albedo), ["SCALE_X"] = Raw(t.ScaleX), ["SCALE_Y"] = Raw(t.ScaleY),
+                    ["FONT"] = t.Font, ["TOUCH"] = t.Touch, ["SOUND"] = t.Sound, ["ATTACH"] = AttachNumber(t.AttachName),
+                    ["SVOL"] = Raw(t.SoundVolume), ["SDIST"] = Raw(t.SoundDistance), ["SVDIST"] = Raw(t.SoundVerticalDistance),
+                    ["POS_X"] = Raw(t.PosX), ["POS_Y"] = Raw(t.PosY),
+                };
+                foreach ((string e, string action) in t.Events)
+                {
+                    words[e] = ActionNumber(action);
+                }
+
+                return new FullSaveTexture(words);
+            }),
+        ];
+
+        // The screen elements, by LAYER and then declaration order (round 18: a TEXT, an OVERLAY and a
+        // PANEL with layers 5, 7, 3 were saved panel, text, overlay; equal layers keep their order).
+        List<FullSaveScreenElement> screen = [];
+        if (_level.NumberedDeclarations.TryGetValue(WdlDeclarations.ScreenElements, out List<string>? elementNames))
+        {
+            var ordered = elementNames
+                // An overlay without LAYER sorts as 50: after LAYER 5 (se-nolayer) and among LEGALISM's
+                // layer-50 texts, before its layer-100 ones; a text without LAYER as 0 (inferred).
+                .Select((name, index) => (Name: name, Index: index, Layer: TryGetUiNumber(name, "LAYER", out double layer) && HasUiProperty(name, "LAYER")
+                    ? layer
+                    : _uiElements.TryGetValue(name, out WdlUiElement? declared) && declared.Keyword.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase) ? 50 : 0))
+                .Where(e => _uiElements.ContainsKey(e.Name))
+                .OrderBy(static e => e.Layer)
+                .ThenBy(static e => e.Index);
+            foreach ((string name, _, _) in ordered)
+            {
+                WdlUiElement element = _uiElements[name];
+                int x = TryGetUiNumber(name, "POS_X", out double posX) ? Raw(posX) : 0;
+                int y = TryGetUiNumber(name, "POS_Y", out double posY) ? Raw(posY) : 0;
+                string kind = element.Keyword.ToUpperInvariant();
+                int flags = 0;
+                foreach ((string flag, int bit) in ScreenFlagBits(kind))
+                {
+                    if (TryGetUiNumber(name, flag, out double set) && set > 0)
+                    {
+                        flags |= bit;
+                    }
+                }
+
+                switch (kind)
+                {
+                    case "PANEL":
+                        screen.Add(new FullSaveScreenElement([x, y, flags, -1]));
+                        break;
+                    case "TEXT":
+                        int font = TryGetUiKeyword(name, "FONT", out string? fontName) ? Numbered("FONT", fontName) : -1;
+                        int text = TryGetUiKeyword(name, "STRING", out string? stringName) ? Numbered("STRING", stringName) : -1;
+                        screen.Add(new FullSaveScreenElement([x, y, flags, 1024, int.MaxValue, 0, font, text, text]));
+                        break;
+                    default:
+                        screen.Add(new FullSaveScreenElement([x, y, flags, 1024]));
+                        break;
+                }
+            }
+        }
+
+        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions)
+        {
+            ScreenElements = screen,
+            Textures = saveTextures,
+            Regions = regions,
+            Unplaced = prefix,
+            PlayerRegion = (int)GetSkill("PLAYER_REGION"),
+            Palette = _savedPalette ?? _level.Palettes.Count,
+        };
+    }
+
+    /// <summary>
+    /// Points the level's synonyms at the objects a full save the original wrote names (reverse
+    /// declaration order; a region by index, a wall, thing or actor by map place + 1, −1 for none).
+    /// Only synonyms of a known object kind are set, so a synonym of another kind is left alone.
+    /// </summary>
+    /// <returns>How many synonyms were set.</returns>
+    public int ImportOriginalSynonyms(IReadOnlyList<int> words)
+    {
+        ArgumentNullException.ThrowIfNull(words);
+        List<string> names = [.. _level.Synonyms.Keys.Reverse()];
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        int set = 0;
+        for (int i = 0; i < names.Count && i < words.Count; i++)
+        {
+            int number = words[i];
+            WdlSynonym synonym = _level.Synonyms[names[i]];
+            AcknexObject? target = synonym.Type?.ToUpperInvariant() switch
+            {
+                "REGION" => number >= 0 && number < _level.Regions.Count ? _level.Regions[number] : null,
+                "WALL" or "THING" or "ACTOR" => number >= 1 && number <= placedObjects.Count ? placedObjects[number - 1] : null,
+                _ => null,
+            };
+            if (target is not null || number == -1)
+            {
+                if (target is null)
+                {
+                    _objects.Remove(names[i]);
+                }
+                else
+                {
+                    SetObjectReference(names[i], target);
+                }
+
+                set++;
+            }
+        }
+
+        return set;
+    }
+
+    private static long IntegerSquareRoot(long value)
+    {
+        long root = (long)Math.Sqrt(value);
+        while (root * root > value)
+        {
+            root--;
+        }
+
+        while ((root + 1) * (root + 1) <= value)
+        {
+            root++;
+        }
+
+        return root;
+    }
+
+    /// <summary>The number the original's saves give the first declared action (OV-20261029-save-body).</summary>
+    private const int FirstActionNumber = 11;
+
+    /// <summary>
+    /// The slot section's word for <c>EACH_TICK.n</c>: 135 + 2n, every other word from 137 to 167
+    /// (<c>EACH_TICK.2</c> was word 139 and <c>EACH_TICK.3</c> word 141, OV-20261029-save-body round 9).
+    /// </summary>
+    private static int EachTickSlot(int slot) => 135 + (2 * slot);
+
+    /// <summary>The engine's own entries in the slot section, the same in every save the original wrote.</summary>
+    private static readonly (int Word, int Action)[] EngineSlotWords =
+        [(11, 9), (12, 7), (13, 8), (15, 6), (27, 7), (53, 8), (60, 0), (61, 1), (63, 2), (64, 3), (68, 4), (88, 5)];
+
+    /// <summary>Replaces the waiting actions with saved ones (the original drops the ones waiting at the load).</summary>
+    private void RestoreWaitingActions(List<WdlWaitingActionSnapshot> waiting)
+    {
+        List<AcknexObject> objects = MutableLevelObjects();
+        AcknexObject? At(int index) => index >= 0 && index < objects.Count ? objects[index] : null;
+        _waitingActions.Clear();
+        foreach (WdlWaitingActionSnapshot saved in waiting)
+        {
+            if (!_actions.TryGetValue(saved.Action, out WdlBlock? block) || saved.Frames.Count == 0)
+            {
+                continue;
+            }
+
+            var state = new WdlExecutionState(block);
+            state.Frames.Peek().Index = saved.Frames[0].Index;
+            bool restored = true;
+            for (int i = 1; i < saved.Frames.Count && restored; i++)
+            {
+                IReadOnlyList<WdlItem> items = block.Items;
+                WdlItem? owner = null;
+                foreach (int index in saved.Frames[i].Path)
+                {
+                    if (index < 0 || index >= items.Count || items[index].Body is not { } body)
+                    {
+                        restored = false;
+                        break;
+                    }
+
+                    owner = items[index];
+                    items = body.Items;
+                }
+
+                if (restored && owner is not null)
+                {
+                    WdlExecutionFrame frame = saved.Frames[i].While ? WdlExecutionFrame.While(owner) : WdlExecutionFrame.Block(items);
+                    frame.Index = saved.Frames[i].Index;
+                    state.Frames.Push(frame);
+                }
+            }
+
+            if (restored)
+            {
+                var scope = new ActionScope(saved.My >= 0, At(saved.My), saved.There >= 0, At(saved.There), At(saved.Target));
+                var wait = new WdlWaitRequest(saved.Remaining, saved.FrameCycles ? WdlWaitMode.FrameCycles : WdlWaitMode.Ticks);
+                _waitingActions.Add(new ActiveAction(state, wait, scope));
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -576,8 +1220,9 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    /// <remarks>Three decimals and no separator: a script writes its own spaces and line feeds (OV-20261029-print-output).</remarks>
     public void PrintValue(double value) =>
-        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture) + Environment.NewLine);
+        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);
@@ -590,7 +1235,12 @@ public sealed class WdlRuntime :
             fileName = _sounds.GetValueOrDefault(soundName);
         }
 
-        int channel = ReserveSoundChannel();
+        if (!IsSoundAudible(volume, emitterName))
+        {
+            return;
+        }
+
+        int channel = ReserveSoundChannel(loop: false);
         if (channel < 0)
         {
             return;
@@ -612,7 +1262,12 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public void PlaySoundFile(string fileName, double volume, double? balance)
     {
-        int channel = ReserveSoundChannel();
+        if (!IsSoundAudible(volume, emitterName: null))
+        {
+            return;
+        }
+
+        int channel = ReserveSoundChannel(loop: false);
         if (channel < 0)
         {
             return;
@@ -632,22 +1287,35 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Stops the normal sounds and leaves <c>SLOOP</c> loops playing. The stopped channels still read
+    /// busy for the rest of this cycle and the next one and free from the cycle after
+    /// (OV-20261029-audio).
+    /// </remarks>
     public void StopSounds()
     {
         StopSoundCount++;
         for (int channel = 0; channel < 8; channel++)
         {
-            SetSkill($"CHANNEL_{channel}", 0);
-        }
+            if (GetSkill($"CHANNEL_{channel}") != 1)
+            {
+                continue;
+            }
 
-        _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopAll, default));
+            if (_channelRelease[channel] == 0)
+            {
+                _channelRelease[channel] = 2;
+            }
+
+            _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopChannel, default, channel));
+        }
     }
 
     /// <summary>Requests playback for a floor or ceiling texture sound.</summary>
     public int PlayTextureSound(string soundName, double volume, bool loop, double? balance = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(soundName);
-        int channel = ReserveSoundChannel();
+        int channel = ReserveSoundChannel(loop);
         if (channel < 0)
         {
             return -1;
@@ -676,38 +1344,132 @@ public sealed class WdlRuntime :
         }
 
         SetSkill($"CHANNEL_{channel}", 0);
+        _channelRelease[channel] = 0;
         _audioRequests.Add(new WdlAudioRequest(WdlSoundOperation.StopChannel, default, channel));
         return true;
     }
 
-    /// <summary>Releases a script-visible sound channel after host playback stops.</summary>
+    /// <summary>
+    /// Notes that host playback on <paramref name="channel"/> has ended. The channel reads free from
+    /// the next world cycle on, not during a flic (OV-20261029-audio).
+    /// </summary>
     public bool CompleteSound(int channel)
     {
-        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0)
+        if (channel is < 0 or >= 8 || GetSkill($"CHANNEL_{channel}") == 0 || _channelRelease[channel] != 0)
         {
             return false;
         }
 
-        SetSkill($"CHANNEL_{channel}", 0);
+        _channelRelease[channel] = 1;
         return true;
     }
 
-    private int ReserveSoundChannel()
+    /// <summary>
+    /// Whether the host's sound on a channel has played out, asked at the start of every world cycle
+    /// once the cycle's <c>TICKS</c> are set. <c>null</c> leaves it to <see cref="CompleteSound"/>.
+    /// </summary>
+    public Func<int, bool>? SoundPlayedOut { get; set; }
+
+    /// <summary>
+    /// Frees the channels whose sounds ended or were stopped, at the start of a world cycle. A sound
+    /// that played out before this cycle's <c>TICKS</c> frees its channel in this cycle: a
+    /// quarter-second sound started at 13.438 read free at 17.625, the first cycle after 17.438
+    /// (OV-20261029-audio).
+    /// </summary>
+    private void ReleaseFinishedChannels()
     {
         for (int channel = 0; channel < 8; channel++)
         {
-            if (GetSkill($"CHANNEL_{channel}") != 0)
+            if (_channelRelease[channel] == 0 && SoundPlayedOut is { } playedOut &&
+                GetSkill($"CHANNEL_{channel}") == 1 && playedOut(channel))
             {
-                continue;
+                _channelRelease[channel] = 1;
             }
 
-            SetSkill($"CHANNEL_{channel}", 1);
-            SetSkill("CHANNEL", channel);
-            return channel;
+            if (_channelRelease[channel] > 0 && --_channelRelease[channel] == 0)
+            {
+                SetSkill($"CHANNEL_{channel}", 0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a sound is played at all. At volume 0, at <c>SOUND_VOL</c> 0, or from an object
+    /// beyond its texture's <c>SDIST</c>, the original skips it: no channel, and <c>CHANNEL</c>
+    /// keeps its value (OV-20261029-audio).
+    /// </summary>
+    private bool IsSoundAudible(double volume, string? emitterName)
+    {
+        if (volume <= 0 || GetSkill("SOUND_VOL") <= 0)
+        {
+            return false;
         }
 
-        SetSkill("CHANNEL", -1);
-        return -1;
+        if (emitterName is null || GetObject(emitterName) is not { } emitter)
+        {
+            return true;
+        }
+
+        (double x, double y, string? texture) = emitter switch
+        {
+            MapEntity entity => (entity.X, entity.Y, entity.Texture),
+            Wall wall when wall.Vertex1 >= 0 && wall.Vertex1 < _level.Vertices.Count &&
+                           wall.Vertex2 >= 0 && wall.Vertex2 < _level.Vertices.Count =>
+                ((_level.Vertices[wall.Vertex1].X + _level.Vertices[wall.Vertex2].X) * 0.5,
+                 (_level.Vertices[wall.Vertex1].Y + _level.Vertices[wall.Vertex2].Y) * 0.5,
+                 wall.Texture),
+            _ => (double.NaN, double.NaN, null),
+        };
+        if (double.IsNaN(x))
+        {
+            return true;
+        }
+
+        double audible = _level.FindTexture(texture) is { } entry ? entry.Texture.SoundDistance : 100;
+        double dx = x - GetSkill("PLAYER_X");
+        double dy = y - GetSkill("PLAYER_Y");
+        return Math.Sqrt((dx * dx) + (dy * dy)) < audible;
+    }
+
+    /// <summary>
+    /// Takes the lowest free channel. With none free a normal sound takes the channel of the oldest
+    /// normal sound; <c>SLOOP</c> channels (2) are never taken, and when all are loops
+    /// <c>CHANNEL</c> becomes −1 (manual p.109, OV-20261029-audio). A loop needs a free channel.
+    /// </summary>
+    private int ReserveSoundChannel(bool loop)
+    {
+        int channel = -1;
+        for (int candidate = 0; candidate < 8 && channel < 0; candidate++)
+        {
+            if (GetSkill($"CHANNEL_{candidate}") == 0)
+            {
+                channel = candidate;
+            }
+        }
+
+        if (channel < 0 && !loop)
+        {
+            for (int candidate = 0; candidate < 8; candidate++)
+            {
+                if (GetSkill($"CHANNEL_{candidate}") == 1 &&
+                    (channel < 0 || _channelStarted[candidate] < _channelStarted[channel]))
+                {
+                    channel = candidate;
+                }
+            }
+        }
+
+        if (channel < 0)
+        {
+            SetSkill("CHANNEL", -1);
+            return -1;
+        }
+
+        SetSkill($"CHANNEL_{channel}", loop ? 2 : 1);
+        SetSkill("CHANNEL", channel);
+        _channelStarted[channel] = ++_soundSequence;
+        _channelRelease[channel] = 0;
+        return channel;
     }
 
     /// <inheritdoc/>
@@ -719,15 +1481,28 @@ public sealed class WdlRuntime :
         }
 
         _paletteFadeRequests.Add(new WdlPaletteFadeRequest(paletteName, fileName, factor));
+        int number = _palettes.Keys.ToList().FindIndex(n => n.Equals(paletteName, StringComparison.OrdinalIgnoreCase));
+        if (number >= 0)
+        {
+            _savedPalette = number + 1;
+        }
     }
 
     /// <inheritdoc/>
     public bool Locate(AcknexObject? target)
     {
-        target ??= GetObject("player");
+        AcknexObject? player = GetObject("player");
+        target ??= player;
         if (target is null || !TryGetMapPosition(target, out double x, out double y))
         {
             return false;
+        }
+
+        if (ReferenceEquals(target, player))
+        {
+            // A script beams the player with SET PLAYER_X/PLAYER_Y and then LOCATEs; the host moves the
+            // player object only after the cycle, so the skills hold the position to locate.
+            (x, y) = (GetSkill("PLAYER_X"), GetSkill("PLAYER_Y"));
         }
 
         if (LevelTopology.LocateRegion(_level, x, y) is not { } region)
@@ -735,10 +1510,22 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        target["region"] = region;
-        if (ReferenceEquals(target, GetObject("player")) && RegionAt(region) is { } here)
+        if (ReferenceEquals(target, player))
         {
-            SetObjectReference("here", here);
+            // In a BELOW stack, the storey that holds the eye (OV-20261030-below-beam).
+            region = LevelTopology.StoreyHoldingEye(_level, region, GetSkill("PLAYER_Z"));
+        }
+
+        target["region"] = region;
+        if (ReferenceEquals(target, GetObject("player")))
+        {
+            // The host copies PLAYER_REGION onto the player when the position changes; keep it current
+            // so a beam followed by LOCATE lands in the located region (OV-20261029-slope).
+            SetSkill("PLAYER_REGION", region);
+            if (RegionAt(region) is { } here)
+            {
+                SetObjectReference("here", here);
+            }
         }
 
         return true;
@@ -921,7 +1708,9 @@ public sealed class WdlRuntime :
         double delta = NormalizeAngle(angle - entity.FacingAngleRadians);
         if (range > 0 &&
             distance <= range &&
-            Math.Abs(delta) <= sector / 2 &&
+            // The original compares fixed-point angles: a full circle given as 6.2832 (truncated to
+            // 6.2822) still takes in an object straight behind (OV-20261029-numeric-edge).
+            (sector <= 0 || Math.Abs(delta) <= (sector / 2) + (1 / WdlFixed.Scale)) &&
             HasPortalLineOfSight(
                 entity.X,
                 entity.Y,
@@ -1025,20 +1814,111 @@ public sealed class WdlRuntime :
         _screenshotRequests.Add(new WdlScreenshotRequest(NormalizePrintBaseName(baseName), Math.Clamp(number, 0, 999)));
 
     /// <inheritdoc/>
-    public void SaveGame(string baseName, int number, bool infoOnly) =>
-        _persistenceRequests.Add(new WdlPersistenceRequest(
+    /// <remarks>
+    /// <c>SAVE_INFO</c> writes the original's file at once when <see cref="SaveDirectory"/> is set
+    /// (OV-20261029-save-format). A full <c>SAVE</c> takes the state at once, without the action running
+    /// it, and leaves the writing to the host.
+    /// </remarks>
+    public void SaveGame(string baseName, int number, bool infoOnly)
+    {
+        var request = new WdlPersistenceRequest(
             WdlPersistenceOperation.Save,
             NormalizePrintBaseName(baseName),
             Math.Clamp(number, 0, 999),
-            infoOnly));
+            infoOnly)
+        {
+            Snapshot = infoOnly ? null : CaptureSnapshot(),
+        };
+        _persistenceRequests.Add(request);
+        if (!infoOnly && OriginalSaveNames is { } names && SaveFilePath(request) is { } fullPath)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllBytes(fullPath, AcknexSaveFile.Pack(AcknexFullSave.Write(CaptureOriginalSave(names.Wdl, names.Wmp, names.Wrs))));
+        }
+        if (infoOnly && SaveFilePath(request) is { } path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, AcknexSaveFile.Pack(AcknexSaveFile.WriteInfo(CaptureInfoSkills())));
+        }
+    }
 
     /// <inheritdoc/>
-    public void LoadGame(string baseName, int number, bool infoOnly) =>
-        _persistenceRequests.Add(new WdlPersistenceRequest(
+    /// <remarks>
+    /// <c>LOAD_INFO</c> restores the <c>GLOBAL</c> and <c>LOCAL</c> skills from the original's file at
+    /// once, and the action goes on (OV-20261029-save-format); a full <c>LOAD</c> is left to the host.
+    /// </remarks>
+    public void LoadGame(string baseName, int number, bool infoOnly)
+    {
+        var request = new WdlPersistenceRequest(
             WdlPersistenceOperation.Load,
             NormalizePrintBaseName(baseName),
             Math.Clamp(number, 0, 999),
-            infoOnly));
+            infoOnly);
+        _persistenceRequests.Add(request);
+        if (infoOnly && SaveFilePath(request) is { } path && File.Exists(path))
+        {
+            RestoreSavedSkills(
+                AcknexSaveFile.ReadSkills(AcknexSaveFile.Unpack(File.ReadAllBytes(path))),
+                name => _level.GlobalSkills.Contains(name) || _level.LocalSkills.Contains(name));
+        }
+    }
+
+    /// <summary>
+    /// The directory the original's save files go to (the game directory, p.94); <c>null</c> keeps
+    /// <c>SAVE_INFO</c>/<c>LOAD_INFO</c> from touching the disk.
+    /// </summary>
+    public string? SaveDirectory { get; set; }
+
+    /// <summary>The original's file for a save slot: the base name in upper case, the number unpadded, <c>.SAV</c>.</summary>
+    public string? SaveFilePath(WdlPersistenceRequest request) =>
+        SaveDirectory is null
+            ? null
+            : Path.Combine(SaveDirectory, string.Create(CultureInfo.InvariantCulture, $"{request.BaseName.ToUpperInvariant()}{request.Number}.SAV"));
+
+    /// <summary>
+    /// The skills <c>SAVE_INFO</c> keeps: the <c>GLOBAL</c> and <c>LOCAL</c> ones, in reverse
+    /// declaration order as the original lists them, with their raw fixed-point values and bounds.
+    /// </summary>
+    public IReadOnlyList<SaveSkill> CaptureInfoSkills()
+    {
+        var skills = new List<SaveSkill>();
+        for (int i = _level.SkillDeclarationOrder.Count - 1; i >= 0; i--)
+        {
+            string name = _level.SkillDeclarationOrder[i];
+            if (!_level.GlobalSkills.Contains(name) && !_level.LocalSkills.Contains(name))
+            {
+                continue;
+            }
+
+            SkillRange? range = _level.SkillBounds.TryGetValue(name, out SkillRange bounds) ? bounds : null;
+            skills.Add(new SaveSkill(
+                name,
+                WdlFixed.ToRaw(GetSkill(name)),
+                range is { } r && !double.IsInfinity(r.Min) ? WdlFixed.ToRaw(r.Min) : SaveSkill.NoMin,
+                range is { } q && !double.IsInfinity(q.Max) ? WdlFixed.ToRaw(q.Max) : SaveSkill.NoMax));
+        }
+
+        return skills;
+    }
+
+    /// <summary>Sets the saved skills that <paramref name="accept"/> takes and this runtime knows.</summary>
+    /// <returns>How many were set.</returns>
+    public int RestoreSavedSkills(IEnumerable<SaveSkill> skills, Func<string, bool> accept)
+    {
+        ArgumentNullException.ThrowIfNull(skills);
+        ArgumentNullException.ThrowIfNull(accept);
+        int restored = 0;
+        foreach (SaveSkill skill in skills)
+        {
+            if (accept(skill.Name) && _skills.ContainsKey(skill.Name))
+            {
+                SetSkill(skill.Name, skill.RawValue / WdlFixed.Scale);
+                restored++;
+            }
+        }
+
+        return restored;
+    }
 
     /// <inheritdoc/>
     public bool IsKeywordReference(string name) => _keywordReferences.ContainsKey(name);
@@ -1331,7 +2211,17 @@ public sealed class WdlRuntime :
 
     /// <summary>Runs the level's <c>IF_START</c> startup action, if one is defined.</summary>
     /// <returns><c>true</c> if a startup action existed and ran.</returns>
-    public bool RunStartup() => _startupAction is not null && Run(_startupAction);
+    /// <remarks>
+    /// <c>IF_START</c> counts as a cycle of its own with <c>TIME_CORR</c> 1 for the waits it arms:
+    /// a <c>WAITT 16</c> has 15 left when the first cycle starts, and a <c>WAIT 3</c> resumes at the
+    /// start of cycle 3 (OV-20261029-scheduler-order).
+    /// </remarks>
+    public bool RunStartup()
+    {
+        bool ran = _startupAction is not null && Run(_startupAction);
+        CountDownWaitingActions(GetSkill(Timing.TimeCorrectionSkill));
+        return ran;
+    }
 
     /// <summary>Runs the named action's script, if it exists.</summary>
     /// <returns><c>true</c> if the action was found and executed.</returns>
@@ -1376,6 +2266,9 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
+    /// The player's region events and the proximity events come after the global slots and before
+    /// the object pass (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count
+    /// the global slot has just raised).
     /// Walls' <c>DISTANCE</c> is refreshed before the resumed actions (see <see cref="RefreshWallDistances"/>);
     /// things' and actors' only when the view changed or an actor in front of the player moved (see
     /// <see cref="RefreshEntityDistances"/>).
@@ -1383,43 +2276,22 @@ public sealed class WdlRuntime :
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
-        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
+        ReleaseFinishedChannels();
         RefreshView();
         RefreshWallDistances();
+        UpdateHere();
         ResumeWaitingActions();
-        DispatchPlayerRegionEvents();
-        DispatchProximityEvents();
-        AdvanceAnimationCycles(timeCorrection);
-        AdvanceActorTargets(timeCorrection);
-        if (_frontActorMoved)
-        {
-            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
-            RefreshEntityDistances(force: true);
-        }
         ResetGlobalSchedulerDiagnostics();
-        if (AdvanceSecond(deltaSeconds))
+        if (AdvanceSecond(elapsedSeconds))
         {
             DispatchGlobalEachSecActions();
         }
 
         DispatchGlobalEachTickActions();
-
-        List<(AcknexObject Target, string ActionName)> scheduled = CurrentObjectSchedulerActions(eachCycle: false);
-        foreach ((AcknexObject target, string actionName) in scheduled)
-        {
-            // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
-            if ((target is Wall && target["INVISIBLE"] > 0) || !IsWithinClipDistance(target) || IsDormantBerkeleyWall(target))
-            {
-                continue;
-            }
-
-            PrepareActorTickSkills(target);
-            RunForActionTarget(target, actionName);
-        }
-
-        scheduled.Clear();
-        _schedulerActionBuffer = scheduled;
-
+        DispatchPlayerRegionEvents();
+        DispatchProximityEvents();
+        RunObjectPass(timeCorrection);
         CountDownWaitingActions(timeCorrection);
         return timeCorrection;
     }
@@ -1435,10 +2307,10 @@ public sealed class WdlRuntime :
     /// </summary>
     public double TickFlic(double deltaSeconds)
     {
-        double timeCorrection = UpdateTimingSkills(deltaSeconds);
+        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds, flic: true);
         ResumeWaitingActions();
         ResetGlobalSchedulerDiagnostics();
-        if (AdvanceSecond(deltaSeconds))
+        if (AdvanceSecond(elapsedSeconds))
         {
             DispatchGlobalEachSecActions();
         }
@@ -1448,12 +2320,44 @@ public sealed class WdlRuntime :
         return timeCorrection;
     }
 
-    private double UpdateTimingSkills(double deltaSeconds)
+    /// <summary>
+    /// Sets <c>TIME_CORR</c>, <c>TIME_FAC</c> and <c>TICKS</c> for a cycle lasting
+    /// <paramref name="deltaSeconds"/>. The first cycle keeps <c>TIME_CORR</c> at the 1 that
+    /// <c>IF_START</c> saw and leaves <c>TICKS</c> (and the second) at 0, as patched V3.963 does;
+    /// <c>TICKS</c> counts from the second cycle on (OV-20261029-scheduler-order).
+    /// </summary>
+    /// <param name="deltaSeconds">The cycle's duration.</param>
+    /// <param name="elapsedSeconds">The time that counts toward <c>SECS</c>: 0 in the first cycle.</param>
+    /// <param name="flic">
+    /// A flic cycle, whose <c>TIME_CORR</c> comes from the frame delay; it is never the start-up
+    /// cycle (whether a flic started in <c>IF_START</c> sees one is unmeasured).
+    /// </param>
+    private double UpdateTimingSkills(double deltaSeconds, out double elapsedSeconds, bool flic = false)
     {
+        bool firstCycle = !_firstCycleRun;
+        _firstCycleRun = true;
+        if (firstCycle && !flic)
+        {
+            _skills[Timing.TimeCorrectionSkill] = 1;
+            _skills[Timing.TimeFactorSkill] = 1;
+            elapsedSeconds = 0;
+            return 1;
+        }
+
+        elapsedSeconds = deltaSeconds;
         double timeCorrection = Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
         _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
+        _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
+        _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
+        _skills["HERE_INDEX"] = GetSkill("PLAYER_REGION"); // the player's region, as the saves hold it (round 16)
+        // "RENDER_MODE is returned to 0.5 automatically after each frame cycle" (manual p.104): a probe that
+        // set 2 saved 0.5. 0, which suppresses rendering, stays (save-body round 18).
+        if (GetSkill("RENDER_MODE") > 0.5)
+        {
+            _skills["RENDER_MODE"] = 0.5;
+        }
         return timeCorrection;
     }
 
@@ -1553,7 +2457,7 @@ public sealed class WdlRuntime :
             RegisterNamedObject(obj);
         }
 
-        foreach (AcknexObject obj in level.Walls)
+        foreach (AcknexObject obj in level.Walls.Concat(level.UnplacedObjects.OfType<Wall>()))
         {
             RegisterNamedObject(obj);
         }
@@ -1695,12 +2599,29 @@ public sealed class WdlRuntime :
             WdlExecutionResult result = _interpreter.Continue(state);
             StoreSuspendedAction(state, result, CaptureActionScope());
         }
+        catch (WdlExpressionException ex)
+        {
+            AbortAction(actionName, ex);
+        }
         finally
         {
             _callDepth--;
         }
 
         return true;
+    }
+
+    /// <summary>The last action stopped by an arithmetic or execution-limit error, and why; <c>null</c> if none.</summary>
+    public string? LastActionError { get; private set; }
+
+    /// <summary>
+    /// Stops an action that hit a division by zero (which crashes the DOS runtime,
+    /// OV-20261029-numeric-edge) or a runaway-loop limit; its caller and the cycle go on.
+    /// </summary>
+    private void AbortAction(string actionName, WdlExpressionException ex)
+    {
+        LastActionError = $"{actionName}: {ex.Message}";
+        Console.Error.WriteLine($"WDL action stopped: {LastActionError}");
     }
 
     private bool IsPlayerMovementAction(string? name) =>
@@ -1711,21 +2632,27 @@ public sealed class WdlRuntime :
 
     private void InitializePredefinedSkillDefaults()
     {
-        EnsureSkillDefault("FRICTION", 0.5);
+        // The manual says 0.5 (p.112); patched V3.963 reads 0 (OV-20261029-motion-timing).
+        EnsureSkillDefault("FRICTION", 0);
         EnsureSkillDefault("INERTIA", 1);
         EnsureSkillDefault("SHOOT_RANGE", 500);
         EnsureSkillDefault("SHOOT_FAC", 1);
-        EnsureSkillDefault("SHOOT_SECTOR", Math.Tau);
+        // Every save V3.963 wrote holds SHOOT_SECTOR 0 where the manual says 2π (p.91), so 0 is the
+        // full circle (save-body round 18).
+        EnsureSkillDefault("SHOOT_SECTOR", 0);
         EnsureSkillDefault("SHOOT_X", 0);
         EnsureSkillDefault("SHOOT_Y", 0);
-        EnsureSkillDefault("KEY_SENSE", 0.7);
+        // A fresh V3.963 level starts KEY_SENSE at 1 and MOUSE_CALM at 1 (the manual says 0.7 and 3),
+        // PLAYER_SIZE at 3.5, PLAYER_CLIMB at 2 (manual 1.5), WAVE_PERIOD at 20 (manual 16) and MUSIC_VOL
+        // at 0.5 (OV-20261029-scheduler-order round 4, `defaults`).
+        EnsureSkillDefault("KEY_SENSE", 1);
         EnsureSkillDefault("SHIFT_SENSE", 2);
         EnsureSkillDefault("MOUSE_SENSE", 1);
         EnsureSkillDefault("JOY_SENSE", 1);
         EnsureSkillDefault("MOUSE_MODE", 0);
         EnsureSkillDefault("TOUCH_MODE", 1);
         EnsureSkillDefault("MOUSE_MOVING", 0);
-        EnsureSkillDefault("MOUSE_CALM", 3);
+        EnsureSkillDefault("MOUSE_CALM", 1);
         EnsureSkillDefault("MOUSE_TIME", 4);
         EnsureSkillDefault("MICKEY_X", 0);
         EnsureSkillDefault("MICKEY_Y", 0);
@@ -1735,27 +2662,58 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("PLAYER_WIDTH", 1.2);
         EnsureSkillDefault("THING_DIST", 1);
         EnsureSkillDefault("ACTOR_DIST", 1);
-        EnsureSkillDefault("PLAYER_SIZE", 3);
-        EnsureSkillDefault("PLAYER_CLIMB", 1.5);
+        EnsureSkillDefault("PLAYER_SIZE", 3.5);
+        EnsureSkillDefault("PLAYER_CLIMB", 2);
         EnsureSkillDefault("PLAYER_TILT", 0);
         EnsureValidSkillDefault("PLAYER_ARC", 1, value => value is >= 0.2 and <= 2);
         EnsureValidSkillDefault("ASPECT", 1, value => value is >= 0.1 and <= 10);
         EnsureSkillDefault("PLAYER_LIGHT", 1);
         EnsureSkillDefault("LIGHT_DIST", 10);
+        // The manual (p.112) says DARK_DIST is recalculated from PLAYER_LIGHT; patched V3.963 read
+        // 1000 at every PLAYER_LIGHT and LIGHT_DIST measured (OV-20261029-shading).
+        EnsureSkillDefault("DARK_DIST", 1000);
         EnsureSkillDefault("SOUND_VOL", 1);
-        EnsureSkillDefault("MUSIC_VOL", 1);
+        EnsureSkillDefault("MUSIC_VOL", 0.5);
         EnsureSkillDefault("WALK_PERIOD", 4);
         EnsureSkillDefault("WALK_TIME", 4);
-        EnsureSkillDefault("WAVE_PERIOD", 16);
+        EnsureSkillDefault("WAVE_PERIOD", 20);
         EnsureSkillDefault("WALK", 0);
         EnsureSkillDefault("WAVE", 0);
         EnsureSkillDefault("PSOUND_VOL", 1);
         EnsureSkillDefault("PSOUND_TONE", 1);
-        EnsureSkillDefault("CHANNEL", -1);
+        EnsureSkillDefault("CHANNEL", 0);
         for (int channel = 0; channel < 8; channel++)
         {
             EnsureSkillDefault($"CHANNEL_{channel}", 0);
         }
+
+        // Engine settings and constants OpenVirtue does not otherwise model, as a fresh V3.963 level's
+        // save holds them, so a save written for the original keeps its renderer's settings: a 0 for
+        // BUFFER_MODE changed the original's frame pacing after a load (OV-20261029-save-body round 13).
+        EnsureSkillDefault("PI", 3216 / 1024.0);
+        EnsureSkillDefault("TWO_PI", 6433 / 1024.0);
+        EnsureSkillDefault("HALF_PI", 1608 / 1024.0);
+        EnsureSkillDefault("BUFFER_MODE", 1);
+        EnsureSkillDefault("FLOOR_MODE", 1);
+        EnsureSkillDefault("MOVE_MODE", 1);
+        EnsureSkillDefault("CLIPPING", 0.5);
+        EnsureSkillDefault("EYE_DIST", 0.5);
+        EnsureSkillDefault("GFX_DX", 1000);
+        EnsureSkillDefault("GFX_DY", 1000);
+        EnsureSkillDefault("CDAUDIO_VOL", 614 / 1024.0);
+        EnsureSkillDefault("NODE", -1);
+        EnsureSkillDefault("TOUCH_RANGE", 100);
+        EnsureSkillDefault("PLAYER_RANGE", 3);
+        EnsureSkillDefault("MAP_SCALE", 921 / 1024.0);
+        EnsureSkillDefault("COLOR_BORDER", 17);
+        EnsureSkillDefault("COLOR_WALLS", 244);
+        EnsureSkillDefault("COLOR_THINGS", 13);
+        EnsureSkillDefault("COLOR_ACTORS", 3);
+        EnsureSkillDefault("COLOR_PLAYER", 7);
+        EnsureSkillDefault("WDIST_MINX", int.MinValue / 1024.0);
+        EnsureSkillDefault("WDIST_MINY", int.MinValue / 1024.0);
+        EnsureSkillDefault("WDIST_MAXX", int.MaxValue / 1024.0);
+        EnsureSkillDefault("WDIST_MAXY", int.MaxValue / 1024.0);
 
         // OV-20261019-border-kinds: the runtime starts ACTOR_CLIMB at 1.1 (the manual says 1, p.113).
         EnsureSkillDefault("ACTOR_CLIMB", 1.1);
@@ -1766,13 +2724,39 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("SCREEN_Y", 0);
         EnsureSkillDefault("SCREEN_WIDTH", _level.VideoMode?.Width ?? 640);
         EnsureSkillDefault("SCREEN_HGT", _level.VideoMode?.Height ?? 480);
+
+        // The frame's size and the map's extent, which the retail saves hold (S640x480: 640 by 480; the
+        // bounds of the vertices and the placed things and actors, cut to 1/1024: apathy's MAP_MAXX is
+        // an actor's X; save-body round 16).
+        EnsureSkillDefault("RENDER_MODE", 0.5);
+        EnsureSkillDefault("MAP_EDGE_X2", _level.VideoMode?.Width ?? 640);
+        EnsureSkillDefault("MAP_EDGE_Y2", _level.VideoMode?.Height ?? 480);
+        EnsureSkillDefault("_SVOL_OLD", 0.5);
+        EnsureSkillDefault("_MVOL_OLD", 0.5);
+        EnsureSkillDefault("FRAME_WIDTH", _level.VideoMode?.Width ?? 640);
+        EnsureSkillDefault("FRAME_HGT", _level.VideoMode?.Height ?? 480);
+        List<(double X, double Y)> points =
+        [
+            .. _level.Vertices.Select(static v => ((double)v.X, (double)v.Y)),
+            .. _level.MapObjects.OfType<MapEntity>().Select(static e => (e.X, e.Y)),
+        ];
+        if (points.Count > 0)
+        {
+            static double Cut(double value) => Math.Truncate(Math.Round(value, 3) * 1024) / 1024;
+            EnsureSkillDefault("MAP_MINX", Cut(points.Min(static p => p.X)));
+            EnsureSkillDefault("MAP_MAXX", Cut(points.Max(static p => p.X)));
+            EnsureSkillDefault("MAP_MINY", Cut(points.Min(static p => p.Y)));
+            EnsureSkillDefault("MAP_MAXY", Cut(points.Max(static p => p.Y)));
+        }
     }
 
+    // An engine default is a 22.10 value like every skill, cut toward zero: PLAYER_WIDTH's 1.2 prints
+    // 1.199 in the original (OV-20261019-eye-clamp GO lines).
     private void EnsureSkillDefault(string name, double value)
     {
         if (!_skills.ContainsKey(name) || !_level.ExplicitlyInitializedSkills.Contains(name))
         {
-            _skills[name] = value;
+            _skills[name] = Math.Truncate(Math.Round(value * 1024, 6)) / 1024;
         }
     }
 
@@ -1783,7 +2767,7 @@ public sealed class WdlRuntime :
             !double.IsFinite(current) ||
             !isValid(current))
         {
-            _skills[name] = value;
+            _skills[name] = Math.Truncate(Math.Round(value * 1024, 6)) / 1024;
         }
     }
 
@@ -1807,9 +2791,46 @@ public sealed class WdlRuntime :
                 continue;
             }
 
-            WdlExecutionResult result = ContinueWithScope(action);
-            StoreSuspendedAction(action.State, result, action.Scope);
+            (SaveAction Record, ActiveAction Action)? previousRecord = _resumedRecord;
+            _resumedRecord = OriginalSaveNames is null ? null : ResumedRecord(action);
+            try
+            {
+                WdlExecutionResult result = ContinueWithScope(action);
+                StoreSuspendedAction(action.State, result, action.Scope);
+            }
+            catch (WdlExpressionException ex)
+            {
+                AbortAction("(resumed action)", ex);
+            }
+            finally
+            {
+                _resumedRecord = previousRecord;
+            }
         }
+    }
+
+    // The waiting action being resumed, as a full save records the action running the SAVE: the wait it
+    // came out of and the time it had left, under one step (round 17). Taken only when original saves
+    // are written.
+    private (SaveAction Record, ActiveAction Action)? _resumedRecord;
+
+    private (SaveAction Record, ActiveAction Action)? ResumedRecord(ActiveAction action)
+    {
+        if (action.State.Frames.Count == 0)
+        {
+            return null;
+        }
+
+        WdlExecutionFrame bottom = action.State.Frames.Last();
+        string? name = _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, bottom.Items)).Key;
+        if (name is null || !WdlFlatPosition.TryPositionOf(_actions[name], action.State, out int position, out int next))
+        {
+            return null;
+        }
+
+        int number = _level.ActionOrder.ToList().FindIndex(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + FirstActionNumber : -1;
+        int remaining = (int)Math.Truncate(Math.Round(Math.Max(0, action.Remaining) * 1024, 6));
+        return (new SaveAction(number, remaining, position, next, -1, -1, Running: true), action);
     }
 
     /// <summary>
@@ -1913,6 +2934,44 @@ public sealed class WdlRuntime :
         }
     }
 
+    /// <summary>
+    /// Starts every thing's and actor's script <c>Z</c> as the original's saves hold it: 0 on the
+    /// <c>GROUND</c>, a <c>CANDELABER</c>'s ceiling less its sprite's height, otherwise the floor under
+    /// it, and 0 for an unplaced object (OV-20261029-save-body round 13; below-view reads a thing's
+    /// <c>Z</c> 10 on a floor 10 high).
+    /// </summary>
+    private void InitializeFootHeights()
+    {
+        var unplaced = new HashSet<AcknexObject>(_level.UnplacedObjects, ReferenceEqualityComparer.Instance);
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (!unplaced.Contains(entity))
+            {
+                UpdateFootHeight(entity);
+            }
+        }
+    }
+
+    private void UpdateFootHeight(MapEntity entity)
+    {
+        if (entity.Region < 0 || entity.Region >= _level.Regions.Count || entity["GROUND"] > 0)
+        {
+            return;
+        }
+
+        if (entity["CANDELABER"] > 0)
+        {
+            int sprite = entity.Texture is { } name && _level.Textures.TryGetValue(TextureAnimation.LogicalTextureName(name), out LevelTexture texture) &&
+                texture.Height > 0 && texture.ScaleY > 0
+                ? (int)Math.Truncate(((texture.Height * 1024.0) - 1) / texture.ScaleY)
+                : 16383;
+            entity.FootZ = ((long)Math.Round(LevelTopology.CeilingHeightAt(_level, entity.Region, entity.X, entity.Y) * 1024) - sprite) / 1024.0;
+            return;
+        }
+
+        entity.FootZ = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
+    }
+
     private void InitializePredefinedReferences(Level level)
     {
         if (level.PlayerStart is not { } playerStart)
@@ -1928,6 +2987,9 @@ public sealed class WdlRuntime :
         // The WMP start heading (degrees, counter-clockwise, 0 = map +x) is the initial
         // PLAYER_ANGLE; the host's camera yaw is derived from the same value (RenderSpace).
         double angle = playerStart.AngleRadians;
+        SetSkill("PLAYER_X", playerStart.X);
+        SetSkill("PLAYER_Y", playerStart.Y);
+        SetSkill("PLAYER_REGION", playerStart.Region);
         SetSkill("PLAYER_ANGLE", angle);
         SetSkill("PLAYER_SIN", Math.Sin(angle));
         SetSkill("PLAYER_COS", Math.Cos(angle));
@@ -1969,6 +3031,19 @@ public sealed class WdlRuntime :
     /// leaves the region (and <c>HERE</c>) as it was, so a beam fires nothing
     /// (OV-20261019-proximity-events).
     /// </summary>
+    /// <summary>
+    /// Points <c>HERE</c> at the player's region as the last movement left it, before the cycle's
+    /// actions run: the global slot already reads the new region's skills in the cycle whose
+    /// <c>IF_ENTER</c> runs after it (OV-20261019-clip-contact border traces, round 8 of actor-contact).
+    /// </summary>
+    private void UpdateHere()
+    {
+        if (GetObject("player") is Player player && RegionAt(player.Region) is { } currentRegion)
+        {
+            SetObjectReference("here", currentRegion);
+        }
+    }
+
     private void DispatchPlayerRegionEvents()
     {
         if (GetObject("player") is not Player player ||
@@ -2062,6 +3137,32 @@ public sealed class WdlRuntime :
                 TriggerObjectActionHook(target, "IF_FAR");
             }
             else if (!isNear && Array.IndexOf(touched, target) >= 0)
+            {
+                TriggerObjectActionHook(target, "IF_NEAR");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires <c>IF_NEAR</c> for what the player's movement just pushed against or passed through,
+    /// at once, before any distance is refreshed: a player beamed into a solid thing is pushed out in
+    /// that cycle's movement and its <c>IF_NEAR</c> runs in the same cycle, reading the thing's
+    /// <c>DISTANCE</c> from before the beam (34 for a thing 24, −10 from the origin;
+    /// OV-20261019-actor-contact round 8). A target already within its <c>DIST</c> does not fire again.
+    /// The host calls it right after the player's movement.
+    /// </summary>
+    public void DispatchContactEvents()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        foreach (AcknexObject target in player.TakeTouchedEntities())
+        {
+            if (ShouldTrackProximity(target) &&
+                (target is not MapEntity || IsWithinClipDistance(target)) &&
+                !(_proximityStates.TryGetValue(target, out bool near) && near))
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
             }
@@ -2236,95 +3337,101 @@ public sealed class WdlRuntime :
             _ => false,
         };
 
-    private void AdvanceActorTargets(double cycleCorrection)
+    /// <summary>
+    /// Moves one actor toward its target, in its own turn of the object pass, before its
+    /// <c>EACH_TICK</c>: a <c>WAY</c> actor's <c>IF_ARRIVED</c> runs after the global slot actions
+    /// and before the actor's <c>EACH_TICK</c> in the same cycle (OV-20261029-actor-events).
+    /// </summary>
+    private void AdvanceActorTarget(Actor actor, double cycleCorrection)
     {
-        foreach (Actor actor in _level.Actors)
+        MoveActorTowardTarget(actor, cycleCorrection);
+        _longSkippedStep = false;
+    }
+
+    private void MoveActorTowardTarget(Actor actor, double cycleCorrection)
+    {
+        double timeCorrection = cycleCorrection;
+        _longSkippedStep = false;
+        actor["MOVED"] = 0;
+        actor["IMPACT_VX"] = 0;
+        actor["IMPACT_VY"] = 0;
+        actor["IMPACT_VZ"] = 0;
+        actor["IMPACT_VROT"] = 0;
+        string? target = actor.Target;
+        LevelWay? way = null;
+        // A TARGET naming a way assigns it (p.66), like the WAY property.
+        bool followsWay = (target ?? actor.WayName) is { } wayName &&
+                          _level.Ways.TryGetValue(wayName, out way) &&
+                          way.Points.Count > 0;
+        if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
         {
-            double timeCorrection = cycleCorrection;
-            _longSkippedStep = false;
-            actor["MOVED"] = 0;
-            actor["IMPACT_VX"] = 0;
-            actor["IMPACT_VY"] = 0;
-            actor["IMPACT_VZ"] = 0;
-            actor["IMPACT_VROT"] = 0;
-            string? target = actor.Target;
-            LevelWay? way = null;
-            // A TARGET naming a way assigns it (p.66), like the WAY property.
-            bool followsWay = (target ?? actor.WayName) is { } wayName &&
-                              _level.Ways.TryGetValue(wayName, out way) &&
-                              way.Points.Count > 0;
-            if (timeCorrection <= 0 || actor["INVISIBLE"] > 0 || (target is null && !followsWay))
-            {
-                _arrivedTargets.Remove(actor);
-                _actorTargetStates.Remove(actor);
-                continue;
-            }
-
-            // OV-20261019-clip-contact: an actor outside its CLIP_DIST border does not move.
-            if (!IsWithinClipDistance(actor))
-            {
-                continue;
-            }
-
-            int cycles = SkipFramesMultiplier(actor);
-            if (cycles == 0)
-            {
-                continue;
-            }
-
-            timeCorrection = cycleCorrection * cycles;
-            _longSkippedStep = cycles > 1;
-            double startX = actor.X;
-            double startY = actor.Y;
-
-            string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
-            bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
-                                 !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
-            _actorTargetStates[actor] = targetState;
-            if (targetChanged && targetState.Equals("STICK", StringComparison.OrdinalIgnoreCase))
-            {
-                InitializeStickTarget(actor);
-            }
-
-            if (followsWay)
-            {
-                if (AdvanceActorWay(actor, way!, timeCorrection))
-                {
-                    TriggerObjectActionHook(actor, "IF_ARRIVED");
-                }
-
-                _arrivedTargets.Remove(actor);
-                NoteFrontMove(actor, startX, startY);
-                continue;
-            }
-
-            bool arrived = target!.ToUpperInvariant() switch
-            {
-                "MOVE" or "BULLET" => AdvanceActorForward(actor, timeCorrection),
-                "FOLLOW" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: false),
-                "REPEL" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: true),
-                "VERTEX" => AdvanceActorToward(actor, actor["TARGET_X"], actor["TARGET_Y"], timeCorrection),
-                "STICK" => AdvanceStickActor(actor, timeCorrection),
-                "HOLD" or "NODE1" or "NODE2" => false,
-                _ => AdvanceActorTowardNamedTarget(actor, target, timeCorrection),
-            };
-
-            if (arrived)
-            {
-                if (_arrivedTargets.Add(actor))
-                {
-                    TriggerObjectActionHook(actor, "IF_ARRIVED");
-                }
-            }
-            else
-            {
-                _arrivedTargets.Remove(actor);
-            }
-
-            NoteFrontMove(actor, startX, startY);
+            _arrivedTargets.Remove(actor);
+            _actorTargetStates.Remove(actor);
+            return;
         }
 
-        _longSkippedStep = false;
+        // OV-20261019-clip-contact: an actor outside its CLIP_DIST border does not move.
+        if (!IsWithinClipDistance(actor))
+        {
+            return;
+        }
+
+        int cycles = SkipFramesMultiplier(actor);
+        if (cycles == 0)
+        {
+            return;
+        }
+
+        timeCorrection = cycleCorrection * cycles;
+        _longSkippedStep = cycles > 1;
+        double startX = actor.X;
+        double startY = actor.Y;
+
+        string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
+        bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
+                             !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
+        _actorTargetStates[actor] = targetState;
+        if (targetChanged && targetState.Equals("STICK", StringComparison.OrdinalIgnoreCase))
+        {
+            InitializeStickTarget(actor);
+        }
+
+        if (followsWay)
+        {
+            if (AdvanceActorWay(actor, way!, timeCorrection))
+            {
+                TriggerObjectActionHook(actor, "IF_ARRIVED");
+            }
+
+            _arrivedTargets.Remove(actor);
+            NoteFrontMove(actor, startX, startY);
+            return;
+        }
+
+        bool arrived = target!.ToUpperInvariant() switch
+        {
+            "MOVE" or "BULLET" => AdvanceActorForward(actor, timeCorrection),
+            "FOLLOW" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: false),
+            "REPEL" => AdvanceActorRelativeToPlayer(actor, timeCorrection, repel: true),
+            "VERTEX" => AdvanceActorToward(actor, actor["TARGET_X"], actor["TARGET_Y"], timeCorrection),
+            "STICK" => AdvanceStickActor(actor, timeCorrection),
+            "HOLD" or "NODE1" or "NODE2" => false,
+            _ => AdvanceActorTowardNamedTarget(actor, target, timeCorrection),
+        };
+
+        // A VERTEX or object target triggers IF_ARRIVED in every cycle the actor is there
+        // (OV-20261029-actor-events).
+        if (arrived)
+        {
+            _arrivedTargets.Add(actor);
+            TriggerObjectActionHook(actor, "IF_ARRIVED");
+        }
+        else
+        {
+            _arrivedTargets.Remove(actor);
+        }
+
+        NoteFrontMove(actor, startX, startY);
     }
 
     private bool AdvanceActorWay(Actor actor, LevelWay way, double timeCorrection)
@@ -2341,17 +3448,22 @@ public sealed class WdlRuntime :
 
         actor["WAYPOINT"] = waypoint;
         LevelWayPoint point = way.Points[waypoint - 1];
+        // OV-20261029-actor-step round 5: a way actor standing (SPEED 0) on a point does not arrive
+        // there; given a speed, it spends its first cycle arriving and steps from the next one.
+        if (actor["SPEED"] <= 0)
+        {
+            return false;
+        }
+
         bool arrived = AdvanceActorToward(actor, point.X, point.Y, timeCorrection);
         if (!arrived)
         {
             return false;
         }
 
-        int nextWaypoint = (waypoint % way.Points.Count) + 1;
-        actor["WAYPOINT"] = nextWaypoint;
-        LevelWayPoint next = way.Points[nextWaypoint - 1];
-        actor["TARGET_X"] = next.X;
-        actor["TARGET_Y"] = next.Y;
+        // WAYPOINT moves on before IF_ARRIVED runs; TARGET_X/Y still show the point reached until the
+        // next step (OV-20261029-actor-events).
+        actor["WAYPOINT"] = (waypoint % way.Points.Count) + 1;
         return true;
     }
 
@@ -2368,30 +3480,31 @@ public sealed class WdlRuntime :
         SetSkill("IMPACT_VROT", actor["IMPACT_VROT"]);
         if (actor.Region >= 0 && actor.Region < _level.Regions.Count)
         {
-            Region region = _level.Regions[actor.Region];
-            double offset = LevelTopology.TryGetSurfaceHeightOffset(
-                _level,
-                actor.Region,
-                actor.X,
-                actor.Y,
-                out double value) ? value : 0;
-            SetSkill("ACTOR_FLOOR_HGT", region.FloorHeight + offset);
-            SetSkill("ACTOR_CEIL_HGT", region.CeilHeight + offset);
+            SetSkill("ACTOR_FLOOR_HGT", LevelTopology.FloorHeightAt(_level, actor.Region, actor.X, actor.Y));
+            SetSkill("ACTOR_CEIL_HGT", LevelTopology.CeilingHeightAt(_level, actor.Region, actor.X, actor.Y));
         }
     }
 
     private bool AdvanceActorForward(Actor actor, double timeCorrection)
     {
-        double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+        // OV-20261029-actor-step: a step along the actor's angle is SPEED·TIME_CORR in 22.10 fixed point,
+        // split with the cosine and sine of the angle (itself a 22.10 value), each cut toward zero to
+        // 22.10 and each part rounded to a whole 1/1024 step. Unlike a step toward a point, it is not
+        // measured in |dx| + |dy|.
+        double distance = EngineProduct(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
             return false;
         }
 
-        double angle = actor.FacingAngleRadians;
+        double angle = WdlFixed.Quantize(actor.FacingAngleRadians);
+        double cos = Math.Truncate(Math.Cos(angle) * 1024) / 1024;
+        double sin = Math.Truncate(Math.Sin(angle) * 1024) / 1024;
+        double stepX = Math.Round(distance * 1024 * cos, MidpointRounding.AwayFromZero) / 1024;
+        double stepY = Math.Round(distance * 1024 * sin, MidpointRounding.AwayFromZero) / 1024;
         double previousX = actor.X;
         double previousY = actor.Y;
-        MoveActor(actor, actor.X + (Math.Cos(angle) * distance), actor.Y + (Math.Sin(angle) * distance));
+        MoveActor(actor, actor.X + stepX, actor.Y + stepY);
         double actualDistance = Math.Sqrt(
             ((actor.X - previousX) * (actor.X - previousX)) +
             ((actor.Y - previousY) * (actor.Y - previousY)));
@@ -2426,9 +3539,10 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        bool arrived = AdvanceActorToward(actor, targetX, targetY, timeCorrection);
+        // FOLLOW triggers IF_ARRIVED only at region borders with CAREFULLY (p.66, MoveActor), not at the player.
+        AdvanceActorToward(actor, targetX, targetY, timeCorrection);
         AdjustActorHeightTowardPlayer(actor, player, timeCorrection);
-        return arrived;
+        return false;
     }
 
     private void InitializeStickTarget(Actor actor)
@@ -2466,33 +3580,77 @@ public sealed class WdlRuntime :
         return false;
     }
 
+    /// <summary>
+    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point. Patched
+    /// V3.963 arrived at 0.098 and not at 0.134 at steps of 0.125 to 0.14 (OV-20261029-actor-events);
+    /// whether the limit is this constant or the cycle's step is unmeasured.
+    /// </summary>
+    private const double ArrivalDistance = 0.125;
+
+    /// <summary>
+    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c>: rounded to 1/1024,
+    /// where a WDL <c>*</c> cuts toward zero (OV-20261029-actor-step round 6).
+    /// </summary>
+    private static double EngineProduct(double left, double right) =>
+        Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
+
     private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
     {
         actor["TARGET_X"] = targetX;
         actor["TARGET_Y"] = targetY;
+        // OV-20261029-actor-events: the step and the distance left are both |dx| + |dy|, so an actor
+        // covers SPEED·TIME_CORR of it per cycle (diagonally, 1/√2 of that as the crow flies). It
+        // arrives on the point when the step would reach it, or where it is once less than
+        // ArrivalDistance is left (measured between 0.098, arrived, and 0.134, not).
         double dx = targetX - actor.X;
         double dy = targetY - actor.Y;
-        double remaining = Math.Sqrt((dx * dx) + (dy * dy));
+        double remaining = Math.Abs(dx) + Math.Abs(dy);
         if (remaining <= 0.000001)
         {
             return true;
         }
 
-        double distance = Math.Max(0, actor["SPEED"]) * timeCorrection;
+        // The engine's own product rounds to 1/1024 (a WDL '*' cuts toward zero): SPEED 0.05 (51 raw)
+        // over six skipped cycles of 0.25 makes 76.5 units, and the original stepped 77 (round 6).
+        double distance = EngineProduct(Math.Max(0, actor["SPEED"]), timeCorrection);
         if (distance <= 0)
         {
             return false;
         }
 
-        TurnActorToward(actor, Math.Atan2(dy, dx), timeCorrection);
+        // The facing is taken once per point, from where the actor sets off: a 22.10 angle in 0..2π
+        // cut toward zero, 1608 raw for a way along +Y however far a CAREFULLY actor then drifts off
+        // it, 367 for 40:15 all the way (OV-20261029-actor-step round 5).
+        if (!_legFacings.TryGetValue(actor, out (double X, double Y, double Facing) leg) || leg.X != targetX || leg.Y != targetY)
+        {
+            double facing = Math.Atan2(dy, dx);
+            leg = (targetX, targetY, Math.Truncate((facing < 0 ? facing + (2 * Math.PI) : facing) * 1024) / 1024);
+            _legFacings[actor] = leg;
+        }
+
+        TurnActorToward(actor, leg.Facing, timeCorrection);
         if (distance >= remaining)
         {
             MoveActor(actor, targetX, targetY);
             return true;
         }
 
-        MoveActor(actor, actor.X + ((dx / remaining) * distance), actor.Y + ((dy / remaining) * distance));
-        return false;
+        // OV-20261029-actor-step round 5: each part of the step is cut toward zero to 1/1024 (40:15
+        // split a 128-unit step 93 and 34), so a CAREFULLY actor 4 units off its line gets no X
+        // part, its nudge, and a Y part one short. Round 6: the part is the 22.10 product of the step
+        // and the distance left along the axis, rounded to 1/1024, then divided by |dx| + |dy| and cut
+        // toward zero, which explains the one-unit short steps (143 for 144 once 39760 units are
+        // left): every step of the plain +Y and 40:15 ways fits.
+        double rawX = Math.Round(dx * 1024);
+        double rawY = Math.Round(dy * 1024);
+        double rawRemaining = Math.Abs(rawX) + Math.Abs(rawY);
+        double rawStep = Math.Round(distance * 1024);
+        static double Part(double step, double along, double remaining) =>
+            Math.Truncate(Math.Round(step * along / 1024, MidpointRounding.AwayFromZero) * 1024 / remaining) / 1024;
+        double stepX = rawRemaining > 0 ? Part(rawStep, rawX, rawRemaining) : 0;
+        double stepY = rawRemaining > 0 ? Part(rawStep, rawY, rawRemaining) : 0;
+        MoveActor(actor, actor.X + stepX, actor.Y + stepY);
+        return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
     }
 
     private bool AdvanceActorTowardNamedTarget(Actor actor, string target, double timeCorrection)
@@ -2590,9 +3748,33 @@ public sealed class WdlRuntime :
                     EntityCollisionRadius,
                     static entity => entity["INVISIBLE"] > 0,
                     actor,
-                    wallClearance: Player.WallClearance);
+                    wallClearance: Player.WallClearance,
+                    clearanceOnContact: true);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
+            UpdateFootHeight(actor);
+            if (result.Collided)
+            {
+                // OV-20261029-actor-step: where a wall stops the step, the original's position is
+                // the contact point cut to 1/1024 toward zero.
+                actor.X = Math.Truncate(actor.X * 1024) / 1024;
+                actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
+            }
+
+            // OV-20261029-actor-step: a CAREFULLY step's part under 4/1024 along one axis becomes
+            // 4/1024, keeping its sign and positive for none, even when a wall stopped the step:
+            // axis-aligned walkers creep 4 units a step, and one drifting back toward its way's line
+            // (a part of −1) steps −4 (round 5).
+            const double Nudge = 4.0 / 1024;
+            if (Math.Abs(requestedX) < Nudge - 1e-9 && Math.Abs(requestedY) >= Nudge - 1e-9)
+            {
+                actor.X += (requestedX < 0 ? -Nudge : Nudge) - requestedX;
+            }
+            else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
+            {
+                actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
+            }
+
             actor.Region = result.Region;
             actor["IMPACT_VX"] = result.Displacement.X - requestedX;
             actor["IMPACT_VY"] = result.Displacement.Y - requestedY;
@@ -2617,7 +3799,10 @@ public sealed class WdlRuntime :
             UpdateActorRegion(actor);
             // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it.
             if (blocked is not null &&
-                blocked.PushAway(actor, new Vector2((float)actor.X, (float)actor.Y), ActorCollisionRadius(actor) + blocked.Width))
+                blocked.PushAway(
+                    actor,
+                    new Vector2((float)actor.X, (float)actor.Y),
+                    LevelCollisionWorld.ContactDistance(ActorCollisionRadius(actor) + blocked.Width)))
             {
                 FireActorContact(actor);
             }
@@ -2861,31 +4046,96 @@ public sealed class WdlRuntime :
         _shakeRequests.Add(new WdlShakeRequest(target.Name));
     }
 
-    private void AdvanceAnimationCycles(double timeCorrection)
+    /// <summary>
+    /// The objects' part of a cycle, after the global slots, in the original's order
+    /// (OV-20261029-scheduler-order): the regions, then the actors, the things and the walls, each
+    /// kind from the last the map places to the first (the region order is assumed, one region was
+    /// measured). Each object runs its <c>EACH_TICK</c>, read when its turn comes so a <c>SET</c>
+    /// earlier in the cycle counts, and then steps its texture animation, which runs its
+    /// <c>EACH_CYCLE</c> when a cycle ends.
+    /// </summary>
+    private void RunObjectPass(double timeCorrection)
     {
-        if (timeCorrection <= 0)
+        List<AcknexObject> order = _objectPassBuffer;
+        order.Clear();
+        for (int i = _regions.Count - 1; i >= 0; i--)
+        {
+            order.Add(_regions[i]);
+        }
+
+        for (int i = _levelObjects.Count - 1; i >= 0; i--)
+        {
+            if (_levelObjects[i] is Actor)
+            {
+                order.Add(_levelObjects[i]);
+            }
+        }
+
+        for (int i = _levelObjects.Count - 1; i >= 0; i--)
+        {
+            if (_levelObjects[i] is MapEntity and not Actor)
+            {
+                order.Add(_levelObjects[i]);
+            }
+        }
+
+        for (int i = _level.Walls.Count - 1; i >= 0; i--)
+        {
+            order.Add(_level.Walls[i]);
+        }
+
+        bool actorsDone = false;
+        foreach (AcknexObject target in order)
+        {
+            if (target is Actor actor)
+            {
+                AdvanceActorTarget(actor, timeCorrection);
+            }
+            else if (!actorsDone && target is not Region)
+            {
+                actorsDone = true;
+                FinishActorMoves();
+            }
+
+            RunObjectEachTick(target);
+            if (timeCorrection > 0)
+            {
+                AdvanceAnimationCycle(target, timeCorrection);
+            }
+        }
+
+        if (!actorsDone)
+        {
+            FinishActorMoves();
+        }
+
+        order.Clear();
+    }
+
+    private void FinishActorMoves()
+    {
+        if (_frontActorMoved)
+        {
+            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
+            RefreshEntityDistances(force: true);
+        }
+    }
+
+    private void RunObjectEachTick(AcknexObject target)
+    {
+        // OV-20261019-clip-detail: an INVISIBLE wall runs no EACH_TICK.
+        if (IsInactiveEntity(target) ||
+            !TryGetObjectSchedulerAction(target, eachCycle: false, out string? actionName) ||
+            string.IsNullOrWhiteSpace(actionName) ||
+            (target is Wall && target["INVISIBLE"] > 0) ||
+            !IsWithinClipDistance(target) ||
+            IsDormantBerkeleyWall(target))
         {
             return;
         }
 
-        // The order of CurrentCycleTargets, without its iterator: regions, walls, things and actors.
-        foreach (Region region in _regions)
-        {
-            AdvanceAnimationCycle(region, timeCorrection);
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            AdvanceAnimationCycle(wall, timeCorrection);
-        }
-
-        foreach (AcknexObject levelObject in _levelObjects)
-        {
-            if (levelObject is MapEntity entity)
-            {
-                AdvanceAnimationCycle(entity, timeCorrection);
-            }
-        }
+        PrepareActorTickSkills(target);
+        RunForActionTarget(target, actionName);
     }
 
     private void AdvanceAnimationCycle(AcknexObject target, double timeCorrection)
@@ -2903,12 +4153,21 @@ public sealed class WdlRuntime :
         if (!_textureAnimationStates.TryGetValue(target, out TextureAnimationState? state))
         {
             state = new TextureAnimationState();
+            StartAnimationLoop(entry.Texture, state, timeCorrection);
             _textureAnimationStates[target] = state;
+            return; // the first phase counts from the next cycle
         }
 
         AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
     }
 
+    /// <summary>
+    /// Steps a texture animation by one frame. The original fixes each loop's phase lengths in frames
+    /// when the loop starts: <c>floor(DELAY · (1 + RANDOM·u) / TIME_CORR)</c>, with the
+    /// <c>TIME_CORR</c> of the cycle that starts the loop and one random draw u for the whole loop
+    /// (OV-20261029-anim-timing). A phase then lasts that many frames whatever the frame rate does,
+    /// and the first loop, started in the first cycle, counts with <c>TIME_CORR</c> 1.
+    /// </summary>
     private void AdvanceAnimationTarget(
         AcknexObject target,
         LevelTexture texture,
@@ -2922,7 +4181,6 @@ public sealed class WdlRuntime :
             if (!play)
             {
                 state.WasPlaying = false;
-                state.ElapsedTicks = 0;
                 return;
             }
 
@@ -2930,8 +4188,9 @@ public sealed class WdlRuntime :
             {
                 SetAnimationCycle(target, 1);
                 QueueAnimationTextureSound(target, texture, 1);
-                state.ElapsedTicks = 0;
+                state.FramesLeft = AnimationFrames(texture, 1, state);
                 state.WasPlaying = true;
+                return;
             }
         }
 
@@ -2941,33 +4200,44 @@ public sealed class WdlRuntime :
             SetAnimationCycle(target, cycle);
         }
 
-        state.ElapsedTicks += timeCorrection;
-        int phasesAdvanced = 0;
-        while (state.ElapsedTicks >= AnimationDelay(texture, cycle) && phasesAdvanced++ < 4096)
+        if (--state.FramesLeft > 0)
         {
-            state.ElapsedTicks -= AnimationDelay(texture, cycle);
-            if (cycle < cycles)
-            {
-                cycle++;
-                SetAnimationCycle(target, cycle);
-                QueueAnimationTextureSound(target, texture, cycle);
-                continue;
-            }
+            return;
+        }
 
-            TriggerEachCycle(target);
-            if (texture.IsOneShot)
-            {
-                target["PLAY"] = 0;
-                state.WasPlaying = false;
-                state.ElapsedTicks = 0;
-                break;
-            }
-
-            cycle = 1;
+        if (cycle < cycles)
+        {
+            cycle++;
             SetAnimationCycle(target, cycle);
             QueueAnimationTextureSound(target, texture, cycle);
+            state.FramesLeft = AnimationFrames(texture, cycle, state);
+            return;
         }
+
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
+        if (texture.IsOneShot)
+        {
+            target["PLAY"] = 0;
+            state.WasPlaying = false;
+            return;
+        }
+
+        SetAnimationCycle(target, 1);
+        QueueAnimationTextureSound(target, texture, 1);
+        state.FramesLeft = AnimationFrames(texture, 1, state);
     }
+
+    /// <summary>Fixes the frame step and the random factor of a new animation loop.</summary>
+    private void StartAnimationLoop(LevelTexture texture, TextureAnimationState state, double timeCorrection)
+    {
+        state.LoopStep = timeCorrection > 0 ? timeCorrection : 1;
+        state.LoopFactor = 1 + (texture.RandomDelayFactor * _random.NextDouble());
+        state.FramesLeft = AnimationFrames(texture, 1, state);
+    }
+
+    private static int AnimationFrames(LevelTexture texture, int cycle, TextureAnimationState state) =>
+        Math.Max(1, (int)Math.Floor((AnimationDelay(texture, cycle) * state.LoopFactor / state.LoopStep) + 1e-9));
 
     private void QueueAnimationTextureSound(AcknexObject target, LevelTexture texture, int cycle)
     {
@@ -3053,45 +4323,6 @@ public sealed class WdlRuntime :
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
             yield return entity;
-        }
-    }
-
-    /// <summary>
-    /// A snapshot of the objects' scheduler actions, in a list taken from
-    /// <see cref="_schedulerActionBuffer"/> when one is free; the caller may hand it back cleared.
-    /// </summary>
-    private List<(AcknexObject Target, string ActionName)> CurrentObjectSchedulerActions(bool eachCycle)
-    {
-        List<(AcknexObject Target, string ActionName)> actions = _schedulerActionBuffer ?? [];
-        _schedulerActionBuffer = null;
-        foreach (Region region in _regions)
-        {
-            AddIfPresent(region);
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            AddIfPresent(wall);
-        }
-
-        foreach (AcknexObject levelObject in _levelObjects)
-        {
-            if (levelObject is MapEntity entity)
-            {
-                AddIfPresent(entity);
-            }
-        }
-
-        return actions;
-
-        void AddIfPresent(AcknexObject target)
-        {
-            if (!IsInactiveEntity(target) &&
-                TryGetObjectSchedulerAction(target, eachCycle, out string? actionName) &&
-                !string.IsNullOrWhiteSpace(actionName))
-            {
-                actions.Add((target, actionName));
-            }
         }
     }
 
@@ -3215,6 +4446,14 @@ public sealed class WdlRuntime :
             (int)Math.Round(GetSkill("SCREEN_HGT")));
         double shootX = useShootDeviation ? GetSkill("SHOOT_X") : 0;
         double shootY = useShootDeviation ? GetSkill("SHOOT_Y") : 0;
+        // OV-20261009-shoot-mapping (sweep): the shot goes through a whole screen pixel, the one
+        // whose column is floor(W/2 + SHOOT_X·W/2) and whose row is floor(H/2 − SHOOT_Y·H/2).
+        double halfWidth = projection.ScreenWidth * 0.5;
+        double halfHeight = projection.ScreenHeight * 0.5;
+        double column = Math.Floor(halfWidth + (WdlFixed.Quantize(Math.Clamp(shootX, -1, 1)) * halfWidth)) - halfWidth;
+        double row = Math.Floor(halfHeight - (WdlFixed.Quantize(Math.Clamp(shootY, -1, 1)) * halfHeight)) - halfHeight;
+        shootX = column / halfWidth;
+        shootY = -row / halfHeight;
         (double horizontalDeviation, double rayVertical) = projection.ShootRay(shootX, shootY);
         double horizontalMagnitude = Math.Sqrt(1 + (horizontalDeviation * horizontalDeviation));
         double verticalSlope = rayVertical / horizontalMagnitude;
@@ -3241,7 +4480,8 @@ public sealed class WdlRuntime :
             verticalSlope,
             range / distanceScale,
             distanceScale,
-            player.Region);
+            player.Region,
+            new ShotPixel(column, halfWidth * Math.Truncate(1024 / projection.HorizontalHalfTangent) / 1024));
         if (hit is null)
         {
             ClearHitResult();
@@ -3264,7 +4504,8 @@ public sealed class WdlRuntime :
         double verticalSlope,
         double horizontalRange,
         double distanceScale,
-        int startRegion)
+        int startRegion,
+        ShotPixel shot)
     {
         int region = startRegion;
         double minimumDistance = 0;
@@ -3325,8 +4566,12 @@ public sealed class WdlRuntime :
                             continue;
                         }
 
-                        hitX = pixelX;
-                        hitY = pixelY;
+                        hitX = sprite.Mirror
+                            ? pixelX
+                            : SpriteHitColumn(shot, (dx * forwardY) - (dy * forwardX) + sprite.CenterOffset.X, depth, sprite.HalfWidth, image.Width);
+                        // OV-20261009-shoot-mapping: the original's HIT_Y is one row below the sampled
+                        // pixel row (129 on the eye line's row 128, 64 for a hit at row 63.9).
+                        hitY = pixelY + 1;
                     }
 
                     bestEntity = Nearer(
@@ -3495,16 +4740,12 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        Region current = _level.Regions[region];
-        Region next = _level.Regions[nextRegion];
-        double currentOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, region, x, y, out double currentValue)
-            ? currentValue
-            : 0;
-        double nextOffset = LevelTopology.TryGetSurfaceHeightOffset(_level, nextRegion, x, y, out double nextValue)
-            ? nextValue
-            : 0;
-        double openingFloor = Math.Max(current.FloorHeight + currentOffset, next.FloorHeight + nextOffset);
-        double openingCeiling = Math.Min(current.CeilHeight + currentOffset, next.CeilHeight + nextOffset);
+        double openingFloor = Math.Max(
+            LevelTopology.FloorHeightAt(_level, region, x, y),
+            LevelTopology.FloorHeightAt(_level, nextRegion, x, y));
+        double openingCeiling = Math.Min(
+            LevelTopology.CeilingHeightAt(_level, region, x, y),
+            LevelTopology.CeilingHeightAt(_level, nextRegion, x, y));
         return eyeHeight > openingFloor && eyeHeight < openingCeiling;
     }
 
@@ -3819,6 +5060,13 @@ public sealed class WdlRuntime :
                     break;
             }
         }
+        else if (_frontActorMoved && target is MapEntity && memberName.Equals("DISTANCE", StringComparison.OrdinalIgnoreCase))
+        {
+            // Actors now move in their turn of the object pass (OV-20261029-actor-events); a script
+            // that reads DISTANCE after an actor in front moved sees it refreshed, as the moves and
+            // the refreshed distances show together (OV-20261020-view-activity round 9).
+            RefreshEntityDistances(force: true);
+        }
 
         return target[memberName];
     }
@@ -3913,8 +5161,8 @@ public sealed class WdlRuntime :
     {
         double bottom = EntityFeetHeight(entity);
         return MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size)
-            ? test.IsSpriteVisible(viewer, entity.X, entity.Y, size.Width * 0.5, bottom, bottom + size.Height)
-            : test.IsSpriteVisible(viewer, entity.X, entity.Y, 0, bottom, bottom + 1);
+            ? test.IsSpriteVisible(viewer, entity.X, entity.Y, size.Width * 0.5, bottom, bottom + size.Height, entity.Region)
+            : test.IsSpriteVisible(viewer, entity.X, entity.Y, 0, bottom, bottom + 1, entity.Region);
     }
 
     /// <summary>
@@ -4038,6 +5286,68 @@ public sealed class WdlRuntime :
 
         value = matches.FirstOrDefault(candidate => ObjectMatchesSynonymType(candidate, type));
         return value is not null;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGetSkillMargin(string skillName, string memberName, out double value)
+    {
+        bool min = memberName.Equals("MIN", StringComparison.OrdinalIgnoreCase);
+        if (!(min || memberName.Equals("MAX", StringComparison.OrdinalIgnoreCase)) || !_skills.ContainsKey(skillName))
+        {
+            value = 0;
+            return false;
+        }
+
+        // A skill without a margin reads the widest one its save record can hold.
+        SkillRange range = _bounds.TryGetValue(skillName, out SkillRange found) ? found : new SkillRange(double.NegativeInfinity, double.PositiveInfinity);
+        double margin = min ? range.Min : range.Max;
+        value = double.IsFinite(margin) ? margin : (min ? SaveSkill.NoMin : SaveSkill.NoMax) / WdlFixed.Scale;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TrySetSkillMargin(string skillName, string memberName, double value)
+    {
+        if (!TryGetSkillMargin(skillName, memberName, out _))
+        {
+            return false;
+        }
+
+        SkillRange range = _bounds.TryGetValue(skillName, out SkillRange found) ? found : new SkillRange(double.NegativeInfinity, double.PositiveInfinity);
+        _bounds[skillName] = memberName.Equals("MIN", StringComparison.OrdinalIgnoreCase) ? range with { Min = value } : range with { Max = value };
+        return true;
+    }
+
+    /// <summary>
+    /// The bits a screen element's flags set in its save record (OV-20261029-save-body round 18, one
+    /// flag per element): <c>VISIBLE</c> <c>0xC000</c> on every kind; a panel's <c>REFRESH</c> 1,
+    /// <c>TRANSPARENT</c> 8 and <c>RELPOS</c> 0x10; an overlay's <c>ABSPOS</c> 0x10; a text's
+    /// <c>CONDENSED</c> 2, <c>CENTER_X</c> 4, <c>CENTER_Y</c> 8 and <c>NARROW</c> 0x2000.
+    /// </summary>
+    private static (string Flag, int Bit)[] ScreenFlagBits(string kind) => kind switch
+    {
+        "PANEL" => [("VISIBLE", 0xC000), ("REFRESH", 0x1), ("TRANSPARENT", 0x8), ("RELPOS", 0x10)],
+        "TEXT" => [("VISIBLE", 0xC000), ("CONDENSED", 0x2), ("CENTER_X", 0x4), ("CENTER_Y", 0x8), ("NARROW", 0x2000)],
+        _ => [("VISIBLE", 0xC000), ("ABSPOS", 0x10)],
+    };
+
+    private bool HasUiProperty(string name, string property) =>
+        _uiElements.TryGetValue(name, out WdlUiElement? element) &&
+        element.Properties.Any(p => p.Keyword.Equals(property, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>What a keyword synonym names, through any synonyms it names in turn; null for none.</summary>
+    private string? KeywordTarget(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? current = name;
+        while (current is not null && _keywordReferences.TryGetValue(current, out string? target) && seen.Add(current))
+        {
+            current = target;
+        }
+
+        return string.IsNullOrWhiteSpace(current) || current.Equals("NULL", StringComparison.OrdinalIgnoreCase) || _keywordReferences.ContainsKey(current)
+            ? null
+            : current;
     }
 
     private string? ResolveActionName(string name)
@@ -4446,8 +5756,12 @@ public sealed class WdlRuntime :
         File.AppendAllText(PrintFilePath(), text, Encoding.Latin1);
     }
 
+    // The DOS runtime names the file in upper case with the number unpadded (PRINT0.TXT, OVSTA0.TXT;
+    // OV-20261029-print-output).
     private string PrintFilePath() =>
-        Path.Combine(_printDirectory!, $"{_printBaseName}{_printNumber:000}.TXT");
+        Path.Combine(
+            _printDirectory!,
+            string.Create(CultureInfo.InvariantCulture, $"{_printBaseName.ToUpperInvariant()}{_printNumber}.TXT"));
 
     private static string NormalizePrintBaseName(string baseName)
     {
@@ -4530,10 +5844,26 @@ public sealed class WdlRuntime :
             strings);
     }
 
+    /// <summary>
+    /// Restores a full save's skills. <c>LOCAL</c> skills keep the values they have now: the original's
+    /// full <c>SAVE</c> leaves them out, and after a <c>LOAD</c> one read what it was set to before
+    /// (OV-20261029-save-body round 7).
+    /// </summary>
     private void RestoreSkills(IReadOnlyDictionary<string, double> skills)
     {
+        Dictionary<string, double> locals = _skills
+            .Where(pair => _level.LocalSkills.Contains(pair.Key))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         _skills.Clear();
         foreach ((string name, double value) in skills)
+        {
+            if (!_level.LocalSkills.Contains(name))
+            {
+                SetSkill(name, value);
+            }
+        }
+
+        foreach ((string name, double value) in locals)
         {
             SetSkill(name, value);
         }
@@ -4620,6 +5950,7 @@ public sealed class WdlRuntime :
             .Concat(_level.Walls)
             .Concat(_level.Things)
             .Concat(_level.Actors)
+            .Concat(_level.UnplacedObjects.OfType<Wall>())
             .ToList();
 
     private static void RestoreObjectSnapshot(AcknexObject obj, WdlObjectSnapshot snapshot)
@@ -4677,6 +6008,28 @@ public sealed class WdlRuntime :
         public ActionScope Scope { get; } = scope;
     }
 
+    /// <summary>
+    /// A shot's screen column, as an offset from the centre, and the focal length the original
+    /// projects sprites with: half the width times 1/tan(<c>PLAYER_ARC</c>/2) cut to 22.10.
+    /// </summary>
+    private readonly record struct ShotPixel(double Column, double FocalLength);
+
+    /// <summary>
+    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping, sweep): the texel column the renderer
+    /// steps to at the shot's screen column. It counts from the sprite's projected left edge,
+    /// 0.714 pixels further on. The pixels per step at the sprite's depth and the texels per pixel
+    /// are both cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead). Fitted to
+    /// three sprites and 19 columns in one 640-wide view, within 0.0013.
+    /// </summary>
+    private static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
+    {
+        double pixelsPerStep = Math.Truncate(1024 * shot.FocalLength / depth) / 1024;
+        double left = (centerRight - halfWidth) * pixelsPerStep;
+        double texelsPerPixel = Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep)) / 1024;
+        double texel = texelsPerPixel * (shot.Column + 0.714 - left);
+        return WdlFixed.Quantize(Math.Clamp(texel, 0, textureWidth - (1.0 / 1024)));
+    }
+
     private sealed record HitCandidate(
         AcknexObject Target,
         double Distance,
@@ -4686,7 +6039,14 @@ public sealed class WdlRuntime :
 
     private sealed class TextureAnimationState
     {
-        public double ElapsedTicks { get; set; }
+        /// <summary>Frames left in the current phase.</summary>
+        public int FramesLeft { get; set; }
+
+        /// <summary>The <c>TIME_CORR</c> the current loop counts its phases with.</summary>
+        public double LoopStep { get; set; } = 1;
+
+        /// <summary>The current loop's <c>RANDOM</c> factor (1 without <c>RANDOM</c>).</summary>
+        public double LoopFactor { get; set; } = 1;
 
         public bool WasPlaying { get; set; }
     }

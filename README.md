@@ -55,13 +55,15 @@ What works today:
 - **OpenGL 3.3 renderer** — an SDL3 windowed viewer draws textured walls and ear-clipped
   floors/ceilings with a depth buffer, plus camera-facing **billboard sprites** for
   things and actors (palette-index-0 color-key transparency). It recognizes WDL
-  `FLAGS SKY` textures as a camera-selected textured background, renders open
+  `FLAGS SKY` textures as the measured panorama (OV-20261029-sky), renders open
   portal wall spans, alpha-tests palette-index-0 holes only on walls marked
   `TRANSPARENT`, and combines global/texture/region ambient lighting with
   `PLAYER_LIGHT`. Static sprite billboards are
   laid out in the engine layer and drawn back-to-front for deterministic static scenes.
   The camera is driven by the WDL-visible player with radius-aware wall, portal,
-  and entity collision. Floor/ceiling queries interpolate WMP vertex heights so
+  and entity collision. Floor/ceiling queries interpolate WMP vertex heights in
+  regions with slope flags (`FLOOR_ASCEND`/`LIFTED` raise the floor, `FLOOR_DESCEND` lowers it,
+  `CEIL_ASCEND` raises the ceiling, `CEIL_DESCEND`/`LIFTED` lower it; OV-20261029-slope), so
   authored slopes feed vertical collision, WDL height/slope skills, and the
   rendered feet/shadows of things and actors. The tilt-0 synthetic room matches the
   DOSBox-X capture `OVTLT0.PCX` (stripes G R G R G R, floor at the bottom). The previous
@@ -145,16 +147,87 @@ What works today:
   `LIBER`, `BERKELEY` things, `IMPASSABLE` and `INVISIBLE` walls are handled. The player climbs
   region borders from the feet with a clamped eye. Actors without `CAREFULLY` push the player,
   and `CAREFULLY` ones stop short of it, honour `IMPASSABLE` and climb below `ACTOR_CLIMB`.
+  The player's contact distance with an object is √(c² + 0.093), where c is half the object's
+  width plus `PLAYER_WIDTH`. A player starting or beamed inside objects is pushed out of the last
+  placed overlapping one only (OV-20261029-overlap).
   A headless view test (ADR-0010, OV-20261020-view-activity) sets `VISIBLE` and `SEEN` on things,
   actors, walls and regions, lets unseen actors skip frames (`SKIP_FRAMES`) and puts unseen
   `BERKELEY` walls to sleep. Things' and actors' `DISTANCE`, which the `DIST` test reads, is
   refreshed only when the view changes or an actor in front of the player walks
   (OV-20261021-distance-refresh).
 
-Not yet complete: sky movement under tilt, exact sky scrolling and indexed-palette shading,
-Acknex-parity `each_cycle` discovery/dispatch order, slopes, stacked (`BELOW`) regions, and exact actor AI/path event ordering,
-exact FLIC frame-number/audio synchronization, exact audio/UI behavior,
-legacy-compatible save/load, and the DOSBox-X oracle-diff harness.
+- **Stacked (`BELOW`) regions** — the retail maps list only the top region of a stack; the 617
+  lower storeys across the four levels exist only as WDL declarations. The loader now builds each
+  one under its map region with the declared heights and the top region's footprint (manual p.59–61),
+  so they get floors, ceilings and walls (a wall covers what is open on one side and solid on the
+  other, such as a bridge's slab), the player walks into the storey it fits, and underwater
+  `IF_DIVE`/`IF_ARISE` links resolve. Things and actors start on the uppermost storey, or with
+  `GROUND` on the lowest storey whose ceiling is above their feet (manual p.61). The view test
+  sees through the openings between storeys and not through the slabs (OV-20261029-below-view).
+  A lower storey's wall pieces show the texture's next four sides (manual p.38). Still open:
+  two- and four-sided wall textures (which half or face shows which side).
+- **Engine rules measured on 2026-10-29** — eight oracle notes (OV-20261029-*):
+  - The cycle order: resumed waits, then `EACH_SEC`, the global slots, and the regions, actors,
+    things and walls, each kind in reverse map order. `IF_START` and the first cycle have
+    `TICKS` 0.
+  - Numbers are 22.10 fixed point: literals truncate and saturate, arithmetic wraps, and
+    functions truncate.
+  - The `ACCEL` formula, and a default `FRICTION` of 0.
+  - Actors step by |dx| + |dy|, arrive within 0.125, and fire `IF_ARRIVED`/`IF_HIT` in the
+    measured order.
+  - Save files: OpenVirtue writes `SAVE_INFO` files byte for byte. It reads the skills and the
+    things', actors' and walls' state of full saves.
+  - The sky panorama.
+  - Palette-index shading by distance and `PLAYER_LIGHT`, and the shade table for sorted
+    ranges and `AUTORANGE`.
+  - Which slope flags tilt a region.
+  - Texture animation phase lengths: each loop is fixed in frames from the `TIME_CORR` it
+    starts with.
+  - How sounds take the eight channels: lowest free, then the oldest; `SLOOP` channels are
+    kept; skipped sounds; when channels read free, and `STOP_SOUND`.
+- **Oracle-diff harness** — `ovtool oracle check <probe>` prepares a probe's DOSBox-X carriers,
+  runs them headless (`oracle run`) and diffs them (`oracle diff`). The diff replays each carrier
+  through the headless `RuntimeHost` in step with the original run's per-cycle `TICKS` and compares
+  every trace file the DOS runtime wrote with OpenVirtue's, line by line, and every save section by
+  section, naming the sections and skills that differ.
+  `oracle summary` gives every probe's match count. These probes match in full:
+  - projection, pixel aspect, tilt;
+  - `BRANCH`;
+  - the sky, the shading curve, the shade table;
+  - slopes.
+
+  The timed ones list what is still off: start-up `WAITT` timing, sub-percent movement steps,
+  details the notes left open, and full `SAVE` files, whose objects' view words and bits
+  OpenVirtue does not reproduce.
+
+Not yet complete:
+- exact UI behaviour beyond `INKEY` editing (OV-20261029-inkey) and `DIGITS`/`TEXT` layout
+  (OV-20261029-ui-layout), panel widgets (OV-20261029-ui-widgets) and multi-line text
+  (OV-20261029-ui-text) and slider knobs: dragging a slider, and where a click lands relative to the
+  pointer's hot spot;
+- how floor and texture-cycle sounds take channels;
+- things `LOCATE`d into a `BELOW` stack (a player lands in the storey that holds its eye,
+  OV-20261030-below-beam; sided wall textures are measured and drawn, OV-20261030-wall-sides);
+- full save compatibility in play. OpenVirtue:
+  - reads and writes `SAVE_INFO`;
+  - imports the original's full saves (skills, objects, waiting actions, slots);
+  - writes full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default). The
+    original loads OpenVirtue's saves of the retail `apathy` and `legalism` levels. That covers a save
+    made at the level's start and ones made in play with an action waiting, which the original resumes
+    at its own pace. The `SAVE` textures and `SAVE` regions sections match the original's byte for byte
+    on `legalism` (OV-20261029-save-body rounds 13 to 15);
+  - writes the screen elements' section as measured, though LEGALISM's own save orders some
+    elements differently, for a reason not yet found (rounds 18 and 19); does not yet write two run-time words of the first section,
+    the engine's run-time statistics skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`,
+    `VESA_MODE`) or `INKEY` strings. V3.963 itself hung loading its own save while an object's
+    event action waited (round 17), so such saves are written as the original writes them but not
+    proven to load;
+- `CAREFULLY` actors' residuals and slides (steps along an `ANGLE` and plain steps toward a
+  point match unit for unit: the engine rounds its own products, OV-20261029-actor-step round 6);
+- shots at mirrored sprites and walls: their `HIT_X` (a sprite's fractional `HIT_X` matches,
+  OV-20261009-shoot-mapping);
+- start-up `TICKS` timing, which keeps many timed probes from matching line for line
+  (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan
 and where each piece sits. The immediate work plan is tracked in

@@ -41,7 +41,27 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.BorderKindsProbeName or
             ProjectionProbeGenerator.ClipDetailProbeName or
             ProjectionProbeGenerator.ViewActivityProbeName or
-            ProjectionProbeGenerator.DistanceRefreshProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.DistanceRefreshProbeName or
+            ProjectionProbeGenerator.SchedulerOrderProbeName or
+            ProjectionProbeGenerator.ActorEventsProbeName or
+            ProjectionProbeGenerator.NumericEdgeProbeName or
+            ProjectionProbeGenerator.MotionTimingProbeName or
+            ProjectionProbeGenerator.SaveFormatProbeName or
+            ProjectionProbeGenerator.SkyProbeName or
+            ProjectionProbeGenerator.ShadingProbeName or
+            ProjectionProbeGenerator.SlopeProbeName or
+            ProjectionProbeGenerator.AudioProbeName or
+            ProjectionProbeGenerator.AutorangeProbeName or
+            ProjectionProbeGenerator.SaveBodyProbeName or
+            ProjectionProbeGenerator.BelowViewProbeName or
+            ProjectionProbeGenerator.WallSidesProbeName or
+            ProjectionProbeGenerator.BelowBeamProbeName or
+            ProjectionProbeGenerator.ActorStepProbeName or
+            ProjectionProbeGenerator.InkeyProbeName or
+            ProjectionProbeGenerator.UiLayoutProbeName or
+            ProjectionProbeGenerator.UiWidgetsProbeName or
+            ProjectionProbeGenerator.UiTextProbeName or
+            ProjectionProbeGenerator.OverlapProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

@@ -12,6 +12,10 @@ dotnet run --project tools/OpenVirtue.Tools -- wrs pack    <input-dir> <archive.
 dotnet run --project tools/OpenVirtue.Tools -- pcx info     <image.pcx>
 dotnet run --project tools/OpenVirtue.Tools -- wmp info     <map.wmp>
 dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
+dotnet run --project tools/OpenVirtue.Tools -- save unpack  <file.sav> <body>   # a save to its body
+dotnet run --project tools/OpenVirtue.Tools -- save pack    <body> <file.sav>   # and back (the original loads it)
+dotnet run --project tools/OpenVirtue.Tools -- save capture <archive.wrs> <file.sav> [main.wdl]   # a level as loaded, in the original's save format
+dotnet run --project tools/OpenVirtue.Tools -- save play <archive.wrs> <main.wdl> [--ticks N]     # runs a level headless (0.25 ticks a cycle); its full SAVEs also land beside the archive in the original's format
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
@@ -91,6 +95,67 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   a THING's `DIST`, let a FOLLOW actor approach a player who stands still, and beam into the pad
   island with and without `LOCATE`. Every line in `OVPRX0.TXT` is a token followed by `TICKS`
   and the sampler's run count; `N`/`F` lines are `IF_NEAR`/`IF_FAR` runs with `MY.DISTANCE`.
+- `oracle prepare scheduler-order | actor-events | numeric-edge | motion-timing` — the
+  OV-20261029 trace probes. `scheduler-order` samples `TICKS`/`TIME_CORR` in every cycle from the top
+  of `IF_START` (through `TraceProbeCase.Prelude`) and records the order of global, region, wall,
+  thing and actor `EACH_TICK`, `EACH_CYCLE`, `EACH_SEC` and resumed `WAIT`s within a cycle.
+  `actor-events` follows `WAY`, `VERTEX`, object, `FOLLOW`/`MOVE` with `CAREFULLY` and `BULLET`
+  actors and their `IF_ARRIVED`/`IF_HIT`. `numeric-edge` reads the number format, rounding and what
+  division by zero and out-of-domain functions do. `motion-timing` fits `ACCEL` with `FRICTION` and
+  `INERTIA` and times texture animation (`DELAY`, `RANDOM`, `ONESHOT`).
+- `oracle run <carrier-or-probe-dir> [--rerun] [--visible] [--timeout s]` — launches the prepared
+  carriers that have not run yet, one after another, through their own launchers, with SDL's dummy
+  video driver unless `--visible`.
+- `oracle check <probe> <output-dir> [prepare options]` — prepare, run and diff in one step.
+- `oracle summary [oracle-runs-dir]` — replays every run carrier of every probe and prints how many
+  match line for line.
+- `oracle replay | diff <carrier-or-probe-dir>` — the oracle-diff harness. `replay` packs a carrier's
+  `work/` files (not `VRUN.EXE` or the original's `OV*` outputs) into `<carrier>/ov-replay/TITLE.WRS`
+  and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the
+  original's last sample; the replay's `PRINTFILE` output lands in
+  `<carrier>/ov-replay/openvirtue-prints/TITLE/`. `diff` does the same and compares every `OV*.TXT`
+  the original wrote (except the autoexec's `OVDIR.TXT`/`OVCON.TXT`) with the replay's, line by line:
+  same token, same field count, numbers within `--tolerance` (default 0.002). Given a probe folder it
+  walks every carrier below it (round sub-folders included) and skips carriers that never ran.
+  Full saves (`OV*.SAV`) are compared by their unpacked bodies, section by section: the report names
+  each differing section, and for the skills section each differing skill. Differences confined to
+  what OpenVirtue does not model are set aside and named, and the save still counts as a match: the
+  first section's run-time words (+36, +40) and the run-time statistics skills
+  (`TIME_*`, `ACTIONS`, `ACTIVE_*`, `MAX_DIST`, `VISIBLES`, `VESA_MODE`, `RANDOM`).
+  Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
+  detected by default: the first non-negative, never-decreasing column of the densest token; a
+  whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
+  in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
+  counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`).
+  Until the replay prints its first sampled cycle every frame lasts the original's first sampled
+  step. That step, the first sampled cycle's `TIME_CORR`, is read from a column that prints it,
+  or else from the step 18 cycles later: DOSBox-X's 60 Hz steps repeat every 18 cycles. This
+  moved the first difference of the bullet carrier from line 3 to line 284, and added 668 matching
+  lines over all carriers; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
+  offset, which is reported, and columns that print `TICKS` are compared relative to it. A gap of
+  more than four typical steps is taken for a sampler that skipped cycles and run at the typical
+  step, unless a cycle counter placed every sample and the typical step is a frame's (at most a
+  tick): then it is one long frame of the original's (view-activity's first frames take 8 ticks;
+  174 more lines matched over all carriers). A carrier
+  without a per-cycle timing column is anchored on the template's start-up stamp (`TCK=` in
+  `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line.
+  A token's first column is shifted by that stamp when it reads like `TICKS`: never below the stamp,
+  never going down, and printed more than once or within a tick of the stamp (so a lone position
+  line is compared as it is). `KEY=value` lines compare their numbers, the stamp within one
+  start-up cycle.
+  Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
+  original's first sample at the original's `TICKS`. A carrier's `AUTOTYPE` keys are typed into the
+  first `INKEY` it opens; clicks and key hooks are still not replayed.
+  A carrier's `case.json` may name its timing column (`"timing": "TK:1"`) where detection picks a
+  wrong one: the flic carriers print `FLIC_FRAME`, whole and never falling, before `TICKS`. The
+  local flic carriers carry these hints; with them the flic probes match 126 more lines and replay to
+  their end. `--timing` on the command line still wins. A `"startup_step"` (ticks) names the first
+  sampled cycle's step where the samples cannot show it. A trace sampled only during a flic has
+  1.094-tick gaps, though its start-up ran 60 Hz frames; the 18-cycle rule accepts only such frames
+  (0.25 to 0.3125). With these, the flic replays no longer start one flic step late. A
+  `"time_corr"` asks for fixed frames, for a carrier whose lines print no `TICKS`.
+  `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
+  `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for
   the lateral mapping, the vertical sign, the shear and `HIT_DIST`, and (from the

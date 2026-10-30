@@ -59,7 +59,7 @@ public sealed class WdlActorMotionTests
         Assert.Equal(2, actor.X, 6);
         Assert.Equal(1, runtime.GetSkill("objectTicks"));
         Assert.Equal(1, actor["VISIBLE"]);
-        Assert.Equal(2, actor["CYCLE"]);
+        Assert.Equal(1, actor["CYCLE"]); // its first phase counts from the next cycle (OV-20261029-anim-timing)
         Assert.Single(SpriteBuilder.Build(level));
     }
 
@@ -97,7 +97,7 @@ public sealed class WdlActorMotionTests
     }
 
     [Fact]
-    public void Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalOnce()
+    public void Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalInEveryCycleThere()
     {
         (WdlRuntime runtime, Level level) = Create(
             "SKILL arrivals { VAL 0; } ACTION arrived { ADD arrivals,1; } " +
@@ -107,9 +107,10 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
         runtime.Tick(1.0 / 16);
 
+        // Arrived in the first cycle and still there in the second (OV-20261029-actor-events).
         Assert.Equal(3, actor.X, 6);
         Assert.Equal(4, actor.Y, 6);
-        Assert.Equal(1, runtime.GetSkill("arrivals"));
+        Assert.Equal(2, runtime.GetSkill("arrivals"));
     }
 
     [Fact]
@@ -130,7 +131,9 @@ public sealed class WdlActorMotionTests
         Assert.Equal(2, actor.X, 6);
         Assert.Equal(0, actor.Z, 6);
         Assert.Equal(2, actor["WAYPOINT"]);
-        Assert.Equal(4, actor["TARGET_X"]);
+        // WAYPOINT moves on before IF_ARRIVED; TARGET_X still shows the point reached until the next
+        // step (OV-20261029-actor-events).
+        Assert.Equal(2, actor["TARGET_X"]);
         Assert.Equal(1, runtime.GetSkill("arrivals"));
 
         runtime.Tick(1.0 / 16);
@@ -185,7 +188,10 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(4, Assert.Single(level.Actors).Z, 6);
-        Assert.Equal(1, runtime.GetSkill("arrivals"));
+        double arrivals = runtime.GetSkill("arrivals");
+        Assert.True(arrivals >= 1);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(arrivals + 1, runtime.GetSkill("arrivals")); // again in every cycle there
     }
 
     [Fact]
@@ -241,6 +247,7 @@ public sealed class WdlActorMotionTests
         (WdlRuntime runtime, _) = Create(
             "SKILL observedFloor { VAL 0; } SKILL observedCeiling { VAL 0; } " +
             "ACTION observe { SET observedFloor,ACTOR_FLOOR_HGT; SET observedCeiling,ACTOR_CEIL_HGT; } " +
+            "REGION ramp { FLAGS FLOOR_ASCEND, CEIL_ASCEND; } " +
             "ACTOR mover { TARGET MOVE; SPEED 0; FLAGS CAREFULLY; EACH_TICK observe; }",
             map);
 
@@ -287,7 +294,7 @@ public sealed class WdlActorMotionTests
         runtime.Tick(1.0 / 16);
 
         // OV-20261019-border-kinds: a CAREFULLY actor stops 0.05 beyond its radius, like the player.
-        Assert.Equal(9.45, actor.X, 3);
+        Assert.Equal(Math.Truncate((9.45) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
         Assert.Equal(-10.55, actor["IMPACT_VX"], 3);
         Assert.Equal(0, runtime.GetSkill("hits"));
     }
@@ -346,7 +353,7 @@ public sealed class WdlActorMotionTests
         }
         else
         {
-            Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
+            Assert.Equal(Math.Truncate((10 - 1 - Player.WallClearance) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
             Assert.Equal(0, actor.Region);
         }
     }
@@ -367,7 +374,7 @@ public sealed class WdlActorMotionTests
             runtime.Tick(1.0 / 16);
         }
 
-        Assert.Equal(10 - 1 - Player.WallClearance, actor.X, 3);
+        Assert.Equal(Math.Truncate((10 - 1 - Player.WallClearance) * 1024) / 1024, actor.X, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step)
     }
 
     [Fact]
@@ -402,6 +409,70 @@ public sealed class WdlActorMotionTests
         Assert.Equal(3, actor.X, 6);
         Assert.Equal(10, actor["TARGET_X"], 6);
         Assert.Equal(0, actor["TARGET_Y"], 6);
+    }
+
+    [Fact]
+    public void Tick_WayActor_SplitsItsStepByCutPartsAndKeepsItsFacing()
+    {
+        // OV-20261029-actor-step round 5: 128 units toward a point 40:15 away go 93 and 34, and the
+        // facing (367 raw) is taken once, where the actor sets off.
+        const string map = "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover -20 -20 0 0;#0\nWAY route -20 -20 20 -5;#1\nPLAYER_START 40 40 0 0;#2";
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(0.25 / 16); // arrives on the point it stands on
+        Assert.Equal(-20, actor.X, 6);
+
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(93, Math.Round((actor.X + 20) * 1024), 6);
+        Assert.Equal(34, Math.Round((actor.Y + 20) * 1024), 6);
+        Assert.Equal(367, Math.Round(actor["ANGLE"] * 1024), 6);
+    }
+
+    [Theory]
+    [InlineData(-19.09375, 0.28125, 144)]  // 40032 raw left: 144·40032/1024 is 5629.5, rounded 5630, 144.01
+    [InlineData(-18.828125, 0.28125, 143)] // 39760 raw left: 5591.25 rounds to 5591, 143.99 cut to 143
+    public void Tick_WayActorAlongAnAxis_StepsByTheRoundedProductOfStepAndDistance(double startY, double timeCorrection, int dyRaw)
+    {
+        // OV-20261029-actor-step round 6: the part of a step toward a point is the step times the
+        // distance left along the axis, rounded to 1/1024, divided by |dx| + |dy| and cut toward zero;
+        // a plain actor on a way along +Y steps one short once 39760 units are left.
+        string map = FormattableString.Invariant(
+            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 10 {startY} 0 0;#0\nWAY route 10 {startY} 10 20;#1\nPLAYER_START 40 40 0 0;#2");
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(timeCorrection / 16); // arrives on the point it stands on
+        double before = actor.Y;
+
+        runtime.Tick(timeCorrection / 16);
+
+        Assert.Equal(dyRaw, Math.Round((actor.Y - before) * 1024), 6);
+    }
+
+    [Theory]
+    [InlineData(1, 0.25, 69, 108)]
+    [InlineData(1, 0.28125, 78, 121)]
+    [InlineData(0.78515625, 0.25, 91, 90)]
+    [InlineData(2, 0.28125, -60, 131)]
+    [InlineData(1, 1.6875, 467, 726)] // six skipped cycles at once: exact trig would give 727
+    [InlineData(0.78515625, 1.5, 543, 542)]
+    [InlineData(1.5703125, 1.5, 0, 767)]
+    public void Tick_Bullet_StepsByRoundedCosineAndSineOfItsAngle(double angle, double timeCorrection, int dxRaw, int dyRaw)
+    {
+        // OV-20261029-actor-step: SPEED 0.5 · TIME_CORR, split by cos and sin of the 22.10 angle,
+        // themselves cut toward zero to 22.10, each part rounded to a whole 1/1024 step (the
+        // measured raw steps).
+        (WdlRuntime runtime, Level level) = Create("ACTOR mover { SPEED 0.5; }");
+        Actor actor = Assert.Single(level.Actors);
+        actor.Angle = angle - (actor.PlacementAngleDegrees * Math.PI / 180);
+        actor.Target = "BULLET";
+        runtime.Tick(1.0 / 16); // the first cycle runs at TIME_CORR 1
+        (double x, double y) = (actor.X, actor.Y);
+
+        runtime.Tick(timeCorrection / 16);
+
+        Assert.Equal(dxRaw, Math.Round((actor.X - x) * 1024), 6);
+        Assert.Equal(dyRaw, Math.Round((actor.Y - y) * 1024), 6);
     }
 
     private static (WdlRuntime Runtime, Level Level) Create(string declarations, string map = Map)

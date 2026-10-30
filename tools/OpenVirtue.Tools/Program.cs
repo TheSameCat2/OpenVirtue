@@ -5,6 +5,7 @@ using System.Text;
 using System.Numerics;
 using OpenVirtue.Engine;
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
@@ -29,6 +30,7 @@ internal static class Cli
                 "pcx" => Pcx(args[1..]),
                 "wmp" => Wmp(args[1..]),
                 "wav" => Wav(args[1..]),
+                "save" => Save(args[1..]),
                 "wdl" => Wdl(args[1..]),
                 "level" => Level(args[1..]),
                 "oracle" => Oracle(args[1..]),
@@ -162,6 +164,82 @@ internal static class Cli
 
             default:
                 return Usage($"Unknown wav subcommand '{verb}'.");
+        }
+    }
+
+    /// <summary><c>save unpack|pack &lt;in&gt; &lt;out&gt;</c>: an Acknex save file to its body and back.</summary>
+    private static int Save(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            return Usage("save requires a subcommand, an input and an output path.");
+        }
+
+        switch (args[0].ToLowerInvariant())
+        {
+            case "unpack":
+                File.WriteAllBytes(args[2], AcknexSaveFile.Unpack(File.ReadAllBytes(args[1])));
+                return 0;
+            case "pack":
+                File.WriteAllBytes(args[2], AcknexSaveFile.Pack(File.ReadAllBytes(args[1])));
+                return 0;
+            case "capture":
+            {
+                // A level's state as loaded (no action run), in the original's full-save format.
+                WrsArchive archive = WrsArchive.ReadFile(args[1]);
+                string[] rest = args[3..];
+                string mainWdl = rest.Length > 0 && !rest[0].StartsWith("--", StringComparison.Ordinal)
+                    ? rest[0]
+                    : Path.GetFileNameWithoutExtension(args[1]) + ".WDL";
+                OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
+                var runtime = new OpenVirtue.Engine.Interpreter.WdlRuntime(level);
+                for (int i = 0; i + 1 < rest.Length; i++)
+                {
+                    // --skill NAME=VALUE sets a skill, --slot N=ACTION an EACH_TICK slot, before the capture.
+                    string[] pair = rest[i + 1].Split('=', 2);
+                    if (rest[i] == "--skill" && pair.Length == 2)
+                    {
+                        runtime.SetSkill(pair[0], double.Parse(pair[1], System.Globalization.CultureInfo.InvariantCulture));
+                    }
+                    else if (rest[i] == "--slot" && pair.Length == 2)
+                    {
+                        runtime.SetEachTickAction(int.Parse(pair[0], System.Globalization.CultureInfo.InvariantCulture), pair[1]);
+                    }
+                }
+
+                FullSave save = runtime.CaptureOriginalSave(mainWdl, level.MapFileName, Path.GetFileName(args[1]));
+                File.WriteAllBytes(args[2], AcknexSaveFile.Pack(AcknexFullSave.Write(save)));
+                Console.WriteLine(
+                    $"{save.Entities.Count} things and actors, {save.Walls.Count} walls, {save.Regions.Count} SAVE regions, " +
+                    $"{save.Skills.Count} skills, {save.Synonyms.Count} synonyms, {save.Actions.Count} waiting actions");
+                return 0;
+            }
+            case "play":
+            {
+                // Runs a level headless at 0.25 ticks a cycle until its EXIT (or --ticks), with full SAVEs
+                // also written in the original's format, so a save made in play can go to the DOS runtime.
+                double maxTicks = args.Length > 4 && args[3] == "--ticks"
+                    ? double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture)
+                    : 2000;
+                var audio = new OracleReplay.TimedAudioSink();
+                using var host = OpenVirtue.Host.RuntimeHost.OpenArchive(
+                    args[1], args[2], new OracleReplay.HeadlessWindow(), new OracleReplay.HeadlessInput(), audio, new OracleReplay.HeadlessRender());
+                host.FrameClock = static () => 1.0 / 64;
+                host.WriteOriginalSaves = true;
+                audio.Now = () => host.Runtime.GetSkill("TICKS") / 16;
+                host.Boot();
+                int frames = 0;
+                while (!host.ExitRequested && host.Runtime.GetSkill("TICKS") < maxTicks)
+                {
+                    host.Frame(present: false);
+                    frames++;
+                }
+
+                Console.WriteLine($"{frames} cycles to TICKS {host.Runtime.GetSkill("TICKS"):0.000}");
+                return 0;
+            }
+            default:
+                return Usage($"Unknown save subcommand '{args[0]}'.");
         }
     }
 
@@ -539,6 +617,10 @@ internal static class Cli
         return verb switch
         {
             "prepare" => OracleProbeGenerator.Prepare(args[1..]),
+            "replay" or "diff" => OracleReplay.Run(verb, args[1..]),
+            "run" => OracleRunner.Run(args[1..]),
+            "check" => OracleRunner.Check(args[1..]),
+            "summary" => OracleRunner.Summary(args[1..]),
             _ => Usage($"Unknown oracle subcommand '{verb}'."),
         };
     }
@@ -632,13 +714,22 @@ internal static class Cli
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>
+              ovtool save unpack <file.sav> <body>      (an Acknex save to its uncompressed body)
+              ovtool save pack   <body> <file.sav>      (and back)
+              ovtool save capture <archive.wrs> <file.sav> [main.wdl] [--skill NAME=VALUE] [--slot N=ACTION]
+                                                        (a level as loaded, in the original's format)
               ovtool wdl info <script.wdl>
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
               ovtool oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
               ovtool oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
-              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope|audio|autorange|save-body|below-view|wall-sides|below-beam|actor-step|inkey|ui-layout|ui-widgets|ui-text|overlap [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle replay <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--extra-ticks n] [--max-ticks n]
+              ovtool oracle diff   <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--tolerance x] [--context n]
+              ovtool oracle run    <carrier-or-probe-dir> [--rerun] [--visible] [--timeout s]
+              ovtool oracle check  <probe> <output-dir> [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle summary [oracle-runs-dir]
 
             Notes:
               These tools operate on game data you supply; no game data ships with

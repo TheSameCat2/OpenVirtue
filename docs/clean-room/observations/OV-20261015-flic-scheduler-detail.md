@@ -166,10 +166,38 @@ high for rules 1–5: each case matches one predicted reading, every flic case h
 wait rule fits every measured wait (14 per `waits` case) at both frame rates. high for the delay/64 rule (two flic
 speeds). medium for rule 6 during a flic, because the trace after the fault was lost.
 
+## Replay notes (2026-10-30)
+- **Timing column.** The flic carriers print `FLIC_FRAME` before `TICKS`. The replay's timing
+  detection took the `FLIC_FRAME` column for the clock, so every carrier differed from line 2.
+  With a `"timing": "TK:1"` hint in each local `case.json`, the carriers replay to their end and
+  match 126 more lines.
+- **What is left.** In `waits` and `round2/near`, OpenVirtue's trace is shifted by one flic step
+  (1.094 ticks) from the `PLAY` line on. Relative to `PLAY` both runs advance the same: frame *n*
+  at `PLAY` + *n* × 1.094.
+  - In the original, the `PLAY` cycle's global slot prints `FLIC_FRAME` 1 with the ordinary
+    `TIME_CORR` (0.281); in OpenVirtue's replay it prints 1.094.
+  - The replay anchors its clock on that line, which may cause the shift rather than the engine.
+    Check the replay's start-up steps before changing the flic `TIME_CORR`.
+  - **Resolved: it was the replay.** These traces sample only during the flic, so the replay ran
+    its start-up in 1.094-tick steps. A `startup_step` of 0.28125 in `case.json` removes the shift,
+    and the `PLAY` cycle's slot then prints 0.281 as in the original. `waits` now matches 40 lines
+    (was 28) and `replace` 16 (was 6).
+  - **2026-10-30.** The replay now reads that step from the `TK` lines' `TIME_CORR` column (whole
+    1/32 ticks between 0.1 and 2, starting at a 60 Hz step of 0.25 or 0.281) even though the sampler prints only every 32 ticks. Without the
+    `case.json` hints, `replace` (0.250, not 0.281) reaches line 18, `round2/near` 30 and
+    `round3/speed` 12. What remains there is the gap after the flic: the sampler's counter shows 79
+    cycles, flic frames and ordinary ones, which the replay spreads evenly.
+  - **Next difference.** After the flic, the replay fills sparse samples with even cycles. The
+    original spent the first of them on the flic's last frames, 1.094 each, so it ran more cycles
+    (513 against 492).
+- **The animation clock.** For the scheduler-order round 4 clock, a check every other cycle adding the
+  `TICKS` that passed fits at most the first 3 of 19 firings, whatever the start phase.
+
 ## Open Questions
 - How far the flic plays after a missing file is requested during it, before the fault.
 - `PLAY_FLIC` with a `FLIC` keyword object, and an existing but invalid flic file.
-- A fractional `WAIT` (`WAIT 1.5`): the rule above assumes it resumes once the count is below 1.
+- A fractional `WAIT` (`WAIT 1.5`): answered by OV-20261029-scheduler-order round 3. It resumes once
+  the count is below 1, and a `WAIT` below 1 does not wait.
 - Whether a wait armed by a key or mouse hook counts that cycle: the hooks run early in the cycle
   (`LEFT` printed the same `fd_n` as resumed actions), so OpenVirtue counts it.
 - Whether `IF_NEAR` repeating every cycle within `DIST` matches OpenVirtue's proximity dispatch:

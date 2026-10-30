@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text;
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
@@ -49,12 +50,30 @@ public static class LevelLoader
             throw new InvalidDataException($"Main WDL '{mainWdlName}' was not found in the archive.");
         }
 
+        var images = archive.Entries
+            .Where(static e => e.Name.EndsWith(".pcx", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(static e => e.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.OrdinalIgnoreCase);
         return LoadCore(
             mainWdlName,
             mainSource,
             name => resources.GetValueOrDefault(Path.GetFileName(name)),
             defines,
-            mapOverrideName);
+            mapOverrideName,
+            file => images.TryGetValue(Path.GetFileName(file), out WrsEntry? entry) ? PcxSize(entry.GetData()) : null);
+    }
+
+    /// <summary>A PCX image's size from its header (window xmin, ymin, xmax, ymax at bytes 4–11).</summary>
+    private static (int Width, int Height)? PcxSize(byte[] pcx)
+    {
+        if (pcx.Length < 12 || pcx[0] != 0x0A)
+        {
+            return null;
+        }
+
+        int width = BitConverter.ToUInt16(pcx, 8) - BitConverter.ToUInt16(pcx, 4) + 1;
+        int height = BitConverter.ToUInt16(pcx, 10) - BitConverter.ToUInt16(pcx, 6) + 1;
+        return width > 0 && height > 0 ? (width, height) : null;
     }
 
     /// <summary>
@@ -68,7 +87,8 @@ public static class LevelLoader
         string mainSource,
         Func<string, string?> resolveResource,
         IEnumerable<string>? defines = null,
-        string? mapOverrideName = null)
+        string? mapOverrideName = null,
+        Func<string, (int Width, int Height)?>? measureImage = null)
     {
         ArgumentNullException.ThrowIfNull(mainSource);
         ArgumentNullException.ThrowIfNull(resolveResource);
@@ -88,9 +108,19 @@ public static class LevelLoader
         double defaultRegionClipDistance = FindNumber(program, "CLIP_DIST") ?? DefaultRegionClipDistance;
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
-        var walls = map.Walls.Select(w => BuildWall(w, declarations)).ToList();
+        StackBelowRegions(regions, declarations, defaultRegionClipDistance);
+        var walls = map.Walls.Select(w => BuildWall(w, declarations, placed: true)).ToList();
         var things = map.Things.Select(p => BuildEntity(new Thing(p.Name), p, declarations)).ToList();
         var actors = map.Actors.Select(p => BuildEntity(new Actor(p.Name), p, declarations)).ToList();
+        foreach (MapEntity entity in things.Concat<MapEntity>(actors))
+        {
+            entity.Region = PlacementStorey(regions, entity);
+        }
+
+        List<AcknexObject> unplaced = BuildUnplacedObjects(map, declarations);
+        things.AddRange(unplaced.OfType<Thing>());
+        actors.AddRange(unplaced.OfType<Actor>());
+
         var ways = map.Ways.ToDictionary(
             way => way.Name,
             way => new LevelWay(
@@ -104,16 +134,36 @@ public static class LevelLoader
         (Dictionary<string, double> skillValues,
             HashSet<string> globalSkills,
             HashSet<string> explicitlyInitializedSkills,
-            Dictionary<string, SkillRange> skillBounds) = GatherSkills(program);
+            Dictionary<string, SkillRange> skillBounds,
+            HashSet<string> localSkills,
+            List<string> skillOrder) = GatherSkills(program);
         return new Level(
             name, vertices, regions, walls, things, actors, ways, start,
             FindVideoMode(program),
             skillValues, globalSkills, explicitlyInitializedSkills, skillBounds,
             GatherStrings(program), GatherSynonyms(program), GatherSearchPaths(program),
             GatherSounds(program), GatherPalettes(program), GatherUiElements(program), BuildBitmaps(declarations),
-            BuildTextures(declarations), declarations.Actions,
+            BuildTextures(declarations, measureImage), declarations.Actions,
             GatherSchedulerSlotActions(program, "EACH_TICK"), GatherActionHooks(program), FindActionName(program, "IF_START"),
-            GatherSchedulerSlotActions(program, "EACH_SEC"));
+            GatherSchedulerSlotActions(program, "EACH_SEC"))
+        {
+            LocalSkills = localSkills,
+            SkillDeclarationOrder = skillOrder,
+            ActionOrder = declarations.ActionOrder,
+            MapFileName = Path.GetFileName(mapName),
+            TextureDeclarations = declarations.TextureDeclarations,
+            UnplacedObjects = unplaced,
+            SaveTextures = declarations.SaveTextures,
+            NumberedDeclarations = declarations.NumberedDeclarations,
+            MapObjects = [.. map.ObjectOrder.Select(o => o.Kind switch
+            {
+                "WALL" => (AcknexObject?)walls[o.Index],
+                "THING" => things[o.Index],
+                "ACTOR" => actors[o.Index],
+                _ => null,
+            })],
+            PaletteShading = GatherPaletteShading(program),
+        };
     }
 
     private static LevelVideoMode? FindVideoMode(WdlProgram program)
@@ -167,7 +217,102 @@ public static class LevelLoader
         return region;
     }
 
-    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations)
+    /// <summary>
+    /// The deepest <c>BELOW</c> chain followed; a longer one is taken for a cycle in the declarations.
+    /// </summary>
+    private const int MaxBelowDepth = 16;
+
+    /// <summary>
+    /// Adds the regions that <c>BELOW</c> stacks under the map's regions (manual p.59–61), and the
+    /// declared regions the map does not place. The map lists only the top region of a stack, so
+    /// every map region whose type names a <c>BELOW</c> region gets its own instance of that region
+    /// type, and of the type's own <c>BELOW</c> and so on, with the heights and properties of its WDL
+    /// declaration and the top region's footprint. They follow the map's regions, so map indices stay
+    /// valid, ordered as the original's save lists them: by the declaration order of their types,
+    /// with a declared type that no stack uses as a region of its own, outside the map
+    /// (OV-20261030-save-body round 15). Where one type sits under several top regions, its
+    /// instances follow their tops' map order (unmeasured). A map that does list a region of the
+    /// <c>BELOW</c> name (the retail maps never do) is linked to that region instead.
+    /// </summary>
+    private static void StackBelowRegions(List<Region> regions, WdlDeclarations declarations, double defaultClipDistance)
+    {
+        int mapRegions = regions.Count;
+        for (int top = 0; top < mapRegions; top++)
+        {
+            regions[top].FootprintRegion = top;
+            regions[top].Top = regions[top];
+        }
+
+        var lowers = new List<(Region Upper, Region Lower)>();
+        for (int top = 0; top < mapRegions; top++)
+        {
+            Region topRegion = regions[top];
+            if (topRegion.BelowName is { } listedName &&
+                regions.FindIndex(0, mapRegions, r => r.Name.Equals(listedName, StringComparison.OrdinalIgnoreCase)) is >= 0 and int listed)
+            {
+                topRegion.BelowRegion = listed;
+                if (regions[listed].AboveRegion < 0)
+                {
+                    regions[listed].AboveRegion = top;
+                }
+
+                continue;
+            }
+
+            Region upper = topRegion;
+            for (int depth = 0; depth < MaxBelowDepth && upper.BelowName is { } belowName; depth++)
+            {
+                if (declarations.GetRegionTextures(belowName) is not { } definition)
+                {
+                    break;
+                }
+
+                // A BELOW region without its own heights hangs under its upper region with no headroom.
+                double floor = definition.FloorHeight ?? upper.FloorHeight;
+                double ceiling = definition.CeilHeight ?? floor;
+                Region lower = BuildRegion(new WmpRegion(belowName, (float)floor, (float)ceiling), declarations, defaultClipDistance);
+                lower.FootprintRegion = top;
+                lower.Top = topRegion;
+                lowers.Add((upper, lower));
+                upper = lower;
+            }
+        }
+
+        var placed = new HashSet<string>(regions.Take(mapRegions).Select(static r => r.Name), StringComparer.OrdinalIgnoreCase);
+        var index = new Dictionary<Region, int>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < mapRegions; i++)
+        {
+            index[regions[i]] = i;
+        }
+
+        foreach (string name in declarations.RegionDeclarations.Where(n => !placed.Contains(n)))
+        {
+            bool stacked = false;
+            foreach ((Region _, Region lower) in lowers.Where(l => l.Lower.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                index[lower] = regions.Count;
+                regions.Add(lower);
+                stacked = true;
+            }
+
+            if (!stacked && declarations.GetRegionTextures(name) is { } definition)
+            {
+                double floor = definition.FloorHeight ?? 0;
+                Region alone = BuildRegion(new WmpRegion(name, (float)floor, (float)(definition.CeilHeight ?? floor)), declarations, defaultClipDistance);
+                alone.FootprintRegion = regions.Count;
+                alone.Top = alone;
+                regions.Add(alone);
+            }
+        }
+
+        foreach ((Region upper, Region lower) in lowers)
+        {
+            upper.BelowRegion = index[lower];
+            lower.AboveRegion = index[upper];
+        }
+    }
+
+    private static Wall BuildWall(WmpWall w, WdlDeclarations declarations, bool placed)
     {
         var wall = new Wall(w.Name)
         {
@@ -192,21 +337,86 @@ public static class LevelLoader
             ApplySkills(wall, definition.Skills);
         }
 
+        // The original starts every placed wall's OFFSET_Y one raw step above the map's or the WDL's
+        // value (0 reads 1/1024, −30 reads −29.999); an unplaced wall's and a script's SET are kept as
+        // given (OV-20261029-save-body round 13).
+        if (placed)
+        {
+            wall.OffsetY += 1 / 1024.0;
+        }
+
         return wall;
     }
 
-    private static Dictionary<string, LevelTexture> BuildTextures(WdlDeclarations declarations)
+    /// <summary>
+    /// The declared walls, things and actors the map does not place, as the original keeps them: with
+    /// <c>INVISIBLE</c> set (manual p.70), at 0,0 in region 0 (OV-20261029-save-body round 13).
+    /// </summary>
+    private static List<AcknexObject> BuildUnplacedObjects(WmpMap map, WdlDeclarations declarations)
+    {
+        var placed = new HashSet<string>(
+            map.Walls.Select(static w => w.Name).Concat(map.Things.Select(static t => t.Name)).Concat(map.Actors.Select(static a => a.Name)),
+            StringComparer.OrdinalIgnoreCase);
+        var unplaced = new List<AcknexObject>();
+        foreach ((string kind, string name) in declarations.ObjectDeclarations)
+        {
+            if (placed.Contains(name))
+            {
+                continue;
+            }
+
+            AcknexObject obj = kind switch
+            {
+                "WALL" => BuildWall(new WmpWall(name, 0, 0, 0, 0, 0, 0), declarations, placed: false),
+                "ACTOR" => BuildEntity(new Actor(name), new WmpPlacement(name, 0, 0, 0, 0), declarations),
+                _ => BuildEntity(new Thing(name), new WmpPlacement(name, 0, 0, 0, 0), declarations),
+            };
+            obj["INVISIBLE"] = 1;
+            obj["VISIBLE"] = 0;
+            unplaced.Add(obj);
+        }
+
+        return unplaced;
+    }
+
+    private static Dictionary<string, LevelTexture> BuildTextures(
+        WdlDeclarations declarations,
+        Func<string, (int Width, int Height)?>? measureImage)
     {
         var catalog = new Dictionary<string, LevelTexture>(StringComparer.OrdinalIgnoreCase);
         foreach (string textureName in declarations.TextureNames)
         {
             if (declarations.ResolveTexture(textureName) is { } texture)
             {
-                catalog[textureName] = texture;
+                catalog[textureName] = measureImage is null ? texture : Measured(texture, measureImage);
             }
         }
 
         return catalog;
+    }
+
+    /// <summary>
+    /// A texture whose <c>BMAP</c>s name a whole image (no x, y, width, height; manual p.30) takes its
+    /// size from the image, so sprites, shots and contact see it.
+    /// </summary>
+    private static LevelTexture Measured(LevelTexture texture, Func<string, (int Width, int Height)?> measureImage)
+    {
+        LevelBitmap? Measure(LevelBitmap? frame) =>
+            frame is { } bitmap && (bitmap.Width <= 0 || bitmap.Height <= 0) && measureImage(bitmap.File) is { } size
+                ? bitmap with { Width = size.Width - bitmap.X, Height = size.Height - bitmap.Y }
+                : frame;
+
+        if ((texture.Width > 0 && texture.Height > 0) || measureImage(texture.File) is not { } whole)
+        {
+            return texture with { Frames = [.. texture.Frames.Select(Measure)] };
+        }
+
+        return texture with
+        {
+            Width = whole.Width - texture.X,
+            Height = whole.Height - texture.Y,
+            Frames = [.. texture.Frames.Select(Measure)],
+        };
     }
 
     private static Dictionary<string, LevelBitmap> BuildBitmaps(WdlDeclarations declarations)
@@ -257,6 +467,46 @@ public static class LevelLoader
         return entity;
     }
 
+    /// <summary>
+    /// The storey of a stack a thing or actor starts in (manual p.61). Without <c>GROUND</c> it is
+    /// the uppermost region. With <c>GROUND</c> it is the lowest region whose ceiling is above the
+    /// object's feet (its <c>HEIGHT</c>, absolute with <c>GROUND</c>).
+    /// </summary>
+    private static int PlacementStorey(List<Region> regions, MapEntity entity)
+    {
+        int region = entity.Region;
+        if ((uint)region >= (uint)regions.Count)
+        {
+            return region;
+        }
+
+        for (int depth = 0; regions[region].AboveRegion >= 0 && depth < regions.Count; depth++)
+        {
+            region = regions[region].AboveRegion;
+        }
+
+        if (entity["GROUND"] <= 0)
+        {
+            return region;
+        }
+
+        var stack = new List<int>();
+        for (int current = region; (uint)current < (uint)regions.Count && stack.Count <= regions.Count; current = regions[current].BelowRegion)
+        {
+            stack.Add(current);
+        }
+
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            if (regions[stack[i]].CeilHeight > entity.Z)
+            {
+                return stack[i];
+            }
+        }
+
+        return region;
+    }
+
     private static void ApplyActionHooks(AcknexObject obj, IReadOnlyDictionary<string, string?> actionHooks)
     {
         foreach ((string name, string? actionName) in actionHooks)
@@ -276,11 +526,12 @@ public static class LevelLoader
         }
     }
 
+    /// <summary>Applies a definition's numeric properties, held in fixed point like any literal (OV-20261029-numeric-edge).</summary>
     private static void ApplySkills(AcknexObject obj, IReadOnlyDictionary<string, double> skills)
     {
         foreach ((string name, double value) in skills)
         {
-            obj[name] = value;
+            obj[name] = WdlFixed.Literal(value);
         }
     }
 
@@ -405,10 +656,14 @@ public static class LevelLoader
         Dictionary<string, double> Values,
         HashSet<string> Global,
         HashSet<string> ExplicitlyInitialized,
-        Dictionary<string, SkillRange> Bounds) GatherSkills(WdlProgram program)
+        Dictionary<string, SkillRange> Bounds,
+        HashSet<string> Local,
+        List<string> Order) GatherSkills(WdlProgram program)
     {
         var values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         var global = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var local = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
         var explicitlyInitialized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var bounds = new Dictionary<string, SkillRange>(StringComparer.OrdinalIgnoreCase);
 
@@ -422,6 +677,7 @@ public static class LevelLoader
             double value = 0;
             bool hasExplicitValue = false;
             bool isGlobal = false;
+            bool isLocal = false;
             double? min = null;
             double? max = null;
             if (item.Body is { } body)
@@ -430,7 +686,8 @@ public static class LevelLoader
                 {
                     if (property.Keyword.Equals("VAL", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedVal)
                     {
-                        value = parsedVal;
+                        // Held in the original's fixed point, like any literal (OV-20261029-numeric-edge).
+                        value = WdlFixed.Literal(parsedVal);
                         hasExplicitValue = true;
                     }
                     else if (property.Keyword.Equals("MIN", StringComparison.OrdinalIgnoreCase) && ParseNumber(property) is { } parsedMin)
@@ -446,11 +703,31 @@ public static class LevelLoader
                     {
                         isGlobal = true;
                     }
+                    else if (property.Keyword.Equals("TYPE", StringComparison.OrdinalIgnoreCase) &&
+                        property.Header.Any(token => token.Text.Equals("LOCAL", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        isLocal = true;
+                    }
                 }
             }
 
             string name = item.Header[0].Text;
             values[name] = value;
+            // A skill declared again keeps its first place, where the original's saves list it (LEGALISM's
+            // fadeVal, declared in its main file and again in dead.wdl; save-body round 16).
+            if (!order.Exists(existing => existing.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                order.Add(name);
+            }
+            if (isLocal)
+            {
+                local.Add(name);
+            }
+            else
+            {
+                local.Remove(name);
+            }
+
             if (isGlobal)
             {
                 global.Add(name);
@@ -473,7 +750,7 @@ public static class LevelLoader
             }
         }
 
-        return (values, global, explicitlyInitialized, bounds);
+        return (values, global, explicitlyInitialized, bounds, local, order);
     }
 
     private static Dictionary<string, WdlString> GatherStrings(WdlProgram program)
@@ -598,6 +875,47 @@ public static class LevelLoader
         }
 
         return sounds;
+    }
+
+    private static Dictionary<string, LevelPaletteShading> GatherPaletteShading(WdlProgram program)
+    {
+        var shading = new Dictionary<string, LevelPaletteShading>(StringComparer.OrdinalIgnoreCase);
+        foreach (WdlItem item in program.Items)
+        {
+            if (!item.Keyword.Equals("PALETTE", StringComparison.OrdinalIgnoreCase) ||
+                item.Header.Count == 0 ||
+                item.Body is not { } body)
+            {
+                continue;
+            }
+
+            var ranges = new List<(int, int)>();
+            bool autoRange = false;
+            bool hard = false;
+            foreach (WdlItem property in body.Items)
+            {
+                if (property.Keyword.Equals("RANGE", StringComparison.OrdinalIgnoreCase))
+                {
+                    int[] numbers = property.Header
+                        .Where(static t => t.Kind == WdlTokenKind.Number)
+                        .Select(static t => (int)double.Parse(t.Text, CultureInfo.InvariantCulture))
+                        .ToArray();
+                    if (numbers.Length >= 2)
+                    {
+                        ranges.Add((numbers[0], numbers[1]));
+                    }
+                }
+                else if (property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase))
+                {
+                    autoRange |= property.Header.Any(static t => t.Text.Equals("AUTORANGE", StringComparison.OrdinalIgnoreCase));
+                    hard |= property.Header.Any(static t => t.Text.Equals("HARD", StringComparison.OrdinalIgnoreCase));
+                }
+            }
+
+            shading[item.Header[0].Text] = new LevelPaletteShading(ranges, autoRange, hard);
+        }
+
+        return shading;
     }
 
     private static Dictionary<string, string> GatherPalettes(WdlProgram program)

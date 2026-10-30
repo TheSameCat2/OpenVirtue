@@ -31,6 +31,7 @@ public sealed class Player : AcknexObject
     private readonly Dictionary<int, List<int>> _regionWalls = [];
     private readonly Dictionary<int, RegionSurface?> _regionSurfaces = [];
     private Vector3 _position;
+    private Vector2? _settled;
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
@@ -105,14 +106,17 @@ public sealed class Player : AcknexObject
         get
         {
             const float SampleDistance = 0.01f;
-            if (!TryGetSurfaceHeightOffset(_region, _position.X, _position.Z, out double center))
+            double sign = (uint)_region < (uint)_level.Regions.Count
+                ? LevelTopology.SlopeSign(_level.Regions[_region], ceiling: false)
+                : 0;
+            if (sign == 0 || !TryGetSurfaceHeightOffset(_region, _position.X, _position.Z, out double center))
             {
                 return Vector2.Zero;
             }
 
             float x = SampleSlopeAxis(_position.X, _position.Z, SampleDistance, 0, center);
             float y = SampleSlopeAxis(_position.X, _position.Z, 0, SampleDistance, center);
-            return new Vector2(x, y);
+            return new Vector2(x, y) * (float)sign;
         }
     }
 
@@ -129,8 +133,15 @@ public sealed class Player : AcknexObject
 
         for (int i = 0; i < level.Walls.Count; i++)
         {
-            Index(level.Walls[i].LeftRegion, i);
-            Index(level.Walls[i].RightRegion, i);
+            foreach (int member in LevelTopology.Stack(level, level.Walls[i].LeftRegion))
+            {
+                Index(member, i);
+            }
+
+            foreach (int member in LevelTopology.Stack(level, level.Walls[i].RightRegion))
+            {
+                Index(member, i);
+            }
         }
 
         if (level.PlayerStart is { } start)
@@ -178,6 +189,18 @@ public sealed class Player : AcknexObject
         return touched;
     }
 
+    /// <summary>
+    /// Returns the things and actors among the touched objects (see <see cref="TakeTouchedObjects"/>)
+    /// and leaves the walls for the next call of that: an object's <c>IF_NEAR</c> runs at once, a
+    /// wall's waits for the next cycle (OV-20261019-actor-contact round 8).
+    /// </summary>
+    public AcknexObject[] TakeTouchedEntities()
+    {
+        AcknexObject[] entities = [.. _touchedObjects.Where(static o => o is MapEntity)];
+        _touchedObjects.RemoveAll(static o => o is MapEntity);
+        return entities;
+    }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null);
 
@@ -194,21 +217,29 @@ public sealed class Player : AcknexObject
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
             ignored,
             _touchedObjects,
-            WallClearance);
-        _region = result.Region;
+            WallClearance,
+            LevelCollisionWorld.ContactSlackSquared);
+        _region = result.Region == _region ? _region : StoreyFor(result.Region);
         _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
         return result.Displacement;
     }
 
     /// <summary>
-    /// Pushes the player out of any solid thing or actor it overlaps, straight away from the
+    /// Pushes the player out of a solid thing or actor it overlaps, straight away from the
     /// object's centre to the contact distance (half the object's width plus <see cref="Width"/>),
-    /// and counts the object as touched. The original does this after a beam into an object
-    /// (OV-20261019-actor-contact).
+    /// and counts the object as touched. The original does this at the start and after a beam into
+    /// an object (OV-20261019-actor-contact), out of one object only, and leaves a player standing
+    /// on others alone (OV-20261029-overlap): there is no push unless the position was set from
+    /// outside since the last one.
     /// </summary>
     public void PushOutOfObjects()
     {
         var start = new Vector2(_position.X, _position.Z);
+        if (_settled == start)
+        {
+            return;
+        }
+
         Vector2 end = _collisionWorld.PushOutOfEntities(
             start,
             _region,
@@ -218,6 +249,9 @@ public sealed class Player : AcknexObject
             _touchedObjects);
         _position = new Vector3(end.X, _position.Y, end.Y);
     }
+
+    /// <summary>Marks the end of the player's own movement in a cycle: the next <see cref="PushOutOfObjects"/> skips an unmoved player.</summary>
+    public void Settle() => _settled = new Vector2(_position.X, _position.Z);
 
     /// <summary>
     /// Moves the player straight away from <paramref name="center"/> to
@@ -258,12 +292,37 @@ public sealed class Player : AcknexObject
         }
 
         if (wall["IMPASSABLE"] > 0 ||
-            otherRegion == currentRegion || otherRegion < 0 || otherRegion >= _level.Regions.Count)
+            otherRegion < 0 || otherRegion >= _level.Regions.Count ||
+            LevelTopology.Footprint(_level, otherRegion) == LevelTopology.Footprint(_level, currentRegion))
         {
             return false;
         }
 
-        return Enterable(otherRegion);
+        return Enterable(StoreyFor(otherRegion));
+    }
+
+    /// <summary>
+    /// The region of <paramref name="region"/>'s <c>BELOW</c> stack the player walks into: the
+    /// uppermost storey it may enter (<see cref="Enterable"/>), else the one that holds its feet.
+    /// A region without a stack is its own storey.
+    /// </summary>
+    private int StoreyFor(int region)
+    {
+        if ((uint)region >= (uint)_level.Regions.Count ||
+            (_level.Regions[region].BelowRegion < 0 && _level.Regions[region].AboveRegion < 0))
+        {
+            return region;
+        }
+
+        foreach (int member in LevelTopology.Stack(_level, region))
+        {
+            if (Enterable(member))
+            {
+                return member;
+            }
+        }
+
+        return LevelTopology.StackRegionAt(_level, region, _position.Y - EyeHeight);
     }
 
     private float EntityCollisionRadius(MapEntity entity)
@@ -386,14 +445,14 @@ public sealed class Player : AcknexObject
                 continue;
             }
 
-            _region = other;
+            _region = StoreyFor(other);
             return;
         }
     }
 
     private bool CanCross(Wall wall, out int other)
     {
-        other = wall.LeftRegion == _region ? wall.RightRegion : wall.LeftRegion;
+        other = wall.LeftRegion == LevelTopology.Footprint(_level, _region) ? wall.RightRegion : wall.LeftRegion;
         return CanCross(wall, _region, other);
     }
 
@@ -596,7 +655,9 @@ public sealed class Player : AcknexObject
             return false;
         }
 
-        below = FindRegionIndex(candidate => candidate.Name.Equals(belowName, StringComparison.OrdinalIgnoreCase));
+        below = upper.BelowRegion >= 0
+            ? upper.BelowRegion
+            : FindRegionIndex(candidate => candidate.Name.Equals(belowName, StringComparison.OrdinalIgnoreCase));
         return below >= 0 &&
                HasAction(_level.Regions[below], "IF_ARISE") &&
                Math.Abs(upper.FloorHeight - _level.Regions[below].CeilHeight) <= 0.001;
@@ -614,6 +675,13 @@ public sealed class Player : AcknexObject
         if (!HasAction(lower, "IF_ARISE"))
         {
             return false;
+        }
+
+        if (lower.AboveRegion >= 0)
+        {
+            above = lower.AboveRegion;
+            Region upper = _level.Regions[above];
+            return HasAction(upper, "IF_DIVE") && Math.Abs(upper.FloorHeight - lower.CeilHeight) <= 0.001;
         }
 
         above = FindRegionIndex(candidate =>
@@ -649,7 +717,8 @@ public sealed class Player : AcknexObject
             return _position.Y - EyeHeight;
         }
 
-        double offset = TryGetSurfaceHeightOffset(region, x, z, out double value) ? value : 0;
+        double sign = LevelTopology.SlopeSign(_level.Regions[region], ceiling: false);
+        double offset = sign != 0 && TryGetSurfaceHeightOffset(region, x, z, out double value) ? sign * value : 0;
         return (float)(_level.Regions[region].FloorHeight + offset);
     }
 
@@ -660,7 +729,8 @@ public sealed class Player : AcknexObject
             return _position.Y;
         }
 
-        double offset = TryGetSurfaceHeightOffset(region, _position.X, _position.Z, out double value) ? value : 0;
+        double sign = LevelTopology.SlopeSign(_level.Regions[region], ceiling: true);
+        double offset = sign != 0 && TryGetSurfaceHeightOffset(region, _position.X, _position.Z, out double value) ? sign * value : 0;
         return (float)(_level.Regions[region].CeilHeight + offset);
     }
 

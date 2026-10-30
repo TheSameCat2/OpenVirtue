@@ -31,12 +31,14 @@ public abstract class WdlExpression
         TryEvaluateKeyword(context, out value);
 }
 
-/// <summary>A numeric literal.</summary>
+/// <summary>A numeric literal, held as the original's fixed-point value (<see cref="WdlFixed.Literal"/>).</summary>
 public sealed class NumberExpression(double value) : WdlExpression
 {
+    private readonly double _fixed = WdlFixed.Literal(value);
+
     public double Value => value;
 
-    public override double Evaluate(IWdlContext context) => value;
+    public override double Evaluate(IWdlContext context) => _fixed;
 }
 
 /// <summary>A bare name resolved as a skill/constant (e.g. <c>gravity</c>).</summary>
@@ -44,7 +46,7 @@ public sealed class NameExpression(string name) : WdlExpression
 {
     public string Name => name;
 
-    public override double Evaluate(IWdlContext context) => context.GetSkill(name);
+    public override double Evaluate(IWdlContext context) => WdlFixed.Quantize(context.GetSkill(name));
 
     public override bool TryEvaluateObject(IWdlContext context, out AcknexObject? value)
     {
@@ -111,11 +113,16 @@ public sealed class MemberExpression(string objectName, string property) : WdlEx
     {
         if (context.GetObject(objectName) is { } obj)
         {
-            return context is IWdlObjectReadContext reads ? reads.GetObjectNumber(obj, property) : obj[property];
+            return WdlFixed.Quantize(context is IWdlObjectReadContext reads ? reads.GetObjectNumber(obj, property) : obj[property]);
+        }
+
+        if (context is IWdlSkillRangeContext ranges && ranges.TryGetSkillMargin(objectName, property, out double margin))
+        {
+            return margin;
         }
 
         // PANEL / TEXT / OVERLAY members (POS_Y, VISIBLE, ...) read the same way SET writes them.
-        return context is IWdlUiContext ui && ui.TryGetUiNumber(objectName, property, out double value) ? value : 0;
+        return context is IWdlUiContext ui && ui.TryGetUiNumber(objectName, property, out double value) ? WdlFixed.Quantize(value) : 0;
     }
 
     public override bool TryEvaluateKeyword(IWdlContext context, out string? value)
@@ -143,7 +150,7 @@ public sealed class UnaryExpression(string op, WdlExpression operand) : WdlExpre
         double value = operand.Evaluate(context);
         return op switch
         {
-            "-" => -value,
+            "-" => WdlFixed.Negate(value),
             "!" => value == 0 ? 1 : 0,
             _ => value,
         };
@@ -156,31 +163,34 @@ public sealed class FunctionExpression(string name, WdlExpression argument) : Wd
     public string Name => name;
     public WdlExpression Argument => argument;
 
+    /// <remarks>
+    /// The function works on the fixed-point argument and its result is truncated to 1/1024; an
+    /// undefined or out-of-range result (<c>SQRT(−1)</c>, <c>LOG(0)</c>, <c>EXP(20)</c>) reads
+    /// <see cref="WdlFixed.Invalid"/> and the action goes on, and <c>ASIN</c>/<c>ACOS</c> clamp their
+    /// argument to −1…1 (OV-20261029-numeric-edge).
+    /// </remarks>
     public override double Evaluate(IWdlContext context)
     {
         double value = argument.Evaluate(context);
         return name.ToUpperInvariant() switch
         {
-            "SQRT" => value >= 0 ? Math.Sqrt(value) : throw InvalidFunctionDomain("SQRT", value),
+            "SQRT" => WdlFixed.Result(Math.Sqrt(value)),
             "SIGN" => Math.Sign(value),
-            "ABS" => Math.Abs(value),
-            "INT" => Math.Truncate(value),
-            "EXP" => Math.Exp(value),
-            "SIN" => Math.Sin(value),
-            "COS" => Math.Cos(value),
-            "TAN" => Math.Tan(value),
-            "ASIN" => value is >= -1 and <= 1 ? Math.Asin(value) : throw InvalidFunctionDomain("ASIN", value),
-            "ACOS" => value is >= -1 and <= 1 ? Math.Acos(value) : throw InvalidFunctionDomain("ACOS", value),
-            "LOG" => value > 0 ? Math.Log(value) : throw InvalidFunctionDomain("LOG", value),
-            "LOG10" => value > 0 ? Math.Log10(value) : throw InvalidFunctionDomain("LOG10", value),
-            "LOG2" => value > 0 ? Math.Log2(value) : throw InvalidFunctionDomain("LOG2", value),
-            "RANDOM" => context is IWdlRandomContext random ? random.Random(value) : Random.Shared.NextDouble() * value,
+            "ABS" => value < 0 ? WdlFixed.Negate(value) : value,
+            "INT" => WdlFixed.Floor(value),
+            "EXP" => WdlFixed.Result(Math.Exp(value)),
+            "SIN" => WdlFixed.Result(Math.Sin(value)),
+            "COS" => WdlFixed.Result(Math.Cos(value)),
+            "TAN" => WdlFixed.Result(Math.Tan(value)),
+            "ASIN" => WdlFixed.Result(Math.Asin(Math.Clamp(value, -1, 1))),
+            "ACOS" => WdlFixed.Result(Math.Acos(Math.Clamp(value, -1, 1))),
+            "LOG" => WdlFixed.Result(value > 0 ? Math.Log(value) : double.NaN),
+            "LOG10" => WdlFixed.Result(value > 0 ? Math.Log10(value) : double.NaN),
+            "LOG2" => WdlFixed.Result(value > 0 ? Math.Log2(value) : double.NaN),
+            "RANDOM" => WdlFixed.Quantize(context is IWdlRandomContext random ? random.Random(value) : Random.Shared.NextDouble() * value),
             _ => 0,
         };
     }
-
-    private static WdlExpressionException InvalidFunctionDomain(string function, double value) =>
-        new($"{function} is undefined for {value}.");
 }
 
 /// <summary>A binary operation: arithmetic (<c>+ - * / %</c>), comparison (<c>&lt; &gt; &lt;= &gt;= == !=</c>), bitwise (<c>&amp; ^ |</c>), or logical (<c>&amp;&amp; ||</c>).</summary>
@@ -209,10 +219,10 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
         double r = right.Evaluate(context);
         return op switch
         {
-            "+" => l + r,
-            "-" => l - r,
-            "*" => l * r,
-            "/" => r != 0 ? l / r : throw new WdlExpressionException("Division by zero."),
+            "+" => WdlFixed.Add(l, r),
+            "-" => WdlFixed.Subtract(l, r),
+            "*" => WdlFixed.Multiply(l, r),
+            "/" => WdlFixed.Divide(l, r),
             "<" => l < r ? 1 : 0,
             ">" => l > r ? 1 : 0,
             "<=" => l <= r ? 1 : 0,
@@ -221,10 +231,10 @@ public sealed class BinaryExpression(string op, WdlExpression left, WdlExpressio
             "!=" => l != r ? 1 : 0,
             "&&" => l != 0 && r != 0 ? 1 : 0,
             "||" => l != 0 || r != 0 ? 1 : 0,
-            "%" => r != 0 ? l % r : throw new WdlExpressionException("Modulo by zero."),
-            "&" => (long)l & (long)r,
-            "^" => (long)l ^ (long)r,
-            "|" => (long)l | (long)r,
+            "%" => WdlFixed.Modulo(l, r),
+            "&" => WdlFixed.And(l, r),
+            "^" => WdlFixed.Xor(l, r),
+            "|" => WdlFixed.Or(l, r),
             _ => 0,
         };
     }

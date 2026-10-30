@@ -735,7 +735,10 @@ public sealed class WdlInterpreter(IWdlContext context)
     {
         double amount = item.Header.Count > 0 ? Evaluate(item.Header, 0, item.Header.Count) : 0;
         frame.Index++;
-        return amount > 0 ? new WdlWaitRequest(amount, mode) : null;
+        // A wait resumes once less than one cycle is left, and a wait of less than one does not wait
+        // at all: WAIT 0.5 went straight on, WAIT 1.5 took one cycle (OV-20261029-scheduler-order
+        // round 3), and WAITT 0.1 … 0.99 went straight on where WAITT 1 took a cycle (round 5).
+        return amount >= 1 ? new WdlWaitRequest(amount, mode) : null;
     }
 
     private WdlExecutionResult? ExecuteInkey(WdlItem item, WdlExecutionFrame frame)
@@ -968,18 +971,24 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
+        // OV-20261029-motion-timing: each tick adds (a - FRICTION·v) / INERTIA, so the speed settles at
+        // a / FRICTION whatever the inertia; a cycle longer than a tick is taken a tick at a time.
         double acceleration = Evaluate(item.Header, comma + 1, item.Header.Count);
-        double timeCorrection = context.GetSkill(Timing.TimeCorrectionSkill);
-        double friction = context.GetSkill("FRICTION");
-        double inertia = context.GetSkill("INERTIA");
-        if (inertia == 0)
+        double timeCorrection = WdlFixed.Quantize(context.GetSkill(Timing.TimeCorrectionSkill));
+        double friction = WdlFixed.Quantize(context.GetSkill("FRICTION"));
+        double inertia = WdlFixed.Quantize(context.GetSkill("INERTIA"));
+        if (inertia <= 0)
         {
             inertia = 1;
         }
 
-        double value = ((1 - (timeCorrection * friction)) * velocity) +
-                       ((timeCorrection * acceleration) / inertia);
-        Assign(item.Header, 0, comma, "=", value);
+        double value = WdlFixed.Quantize(velocity);
+        for (double left = timeCorrection; left > 0; left -= 1)
+        {
+            value += Math.Min(1, left) * (acceleration - (friction * value)) / inertia;
+        }
+
+        Assign(item.Header, 0, comma, "=", WdlFixed.Result(value));
     }
 
     private void ExecuteAdd(WdlItem item, bool timeCorrected)
@@ -993,7 +1002,7 @@ public sealed class WdlInterpreter(IWdlContext context)
         double value = Evaluate(item.Header, comma + 1, item.Header.Count);
         if (timeCorrected)
         {
-            value *= context.GetSkill(Timing.TimeCorrectionSkill);
+            value = WdlFixed.Multiply(value, WdlFixed.Quantize(context.GetSkill(Timing.TimeCorrectionSkill)));
         }
 
         Assign(item.Header, 0, comma, "+=", value);
@@ -1206,7 +1215,8 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
-        print.PrintString(value.Replace("\\n", Environment.NewLine, StringComparison.Ordinal));
+        // "\n" is a bare line feed on every host, as the DOS runtime writes it (OV-20261029-print-output).
+        print.PrintString(value.Replace("\\n", "\n", StringComparison.Ordinal));
     }
 
     private void ExecutePlaySound(WdlItem item)
@@ -1797,6 +1807,12 @@ public sealed class WdlInterpreter(IWdlContext context)
                 return;
             }
 
+            if (context is IWdlSkillRangeContext ranges && ranges.TryGetSkillMargin(name, property, out double margin))
+            {
+                ranges.TrySetSkillMargin(name, property, Apply(op, margin, rvalue));
+                return;
+            }
+
             if (context is IWdlUiContext ui &&
                 ui.TryGetUiNumber(name, property, out double current))
             {
@@ -2032,10 +2048,10 @@ public sealed class WdlInterpreter(IWdlContext context)
     private static double Apply(string op, double current, double rvalue) => op switch
     {
         "=" => rvalue,
-        "+=" => current + rvalue,
-        "-=" => current - rvalue,
-        "*=" => current * rvalue,
-        "/=" => rvalue != 0 ? current / rvalue : throw new WdlExpressionException("Division by zero."),
+        "+=" => WdlFixed.Add(current, rvalue),
+        "-=" => WdlFixed.Subtract(current, rvalue),
+        "*=" => WdlFixed.Multiply(current, rvalue),
+        "/=" => WdlFixed.Divide(current, rvalue),
         _ => rvalue,
     };
 

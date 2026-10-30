@@ -337,7 +337,14 @@ public readonly record struct WdlPersistenceRequest(
     WdlPersistenceOperation Operation,
     string BaseName,
     int Number,
-    bool InfoOnly);
+    bool InfoOnly)
+{
+    /// <summary>
+    /// A full <c>SAVE</c>'s state, taken in the instruction: the action running it is not among the
+    /// waiting actions, and the original does not resume it after a load (OV-20261029-save-body round 7).
+    /// </summary>
+    public WdlRuntimeSnapshot? Snapshot { get; init; }
+}
 
 /// <summary>Optional runtime surface for documented save/load instructions.</summary>
 public interface IWdlPersistenceContext
@@ -360,6 +367,20 @@ public interface IWdlKeywordReferenceContext
 
     /// <summary>Assigns a keyword-valued synonym.</summary>
     void SetKeywordReference(string name, string? value);
+}
+
+/// <summary>
+/// A skill's <c>MIN</c> and <c>MAX</c> margins (manual p.100) as members: Saints of Virtue reads
+/// <c>myHealth.MAX</c> and sets <c>PLAYER_SIZE.MAX</c>, which the original's saves then hold
+/// (OV-20261029-save-body round 16).
+/// </summary>
+public interface IWdlSkillRangeContext
+{
+    /// <summary>Reads <paramref name="memberName"/> (<c>MIN</c> or <c>MAX</c>) of a skill; false when it is not one.</summary>
+    bool TryGetSkillMargin(string skillName, string memberName, out double value);
+
+    /// <summary>Sets <paramref name="memberName"/> (<c>MIN</c> or <c>MAX</c>) of a skill; false when it is not one.</summary>
+    bool TrySetSkillMargin(string skillName, string memberName, double value);
 }
 
 /// <summary>Optional runtime storage for mutable WDL UI declarations.</summary>

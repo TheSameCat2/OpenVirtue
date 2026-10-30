@@ -41,6 +41,93 @@ public class MeshBuilderTests
         Assert.All(batch.Vertices, vertex => Assert.Equal(0.6f, vertex.Ambient));
     }
 
+    [Theory]
+    [InlineData(4, 8, 0, 1)]     // west of the wall, square on: green
+    [InlineData(4, 8, -12, 0)]   // west, towards v1: red
+    [InlineData(4, 8, 12, 1)]    // west, towards v2: green
+    [InlineData(4, 40, 0, 3)]    // east, square on: blue
+    [InlineData(4, 40, -12, 2)]  // east, towards v1: yellow
+    [InlineData(4, 40, 12, 3)]   // east, towards v2: blue
+    [InlineData(2, 8, 0, 1)]
+    [InlineData(2, 8, -12, 0)]
+    [InlineData(2, 8, 12, 1)]
+    [InlineData(2, 40, 0, 1)]    // a two-sided wall shows the same pair from both faces
+    [InlineData(2, 40, -12, 0)]
+    public void BuildWalls_SidedTexture_ShowsTheSideTheViewpointPicks(int sides, double eyeX, double eyeY, int side)
+    {
+        // OV-20261030-wall-sides: a wall from v1 (24, -6) to v2 (24, 6), screenshotted in V3.963 from
+        // 16 west or east of it, square on or off towards an end.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 24 -6 0;#0\nVERTEX 24 6 0;#1\nREGION room 0 10;#0\nWALL w 0 1 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        string main = "MAPFILE <m.wmp>; BMAP a, <a.pcx>; BMAP b, <b.pcx>; BMAP c, <c.pcx>; BMAP d, <d.pcx>; " +
+            (sides == 4 ? "TEXTURE t { SIDES 4; BMAPS a, b, c, d; }" : "TEXTURE t { SIDES 2; BMAPS a, b; }") + " WALL w { TEXTURE t; }";
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+        Wall wall = Assert.IsType<Wall>(batch.AnimationSource); // its own batch, to pick the side per frame
+        Assert.Equal(side, TextureAnimation.WallSide(level.Textures["t"], 24, -6, 24, 6, eyeX, eyeY));
+        Assert.Same(level.Walls[0], wall);
+    }
+
+    [Theory]
+    [InlineData(2, 1, 0.5f)] // the lamp on the room's side: ALBEDO 1 adds 16 levels (0.5 of ambient)
+    [InlineData(2, -1, 0f)] // behind the wall: nothing
+    public void BuildWalls_GeniusLamp_BrightensTheFaceItStandsBefore(int lampX, int lampY, float expected)
+    {
+        // OV-20261029-shading rounds 4 and 5: a region's GENIUS with an AMBIENT texture lights ALBEDO walls.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 10;#0\nREGION solid 10 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\n" + FormattableString.Invariant($"THING lamp {lampX} {lampY} 0 0;#1\n") + "PLAYER_START 0 0 0 0;#2",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { BMAPS m; ALBEDO 1; }
+            TEXTURE lampTex { BMAPS m; AMBIENT 1; }
+            THING lamp { TEXTURE lampTex; }
+            WALL w { TEXTURE wallTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; GENIUS lamp; }
+            REGION solid { FLOOR_HGT 10; CEIL_HGT 10; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.All(
+            MeshBuilder.BuildWalls(level).Batches.SelectMany(static batch => batch.Vertices),
+            vertex => Assert.Equal(expected, vertex.Ambient));
+    }
+
+    [Fact]
+    public void BuildWalls_WallToASolidRegion_TakesTheLeftRegionsAmbient()
+    {
+        // OV-20261029-shading round 3: a room with AMBIENT −0.25 darkened its walls to the solid
+        // region (AMBIENT 0) by 8 levels, so the brighter side does not win.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 10;#0\nREGION solid 10 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; AMBIENT -0.25; }
+            REGION solid { FLOOR_HGT 10; CEIL_HGT 10; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        LevelMesh mesh = MeshBuilder.BuildWalls(level);
+
+        Assert.NotEmpty(mesh.Batches);
+        Assert.All(mesh.Batches.SelectMany(static batch => batch.Vertices), vertex => Assert.Equal(-0.25f, vertex.Ambient));
+    }
+
     [Fact]
     public void BuildWalls_TwoSidedWallWithMatchingHeights_IsOpenPortal()
     {
@@ -158,8 +245,8 @@ public class MeshBuilderTests
 
         Assert.Equal(0, batch.Vertices.Min(v => v.U));
         Assert.Equal(1, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0, batch.Vertices.Min(v => v.V));
-        Assert.Equal(1, batch.Vertices.Max(v => v.V));
+        Assert.Equal(0, batch.Vertices.Min(v => v.V), 1e-4); // OFFSET_Y starts at 1/1024
+        Assert.Equal(1, batch.Vertices.Max(v => v.V), 1e-4);
     }
 
     [Fact]
@@ -183,8 +270,8 @@ public class MeshBuilderTests
 
         Assert.Equal(0.25f, batch.Vertices.Min(v => v.U));
         Assert.Equal(1.25f, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V));
-        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V));
+        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V), 1e-4f);
+        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V), 1e-4f);
     }
 
     [Fact]
@@ -246,7 +333,7 @@ public class MeshBuilderTests
             MAPFILE <m.wmp>;
             BMAP m, <t.pcx>, 0, 0, 64, 64;
             TEXTURE floorTex { BMAPS m; }
-            REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; }
+            REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; FLAGS FLOOR_ASCEND, CEIL_ASCEND; }
             WALL w { TEXTURE floorTex; }
             """;
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));

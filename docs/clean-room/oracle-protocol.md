@@ -118,6 +118,38 @@ Example:
 
 Use these comments sparingly; prefer tests as the durable record.
 
+### Check the implementation against the run (oracle-diff)
+
+A trace carrier that has run can be replayed through OpenVirtue headless and compared with the
+original's files line by line:
+
+```bash
+dotnet run --project tools/OpenVirtue.Tools -- oracle diff <carrier-or-probe-dir>
+```
+
+The replay packs the carrier's `work/` files into a WRS under `<carrier>/ov-replay/` (local-only,
+beside the original's outputs) and runs `RuntimeHost` with the original's per-cycle `TICKS` steps,
+so `TIME_CORR` follows the original run. It reports the tick at which each run reached its first
+sampled cycle (a different start-up shows once, as the start offset) and, per output file, the first
+line that differs. Scripted key presses and clicks are not replayed; such carriers are flagged.
+Re-run it on the probe after implementing a note: the probe's own carriers should then match or
+differ only in what the note leaves open.
+
+The whole loop has one command per step, and one for all of it:
+
+```bash
+dotnet run --project tools/OpenVirtue.Tools -- oracle run <carrier-or-probe-dir>       # launch carriers not run yet
+dotnet run --project tools/OpenVirtue.Tools -- oracle check <probe> <output-dir> --runtime <VRUN.EXE>  # prepare, run, diff
+dotnet run --project tools/OpenVirtue.Tools -- oracle summary [_research/oracle-runs]  # every probe's match count
+```
+
+`run` launches each carrier's own `run.sh` (`run.bat` on Windows) in turn with SDL's dummy video
+driver, since a visible DOSBox-X window can slow the runtime to two engine frames a second
+(`--visible` keeps the window, `--rerun` relaunches carriers that already ran). The first launch of
+a session still needs the maintainer's go. `summary` replays every run carrier and prints, per
+probe, how many match line for line; a carrier that differs still needs its diff read, since a
+start-up `TICKS` offset counts as a difference.
+
 ## Split-Role Mode
 
 Use split-role mode for high-risk or source-level questions.

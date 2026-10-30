@@ -493,6 +493,75 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_DeclaredButUnplacedObjects_ExistInvisibleBeforeThePlacedOnesInSaves()
+    {
+        // Manual p.70 and OV-20261029-save-body round 13: a declared object the map does not place
+        // exists with INVISIBLE set; the original's saves list them first, last declared first.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+                        "WALL placed 0 1 0 -1 0 0;#0\nTHING crate 0.5 0.5 0 0;#1\nPLAYER_START 0 0 0 0;#2",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            THING crate { }
+            THING drop { }
+            ACTOR shot { }
+            WALL placed { }
+            WALL spare { }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(["drop", "shot", "spare"], level.UnplacedObjects.Select(static o => o.Name));
+        Assert.All(level.UnplacedObjects, static o => Assert.Equal(1, o["INVISIBLE"]));
+        Assert.Equal(["crate", "drop"], level.Things.Select(static t => t.Name));
+        Assert.Equal(["shot"], level.Actors.Select(static a => a.Name));
+        Assert.Equal(["placed"], level.Walls.Select(static w => w.Name)); // an unplaced wall has no geometry
+        Assert.Equal(["spare", "shot", "drop", "crate", "placed"], level.SaveObjectOrder().Select(static o => o.Name));
+    }
+
+    [Fact]
+    public void LoadCore_ActionOrder_NumbersAnActionWhereItsNameFirstAppears()
+    {
+        // OV-20261029-save-body round 13: a reference ahead of the declaration takes the number.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = "REGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1" };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            THING t { IF_NEAR later; }
+            ACTION first { CALL third; }
+            ACTION later { }
+            ACTION third { }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(["later", "first", "third"], level.ActionOrder);
+    }
+
+    [Fact]
+    public void LoadCore_TextureBmapKeyword_ListsTheBitmapsLikeBmaps()
+    {
+        // Saints of Virtue's music room writes BMAP in its textures; the original reads it as BMAPS.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = "REGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1" };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP a, <t.pcx>, 0, 0, 24, 40;
+            BMAP b, <t.pcx>, 24, 0, 24, 40;
+            TEXTURE spin { CYCLES 2; BMAP a, b; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelTexture texture = level.Textures["spin"];
+        Assert.Equal(40, texture.Height);
+        Assert.Equal(2, texture.Frames.Count);
+    }
+
+    [Fact]
     public void LoadCore_WallOffsetDeclarations_OverridePlacementOffsets()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -510,7 +579,7 @@ public class LevelLoaderTests
 
         Wall wall = Assert.Single(level.Walls);
         Assert.Equal(5, wall.OffsetX);
-        Assert.Equal(6, wall.OffsetY);
+        Assert.Equal(6 + (1 / 1024.0), wall.OffsetY); // one raw step up, as the original starts it
     }
 
     [Fact]
@@ -964,10 +1033,20 @@ public class LevelLoaderTests
         Level level = LevelLoader.Load(archive, "APATHY.WDL");
 
         Assert.Equal(5192, level.Vertices.Count);
-        Assert.Equal(1073, level.Regions.Count);
+        // 1073 map regions, then the 69 BELOW regions the map stacks under 69 of them and the 12
+        // declared regions the map does not place, which stand alone.
+        Assert.Equal(1073 + 69 + 12, level.Regions.Count);
+        Assert.Equal(69, level.Regions.Count(static r => r.AboveRegion >= 0));
+        Assert.All(level.Regions.Skip(1073).Where(static r => r.AboveRegion >= 0), static r => Assert.InRange(r.FootprintRegion, 0, 1072));
+        Assert.All(level.Regions.Skip(1073).Where(static r => r.AboveRegion < 0), static r => Assert.Same(r, r.Top));
         Assert.Equal(5894, level.Walls.Count);
-        Assert.Equal(492, level.Things.Count);
-        Assert.Equal(138, level.Actors.Count);
+        // 492 placed things and 138 placed actors, then the 46 declared objects the map does not
+        // place (21 things, 15 actors, 10 walls), as many as the original's retail save holds.
+        Assert.Equal(492 + 21, level.Things.Count);
+        Assert.Equal(138 + 15, level.Actors.Count);
+        Assert.Equal(46, level.UnplacedObjects.Count);
+        Assert.Equal(10, level.UnplacedObjects.OfType<Wall>().Count());
+        Assert.All(level.UnplacedObjects, static o => Assert.Equal(1, o["INVISIBLE"]));
         Assert.NotNull(level.PlayerStart);
         Assert.True(level.Skills.Count > 200, $"expected >200 global skills, got {level.Skills.Count}");
 
@@ -1003,4 +1082,29 @@ public class LevelLoaderTests
                 $"Expected matching GLOBAL declarations; counts were {expectedGlobals.Count} and {level.GlobalSkills.Count}."));
     }
 
+
+    [Fact]
+    public void Load_WholeImageBitmap_TakesItsSizeFromThePcxHeader()
+    {
+        // BMAP tgt,<T.PCX>; names the whole image: a thing with it needs the image's 64 x 256 size
+        // to be a sprite at all (found by the shoot-mapping replay).
+        byte[] pcx = new byte[128];
+        pcx[0] = 0x0A;
+        BitConverter.TryWriteBytes(pcx.AsSpan(8), (ushort)63);
+        BitConverter.TryWriteBytes(pcx.AsSpan(10), (ushort)255);
+        const string map = "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\nTHING t 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        const string main = "MAPFILE <m.wmp>; BMAP tgt,<T.PCX>; TEXTURE tex { SCALE_X 16; SCALE_Y 16; BMAPS tgt; } THING t { TEXTURE tex; }";
+        WrsArchive archive = WrsArchive.Read(WrsArchive.Write(
+        [
+            new WrsFile("MAIN.WDL", System.Text.Encoding.ASCII.GetBytes(main)),
+            new WrsFile("M.WMP", System.Text.Encoding.ASCII.GetBytes(map)),
+            new WrsFile("T.PCX", pcx),
+        ]));
+
+        Level level = LevelLoader.Load(archive, "MAIN.WDL");
+
+        Assert.True(OpenVirtue.Engine.Map.MapEntitySizing.TryGetSize(level, Assert.Single(level.Things), out var size));
+        Assert.Equal(4, size.Width, 3);
+        Assert.Equal(16, size.Height, 3);
+    }
 }

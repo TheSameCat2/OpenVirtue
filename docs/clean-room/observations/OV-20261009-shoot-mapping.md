@@ -214,3 +214,44 @@ report billboards' center depth and walls' trace distance × cos(deviation) as `
 (and apply `SHOOT_RANGE` to that measure); `MeshBuilder.EmitWallSegment` puts u = 0 at v2;
 `CreateWallHitCandidate` counts the wall `HIT_X` from v2. `HIT_X`/`HIT_Y` stay integer texel
 indices in OpenVirtue (sub-texel precision is not needed for parity).
+
+## Addendum (2026-10-29, oracle-diff replay)
+Replaying the eight carriers showed OpenVirtue's shots missing the targets' texels: `BMAP tgt_map,<PRBTGT.PCX>`
+names the whole image, and the loader left such a texture's size at 0, so the things were not sprites
+at all. The archive loader now takes a whole-image bitmap's size from its PCX header. The texels then
+differ from the original's by one or two: the original reports a fractional `HIT_X` (32.832 at the
+centre, 33.176, 32.488, 51.193) and `HIT_Y` one row lower (129 where OpenVirtue gives 128), where
+OpenVirtue floors the sampled pixel.
+- **`HIT_Y`.** All eight readings (129, 64, 193, 180, 77) are the sampled row plus one, and
+  OpenVirtue now reports that.
+- **`HIT_X`.** Solved by the sweep below.
+
+## Addendum: the HIT_X sweep (2026-10-29)
+- Carriers: `ovtool oracle prepare shoot-mapping … --shoot-x -0.06,…,0.06,0.44,0.47,0.53,0.56
+  --shoot-y 0.01 --tilts 0.01`. That is 19 more runs under `hitx-sweep/` in the same 640×480
+  room.
+- Local-only hashes (`OVSHO0.TXT`, sha256, first 8): shootx-0.05 `9b2d7c75`, shootx-0.53
+  `b93ad7d0`, shooty-0.01 `1c1bb3b6`.
+
+Observations:
+- **The shot goes through a whole pixel.** Across SHOOT_X −0.06 … 0.06 on the centre target,
+  `HIT_X` moves in whole steps of 1230/1024 texels. Those steps are 3, 6, 9, 12, 15 and 19
+  pixels to the right and 4, 7, 10, 13, 16 and 20 to the left. The shot's column is therefore
+  `floor(320 + SHOOT_X·320)`, with `SHOOT_X` a 22.10 value (0.05 is 51/1024, so 15.94 pixels).
+- **The row follows the same rule.** At `SHOOT_Y` 0.01 the row is `floor(240 − SHOOT_Y·240)`,
+  2.34 rows up, row 237, and `HIT_Y` reads 125. `PLAYER_TILT` 0.01 reads 134.
+- **Texels per pixel.** The step 1230/1024 is the sprite's texels per pixel, 64 / (4 steps ·
+  pixels per step), cut to 22.10.
+- **Pixels per step** at depth d are `f/d`, cut to 22.10. Here f is 320 times 1/tan(`PLAYER_ARC`/2),
+  that factor itself cut to 22.10 (1874/1024).
+- **The texel.** For all three targets and all 19 columns,
+  `HIT_X = (column + 0.714 − sprite's left edge in pixels) · texels per pixel`, within 0.0013.
+  The 0.714 is fitted; its source is unknown.
+
+Implementation:
+- `WdlRuntime.ShootFromPlayer` snaps the shot to its pixel.
+- `WdlRuntime.SpriteHitColumn` reports a sprite's `HIT_X` by this rule. Mirrored sprites keep
+  the sampled column (unmeasured), as do walls.
+- The harness treats `HIN_T`/`HOUT_T` like the start-up stamp.
+- Results: 24 of the 27 shoot carriers replay line for line. One is 0.002 off on `HIT_X`; the
+  other two come from an original run whose start-up took a cycle longer (`TICKS` 14.781 at the shot).

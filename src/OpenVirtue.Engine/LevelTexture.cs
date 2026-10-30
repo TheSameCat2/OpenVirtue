@@ -37,7 +37,8 @@ public readonly record struct LevelTexture(
     double SoundVolume,
     IReadOnlyList<bool> SoundCycles,
     bool IsSoundLoop,
-    double RandomDelayFactor);
+    double RandomDelayFactor,
+    double Albedo = 0);
 
 /// <summary>
 /// A catalog <see cref="LevelTexture"/> held by reference (<see cref="Level.FindTexture"/>), so a
@@ -68,6 +69,31 @@ public static class TextureAnimation
         ReadOnlySpan<char> remainder = renderTextureName.AsSpan(FramePrefix.Length);
         int separator = remainder.LastIndexOf('/');
         return separator > 0 ? remainder[..separator].ToString() : renderTextureName;
+    }
+
+    /// <summary>
+    /// The side of a wall texture seen from (<paramref name="eyeX"/>, <paramref name="eyeY"/>) in map
+    /// coordinates (manual p.37; OV-20261030-wall-sides). With four sides or more, the first two are
+    /// seen from the face to the left of v1 → v2 (where the cross product of v1 → v2 and v1 → eye is
+    /// positive) and the next two from the other face. Of a pair, the first is seen while the eye,
+    /// projected on the wall's line, lies before its middle, and the second from the middle on.
+    /// With one side, 0.
+    /// </summary>
+    public static int WallSide(LevelTexture texture, double v1X, double v1Y, double v2X, double v2Y, double eyeX, double eyeY)
+    {
+        if (texture.Sides < 2)
+        {
+            return 0;
+        }
+
+        double dx = v2X - v1X;
+        double dy = v2Y - v1Y;
+        double ex = eyeX - v1X;
+        double ey = eyeY - v1Y;
+        double lengthSquared = (dx * dx) + (dy * dy);
+        int half = lengthSquared > 0 && ((ex * dx) + (ey * dy)) / lengthSquared >= 0.5 ? 1 : 0;
+        int pair = texture.Sides >= 4 && ((dx * ey) - (dy * ex)) < 0 ? 1 : 0;
+        return (2 * pair) + half;
     }
 
     /// <summary>

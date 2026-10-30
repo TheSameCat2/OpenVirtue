@@ -124,3 +124,48 @@ and validate against real game data used only locally (never committed).
 - **Writer:** emits the same fixed records with big-endian size fields and
   literal-only LZSS payloads. It is intended for generated synthetic fixtures and
   local tooling, not for redistributing game data.
+
+## Save files (`Save/AcknexSaveFile.cs`)
+
+- **Source of truth:** black-box byte comparison of the `.SAV` files the patched DOS
+  runtime (V3.963) wrote for synthetic levels that differ in one known value each
+  (OV-20261029-save-format: `SAVE_INFO` with a `GLOBAL` skill of 1234.5 or 4321.25, a
+  `LOCAL` skill of 77 or 99, a `PLAYER` skill of 5 or 6; full `SAVE`s with the player
+  at (5, 3) or (6, 3)). The manual (p.94, p.111) gives only the file name, the
+  instruction semantics and that `LOAD` "decompresses and decodes". The container was
+  recognised as the WRS entry framing (big-endian sizes, then the LZSS stream above);
+  the body's little-endian words, the self-locating sections and the skill records
+  were read off the decompressed bytes. Not ported from any third-party source.
+- **Confirmed against real data:** re-encoding the skills read from each DOS-written
+  `SAVE_INFO` file reproduces its body byte for byte (guarded test
+  `AcknexSaveFileTests.ReadSkills_SavesTheDosRuntimeWrote_HoldTheirSkills`, local-only
+  data), and `ovtool oracle diff` compares OpenVirtue's `SAVE_INFO` bodies with the
+  original's.
+- **Object section** (OV-20261029-save-body): the fourth section of a full `SAVE` was located
+  and laid out the same way, by comparing full saves of one synthetic world in which a single
+  object skill was changed. A second set wrote each skill of a thing, actor or wall to its own
+  raw bit pattern, and the patterns were searched for in the bytes. Thing/actor records are 170
+  bytes and wall records 178. The skill sections, the object section and the global action
+  slots are understood; the regions are not saved (only `SAVE_ALL` regions might be).
+- **Action section** (OV-20261029-save-body rounds 7 and 8): the tenth section's records were read
+  from saves of synthetic actions that each ran a different mix of instructions before the same
+  wait, against our own count of the instructions (`ReadActions`, `ReadSlots`). Not ported from any
+  third-party source.
+- **Writing full saves** (`AcknexFullSave`, `AcknexPredefinedSkills`, round 9):
+  - which parts the original needs was found by blanking or swapping parts of its own saves and
+    loading them;
+  - the fields' meanings come from comparing records with the synthetic level's geometry;
+  - the predefined skill names are the ones its saves list that the level does not declare;
+  - checked by the original loading a save OpenVirtue wrote.
+  - Round 13 laid out the rest of the records from our own byte comparison of a retail level's save
+    with OpenVirtue's capture of the same level, matched object by object. That covers the unplaced
+    objects that open the object section, the event block, `ATTACH`, the texture size words, the
+    regions, the fixed-point wall length and the first section's player and palette words. Probe
+    carriers settled what the comparison could not. The original then loaded OpenVirtue's save of
+    that level without errors.
+  - Round 15 did the same with a second retail level. The `SAVE` textures' 68-byte records (the
+    second section) and the region records' flag bits, events and `GENIUS` word were then laid out
+    by synthetic carriers that each set one property to its own value. Splicing sections between
+    the two engines' saves showed which ones the load needs.
+
+  Not ported from any third-party source.

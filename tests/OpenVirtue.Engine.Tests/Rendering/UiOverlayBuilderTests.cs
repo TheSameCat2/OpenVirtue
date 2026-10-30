@@ -53,8 +53,8 @@ public sealed class UiOverlayBuilderTests
         UiOverlaySprite cursor = Assert.Single(UiOverlayBuilder.Build(level, skills: skills));
 
         Assert.Equal("cursor", cursor.SourceElement);
-        Assert.Equal(17, cursor.X);
-        Assert.Equal(25, cursor.Y);
+        Assert.Equal(20, cursor.X); // drawn at MOUSE_X/Y; POS_X/Y is only the click point (OV-20261029-ui-widgets)
+        Assert.Equal(30, cursor.Y);
         Assert.Equal(7, cursor.Layer);
         Assert.True(cursor.Absolute);
         Assert.Contains(level.UiElements.Values, element =>
@@ -156,8 +156,8 @@ public sealed class UiOverlayBuilderTests
 
         UiOverlaySprite window = Assert.Single(UiOverlayBuilder.BuildPanelWindows(level, skills, sizes));
 
-        Assert.Equal(50, window.SourceX);
-        Assert.Equal(8, window.SourceY);
+        Assert.Equal(49, window.SourceX); // one short of the end (OV-20261029-ui-widgets)
+        Assert.Equal(0, window.SourceY); // Y counts up from the bottom
     }
 
     [Fact]
@@ -298,7 +298,7 @@ public sealed class UiOverlayBuilderTests
         UiOverlaySprite slider = Assert.Single(UiOverlayBuilder.BuildPanelWidgets(level, skills));
 
         Assert.Equal("thumb", slider.Bitmap);
-        Assert.Equal(34, slider.X);
+        Assert.Equal(30, slider.X); // 50% of the 32-pixel travel (40 less the 8-wide knob), OV-20261029-ui-widgets
         Assert.Equal(25, slider.Y);
         Assert.Equal(8, slider.Width);
         Assert.Equal(6, slider.Height);
@@ -322,7 +322,7 @@ public sealed class UiOverlayBuilderTests
         UiOverlaySprite slider = Assert.Single(UiOverlayBuilder.BuildPanelWidgets(level, level.Skills, sizes));
 
         Assert.Equal(12, slider.X);
-        Assert.Equal(38, slider.Y);
+        Assert.Equal(31, slider.Y); // 75% of the 11-pixel travel, cut to 8
         Assert.Equal(7, slider.Width);
         Assert.Equal(9, slider.Height);
     }
@@ -372,7 +372,7 @@ public sealed class UiOverlayBuilderTests
         Assert.Equal(3, bar.Y);
         Assert.Equal(30, bar.Width);
         Assert.Equal(9, bar.Height);
-        Assert.Equal(50, bar.SourceX);
+        Assert.Equal(48, bar.SourceX); // 2·99 = 198 wraps around the free 50 (OV-20261029-ui-widgets)
         Assert.Equal(0, bar.SourceY);
         Assert.Equal(30, bar.SourceWidth);
         Assert.Equal(9, bar.SourceHeight);

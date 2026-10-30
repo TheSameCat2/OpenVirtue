@@ -51,7 +51,7 @@ public class WdlExpressionTests
     [InlineData("SIGN(4)", 1)]
     [InlineData("ABS(-2.5)", 2.5)]
     [InlineData("INT(2.9)", 2)]
-    [InlineData("INT(-2.9)", -2)]
+    [InlineData("INT(-2.9)", -3)] // INT rounds down (OV-20261029-numeric-edge)
     [InlineData("EXP(0)", 1)]
     [InlineData("SQRT(9) + ABS(-2)", 5)]
     public void Evaluates_DocumentedMathFunctions(string expression, double expected)
@@ -78,7 +78,35 @@ public class WdlExpressionTests
     [InlineData("ACOS(0)", Math.PI / 2)]
     public void Evaluates_DocumentedTrigonometricFunctionsInRadians(string expression, double expected)
     {
-        Assert.Equal(expected, Eval(expression, new TestContext()), precision: 12);
+        // Arguments and results are fixed point: within a 1/1024 step (OV-20261029-numeric-edge).
+        Assert.Equal(expected, Eval(expression, new TestContext()), 1.0 / 1024);
+    }
+
+    [Theory]
+    [InlineData("1 / 3 * 1024", 341)]
+    [InlineData("0.001 * 1000000", 976.5625)]
+    [InlineData("0.0001 * 1000000", 0)]
+    [InlineData("2097151 + 2", -2097151)]
+    [InlineData("1000000 * 1000", 1755648)]
+    [InlineData("(0 - 1) / 3 * 1024", -341)] // round 2: toward zero
+    [InlineData("(0 - 0.5) * 0.3 * 1024", -153)]
+    [InlineData("(0 - 0.7) * 0.3 * 1024", -214)]
+    [InlineData("0 - 2097153", -2097151.9990234375)]
+    [InlineData("INT(0 - 2.5)", -3)]
+    [InlineData("(0 - 7) % 3", 0)]
+    [InlineData("7 % (0 - 3)", 1)]
+    [InlineData("7.9 % 3", 1.8994140625)]
+    [InlineData("5.7 & 3", 1)]
+    [InlineData("(0 - 1) & 255", 255)]
+    [InlineData("4 | 2.9", 6.8994140625)]
+    [InlineData("TAN(1.5707)", 2066.8544921875)]
+    [InlineData("SIN(0.5) * 1000000", 478515.625)]
+    [InlineData("EXP(20)", WdlFixed.Invalid)]
+    [InlineData("0.1 * 3", 0.298828125)]
+    public void Evaluates_TheOriginalsFixedPointArithmetic(string expression, double expected)
+    {
+        // The readings of OV-20261029-numeric-edge (case `values`).
+        Assert.Equal(expected, Eval(expression, new TestContext()), 9);
     }
 
     [Fact]
@@ -93,15 +121,24 @@ public class WdlExpressionTests
     [Theory]
     [InlineData("10 / 0")]
     [InlineData("10 % 0")]
-    [InlineData("SQRT(-1)")]
-    [InlineData("LOG(0)")]
-    [InlineData("LOG10(-1)")]
-    [InlineData("LOG2(0)")]
-    [InlineData("ASIN(2)")]
-    [InlineData("ACOS(-2)")]
-    public void InvalidArithmeticOperations_Throw(string expression)
+    public void DivisionByZero_Throws(string expression)
     {
+        // The DOS runtime crashes (OV-20261029-numeric-edge); OpenVirtue stops the action.
         Assert.Throws<WdlExpressionException>(() => Eval(expression, new TestContext()));
+    }
+
+    [Theory]
+    [InlineData("SQRT(-1)", WdlFixed.Invalid)]
+    [InlineData("LOG(0)", WdlFixed.Invalid)]
+    [InlineData("LOG10(-1)", WdlFixed.Invalid)]
+    [InlineData("LOG2(0)", WdlFixed.Invalid)]
+    [InlineData("ASIN(2)", 1.5703125)]
+    [InlineData("ACOS(-2)", 3.140625)]
+    public void UndefinedFunctionResults_ReadAsTheOriginalsValues(string expression, double expected)
+    {
+        // OV-20261029-numeric-edge: SQRT(-1) and LOG(0) read -2097151.999 and the action goes on;
+        // ASIN(2) reads pi/2 (the argument is clamped).
+        Assert.Equal(expected, Eval(expression, new TestContext()), 9);
     }
 
     [Fact]

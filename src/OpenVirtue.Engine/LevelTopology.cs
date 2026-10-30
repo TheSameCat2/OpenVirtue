@@ -15,21 +15,83 @@ public static class LevelTopology
     {
         ArgumentNullException.ThrowIfNull(level);
         RegionSurfaceCache cache = SurfaceCache(level);
+        int? found = null;
+        double foundArea = double.PositiveInfinity;
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            List<int>? loop = cache.Loop(regionIndex);
-            if (loop is not null && ContainsPoint(level, loop, x, y))
+            List<int>? loop = cache.Outline(regionIndex);
+            if (loop is null || !ContainsPoint(level, loop, x, y))
             {
-                return regionIndex;
+                continue;
+            }
+
+            // An island region (a pad, a pillar's top) lies inside the outline of the region around
+            // it, so the innermost, smallest outline is the one the point is in.
+            double area = cache.Area(regionIndex, loop);
+            if (area < foundArea - 1e-9)
+            {
+                found = regionIndex;
+                foundArea = area;
             }
         }
 
-        return null;
+        return found;
     }
 
     /// <summary>
-    /// Interpolates the WMP vertex-height offset of a region surface at a map-space point.
-    /// The triangulation matches the rendered floor and ceiling surface.
+    /// How a region's floor (or ceiling) follows its vertices' WMP heights, as measured in
+    /// OV-20261029-slope: <c>ASCEND</c> adds them (+1), <c>DESCEND</c> subtracts them (−1), and the
+    /// undocumented <c>LIFTED</c> moves the surface into the region — up for a floor (+1), down for a
+    /// ceiling (−1). Without a slope flag the surface is flat (0) whatever the vertex heights.
+    /// </summary>
+    public static double SlopeSign(Region region, bool ceiling)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        string prefix = ceiling ? "CEIL_" : "FLOOR_";
+        if (region[prefix + "ASCEND"] > 0)
+        {
+            return 1;
+        }
+
+        if (region[prefix + "DESCEND"] > 0)
+        {
+            return -1;
+        }
+
+        return region[prefix + "LIFTED"] > 0 ? (ceiling ? -1 : 1) : 0;
+    }
+
+    /// <summary>The height of a region's floor at a map-space point, its slope flags applied.</summary>
+    public static double FloorHeightAt(Level level, int regionIndex, double x, double y) =>
+        SurfaceHeightAt(level, regionIndex, x, y, ceiling: false);
+
+    /// <summary>The height of a region's ceiling at a map-space point, its slope flags applied.</summary>
+    public static double CeilingHeightAt(Level level, int regionIndex, double x, double y) =>
+        SurfaceHeightAt(level, regionIndex, x, y, ceiling: true);
+
+    private static double SurfaceHeightAt(Level level, int regionIndex, double x, double y, bool ceiling)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if ((uint)regionIndex >= (uint)level.Regions.Count)
+        {
+            return 0;
+        }
+
+        Region region = level.Regions[regionIndex];
+        double baseHeight = ceiling ? region.CeilHeight : region.FloorHeight;
+        double sign = SlopeSign(region, ceiling);
+        return sign != 0 && TryGetSurfaceHeightOffset(level, regionIndex, x, y, out double offset)
+            ? baseHeight + (sign * offset)
+            : baseHeight;
+    }
+
+    /// <summary>
+    /// Interpolates the WMP vertex heights of a region's footprint at a map-space point (before the
+    /// region's slope flags, see <see cref="SlopeSign"/>). The original scans the footprint along the
+    /// map's y: the line x = const through the point meets the edges below and above it, each edge
+    /// gives the height where it is met, and the point's height lies between the two along y. On a
+    /// square with one corner raised that is bilinear, and it fits the retail quads to 1/1024
+    /// (OV-20261029-slope round 2). The triangulation stands in where no span holds the point.
     /// </summary>
     public static bool TryGetSurfaceHeightOffset(Level level, int regionIndex, double x, double y, out double offset)
     {
@@ -54,6 +116,11 @@ public static class LevelTopology
         double y,
         out double offset)
     {
+        if (TryScanHeight(level, loop, x, y, out offset))
+        {
+            return true;
+        }
+
         offset = 0;
         for (int i = 0; i < triangles.Count; i += 3)
         {
@@ -83,10 +150,120 @@ public static class LevelTopology
         return false;
     }
 
+    private static bool TryScanHeight(Level level, IReadOnlyList<int> loop, double x, double y, out double offset)
+    {
+        offset = 0;
+        double below = double.NegativeInfinity;
+        double above = double.PositiveInfinity;
+        double belowZ = 0;
+        double aboveZ = 0;
+        for (int i = 0; i < loop.Count; i++)
+        {
+            Vertex a = level.Vertices[loop[i]];
+            Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+            if (a.X == b.X || (a.X - x) * (b.X - x) > 0)
+            {
+                continue;
+            }
+
+            double t = (x - a.X) / (b.X - a.X);
+            double edgeY = a.Y + (t * (b.Y - a.Y));
+            double edgeZ = a.Z + (t * (b.Z - a.Z));
+            if (edgeY <= y && edgeY > below)
+            {
+                (below, belowZ) = (edgeY, edgeZ);
+            }
+
+            if (edgeY >= y && edgeY < above)
+            {
+                (above, aboveZ) = (edgeY, edgeZ);
+            }
+        }
+
+        if (double.IsInfinity(below) || double.IsInfinity(above))
+        {
+            return false;
+        }
+
+        offset = above - below < 1e-9 ? belowZ : belowZ + ((aboveZ - belowZ) * (y - below) / (above - below));
+        return true;
+    }
+
+    /// <summary>
+    /// The index of the map region whose walls bound <paramref name="regionIndex"/>: the region
+    /// itself, or for a <c>BELOW</c> region the top of its stack (<see cref="Region.FootprintRegion"/>).
+    /// </summary>
+    public static int Footprint(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        return (uint)regionIndex < (uint)level.Regions.Count && level.Regions[regionIndex].FootprintRegion >= 0
+            ? level.Regions[regionIndex].FootprintRegion
+            : regionIndex;
+    }
+
+    /// <summary>
+    /// The regions stacked at <paramref name="regionIndex"/>'s footprint, top first: the map region
+    /// and the chain of <c>BELOW</c> regions under it (manual p.59).
+    /// </summary>
+    public static IEnumerable<int> Stack(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        int current = Footprint(level, regionIndex);
+        for (int depth = 0; (uint)current < (uint)level.Regions.Count && depth <= level.Regions.Count; depth++)
+        {
+            yield return current;
+            current = level.Regions[current].BelowRegion;
+        }
+    }
+
+    /// <summary>
+    /// The region of <paramref name="regionIndex"/>'s stack that holds <paramref name="height"/>: the
+    /// uppermost one whose floor is at or below it, else the lowest. A region without a
+    /// <c>BELOW</c> chain is its own answer.
+    /// </summary>
+    public static int StackRegionAt(Level level, int regionIndex, double height)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        int found = Footprint(level, regionIndex);
+        foreach (int member in Stack(level, regionIndex))
+        {
+            found = member;
+            if (level.Regions[member].FloorHeight <= height + 1e-4)
+            {
+                break;
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// The storey of <paramref name="regionIndex"/>'s stack that <c>LOCATE</c> puts a player with its eye
+    /// at <paramref name="eye"/> in: the lowest whose ceiling is not below the eye, or the top when the
+    /// eye is above them all. An eye between a lower storey's ceiling and the deck's floor goes to the
+    /// deck (OV-20261030-below-beam: eye 4 → the underpass, 9 and 14 → the deck over its ceiling at 8).
+    /// </summary>
+    public static int StoreyHoldingEye(Level level, int regionIndex, double eye)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        List<int> stack = [.. Stack(level, regionIndex)];
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            if (level.Regions[stack[i]].CeilHeight >= eye - 1e-4)
+            {
+                return stack[i];
+            }
+        }
+
+        return stack.Count > 0 ? stack[0] : regionIndex;
+    }
+
     /// <summary>Traces the boundary of a region into a single ordered vertex loop, if possible.</summary>
     public static List<int>? TraceRegionLoop(Level level, int regionIndex)
     {
         ArgumentNullException.ThrowIfNull(level);
+        // A BELOW region has no walls of its own; its stack's top region bounds it.
+        regionIndex = Footprint(level, regionIndex);
 
         var adjacency = new Dictionary<int, List<int>>();
         var edges = new HashSet<(int, int)>();
@@ -145,6 +322,74 @@ public static class LevelTopology
         }
 
         return loop.Count == edges.Count ? loop : null;
+    }
+
+    /// <summary>The largest closed loop among a region's walls, when they form several (a region with holes).</summary>
+    private static List<int>? LargestLoop(Level level, int regionIndex)
+    {
+        regionIndex = Footprint(level, regionIndex);
+        var adjacency = new Dictionary<int, List<int>>();
+        var edges = new HashSet<(int, int)>();
+        foreach (Wall wall in level.Walls)
+        {
+            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2 ||
+                !edges.Add(wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1)))
+            {
+                continue;
+            }
+
+            Connect(adjacency, wall.Vertex1, wall.Vertex2);
+            Connect(adjacency, wall.Vertex2, wall.Vertex1);
+        }
+
+        if (adjacency.Values.Any(static n => n.Count != 2))
+        {
+            return null;
+        }
+
+        var visited = new HashSet<int>();
+        List<int>? best = null;
+        double bestArea = 0;
+        foreach (int start in adjacency.Keys)
+        {
+            if (!visited.Add(start))
+            {
+                continue;
+            }
+
+            var loop = new List<int> { start };
+            int previous = -1;
+            int current = start;
+            while (true)
+            {
+                List<int> neighbours = adjacency[current];
+                int next = neighbours[0] != previous ? neighbours[0] : neighbours[1];
+                if (next == start || !visited.Add(next))
+                {
+                    break;
+                }
+
+                loop.Add(next);
+                previous = current;
+                current = next;
+            }
+
+            double twice = 0;
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Vertex a = level.Vertices[loop[i]];
+                Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+                twice += (a.X * (double)b.Y) - (b.X * (double)a.Y);
+            }
+
+            if (loop.Count >= 3 && Math.Abs(twice) > bestArea)
+            {
+                bestArea = Math.Abs(twice);
+                best = loop;
+            }
+        }
+
+        return best;
     }
 
     private static bool ContainsPoint(Level level, List<int> loop, double x, double y)
@@ -244,6 +489,55 @@ public static class LevelTopology
             }
 
             return _loops[regionIndex];
+        }
+
+        private readonly double[] _areas = new double[level.Regions.Count];
+        private readonly bool[] _outlined = new bool[level.Regions.Count];
+        private readonly List<int>?[] _outlines = new List<int>?[level.Regions.Count];
+
+        /// <summary>
+        /// The region's outer boundary: its traced loop, or, for a region with holes (islands inside
+        /// it), the largest of its loops.
+        /// </summary>
+        public List<int>? Outline(int regionIndex)
+        {
+            if ((uint)regionIndex >= (uint)_outlines.Length)
+            {
+                return Loop(regionIndex);
+            }
+
+            if (!_outlined[regionIndex])
+            {
+                _outlines[regionIndex] = Loop(regionIndex) ?? LargestLoop(level, regionIndex);
+                _outlined[regionIndex] = true;
+            }
+
+            return _outlines[regionIndex];
+        }
+
+        /// <summary>The area inside a region's traced loop (cached).</summary>
+        public double Area(int regionIndex, List<int> loop)
+        {
+            if ((uint)regionIndex < (uint)_areas.Length && _areas[regionIndex] > 0)
+            {
+                return _areas[regionIndex];
+            }
+
+            double twice = 0;
+            for (int i = 0; i < loop.Count; i++)
+            {
+                Vertex a = level.Vertices[loop[i]];
+                Vertex b = level.Vertices[loop[(i + 1) % loop.Count]];
+                twice += (a.X * (double)b.Y) - (b.X * (double)a.Y);
+            }
+
+            double area = Math.Abs(twice) / 2;
+            if ((uint)regionIndex < (uint)_areas.Length)
+            {
+                _areas[regionIndex] = area;
+            }
+
+            return area;
         }
 
         public IReadOnlyList<int> Triangles(int regionIndex, List<int> loop)

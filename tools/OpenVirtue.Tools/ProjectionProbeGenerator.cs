@@ -39,6 +39,28 @@ internal static class ProjectionProbeGenerator
     public const string ClipDetailProbeName = "clip-detail";
     public const string ViewActivityProbeName = "view-activity";
     public const string DistanceRefreshProbeName = "distance-refresh";
+    public const string SchedulerOrderProbeName = "scheduler-order";
+    public const string ActorEventsProbeName = "actor-events";
+    public const string NumericEdgeProbeName = "numeric-edge";
+    public const string MotionTimingProbeName = "motion-timing";
+    public const string SaveFormatProbeName = "save-format";
+    public const string SkyProbeName = "sky";
+    public const string ShadingProbeName = "shading";
+    public const string SlopeProbeName = "slope";
+    public const string AudioProbeName = "audio";
+    public const string AutorangeProbeName = "autorange";
+    public const string SaveBodyProbeName = "save-body";
+    public const string BelowViewProbeName = "below-view";
+
+    public const string WallSidesProbeName = "wall-sides";
+
+    public const string BelowBeamProbeName = "below-beam";
+    public const string ActorStepProbeName = "actor-step";
+    public const string InkeyProbeName = "inkey";
+    public const string UiLayoutProbeName = "ui-layout";
+    public const string UiWidgetsProbeName = "ui-widgets";
+    public const string UiTextProbeName = "ui-text";
+    public const string OverlapProbeName = "overlap";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -59,6 +81,28 @@ internal static class ProjectionProbeGenerator
     private const string ClipDetailProbeId = "OV-20261019-clip-detail";
     private const string ViewActivityProbeId = "OV-20261020-view-activity";
     private const string DistanceRefreshProbeId = "OV-20261021-distance-refresh";
+    private const string SchedulerOrderProbeId = "OV-20261029-scheduler-order";
+    private const string ActorEventsProbeId = "OV-20261029-actor-events";
+    private const string NumericEdgeProbeId = "OV-20261029-numeric-edge";
+    private const string MotionTimingProbeId = "OV-20261029-motion-timing";
+    private const string SaveFormatProbeId = "OV-20261029-save-format";
+    private const string SkyProbeId = "OV-20261029-sky";
+    private const string ShadingProbeId = "OV-20261029-shading";
+    private const string SlopeProbeId = "OV-20261029-slope";
+    private const string AudioProbeId = "OV-20261029-audio";
+    private const string AutorangeProbeId = "OV-20261029-autorange";
+    private const string SaveBodyProbeId = "OV-20261029-save-body";
+    private const string BelowViewProbeId = "OV-20261029-below-view";
+
+    private const string WallSidesProbeId = "OV-20261030-wall-sides";
+
+    private const string BelowBeamProbeId = "OV-20261030-below-beam";
+    private const string ActorStepProbeId = "OV-20261029-actor-step";
+    private const string InkeyProbeId = "OV-20261029-inkey";
+    private const string UiLayoutProbeId = "OV-20261029-ui-layout";
+    private const string UiWidgetsProbeId = "OV-20261029-ui-widgets";
+    private const string UiTextProbeId = "OV-20261029-ui-text";
+    private const string OverlapProbeId = "OV-20261029-overlap";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -106,6 +150,7 @@ internal static class ProjectionProbeGenerator
         ("PLAYER_Z", "PZ"), ("PLAYER_ANGLE", "ANG"), ("PLAYER_SIZE", "PSIZE"), ("FLOOR_HGT", "FLOOR"),
         ("CEIL_HGT", "CEIL"), ("SCREEN_X", "SX"), ("SCREEN_Y", "SY"), ("SCREEN_WIDTH", "SW"),
         ("SCREEN_HGT", "SH"), ("MOTION_BLUR", "BLUR"), ("ASPECT", "ASPECT"),
+        ("TICKS", "TCK"), // the start-up stamp the oracle diff anchors untimed traces on
     ];
     private static readonly string[] DefaultAspectVideos = ["S640x480", "320x200", "X320x240", "X320x400"];
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
@@ -321,6 +366,26 @@ internal static class ProjectionProbeGenerator
         ClipDetailProbeName => ClipDetailProbeId,
         ViewActivityProbeName => ViewActivityProbeId,
         DistanceRefreshProbeName => DistanceRefreshProbeId,
+        SchedulerOrderProbeName => SchedulerOrderProbeId,
+        ActorEventsProbeName => ActorEventsProbeId,
+        NumericEdgeProbeName => NumericEdgeProbeId,
+        MotionTimingProbeName => MotionTimingProbeId,
+        SaveFormatProbeName => SaveFormatProbeId,
+        SkyProbeName => SkyProbeId,
+        ShadingProbeName => ShadingProbeId,
+        SlopeProbeName => SlopeProbeId,
+        AudioProbeName => AudioProbeId,
+        AutorangeProbeName => AutorangeProbeId,
+        SaveBodyProbeName => SaveBodyProbeId,
+        BelowViewProbeName => BelowViewProbeId,
+        WallSidesProbeName => WallSidesProbeId,
+        BelowBeamProbeName => BelowBeamProbeId,
+        ActorStepProbeName => ActorStepProbeId,
+        InkeyProbeName => InkeyProbeId,
+        UiLayoutProbeName => UiLayoutProbeId,
+        UiWidgetsProbeName => UiWidgetsProbeId,
+        UiTextProbeName => UiTextProbeId,
+        OverlapProbeName => OverlapProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -436,6 +501,26 @@ internal static class ProjectionProbeGenerator
             case ClipDetailProbeName:
             case ViewActivityProbeName:
             case DistanceRefreshProbeName:
+            case SchedulerOrderProbeName:
+            case ActorEventsProbeName:
+            case NumericEdgeProbeName:
+            case MotionTimingProbeName:
+            case SaveFormatProbeName:
+            case SkyProbeName:
+            case ShadingProbeName:
+            case SlopeProbeName:
+            case AudioProbeName:
+            case AutorangeProbeName:
+            case SaveBodyProbeName:
+            case BelowViewProbeName:
+            case WallSidesProbeName:
+            case BelowBeamProbeName:
+            case ActorStepProbeName:
+            case InkeyProbeName:
+            case UiLayoutProbeName:
+            case UiWidgetsProbeName:
+            case UiTextProbeName:
+            case OverlapProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -467,6 +552,26 @@ internal static class ProjectionProbeGenerator
         ClipDetailProbeName => ClipDetailProbeCases.Set,
         ViewActivityProbeName => ViewActivityProbeCases.Set,
         DistanceRefreshProbeName => DistanceRefreshProbeCases.Set,
+        SchedulerOrderProbeName => SchedulerOrderProbeCases.Set,
+        ActorEventsProbeName => ActorEventsProbeCases.Set,
+        NumericEdgeProbeName => NumericEdgeProbeCases.Set,
+        MotionTimingProbeName => MotionTimingProbeCases.Set,
+        SaveFormatProbeName => SaveFormatProbeCases.Set,
+        SkyProbeName => SkyProbeCases.Set,
+        ShadingProbeName => ShadingProbeCases.Set,
+        SlopeProbeName => SlopeProbeCases.Set,
+        AudioProbeName => AudioProbeCases.Set,
+        AutorangeProbeName => AutorangeProbeCases.Set,
+        SaveBodyProbeName => SaveBodyProbeCases.Set,
+        BelowViewProbeName => BelowViewProbeCases.Set,
+        WallSidesProbeName => WallSidesProbeCases.Set,
+        BelowBeamProbeName => BelowBeamProbeCases.Set,
+        ActorStepProbeName => ActorStepProbeCases.Set,
+        InkeyProbeName => InkeyProbeCases.Set,
+        UiLayoutProbeName => UiLayoutProbeCases.Set,
+        UiWidgetsProbeName => UiWidgetsProbeCases.Set,
+        UiTextProbeName => UiTextProbeCases.Set,
+        OverlapProbeName => OverlapProbeCases.Set,
         _ => null,
     };
 
@@ -475,7 +580,9 @@ internal static class ProjectionProbeGenerator
         string workDir = Path.Combine(variantDir, "work");
         Directory.CreateDirectory(workDir);
 
-        SyntheticPcx.Palette palette = BuildPalette();
+        SyntheticPcx.Palette palette = plan.ProbeName != AutorangeProbeName ? BuildPalette()
+            : variant.Label.StartsWith("auto", StringComparison.Ordinal) ? AutorangeProbeCases.AutoPalette()
+            : AutorangeProbeCases.SortedPalette();
         string wdl = Wdl(plan, variant);
         string wmp = Wmp(variant.Room, variant.Targets, variant.Trace?.Map);
         WdlParser.Parse(wdl);
@@ -494,9 +601,33 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, "PRBYEL.PCX"), SyntheticPcx.HalfHalf(64, 64, (byte)Ink.Yellow, (byte)Ink.Mark, palette));
             WriteValidated(Path.Combine(workDir, "PRBTGT.PCX"), SyntheticPcx.HalfHalf(TargetBitmapWidth, TargetBitmapHeight, (byte)Ink.TargetLeft, (byte)Ink.TargetRight, palette));
         }
+        else if (plan.ProbeName == AutorangeProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, "PRBYEL.PCX"), SyntheticPcx.Write(64, 64, AutorangeProbeCases.GridBitmap, palette));
+        }
         else
         {
             WriteTexture(workDir, "PRBYEL.PCX", Ink.Yellow, palette);
+        }
+
+        if (plan.ProbeName == SkyProbeName)
+        {
+            // Four sky sides (SkyProbeCases): the left half in the side's colour, the right half
+            // yellow, and a band in the marker colour over rows 16-47, whose edges show where the
+            // bitmap sits and how tall it is drawn (rows 0 and 63 are the side colour, which the
+            // runtime repeats above and below the bitmap, p.38).
+            Ink[] sides = [Ink.Red, Ink.Green, Ink.Blue, Ink.Magenta];
+            for (int side = 0; side < sides.Length; side++)
+            {
+                byte left = (byte)sides[side];
+                WriteValidated(
+                    Path.Combine(workDir, SkyProbeCases.SideFile(side)),
+                    SyntheticPcx.Write(
+                        SkyProbeCases.SideWidth,
+                        SkyProbeCases.SideHeight,
+                        (x, y) => y is >= 16 and < 48 ? (byte)Ink.Mark : x < SkyProbeCases.SideWidth / 2 ? left : (byte)Ink.Yellow,
+                        palette));
+            }
         }
 
         if (plan.ProbeName == ViewActivityProbeName)
@@ -505,9 +636,26 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
         }
 
-        WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
+        if (plan.ProbeName == ShadingProbeName)
+        {
+            // The side walls and the floor in the ramp's brightest colour, which shading darkens.
+            WriteValidated(Path.Combine(workDir, "PRBBLU.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
+        }
+        else
+        {
+            WriteTexture(workDir, "PRBBLU.PCX", Ink.Blue, palette);
+        }
+
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
+        if (plan.ProbeName == ShadingProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
+        }
+        else
+        {
+            WriteTexture(workDir, "PRBFLR.PCX", Ink.Floor, palette);
+        }
+
         WriteTexture(workDir, "PRBCEL.PCX", Ink.Ceiling, palette);
         WriteValidated(Path.Combine(workDir, "PRBPAL.PCX"), SyntheticPcx.Swatch(palette));
 
@@ -518,7 +666,35 @@ internal static class ProjectionProbeGenerator
                 SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
         }
 
-        if (plan.ProbeName == FlicDetailProbeName)
+        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName or SaveBodyProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.FontFile), SyntheticPcx.Write(128, 64, UiLayoutProbeCases.FontPixel, palette));
+            WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.DigitFile), SyntheticPcx.Write(88, 8, UiLayoutProbeCases.DigitPixel, palette));
+            WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.PanelFile), SyntheticPcx.Solid(64, 24, 250, palette));
+        }
+
+        if (plan.ProbeName == UiWidgetsProbeName)
+        {
+            foreach ((string file, int width, int height, Func<int, int, byte> pixel) in UiWidgetsProbeCases.Bitmaps)
+            {
+                WriteValidated(Path.Combine(workDir, file), SyntheticPcx.Write(width, height, pixel, palette));
+            }
+        }
+
+        if (plan.ProbeName == WallSidesProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, WallSidesProbeCases.SplitFile), SyntheticPcx.HalfHalf(64, 64, (byte)Ink.Red, (byte)Ink.Blue, palette));
+        }
+
+        if (plan.ProbeName is AudioProbeName or SaveBodyProbeName)
+        {
+            foreach ((string file, int rate, int samples, int tone) in AudioProbeCases.Sounds)
+            {
+                File.WriteAllBytes(Path.Combine(workDir, file), SyntheticWav.Tone(rate, samples, tone));
+            }
+        }
+
+        if (plan.ProbeName is FlicDetailProbeName or AudioProbeName)
         {
             File.WriteAllBytes(
                 Path.Combine(workDir, FlicDetailProbeCases.SecondFlicFile),
@@ -583,8 +759,23 @@ internal static class ProjectionProbeGenerator
         palette.Set((int)Ink.TargetRight, 240, 130, 40);
         palette.Set((int)Ink.Mark, 170, 190, 255);
         palette.Set((int)Ink.White, 255, 255, 255);
+
+        // A gray ramp from bright to black at ShadeRampStart for the shading probe's RANGE (p.34);
+        // the other probes do not use these indices.
+        for (int i = 0; i < ShadeRampLength; i++)
+        {
+            int level = 248 - (i * 8);
+            palette.Set(ShadeRampStart + i, (byte)level, (byte)level, (byte)level);
+        }
+
         return palette;
     }
+
+    /// <summary>The first palette index of the shading probe's gray ramp.</summary>
+    public const int ShadeRampStart = 16;
+
+    /// <summary>The number of colours in the gray ramp (brightest first).</summary>
+    public const int ShadeRampLength = 32;
 
     private static string Wdl(Plan plan, Variant variant)
     {
@@ -600,7 +791,7 @@ internal static class ProjectionProbeGenerator
             MAPFILE <TITLE.WMP>;
             BIND <TITLE.WDL>;
 
-            PALETTE probe_pal { PALFILE <PRBPAL.PCX>; }
+            PALETTE probe_pal { PALFILE <PRBPAL.PCX>; {{variant.Trace?.Map?.PaletteBody ?? ""}}}
 
             BMAP red_map,<PRBRED.PCX>;
             BMAP grn_map,<PRBGRN.PCX>;
@@ -610,14 +801,15 @@ internal static class ProjectionProbeGenerator
             BMAP flr_map,<PRBFLR.PCX>;
             BMAP cel_map,<PRBCEL.PCX>;
 
-            TEXTURE red_tex { SCALE_X 4; SCALE_Y 4; BMAPS red_map; }
-            TEXTURE grn_tex { SCALE_X 4; SCALE_Y 4; BMAPS grn_map; }
-            TEXTURE yel_tex { SCALE_X 4; SCALE_Y 4; BMAPS yel_map; }
-            TEXTURE blu_tex { SCALE_X 4; SCALE_Y 4; BMAPS blu_map; }
-            TEXTURE mag_tex { SCALE_X 4; SCALE_Y 4; BMAPS mag_map; }
+            TEXTURE red_tex { SCALE_X 4; SCALE_Y 4; BMAPS red_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE grn_tex { SCALE_X 4; SCALE_Y 4; BMAPS grn_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE yel_tex { SCALE_X 4; SCALE_Y 4; BMAPS yel_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE blu_tex { SCALE_X 4; SCALE_Y 4; BMAPS blu_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
+            TEXTURE mag_tex { SCALE_X 4; SCALE_Y 4; BMAPS mag_map; {{variant.Trace?.Map?.WallTextureBody ?? ""}}}
             TEXTURE flr_tex { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; }
             TEXTURE cel_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; }
 
+            {{variant.Trace?.Map?.Textures ?? ""}}
             WALL red_wall { TEXTURE red_tex; }
             WALL grn_wall { TEXTURE grn_tex; }
             WALL yel_wall { TEXTURE yel_tex; }
@@ -629,7 +821,7 @@ internal static class ProjectionProbeGenerator
                 FLOOR_HGT 0;
                 CEIL_HGT {{variant.Room.CeilingHeight}};
                 FLOOR_TEX flr_tex;
-                CEIL_TEX cel_tex;
+                CEIL_TEX {{variant.Trace?.Map?.RoomCeiling ?? "cel_tex"}};
                 {{variant.Trace?.Map?.RoomBody ?? ""}}
             }
             {{(variant.Trace?.Map is { PadBody: not null } padMap ? PadRegionWdl(variant.Room, padMap) : "")}}
@@ -647,7 +839,7 @@ internal static class ProjectionProbeGenerator
             {
                 PRINTFILE "ovsta", 0;
                 PRINT_STRING "START\n";
-                SET PLAYER_ARC, {{Num(variant.Arc)}};
+            {{variant.Trace?.Prelude ?? ""}}    SET PLAYER_ARC, {{Num(variant.Arc)}};
                 SET PLAYER_TILT, {{Num(variant.Tilt)}};
                 SET PLAYER_SIZE, {{variant.Room.EyeHeight}};
                 SET PLAYER_Z, {{variant.Room.EyeHeight}};
@@ -732,7 +924,7 @@ internal static class ProjectionProbeGenerator
     /// <summary>Extra skills dumped before the shot by the shoot-mapping probe.</summary>
     private static readonly (string Skill, string Label)[] ShootStateLabels =
     [
-        ("SHOOT_X", "SHX"), ("SHOOT_Y", "SHY"), ("SHOOT_RANGE", "SHRNG"), ("SHOOT_FAC", "SHFAC"), ("TICKS", "TCK"),
+        ("SHOOT_X", "SHX"), ("SHOOT_Y", "SHY"), ("SHOOT_RANGE", "SHRNG"), ("SHOOT_FAC", "SHFAC"),
     ];
 
     /// <summary>
@@ -854,7 +1046,10 @@ internal static class ProjectionProbeGenerator
 
         for (int i = 0; i < vertices.Count; i++)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} 0;#{i}\r\n");
+            double z = map?.PadZ is { } padZ && map.PadBody is not null && i >= padFirst && i < padFirst + PadCorners.Length
+                ? padZ[i - padFirst]
+                : 0;
+            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} {Num(z)};#{i}\r\n");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $"REGION room 0 {room.CeilingHeight};#0\r\n");

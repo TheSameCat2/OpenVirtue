@@ -106,9 +106,9 @@ public static class UiTextBuilder
         int advance = TextAdvance(font, element);
         int drawWidth = TextDrawWidth(font, element);
         List<string> lines = TextLines(element, strings).ToList();
-        float blockHeight = lines.Count * font.Height;
+        // OV-20261029-ui-text: CENTER_Y centres the first line on POS_Y; the others follow below it.
         float blockTop = HasFlag(element, "CENTER_Y")
-            ? originY - (blockHeight / 2)
+            ? originY - (font.Height / 2f)
             : originY;
         float clipTop = blockTop;
         float clipBottom = float.IsPositiveInfinity(sizeY)
@@ -123,10 +123,13 @@ public static class UiTextBuilder
                 ? originX - (lineWidth / 2)
                 : originX;
             float y = blockTop + (lineIndex * font.Height) - offsetY;
-            if (!TryClipTextLine(y, font.Height, clipTop, clipBottom, out int sourceY, out int drawHeight, out float drawY))
+            // OV-20261029-ui-text: a line is drawn only when it lies wholly between POS_Y and
+            // POS_Y + SIZE_Y; one that sticks out above (OFFSET_Y) or below is left out entirely.
+            if (y < clipTop || y + font.Height > clipBottom)
             {
                 continue;
             }
+
 
             foreach (char ch in line)
             {
@@ -136,15 +139,15 @@ public static class UiTextBuilder
                     fontName,
                     ch,
                     x,
-                    drawY,
+                    y,
                     font,
                     layer,
                     0,
-                    sourceY,
+                    0,
                     font.Width,
-                    drawHeight,
+                    font.Height,
                     drawWidth,
-                    drawHeight);
+                    font.Height);
                 x += advance;
             }
         }
@@ -278,45 +281,23 @@ public static class UiTextBuilder
         return font.Width;
     }
 
-    private static int TextDrawWidth(FontDef font, WdlUiElement element) =>
-        HasFlag(element, "NARROW") || HasFlag(element, "CONDENSED")
-            ? TextAdvance(font, element)
-            : font.Width;
+    /// <summary>
+    /// A character's drawn width: the whole font cell. <c>CONDENSED</c> and <c>NARROW</c> shorten only
+    /// the advance, so each character overlaps the one before (OV-20261029-ui-layout).
+    /// </summary>
+    private static int TextDrawWidth(FontDef font, WdlUiElement element) => font.Width;
 
     private static float TextLineWidth(int characterCount, int drawWidth, int advance) =>
         characterCount <= 0 ? 0 : ((characterCount - 1) * advance) + drawWidth;
 
-    private static bool TryClipTextLine(
-        float y,
-        int height,
-        float clipTop,
-        float clipBottom,
-        out int sourceY,
-        out int drawHeight,
-        out float drawY)
-    {
-        float bottom = y + height;
-        float clippedTop = Math.Max(y, clipTop);
-        float clippedBottom = Math.Min(bottom, clipBottom);
-        if (clippedBottom <= clippedTop)
-        {
-            sourceY = 0;
-            drawHeight = 0;
-            drawY = y;
-            return false;
-        }
-
-        sourceY = Math.Max(0, (int)Math.Round(clippedTop - y));
-        drawHeight = Math.Max(0, (int)Math.Round(clippedBottom - clippedTop));
-        drawY = clippedTop;
-        return drawHeight > 0;
-    }
-
     private static string FormatDigits(double skill, float factor, int length)
     {
+        // OV-20261029-ui-layout: the value is rounded (3.7 shows 4), right-aligned in len places with
+        // spaces before it, and a longer number keeps its last len digits.
         double scaled = skill * factor;
-        bool negative = scaled < 0;
-        string digits = Math.Abs((long)Math.Truncate(scaled)).ToString(CultureInfo.InvariantCulture);
+        long rounded = (long)Math.Round(scaled, MidpointRounding.AwayFromZero);
+        bool negative = rounded < 0;
+        string digits = Math.Abs(rounded).ToString(CultureInfo.InvariantCulture);
         if (negative)
         {
             digits = "-" + digits;

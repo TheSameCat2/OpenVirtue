@@ -41,7 +41,8 @@ public class WdlInterpreterTests
             "SET TIME_CORR, 0.5; SET FRICTION, 0.25; SET INERTIA, 2; " +
             "SET PLAYER_VX, 10; ACCEL PLAYER_VX, 4;");
 
-        Assert.Equal(9.75, context.GetSkill("PLAYER_VX"), 9);
+        // v + TIME_CORR·(a - FRICTION·v) / INERTIA = 10 + 0.5·(4 - 2.5) / 2 (OV-20261029-motion-timing).
+        Assert.Equal(10.375, context.GetSkill("PLAYER_VX"), 9);
     }
 
     [Fact]

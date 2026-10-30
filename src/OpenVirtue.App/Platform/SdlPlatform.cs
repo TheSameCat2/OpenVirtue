@@ -3,6 +3,7 @@
 
 using System.Numerics;
 using System.Runtime.InteropServices;
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Host;
 using SDL;
 
@@ -41,6 +42,8 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
     private string _title;
     private bool _open = true;
     private bool _cursorVisible = true;
+    private readonly List<(InkeyKey Key, char Character)> _textKeys = [];
+    private bool _textInput;
     private bool _prompting;
     private bool _promptDone;
     private bool _promptAccepted;
@@ -230,6 +233,37 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
         }
     }
 
+    /// <inheritdoc/>
+    public bool BeginTextInput()
+    {
+        _textKeys.Clear();
+        _textInput = true;
+        _down.Clear();
+        SDL3.SDL_StartTextInput(_window);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void EndTextInput()
+    {
+        _textInput = false;
+        _textKeys.Clear();
+        SDL3.SDL_StopTextInput(_window);
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(InkeyKey Key, char Character)> ConsumeTextKeys()
+    {
+        if (_textKeys.Count == 0)
+        {
+            return [];
+        }
+
+        var keys = _textKeys.ToArray();
+        _textKeys.Clear();
+        return keys;
+    }
+
     public string? Prompt(string label, string initialValue, int capacity)
     {
         _prompting = true;
@@ -337,6 +371,13 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
                 {
                     AppendPromptText(e.text.text);
                 }
+                else if (_textInput && Marshal.PtrToStringUTF8((nint)e.text.text) is { } typed)
+                {
+                    foreach (char c in typed)
+                    {
+                        _textKeys.Add((InkeyKey.Character, c));
+                    }
+                }
 
                 break;
             case EventMouseMotion:
@@ -375,6 +416,31 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
                 {
                     _promptBuffer = _promptBuffer[..^1];
                 }
+            }
+
+            return;
+        }
+
+        if (_textInput)
+        {
+            // INKEY editing keys (SDL scancodes); the game sees no keys while the input runs.
+            InkeyKey? editing = (int)scancode switch
+            {
+                40 or 88 => InkeyKey.Return,
+                41 => InkeyKey.Escape,
+                42 => InkeyKey.Backspace,
+                76 => InkeyKey.Delete,
+                79 => InkeyKey.Right,
+                80 => InkeyKey.Left,
+                81 => InkeyKey.Down,
+                82 => InkeyKey.Up,
+                75 => InkeyKey.PageUp,
+                78 => InkeyKey.PageDown,
+                _ => null,
+            };
+            if (down && editing is { } k)
+            {
+                _textKeys.Add((k, '\0'));
             }
 
             return;

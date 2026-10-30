@@ -115,11 +115,12 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
+        // CENTER_Y centres the first line on POS_Y; CENTER_X centres each line (OV-20261029-ui-text).
         Assert.Equal(42, glyphs[0].X);
-        Assert.Equal(30, glyphs[0].Y);
+        Assert.Equal(35, glyphs[0].Y);
         Assert.Equal(50, glyphs[1].X);
         Assert.Equal(46, glyphs[2].X);
-        Assert.Equal(40, glyphs[2].Y);
+        Assert.Equal(45, glyphs[2].Y);
     }
 
     [Fact]
@@ -137,14 +138,41 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
-        Assert.Equal(7, glyphs[0].DrawWidth);
+        // The advance shrinks; each character is still drawn whole, over the one before
+        // (OV-20261029-ui-layout).
+        Assert.Equal(8, glyphs[0].DrawWidth);
         Assert.Equal(7, glyphs[1].X);
-        Assert.Equal(6, glyphs[2].DrawWidth);
+        Assert.Equal(8, glyphs[2].DrawWidth);
         Assert.Equal(6, glyphs[3].X);
     }
 
+    [Theory]
+    [InlineData(7, "    7")]
+    [InlineData(1234, " 1234")]
+    [InlineData(-56, "  -56")]
+    [InlineData(3.7, "    4")]
+    [InlineData(123456, "23456")]
+    [InlineData(0, "    0")]
+    public void Build_PanelDigits_ShowTheMeasuredLayout(double value, string shown)
+    {
+        // OV-20261029-ui-layout: rounded, right-aligned in len places, the last len digits kept.
+        Level level = Load(
+            """
+            MAPFILE <test.wmp>;
+            SKILL v { VAL 0; }
+            FONT f, <f.pcx>, 8, 8;
+            PANEL p { POS_X 100; POS_Y 60; DIGITS 4,14,5,f,1,v; FLAGS VISIBLE; }
+            """);
+        var skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase) { ["v"] = value };
+
+        IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level, skills: skills);
+
+        Assert.Equal(shown, new string([.. glyphs.Select(g => (char)g.CodePoint)]));
+        Assert.Equal([104f, 112f, 120f, 128f, 136f], glyphs.Select(g => g.X));
+    }
+
     [Fact]
-    public void Build_SizeYAndOffsetY_CropsScrolledTextVertically()
+    public void Build_SizeYAndOffsetY_ShowOnlyWholeLines()
     {
         Level level = Load(
             """
@@ -156,14 +184,13 @@ public sealed class UiTextBuilderTests
 
         IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
 
-        Assert.Equal(['A', 'B'], glyphs.Select(glyph => (char)glyph.CodePoint).ToArray());
-        Assert.Equal(20, glyphs[0].Y);
-        Assert.Equal(5, glyphs[0].SourceY);
-        Assert.Equal(5, glyphs[0].SourceHeight);
-        Assert.Equal(5, glyphs[0].DrawHeight);
-        Assert.Equal(25, glyphs[1].Y);
-        Assert.Equal(0, glyphs[1].SourceY);
-        Assert.Equal(10, glyphs[1].DrawHeight);
+        // Only whole lines between POS_Y and POS_Y + SIZE_Y are drawn: A (15…25) sticks out above,
+        // C (35…45) below (OV-20261029-ui-text).
+        UiTextGlyph b = Assert.Single(glyphs);
+        Assert.Equal('B', (char)b.CodePoint);
+        Assert.Equal(25, b.Y);
+        Assert.Equal(0, b.SourceY);
+        Assert.Equal(10, b.DrawHeight);
     }
 
     [Fact]

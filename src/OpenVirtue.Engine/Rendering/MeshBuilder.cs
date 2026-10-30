@@ -51,17 +51,22 @@ public static class MeshBuilder
 
             Region? left = RegionAt(level, wall.LeftRegion);
             Region? right = RegionAt(level, wall.RightRegion);
+            if ((left?.BelowRegion ?? -1) >= 0 || (right?.BelowRegion ?? -1) >= 0)
+            {
+                AddStackedWall(level, accumulator, wall, v1, v2);
+                continue;
+            }
+
             if (left is not null && right is not null && !ReferenceEquals(left, right))
             {
-                float leftFloor = (float)left.FloorHeight;
-                float rightFloor = (float)right.FloorHeight;
+                // Each end of the wall meets each region's surfaces at that vertex's height, if the
+                // region's slope flags make it follow them (OV-20261029-slope).
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(leftFloor, rightFloor), Math.Max(leftFloor, rightFloor));
-
-                float leftCeiling = (float)left.CeilHeight;
-                float rightCeiling = (float)right.CeilHeight;
+                    Math.Min(Floor(left, v1), Floor(right, v1)), Math.Max(Floor(left, v1), Floor(right, v1)),
+                    Math.Min(Floor(left, v2), Floor(right, v2)), Math.Max(Floor(left, v2), Floor(right, v2)));
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(leftCeiling, rightCeiling), Math.Max(leftCeiling, rightCeiling));
+                    Math.Min(Ceiling(left, v1), Ceiling(right, v1)), Math.Max(Ceiling(left, v1), Ceiling(right, v1)),
+                    Math.Min(Ceiling(left, v2), Ceiling(right, v2)), Math.Max(Ceiling(left, v2), Ceiling(right, v2)));
                 continue;
             }
 
@@ -69,11 +74,119 @@ public static class MeshBuilder
             if (region is not null)
             {
                 EmitWallSegment(level, accumulator, wall, v1, v2,
-                    (float)region.FloorHeight, (float)region.CeilHeight);
+                    Floor(region, v1), Ceiling(region, v1), Floor(region, v2), Ceiling(region, v2));
             }
         }
     }
 
+    /// <summary>
+    /// A wall beside a <c>BELOW</c> stack (manual p.59): each side's column is open over its
+    /// regions' spans and solid in between (the slab of a bridge or balcony). The wall covers what is
+    /// open on one side and solid on the other, so it shows a slab's edge to a neighbour, closes a
+    /// storey that the other column does not continue, and leaves shared openings as portals. A wall
+    /// with a column on one side only, or the same column on both, covers each of its storeys. A
+    /// piece facing storey k shows the texture's sides 4k… when it has that many (manual p.38: "the
+    /// first four sides are assigned to the uppermost region, the BELOW region has the next four").
+    /// </summary>
+    private static void AddStackedWall(Level level, Accumulator accumulator, Wall wall, Vertex v1, Vertex v2)
+    {
+        List<(float Floor, float Ceiling)> left = OpenSpans(level, wall.LeftRegion);
+        List<(float Floor, float Ceiling)> right = OpenSpans(level, wall.RightRegion);
+        if (left.Count == 0 || right.Count == 0 || wall.LeftRegion == wall.RightRegion)
+        {
+            List<(float Floor, float Ceiling)> spans = left.Count > 0 ? left : right;
+            for (int storey = 0; storey < spans.Count; storey++)
+            {
+                EmitWallSegment(level, accumulator, wall, v1, v2, spans[storey].Floor, spans[storey].Ceiling, storey);
+            }
+
+            return;
+        }
+
+        foreach ((float floor, float ceiling, int storey) in Uncovered(left, right).Concat(Uncovered(right, left)))
+        {
+            EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, storey);
+        }
+    }
+
+    /// <summary>The open spans of the stack at a map region, top first.</summary>
+    private static List<(float Floor, float Ceiling)> OpenSpans(Level level, int regionIndex)
+    {
+        var spans = new List<(float, float)>();
+        if (RegionAt(level, regionIndex) is null)
+        {
+            return spans;
+        }
+
+        foreach (int member in LevelTopology.Stack(level, regionIndex))
+        {
+            Region region = level.Regions[member];
+            if (region.CeilHeight > region.FloorHeight)
+            {
+                spans.Add(((float)region.FloorHeight, (float)region.CeilHeight));
+            }
+        }
+
+        return spans;
+    }
+
+    /// <summary>The parts of <paramref name="spans"/> that none of <paramref name="cover"/> overlaps.</summary>
+    private static IEnumerable<(float Floor, float Ceiling, int Storey)> Uncovered(
+        List<(float Floor, float Ceiling)> spans,
+        List<(float Floor, float Ceiling)> cover)
+    {
+        for (int storey = 0; storey < spans.Count; storey++)
+        {
+            (float floor, float ceiling) = spans[storey];
+            var pieces = new List<(float Floor, float Ceiling)> { (floor, ceiling) };
+            foreach ((float coverFloor, float coverCeiling) in cover)
+            {
+                var next = new List<(float Floor, float Ceiling)>();
+                foreach ((float f, float c) in pieces)
+                {
+                    if (coverCeiling <= f || coverFloor >= c)
+                    {
+                        next.Add((f, c));
+                        continue;
+                    }
+
+                    if (coverFloor > f)
+                    {
+                        next.Add((f, coverFloor));
+                    }
+
+                    if (coverCeiling < c)
+                    {
+                        next.Add((coverCeiling, c));
+                    }
+                }
+
+                pieces = next;
+            }
+
+            foreach ((float pieceFloor, float pieceCeiling) in pieces)
+            {
+                yield return (pieceFloor, pieceCeiling, storey);
+            }
+        }
+    }
+
+    /// <summary>The render texture of a lower storey's own sides (4·storey on), or null to use the wall's texture.</summary>
+    private static string? StoreySide(Level level, string? texture, int storey) =>
+        storey > 0 &&
+        texture is not null &&
+        level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
+        resolved.Sides > 4 * storey
+            ? TextureAnimation.ResolveRenderTexture(resolved, 1, 4 * storey)
+            : null;
+
+    private static float Floor(Region region, Vertex vertex) =>
+        (float)(region.FloorHeight + (LevelTopology.SlopeSign(region, ceiling: false) * vertex.Z));
+
+    private static float Ceiling(Region region, Vertex vertex) =>
+        (float)(region.CeilHeight + (LevelTopology.SlopeSign(region, ceiling: true) * vertex.Z));
+
+    /// <summary>A flat-topped wall piece between two heights (a <c>BELOW</c> stack's spans).</summary>
     private static void EmitWallSegment(
         Level level,
         Accumulator accumulator,
@@ -81,38 +194,55 @@ public static class MeshBuilder
         Vertex v1,
         Vertex v2,
         float floor,
-        float ceiling)
+        float ceiling,
+        int storey) =>
+        EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, floor, ceiling, storey);
+
+    private static void EmitWallSegment(
+        Level level,
+        Accumulator accumulator,
+        Wall wall,
+        Vertex v1,
+        Vertex v2,
+        float floor1,
+        float ceiling1,
+        float floor2,
+        float ceiling2,
+        int storey = 0)
     {
-        if (ceiling <= floor)
+        if (ceiling1 <= floor1 && ceiling2 <= floor2)
         {
             return;
         }
 
+        float floor = Math.Min(floor1, floor2);
+        float ceiling = Math.Max(ceiling1, ceiling2);
+
         float dx = v2.X - v1.X;
         float dz = v2.Y - v1.Y;
         float length = MathF.Sqrt((dx * dx) + (dz * dz));
-        float height = ceiling - floor;
         TextureMapping mapping = TextureMappingFor(level, wall.Texture);
         // OV-20261009-shoot-mapping: viewed from the wall's left region (the room side of the
         // retail convention), the bitmap's left half sits at the SECOND vertex, so u starts at
-        // v2 and grows toward v1; the right-region view and the OFFSET_X sense are unprobed.
+        // v2 and grows toward v1. OV-20261030-wall-sides: from the other face it is the same, the
+        // bitmap fixed to the wall and so seen mirrored. The OFFSET_X sense is unprobed.
         float uAtV2 = (float)wall.OffsetX * mapping.OffsetToU;
         float v0 = (float)wall.OffsetY * mapping.OffsetToV;
         float uAtV1 = uAtV2 + (length * mapping.WorldToU);
-        float textureV1 = v0 + (height * mapping.WorldToV);
         float ambient = WallAmbient(level, wall);
 
-        List<RenderVertex> target = accumulator.Bucket(
-            wall.Texture,
-            AnimationSourceFor(level, wall.Texture, wall),
-            alphaTest: wall["TRANSPARENT"] > 0);
+        List<RenderVertex> target = StoreySide(level, wall.Texture, storey) is { } sideTexture
+            ? accumulator.Bucket(sideTexture, animationSource: null, alphaTest: wall["TRANSPARENT"] > 0)
+            : accumulator.Bucket(wall.Texture, AnimationSourceFor(level, wall.Texture, wall), alphaTest: wall["TRANSPARENT"] > 0);
         // Render depth is −map y (RenderSpace, ADR-0009); u follows the vertex order unchanged.
         float z1 = RenderSpace.ZFromMapY(v1.Y);
         float z2 = RenderSpace.ZFromMapY(v2.Y);
-        var bottomLeft = new RenderVertex(v1.X, floor + v1.Z, z1, uAtV1, v0, ambient);
-        var bottomRight = new RenderVertex(v2.X, floor + v2.Z, z2, uAtV2, v0, ambient);
-        var topRight = new RenderVertex(v2.X, ceiling + v2.Z, z2, uAtV2, textureV1, ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling + v1.Z, z1, uAtV1, textureV1, ambient);
+        // v runs from the piece's lowest point, so a sloped edge cuts the texture rather than stretching it.
+        float worldToV = mapping.WorldToV;
+        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, v0 + ((floor1 - floor) * worldToV), ambient);
+        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, v0 + ((floor2 - floor) * worldToV), ambient);
+        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, v0 + ((ceiling2 - floor) * worldToV), ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, v0 + ((ceiling1 - floor) * worldToV), ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -125,7 +255,7 @@ public static class MeshBuilder
     {
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
-            List<int>? loop = TraceRegionLoop(level, regionIndex);
+            List<int>? loop = LevelTopology.TraceRegionLoop(level, regionIndex);
             if (loop is null)
             {
                 continue;
@@ -151,6 +281,7 @@ public static class MeshBuilder
                 loop,
                 triangles,
                 (float)region.FloorHeight,
+                (float)LevelTopology.SlopeSign(region, ceiling: false),
                 region.FloorTexture,
                 region,
                 (float)region.FloorOffsetX,
@@ -162,6 +293,7 @@ public static class MeshBuilder
                 loop,
                 triangles,
                 (float)region.CeilHeight,
+                (float)LevelTopology.SlopeSign(region, ceiling: true),
                 region.CeilTexture,
                 region,
                 (float)region.CeilOffsetX,
@@ -176,6 +308,7 @@ public static class MeshBuilder
         List<int> loop,
         IReadOnlyList<int> triangles,
         float height,
+        float slopeSign,
         string? texture,
         Region region,
         float offsetX,
@@ -197,99 +330,24 @@ public static class MeshBuilder
             int a = loop[triangles[i]];
             int b = loop[triangles[flip ? i + 2 : i + 1]];
             int c = loop[triangles[flip ? i + 1 : i + 2]];
-            target.Add(SurfaceVertex(level, a, height, mapping, offsetX, offsetY, (float)region.Ambient));
-            target.Add(SurfaceVertex(level, b, height, mapping, offsetX, offsetY, (float)region.Ambient));
-            target.Add(SurfaceVertex(level, c, height, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, a, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, b, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
+            target.Add(SurfaceVertex(level, c, height, slopeSign, mapping, offsetX, offsetY, (float)region.Ambient));
         }
     }
 
     private static RenderVertex SurfaceVertex(
-        Level level, int vertexIndex, float height, TextureMapping mapping, float offsetX, float offsetY, float ambient)
+        Level level, int vertexIndex, float height, float slopeSign, TextureMapping mapping, float offsetX, float offsetY, float ambient)
     {
+        // A surface follows its vertices' heights only with a slope flag (OV-20261029-slope).
         Vertex vertex = level.Vertices[vertexIndex];
         return new RenderVertex(
             vertex.X,
-            height + vertex.Z,
+            height + (slopeSign * vertex.Z),
             RenderSpace.ZFromMapY(vertex.Y),
             (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
             ambient);
-    }
-
-    /// <summary>
-    /// Traces the boundary of a region into a single ordered vertex loop, or returns null
-    /// when the region's walls don't form one clean simple polygon (it is then skipped).
-    /// </summary>
-    private static List<int>? TraceRegionLoop(Level level, int regionIndex)
-    {
-        var adjacency = new Dictionary<int, List<int>>();
-        var edges = new HashSet<(int, int)>();
-
-        foreach (Wall wall in level.Walls)
-        {
-            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2)
-            {
-                continue;
-            }
-
-            (int, int) key = wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1);
-            if (!edges.Add(key))
-            {
-                continue;
-            }
-
-            Connect(adjacency, wall.Vertex1, wall.Vertex2);
-            Connect(adjacency, wall.Vertex2, wall.Vertex1);
-        }
-
-        if (edges.Count < 3)
-        {
-            return null;
-        }
-
-        foreach (List<int> neighbours in adjacency.Values)
-        {
-            if (neighbours.Count != 2)
-            {
-                return null; // a junction or dangling edge — not a simple loop
-            }
-        }
-
-        int start = edges.First().Item1;
-        var loop = new List<int> { start };
-        int previous = -1;
-        int current = start;
-        while (true)
-        {
-            List<int> neighbours = adjacency[current];
-            int next = neighbours[0] != previous ? neighbours[0] : neighbours[1];
-            if (next == start)
-            {
-                break;
-            }
-
-            loop.Add(next);
-            if (loop.Count > edges.Count)
-            {
-                return null;
-            }
-
-            previous = current;
-            current = next;
-        }
-
-        return loop.Count == edges.Count ? loop : null; // must be one loop covering every edge
-    }
-
-    private static void Connect(Dictionary<int, List<int>> adjacency, int from, int to)
-    {
-        if (!adjacency.TryGetValue(from, out List<int>? list))
-        {
-            list = [];
-            adjacency[from] = list;
-        }
-
-        list.Add(to);
     }
 
     private static bool TryVertex(Level level, int index, out Vertex vertex)
@@ -307,11 +365,44 @@ public static class MeshBuilder
     private static Region? RegionAt(Level level, int index) =>
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
 
-    private static float WallAmbient(Level level, Wall wall)
+    /// <summary>
+    /// A wall's region <c>AMBIENT</c>: its left region's, the room side of the retail convention. A
+    /// room with <c>AMBIENT</c> −0.25 darkened its walls to a solid region by 8 levels
+    /// (OV-20261029-shading round 3), so the brighter side does not win. One mesh serves both sides;
+    /// the view from the right region is unmeasured.
+    /// </summary>
+    private static float WallAmbient(Level level, Wall wall) =>
+        (RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient
+        : RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient
+        : 0) + (float)GeniusLight(level, wall);
+
+    /// <summary>
+    /// The light a region's <c>GENIUS</c> object gives a wall of it: a thing or actor whose texture has
+    /// <c>AMBIENT</c> &gt; 0 brightens the face it stands in front of by 16 shade levels per 1.0 of the
+    /// wall texture's <c>ALBEDO</c> — half what an <c>AMBIENT</c> gives (32 a 1.0, <see cref="PaletteShading"/>) —
+    /// as a facing wall gains in OV-20261029-shading rounds 4 and 5. A wall seen at a grazing angle
+    /// gains less there; that is not modelled.
+    /// </summary>
+    private static double GeniusLight(Level level, Wall wall)
     {
-        float left = RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient : 0;
-        float right = RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient : 0;
-        return Math.Max(left, right);
+        if (wall.Texture is not { } textureName ||
+            !level.Textures.TryGetValue(textureName, out LevelTexture texture) ||
+            texture.Albedo <= 0 ||
+            RegionAt(level, wall.LeftRegion) is not { GeniusName: { } geniusName } ||
+            level.Things.Cast<MapEntity>().Concat(level.Actors).FirstOrDefault(e => e.Name.Equals(geniusName, StringComparison.OrdinalIgnoreCase)) is not { } lamp ||
+            lamp.Texture is not { } lampTexture ||
+            !level.Textures.TryGetValue(lampTexture, out LevelTexture lampLevelTexture) ||
+            lampLevelTexture.Ambient <= 0 ||
+            (uint)wall.Vertex1 >= (uint)level.Vertices.Count ||
+            (uint)wall.Vertex2 >= (uint)level.Vertices.Count)
+        {
+            return 0;
+        }
+
+        Vertex a = level.Vertices[wall.Vertex1];
+        Vertex b = level.Vertices[wall.Vertex2];
+        double side = ((b.X - a.X) * (lamp.Y - a.Y)) - ((b.Y - a.Y) * (lamp.X - a.X));
+        return side > 0 ? texture.Albedo * 0.5 : 0;
     }
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)
@@ -340,9 +431,11 @@ public static class MeshBuilder
         string? textureName,
         AcknexObject source)
     {
+        // A wall with a sided texture also needs its own batch: the side it shows depends on the
+        // viewpoint (OV-20261030-wall-sides).
         return textureName is not null &&
                level.Textures.TryGetValue(textureName, out LevelTexture texture) &&
-               (texture.Cycles > 1 || texture.IsOneShot)
+               (texture.Cycles > 1 || texture.IsOneShot || (source is Wall && texture.Sides >= 2))
             ? source
             : null;
     }

@@ -118,6 +118,73 @@ public sealed class Level
     /// <summary>Skills declared with <c>TYPE GLOBAL</c>, whose values survive a <c>LEVEL</c> change.</summary>
     public IReadOnlySet<string> GlobalSkills { get; }
 
+    /// <summary>Skills declared with <c>TYPE LOCAL</c>, which <c>SAVE_INFO</c> keeps and <c>SAVE</c> does not (p.111).</summary>
+    public IReadOnlySet<string> LocalSkills { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every <c>TEXTURE</c> declaration's name in order, repeats included. The original's saves number
+    /// textures by declaration (OV-20261029-save-body round 12).
+    /// </summary>
+    public IReadOnlyList<string> TextureDeclarations { get; init; } = [];
+
+    /// <summary>The map file the level's <c>MAPFILE</c> (or a <c>LEVEL</c> override) names.</summary>
+    public string MapFileName { get; init; } = "";
+
+    /// <summary>
+    /// The map's walls, things and actors in file order, ways and the player start as <c>null</c>
+    /// places: an object's original save number is its place here + 1 (OV-20261029-save-body round 9).
+    /// </summary>
+    public IReadOnlyList<AcknexObject?> MapObjects { get; init; } = [];
+
+    /// <summary>
+    /// The walls, things and actors the level's WDL declares but its map does not place, in
+    /// declaration order. They exist with <c>INVISIBLE</c> set (manual p.70), at 0,0 in region 0, so
+    /// scripts can bring them in: Saints of Virtue keeps its shots and dropped pickups this way. The
+    /// things and actors among them also end <see cref="Things"/> and <see cref="Actors"/>; the walls,
+    /// which have no vertices, are only here. The original's saves put them first
+    /// (OV-20261029-save-body round 13).
+    /// </summary>
+    public IReadOnlyList<AcknexObject> UnplacedObjects { get; init; } = [];
+
+    /// <summary>
+    /// Declarations a full save refers to by number, in order: <c>FONT</c>, <c>STRING</c>, <c>SOUND</c>,
+    /// and the screen elements under <see cref="WdlDeclarations.ScreenElements"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, List<string>> NumberedDeclarations { get; init; } = new Dictionary<string, List<string>>();
+
+    /// <summary>The textures declared with <c>FLAGS SAVE</c>, in declaration order (a full save's second section; round 15b).</summary>
+    public IReadOnlyList<WdlDeclarations.SaveTextureDeclaration> SaveTextures { get; init; } = [];
+
+    /// <summary>
+    /// The objects in the order of a full save's object records: the unplaced ones in reverse
+    /// declaration order, then the placed actors, things and walls, each in reverse map order
+    /// (OV-20261029-save-body rounds 9 and 13).
+    /// </summary>
+    public IReadOnlyList<AcknexObject> SaveObjectOrder()
+    {
+        var unplaced = new HashSet<AcknexObject>(UnplacedObjects, ReferenceEqualityComparer.Instance);
+        return
+        [
+            .. UnplacedObjects.Reverse(),
+            .. Actors.Where(a => !unplaced.Contains(a)).Reverse(),
+            .. Things.Where(t => !unplaced.Contains(t)).Reverse(),
+            .. Walls.Reverse(),
+        ];
+    }
+
+    /// <summary>
+    /// The actions in the order they are first declared. The original numbers them from 11 in this
+    /// order in its saves (OV-20261029-save-body).
+    /// </summary>
+    public IReadOnlyList<string> ActionOrder { get; init; } = [];
+
+    /// <summary>The declared skills in declaration order (the last declaration of a name counts).</summary>
+    public IReadOnlyList<string> SkillDeclarationOrder { get; init; } = [];
+
+    /// <summary>Each <c>PALETTE</c>'s shading: its <c>RANGE</c>s and flags (manual p.34–35).</summary>
+    public IReadOnlyDictionary<string, LevelPaletteShading> PaletteShading { get; init; } =
+        new Dictionary<string, LevelPaletteShading>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Skills whose declarations supplied an explicit <c>VAL</c> initializer.</summary>
     public IReadOnlySet<string> ExplicitlyInitializedSkills { get; }
 
@@ -192,3 +259,6 @@ public sealed class Level
     /// <summary>Per-region boundary loops and floor triangulations, built on first use by <see cref="LevelTopology"/>.</summary>
     internal LevelTopology.RegionSurfaceCache? SurfaceCache { get; set; }
 }
+
+/// <summary>A palette's shading declarations: its <c>RANGE start, length</c> pairs and its <c>AUTORANGE</c> and <c>HARD</c> flags.</summary>
+public sealed record LevelPaletteShading(IReadOnlyList<(int Start, int Length)> Ranges, bool AutoRange, bool Hard);

@@ -9,6 +9,7 @@ using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Flic;
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wrs;
 
@@ -129,7 +130,7 @@ public sealed partial class RuntimeHost
             }
 
             float[] mono = WavPcm.ToMono(decoded);
-            _audio.StartVoice(request.Channel, mono, decoded.SampleRate, volume, pan, request.Loop);
+            _audio.StartVoice(request.Channel, mono, SoundBlasterRate(decoded.SampleRate), volume, pan, request.Loop);
             if (request.Channel is >= 0 and < AudioMixer.VoiceCount)
             {
                 _hostedChannels.Add(request.Channel);
@@ -468,7 +469,13 @@ public sealed partial class RuntimeHost
     private void AddSpatialLoopCandidate(AcknexObject emitter, List<SpatialLoopCandidate> candidates)
     {
         // Most emitters have no looping sound texture, so the texture is checked before the
-        // emitter is placed (which reads its skills).
+        // emitter is placed (which reads its skills). An INVISIBLE thing or actor is "as if it was
+        // not there" (manual p.70); the unplaced ones all are.
+        if (emitter is MapEntity { } hidden && hidden["INVISIBLE"] > 0)
+        {
+            return;
+        }
+
         if (_level.FindTexture(EmitterTextureName(emitter)) is not { } entry ||
             !entry.Texture.IsSoundLoop ||
             string.IsNullOrWhiteSpace(entry.Texture.SoundName) ||
@@ -492,6 +499,15 @@ public sealed partial class RuntimeHost
         float volume = requestVolume * (float)Math.Clamp(_runtime.GetSkill("SOUND_VOL"), 0, 1);
         candidates.Add(new SpatialLoopCandidate(emitter, spatialTexture.SoundName, requestVolume, volume, pan));
     }
+
+    /// <summary>
+    /// The rate a Sound Blaster plays a sound at: its time constant sets the sample period in whole
+    /// microseconds, cut down, so 11025 Hz plays at 1,000,000 / 90 = 11,111 Hz and 22050 Hz at 22,222.
+    /// A one-second sound then frees its channel at TICKS 29.406 rather than at the next cycle after
+    /// 29.438 (OV-20261029-audio round 3).
+    /// </summary>
+    public static int SoundBlasterRate(int sampleRate) =>
+        sampleRate is > 3906 and <= 45454 ? 1_000_000 / (1_000_000 / sampleRate) : sampleRate;
 
     private bool HasFreeSoundChannel()
     {
@@ -696,6 +712,12 @@ public sealed partial class RuntimeHost
 
     private void HandleRuntimeInputRequests()
     {
+        if (_inkey is not null || (_runtime.PendingInputRequests.Count > 0 && !_handlingInputRequest && _window.BeginTextInput()))
+        {
+            EditInkey();
+            return;
+        }
+
         if (_handlingInputRequest || _runtime.PendingInputRequests.Count == 0)
         {
             return;
@@ -728,6 +750,41 @@ public sealed partial class RuntimeHost
         }
     }
 
+    /// <summary>
+    /// One frame of a running <c>INKEY</c> (OV-20261029-inkey): the window's keys edit the string in
+    /// place, the world goes on, and Return or an abort key completes the waiting action.
+    /// </summary>
+    private void EditInkey()
+    {
+        if (_inkey is null)
+        {
+            WdlInputRequest request = _runtime.PendingInputRequests[0];
+            _inkey = new InkeyEditor(request.InitialValue, request.Capacity);
+            _inkeyRequest = request;
+        }
+
+        foreach ((InkeyKey key, char character) in _window.ConsumeTextKeys())
+        {
+            if (_inkey.Press(key, character))
+            {
+                break;
+            }
+        }
+
+        WdlInputRequest active = _inkeyRequest!.Value;
+        _runtime.SetString(active.StringName, _inkey.Text);
+        if (_inkey.Result is not { } result)
+        {
+            return;
+        }
+
+        string text = _inkey.Text;
+        _inkey = null;
+        _inkeyRequest = null;
+        _window.EndTextInput();
+        _runtime.CompleteInput(active.Id, text, result);
+    }
+
     private void HandleRuntimePersistenceRequests()
     {
         while (_handledPersistenceRequests < _runtime.PersistenceRequests.Count)
@@ -735,7 +792,9 @@ public sealed partial class RuntimeHost
             WdlPersistenceRequest request = _runtime.PersistenceRequests[_handledPersistenceRequests++];
             if (request.InfoOnly)
             {
-                _lastPersistenceStatus = $"{PersistenceVerb(request)} info {PersistenceSlotName(request)} noted";
+                // The runtime reads and writes the original's file itself, in the instruction
+                // (OV-20261029-save-format).
+                _lastPersistenceStatus = $"{PersistenceVerb(request)} info {PersistenceSlotName(request)}";
                 continue;
             }
 
@@ -809,7 +868,7 @@ public sealed partial class RuntimeHost
         }
 
         using FileStream stream = File.Create(path);
-        JsonSerializer.Serialize(stream, _runtime.CaptureSnapshot(), SaveJsonOptions);
+        JsonSerializer.Serialize(stream, request.Snapshot ?? _runtime.CaptureSnapshot(), SaveJsonOptions);
         _lastPersistenceStatus = $"saved {PersistenceSlotName(request)}";
     }
 
@@ -818,6 +877,12 @@ public sealed partial class RuntimeHost
         string path = RuntimeSavePath(request);
         if (!File.Exists(path))
         {
+            if (_runtime.SaveFilePath(request) is { } original && File.Exists(original))
+            {
+                ImportOriginalSave(request, original);
+                return;
+            }
+
             _lastPersistenceStatus = $"missing {PersistenceSlotName(request)}";
             return;
         }
@@ -838,6 +903,76 @@ public sealed partial class RuntimeHost
         RebuildWorldResources();
         ApplyRuntimePlayerState();
         _lastPersistenceStatus = $"loaded {PersistenceSlotName(request)}";
+    }
+
+    /// <summary>
+    /// Loads what OpenVirtue can read of a full save the original wrote:
+    /// <list type="bullet">
+    /// <item>its <c>GLOBAL</c> and <c>PLAYER</c> skills, the predefined ones and so the player's
+    /// position included (OV-20261029-save-format);</item>
+    /// <item>the things', actors' and walls' positions, angles, speeds, offsets and skills
+    /// (OV-20261029-save-body);</item>
+    /// <item>the global <c>EACH_TICK</c> slots and the waiting actions (OV-20261029-save-body
+    /// rounds 7 and 8).</item>
+    /// </list>
+    /// Regions keep their level values, as the original's saves do.
+    /// </summary>
+    private void ImportOriginalSave(WdlPersistenceRequest request, string path)
+    {
+        byte[] body = AcknexSaveFile.Unpack(File.ReadAllBytes(path));
+        IReadOnlyList<SaveSkill> skills = AcknexSaveFile.ReadSkills(body);
+        int restored = _runtime.RestoreSavedSkills(skills, name => !_level.LocalSkills.Contains(name));
+        int objects = ImportOriginalObjects(body);
+        if (objects > 0)
+        {
+            RebuildWorldResources();
+        }
+
+        int actions = AcknexSaveFile.ReadActions(body) is { } saved
+            ? _runtime.ImportOriginalActions(saved, AcknexSaveFile.ReadSlots(body))
+            : 0;
+        _runtime.ImportOriginalSynonyms(AcknexSaveFile.ReadSynonyms(body));
+
+        _hasPlayerRuntimeSnapshot = false;
+        ApplyRuntimePlayerState();
+        AdoptRuntimeHeading();
+        _lastPersistenceStatus = $"loaded {restored} skills, {objects} objects and {actions} waiting actions of {PersistenceSlotName(request)} (original save)";
+    }
+
+    /// <summary>
+    /// Copies the object records of an original full save onto the level's things, actors and walls,
+    /// in <see cref="Level.SaveObjectOrder"/>.
+    /// </summary>
+    private int ImportOriginalObjects(byte[] body)
+    {
+        IReadOnlyList<AcknexObject> order = _level.SaveObjectOrder();
+        if (AcknexSaveFile.ReadObjectRecords(body, [.. order.Select(static o => o is Wall)]) is not { } saved)
+        {
+            return 0;
+        }
+
+        // SAVE regions, in reverse map order (OV-20261029-save-body round 10).
+        AcknexObject[] saveRegions = [.. _level.Regions.AsEnumerable().Reverse().Where(static r => r["SAVE"] > 0 || r["SAVE_ALL"] > 0)];
+        IReadOnlyList<SaveObjectState> savedRegions = AcknexSaveFile.ReadRegions(body);
+        for (int i = 0; i < saveRegions.Length && i < savedRegions.Count; i++)
+        {
+            Apply(saveRegions[i], savedRegions[i]);
+        }
+
+        for (int i = 0; i < order.Count; i++)
+        {
+            Apply(order[i], saved[i]);
+        }
+
+        return order.Count;
+
+        static void Apply(AcknexObject target, SaveObjectState state)
+        {
+            foreach ((string name, int raw) in state.RawSkills)
+            {
+                target[name] = raw / 1024.0;
+            }
+        }
     }
 
     private string RuntimeSavePath(WdlPersistenceRequest request)

@@ -178,7 +178,7 @@ public sealed class UiHitTesterTests
 
         Assert.NotNull(target);
         Assert.Equal("HSLIDER", target.Value.TargetKind);
-        Assert.Equal(34, target.Value.X);
+        Assert.Equal(30, target.Value.X); // 50% of the 32-pixel travel (40 less the 8-wide knob), OV-20261029-ui-widgets
         Assert.Equal(25, target.Value.Y);
         UiSliderTarget slider = Assert.IsType<UiSliderTarget>(target.Value.Slider);
         Assert.Equal("volume", slider.Skill);
@@ -189,8 +189,21 @@ public sealed class UiHitTesterTests
         Assert.Equal(0, slider.Min);
         Assert.Equal(100, slider.Max);
         Assert.Equal(0, slider.ValueAtOffset(-10));
-        Assert.Equal(50, slider.ValueAtOffset(20));
+        Assert.Equal(50, slider.ValueAtOffset(16));
         Assert.Equal(100, slider.ValueAtOffset(50));
+    }
+
+    [Theory]
+    [InlineData(2, 0)]
+    [InlineData(3, 9)]
+    [InlineData(4.5, 22)]
+    [InlineData(6, 36)]
+    public void SliderOffset_MeasuredSliders_TravelLengthLessKnobCutToAPixel(double value, float offset)
+    {
+        // OV-20261029-ui-widgets round 2: a 40-pixel slider, a 4-pixel knob, MIN 2, MAX 6.
+        var slider = new UiSliderTarget("ui_s", false, 104, 320, 40, 2, 6, 4);
+
+        Assert.Equal(offset, slider.OffsetFor(value));
     }
 
     [Fact]
@@ -213,7 +226,7 @@ public sealed class UiHitTesterTests
         Assert.NotNull(target);
         Assert.Equal("VSLIDER", target.Value.TargetKind);
         Assert.Equal(2, target.Value.X);
-        Assert.Equal(18, target.Value.Y);
+        Assert.Equal(11, target.Value.Y); // 75% of the 11-pixel travel, cut to 8
         Assert.Equal(7, target.Value.Width);
         Assert.Equal(9, target.Value.Height);
         Assert.True(target.Value.Slider!.Value.Vertical);

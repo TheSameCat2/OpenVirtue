@@ -9,10 +9,11 @@ using Silk.NET.OpenGL;
 namespace OpenVirtue.App.Rendering;
 
 /// <summary>
-/// OpenGL 3.3 core renderer. Textures are point-sampled RGBA. Palette-index shading
-/// (ADR-0008 decision 3) is the next renderer change, after projection frames match
-/// the DOSBox-X captures; this pass keeps the same tint and ambient multiply the
-/// Direct3D host used.
+/// OpenGL 3.3 core renderer. Textures are point-sampled. Shaded batches (world and sprites when the
+/// level's palette declares <c>RANGE</c>s, ADR-0008 decision 3) draw by palette index: the texel's
+/// shade level comes from its depth, <c>PLAYER_LIGHT</c>, <c>LIGHT_DIST</c> and <c>AMBIENT</c> as
+/// measured in OV-20261029-shading, the shade table maps index and level to an index, and the palette
+/// gives its colour. Other batches keep the RGB tint and ambient multiply.
 /// </summary>
 public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 {
@@ -24,6 +25,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform mat4 uViewProjection;
         out vec2 vUv;
         out float vAmbient;
+        out float vDepth;
         void main() {
             // uViewProjection is a System.Numerics row-vector matrix. It is uploaded with
             // glUniformMatrix4fv transpose=false, so GL reads that memory as column-major.
@@ -31,6 +33,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             gl_Position = uViewProjection * vec4(aPos, 1.0);
             vUv = aUv;
             vAmbient = aAmbient;
+            // The perspective w is the depth along the line of sight.
+            vDepth = gl_Position.w;
         }
         """;
 
@@ -38,11 +42,31 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         #version 330 core
         in vec2 vUv;
         in float vAmbient;
+        in float vDepth;
         uniform sampler2D uTexture;
+        uniform sampler2D uPalette;
+        uniform sampler2D uShade;
         uniform vec4 uTintAndLight;
         uniform float uAlphaTest;
+        uniform float uShaded;
+        uniform vec2 uLight;
         out vec4 fragColor;
         void main() {
+            if (uShaded > 0.5) {
+                // OV-20261029-shading: level = 30 - 32*AMBIENT - 30.4*PLAYER_LIGHT*LIGHT_DIST/d,
+                // down to an even level, 0..30; then index -> shaded index -> colour.
+                float index = floor(texture(uTexture, vUv).r * 255.0 + 0.5);
+                if (uAlphaTest > 0.5 && index < 0.5) {
+                    discard;
+                }
+                float level = 30.0 - 32.0 * (uTintAndLight.a + vAmbient)
+                    - 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
+                level = clamp(2.0 * floor(level / 2.0), 0.0, 30.0);
+                float shaded = floor(texelFetch(uShade, ivec2(int(level), int(index)), 0).r * 255.0 + 0.5);
+                vec3 rgb = texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb;
+                fragColor = vec4(clamp(rgb * uTintAndLight.rgb, 0.0, 1.0), 1.0);
+                return;
+            }
             vec4 color = texture(uTexture, vUv);
             if (uAlphaTest > 0.5 && color.a < 0.5) {
                 discard;
@@ -60,6 +84,11 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _viewProjectionLocation;
     private readonly int _tintLocation;
     private readonly int _alphaTestLocation;
+    private readonly int _shadedLocation;
+    private readonly int _lightLocation;
+    private readonly Dictionary<string, uint> _worldIndices = new(StringComparer.OrdinalIgnoreCase);
+    private uint _palette;
+    private uint _shade;
     private readonly Dictionary<string, uint> _world = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, uint> _ui = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, uint> _fonts = new(StringComparer.OrdinalIgnoreCase);
@@ -101,8 +130,12 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
         _tintLocation = _gl.GetUniformLocation(_program, "uTintAndLight");
         _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
+        _shadedLocation = _gl.GetUniformLocation(_program, "uShaded");
+        _lightLocation = _gl.GetUniformLocation(_program, "uLight");
         _gl.UseProgram(_program);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
+        _gl.Uniform1(_gl.GetUniformLocation(_program, "uPalette"), 1);
+        _gl.Uniform1(_gl.GetUniformLocation(_program, "uShade"), 2);
         _white = CreateTexture(new TextureImage(1, 1, [255, 255, 255, 255]));
         Version = _gl.GetStringS(StringName.Version) ?? "";
         Renderer = _gl.GetStringS(StringName.Renderer) ?? "";
@@ -123,7 +156,38 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         Height = Math.Max(1, height);
     }
 
-    public void UploadWorld(IReadOnlyDictionary<string, TextureImage> images) => Replace(_world, images);
+    public void UploadWorld(IReadOnlyDictionary<string, TextureImage> images)
+    {
+        Replace(_world, images);
+        DeleteAll(_worldIndices);
+        foreach ((string name, TextureImage image) in images)
+        {
+            if (image.Indices is { } indices && image.Width > 0 && image.Height > 0 && indices.Length >= image.Width * image.Height)
+            {
+                uint texture = _gl.GenTexture();
+                UploadBytes(texture, image.Width, image.Height, indices, InternalFormat.R8, PixelFormat.Red);
+                _worldIndices[name] = texture;
+            }
+        }
+    }
+
+    public void UploadShading(byte[]? palette, byte[]? shadeTable)
+    {
+        if (palette is null || shadeTable is null || palette.Length < 256 * 3 || shadeTable.Length < 256 * 32)
+        {
+            return;
+        }
+
+        if (_palette == 0)
+        {
+            _palette = _gl.GenTexture();
+            _shade = _gl.GenTexture();
+        }
+
+        UploadBytes(_palette, 256, 1, palette, InternalFormat.Rgb8, PixelFormat.Rgb);
+        // Row y is a colour index, column x a level.
+        UploadBytes(_shade, 32, 256, shadeTable, InternalFormat.R8, PixelFormat.Red);
+    }
 
     public void UploadUi(IReadOnlyDictionary<string, TextureImage> images) => Replace(_ui, images);
 
@@ -166,7 +230,25 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 _gl.DepthMask(false);
             }
 
-            BindBatchTexture(batch);
+            bool shaded = batch.Shaded && _palette != 0 && batch.Texture is not null &&
+                _worldIndices.ContainsKey(batch.Texture);
+            if (shaded)
+            {
+                _gl.ActiveTexture(TextureUnit.Texture0);
+                _gl.BindTexture(TextureTarget.Texture2D, _worldIndices[batch.Texture!]);
+                _gl.ActiveTexture(TextureUnit.Texture1);
+                _gl.BindTexture(TextureTarget.Texture2D, _palette);
+                _gl.ActiveTexture(TextureUnit.Texture2);
+                _gl.BindTexture(TextureTarget.Texture2D, _shade);
+                _gl.ActiveTexture(TextureUnit.Texture0);
+            }
+            else
+            {
+                BindBatchTexture(batch);
+            }
+
+            _gl.Uniform1(_shadedLocation, shaded ? 1f : 0f);
+            _gl.Uniform2(_lightLocation, frame.Light.X, frame.Light.Y);
             UploadMatrix(batch.Transform);
             _gl.Uniform4(_tintLocation, batch.Tint.X, batch.Tint.Y, batch.Tint.Z, batch.Ambient);
             _gl.Uniform1(_alphaTestLocation, batch.AlphaTest ? 1f : 0f);
@@ -203,6 +285,13 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 
         _disposed = true;
         DeleteAll(_world);
+        DeleteAll(_worldIndices);
+        if (_palette != 0)
+        {
+            _gl.DeleteTexture(_palette);
+            _gl.DeleteTexture(_shade);
+        }
+
         DeleteAll(_ui);
         DeleteAll(_fonts);
         if (_dynamic != 0)
@@ -289,6 +378,25 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             PixelFormat.Rgba,
             PixelType.UnsignedByte,
             image.Rgba);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+    }
+
+    private void UploadBytes(uint texture, int width, int height, byte[] data, InternalFormat internalFormat, PixelFormat format)
+    {
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        _gl.TexImage2D(
+            TextureTarget.Texture2D,
+            0,
+            internalFormat,
+            (uint)width,
+            (uint)height,
+            0,
+            format,
+            PixelType.UnsignedByte,
+            data);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);

@@ -15,7 +15,8 @@ using System.Text;
 /// key presses, e.g. <c>-w 15 space</c>). <c>Map</c>, when set, adds objects and a second region to
 /// the carrier's room. <c>ClickAfterSeconds</c>, when set, makes <c>run.sh</c> send one left
 /// mouse click to the DOSBox-X window that many seconds after launch (DOSBox-X <c>AUTOTYPE</c> only
-/// presses keys).
+/// presses keys). <c>Prelude</c>, when set, goes at the top of <c>probe_start</c>, right after the
+/// <c>START</c> marker and before the settling <c>WAITT 16</c>, for cases about the start-up itself.
 /// </summary>
 internal sealed record TraceProbeCase(
     string Label,
@@ -25,7 +26,8 @@ internal sealed record TraceProbeCase(
     IReadOnlyDictionary<string, string> Predictions,
     string? Autotype = null,
     TraceProbeMap? Map = null,
-    double? ClickAfterSeconds = null);
+    double? ClickAfterSeconds = null,
+    string? Prelude = null);
 
 /// <summary>
 /// Additions to a trace carrier's room. <c>RoomBody</c> goes into the <c>room</c> region's WDL
@@ -37,7 +39,12 @@ internal sealed record TraceProbeCase(
 /// <c>room</c> on both sides; their WALL keywords are defined in the case's declarations.
 /// <c>PadWall</c>, when set, replaces the pad's invisible passable boundary wall with that WALL
 /// keyword (defined in the case's declarations), <c>PadFloor</c> raises (or lowers) the pad's
-/// floor and <c>PadCeiling</c>, when set, replaces its ceiling height.
+/// floor and <c>PadCeiling</c>, when set, replaces its ceiling height. <c>RoomCeiling</c>, when set,
+/// is the room's <c>CEIL_TEX</c> in place of the plain ceiling (a sky texture, say); <c>Textures</c>
+/// holds <c>BMAP</c>/<c>TEXTURE</c> declarations placed before the regions, since a texture must be
+/// declared before a region uses it (Genesis "Error(137): Texture unknown"). <c>PaletteBody</c> goes
+/// into the palette's definition after its <c>PALFILE</c> (<c>RANGE</c>s, <c>FLAGS</c>). <c>PadZ</c>, when
+/// set, gives the pad's four corner vertices (−12,12), (−4,12), (−4,20), (−12,20) these WMP heights.
 /// </summary>
 internal sealed record TraceProbeMap(
     string RoomBody = "",
@@ -46,7 +53,12 @@ internal sealed record TraceProbeMap(
     IReadOnlyList<TraceProbeWall>? Walls = null,
     string? PadWall = null,
     int PadFloor = 0,
-    int? PadCeiling = null);
+    int? PadCeiling = null,
+    string? RoomCeiling = null,
+    string? Textures = null,
+    string? PaletteBody = null,
+    IReadOnlyList<double>? PadZ = null,
+    string? WallTextureBody = null);
 
 /// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
 internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);
@@ -89,6 +101,10 @@ internal static class TraceProbeWdl
         sb.Append("    PRINT_STRING \"\\n\";\n");
         return sb.ToString();
     }
+
+    /// <summary>Indents every line of <paramref name="lines"/> by four spaces (for nesting in an <c>IF</c> block).</summary>
+    public static string Indent(string lines) =>
+        string.Concat(lines.Split('\n').Select(static l => l.Length == 0 ? "" : "    " + l + "\n"));
 
     public static string Action(string name, string body) =>
         new StringBuilder().Append("ACTION ").Append(name).Append("\n{\n").Append(body).Append("}\n").ToString();

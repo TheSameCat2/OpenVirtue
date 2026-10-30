@@ -56,6 +56,12 @@ public sealed class ViewTest
     private readonly int[] _testedBy;
     private int _sightLine;
 
+    // The walls the current sight line crosses (fraction of the way, segment), and the spans of
+    // heights at the target that it reaches, each with the storey it reaches them in.
+    private readonly List<(double T, int Segment)> _crossings = [];
+    private List<(int Storey, double Low, double High)> _spans = [];
+    private List<(int Storey, double Low, double High)> _nextSpans = [];
+
     /// <summary>Indexes the walls of <paramref name="level"/> where they stand.</summary>
     public ViewTest(Level level)
     {
@@ -177,10 +183,23 @@ public sealed class ViewTest
     /// <summary>
     /// Tests a billboard sprite standing at (<paramref name="x"/>, <paramref name="y"/>) and facing the
     /// viewer, <paramref name="halfWidth"/> to either side, from <paramref name="bottom"/> to
-    /// <paramref name="top"/> in world height.
+    /// <paramref name="top"/> in world height. <paramref name="region"/> is the region (storey) it stands
+    /// in, or −1; it matters only in a <c>BELOW</c> stack.
     /// </summary>
-    public bool IsSpriteVisible(Viewer viewer, double x, double y, double halfWidth, double bottom, double top)
+    public bool IsSpriteVisible(Viewer viewer, double x, double y, double halfWidth, double bottom, double top, int region = -1)
     {
+        // A sprite in a storey of a BELOW stack shows only between its storey's floor and ceiling: a
+        // 16-high sprite in an 8-high underpass does not reach through the slab (OV-20261029-below-view).
+        if (region >= 0 && region < _level.Regions.Count && LevelTopology.Stack(_level, region).Skip(1).Any())
+        {
+            bottom = Math.Max(bottom, _level.Regions[region].FloorHeight);
+            top = Math.Min(top, _level.Regions[region].CeilHeight);
+            if (top <= bottom)
+            {
+                return false;
+            }
+        }
+
         double dx = x - viewer.X;
         double dy = y - viewer.Y;
         double length = Math.Sqrt((dx * dx) + (dy * dy));
@@ -192,9 +211,10 @@ public sealed class ViewTest
             double offset = halfWidth * ((2.0 * i / (SpriteSamples - 1)) - 1);
             double px = x + (sideX * offset);
             double py = y + (sideY * offset);
-            if (InCone(viewer, px, py) &&
-                TryVisibleSpan(viewer, px, py, bottom, top, null, out double low, out double high) &&
-                IntersectsScreen(viewer, px, py, low, high))
+            // A sprite is a billboard drawn at its centre's depth, so the screen's top and bottom are
+            // tested there for every column: a 2-high sprite 6 to the side stays below the screen at a
+            // centre depth of 16.4 though its far edge is deeper (OV-20261029-actor-events round 3).
+            if (InCone(viewer, px, py) && Sees(viewer, px, py, bottom, top, null, region, (x, y)))
             {
                 return true;
             }
@@ -221,8 +241,7 @@ public sealed class ViewTest
             double u = u0 + ((u1 - u0) * i / (samples - 1));
             double px = ax + ((bx - ax) * u);
             double py = ay + ((by - ay) * u);
-            if (TryVisibleSpan(viewer, px, py, bottom, top, wall, out double low, out double high) &&
-                IntersectsScreen(viewer, px, py, low, high))
+            if (Sees(viewer, px, py, bottom, top, wall, -1))
             {
                 return true;
             }
@@ -279,8 +298,31 @@ public sealed class ViewTest
     }
 
     private bool IsSurfaceVisible(Viewer viewer, double px, double py, double bottom, double top, Wall border) =>
-        TryVisibleSpan(viewer, px, py, bottom, top, border, out double low, out double high) &&
-        IntersectsScreen(viewer, px, py, low, high);
+        Sees(viewer, px, py, bottom, top, border, -1);
+
+    /// <summary>
+    /// Whether the eye sees some of heights <paramref name="bottom"/>…<paramref name="top"/> at the map point, on
+    /// the screen; <paramref name="depthAt"/> gives the point whose depth places it on the screen, when not the same.
+    /// </summary>
+    private bool Sees(
+        Viewer viewer, double px, double py, double bottom, double top, Wall? target, int region, (double X, double Y)? depthAt = null)
+    {
+        if (!TryVisibleSpans(viewer, px, py, bottom, top, target, region))
+        {
+            return false;
+        }
+
+        (double dx, double dy) = depthAt ?? (px, py);
+        foreach ((_, double low, double high) in _spans)
+        {
+            if (IntersectsScreen(viewer, dx, dy, low, high))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Whether a wall shows a face: a solid wall, or a step in the floor or ceiling between its regions.</summary>
     private static bool HasFace(Level level, Wall wall) =>
@@ -362,26 +404,172 @@ public sealed class ViewTest
     }
 
     /// <summary>
-    /// The heights between <paramref name="bottom"/> and <paramref name="top"/> at the map point that
-    /// the eye sees past every wall the sight line crosses, or <c>false</c> when none.
+    /// The spans of heights between <paramref name="bottom"/> and <paramref name="top"/> at the map point
+    /// that the eye sees past every wall the sight line crosses (in <see cref="_spans"/>), or
+    /// <c>false</c> when none. The walls are taken in order from the eye. At each one the sight line
+    /// must pass an opening between a storey on its near side and one on its far side. Across a
+    /// <c>BELOW</c> stack's footprint it stays in one storey, so the slab between two storeys hides
+    /// what lies beyond it. Without stacks this is one span narrowed by each wall's opening.
     /// </summary>
-    private bool TryVisibleSpan(
-        Viewer viewer,
-        double px,
-        double py,
-        double bottom,
-        double top,
-        Wall? target,
-        out double low,
-        out double high)
+    private bool TryVisibleSpans(Viewer viewer, double px, double py, double bottom, double top, Wall? target, int region)
     {
-        low = bottom;
-        high = top;
-        if (_segments.Length == 0)
+        _spans.Clear();
+        _crossings.Clear();
+        if (_segments.Length > 0)
         {
+            CollectCrossings(viewer, px, py, target);
+        }
+
+        double eye = viewer.EyeHeight;
+        if (_crossings.Count == 0)
+        {
+            // The eye and the point share a footprint: in a stack, they share the eye's storey too.
+            (double low, double high) = (bottom, top);
+            if (region >= 0 && EyeStorey(region, eye) is { } storey)
+            {
+                low = Math.Max(low, _level.Regions[storey].FloorHeight);
+                high = Math.Min(high, _level.Regions[storey].CeilHeight);
+            }
+
+            if (low >= high)
+            {
+                return false;
+            }
+
+            _spans.Add((-1, low, high));
             return true;
         }
 
+        _crossings.Sort(static (a, b) => a.T.CompareTo(b.T));
+        bool first = true;
+        int lastFar = -1;
+        foreach ((double t, int index) in _crossings)
+        {
+            Segment segment = _segments[index];
+            Wall wall = segment.Wall;
+            bool eyeOnLeft = (((segment.Bx - segment.Ax) * (viewer.Y - segment.Ay)) - ((segment.By - segment.Ay) * (viewer.X - segment.Ax))) > 0;
+            int near = eyeOnLeft ? wall.LeftRegion : wall.RightRegion;
+            int far = eyeOnLeft ? wall.RightRegion : wall.LeftRegion;
+            if (wall.LeftRegion == wall.RightRegion ||
+                !TryGetRegion(_level, near, out _) ||
+                !TryGetRegion(_level, far, out _))
+            {
+                return false;
+            }
+
+            List<int> nearStack = [.. LevelTopology.Stack(_level, near)];
+            List<int> farStack = [.. LevelTopology.Stack(_level, far)];
+            if (first)
+            {
+                // The eye starts in the storey that holds it (any, when none does).
+                int? eyeStorey = nearStack.Count > 1 ? EyeStorey(near, eye) : null;
+                foreach (int storey in nearStack)
+                {
+                    if (eyeStorey is null || storey == eyeStorey)
+                    {
+                        _spans.Add((storey, bottom, top));
+                    }
+                }
+
+                first = false;
+            }
+            else if (!_spans.Exists(span => nearStack.Contains(span.Storey)))
+            {
+                // A sight line that left one footprint and meets a wall of another: carry the spans on.
+                List<(int, double, double)> carried = [.. _spans.SelectMany(span => nearStack.Select(storey => (storey, span.Low, span.High)))];
+                _spans.Clear();
+                _spans.AddRange(carried);
+            }
+
+            _nextSpans.Clear();
+            foreach ((int storey, double low, double high) in _spans)
+            {
+                if (!nearStack.Contains(storey))
+                {
+                    continue;
+                }
+
+                Region from = _level.Regions[storey];
+                // Into a stack from outside, the sight line goes on only in the storey that holds the
+                // eye's height, when one does: from the room at eye 15 the underpass under a deck
+                // (floor 10) stays hidden though a line passes under the slab, and from eye 4 the
+                // deck's things do (OV-20261029-below-view).
+                int? entered = farStack.Count > 1 && !farStack.Contains(storey) ? EyeStorey(far, eye) : null;
+                foreach (int beyond in farStack)
+                {
+                    if (entered is { } only && beyond != only)
+                    {
+                        continue;
+                    }
+
+                    Region to = _level.Regions[beyond];
+                    double floor = Math.Max(from.FloorHeight, to.FloorHeight);
+                    double ceiling = Math.Min(from.CeilHeight, to.CeilHeight);
+                    if (ceiling <= floor)
+                    {
+                        continue;
+                    }
+
+                    // The sight line to height h passes the wall at eye + (h − eye)·t, which must lie in the opening.
+                    double nextLow = Math.Max(low, eye + ((floor - eye) / t));
+                    double nextHigh = Math.Min(high, eye + ((ceiling - eye) / t));
+                    if (nextLow < nextHigh)
+                    {
+                        _nextSpans.Add((beyond, nextLow, nextHigh));
+                    }
+                }
+            }
+
+            (_spans, _nextSpans) = (_nextSpans, _spans);
+            if (_spans.Count == 0)
+            {
+                return false;
+            }
+
+            lastFar = far;
+        }
+
+        // In a stack, the point must lie in the storey the sight line ends in.
+        if (lastFar >= 0 && _level.Regions[lastFar].BelowRegion >= 0)
+        {
+            _nextSpans.Clear();
+            foreach ((int storey, double low, double high) in _spans)
+            {
+                double clippedLow = Math.Max(low, _level.Regions[storey].FloorHeight);
+                double clippedHigh = Math.Min(high, _level.Regions[storey].CeilHeight);
+                if (clippedLow < clippedHigh)
+                {
+                    _nextSpans.Add((storey, clippedLow, clippedHigh));
+                }
+            }
+
+            (_spans, _nextSpans) = (_nextSpans, _spans);
+        }
+
+        return _spans.Count > 0;
+    }
+
+    /// <summary>The storey of <paramref name="region"/>'s stack that holds the eye, if it is a stack.</summary>
+    private int? EyeStorey(int region, double eye)
+    {
+        int? found = null;
+        int members = 0;
+        foreach (int storey in LevelTopology.Stack(_level, region))
+        {
+            members++;
+            Region r = _level.Regions[storey];
+            if (found is null && r.FloorHeight <= eye && eye <= r.CeilHeight)
+            {
+                found = storey;
+            }
+        }
+
+        return members > 1 ? found : null;
+    }
+
+    /// <summary>Collects the walls the sight line from the eye to P crosses into <see cref="_crossings"/>.</summary>
+    private void CollectCrossings(Viewer viewer, double px, double py, Wall? target)
+    {
         // Walk the grid cells the sight line passes (in grid units, t from 0 at the eye to 1 at P).
         _sightLine++;
         double x0 = (viewer.X - _gridX) / CellSize;
@@ -405,9 +593,26 @@ public sealed class ViewTest
         {
             // Outside the grid, the edge cells hold the walls that moved out of it (see Index).
             int cellIndex = (Math.Clamp(row, 0, _rows - 1) * _columns) + Math.Clamp(column, 0, _columns - 1);
-            if (_cells[cellIndex] is { } cell && !PassesCell(cell, viewer, px, py, target, ref low, ref high))
+            if (_cells[cellIndex] is { } cell)
             {
-                return false;
+                foreach (int index in cell)
+                {
+                    if (_testedBy[index] == _sightLine)
+                    {
+                        continue;
+                    }
+
+                    _testedBy[index] = _sightLine;
+                    Segment segment = _segments[index];
+                    Wall wall = segment.Wall;
+                    if (!ReferenceEquals(wall, target) &&
+                        wall["INVISIBLE"] <= 0 &&
+                        wall["TRANSPARENT"] <= 0 &&
+                        TryCrossing(viewer.X, viewer.Y, px, py, segment.Ax, segment.Ay, segment.Bx, segment.By, out double t))
+                    {
+                        _crossings.Add((t, index));
+                    }
+                }
             }
 
             if (nextX < nextY)
@@ -421,47 +626,6 @@ public sealed class ViewTest
                 nextY += deltaY;
             }
         }
-
-        return true;
-    }
-
-    /// <summary>Narrows the visible span by the walls of one grid cell that the sight line crosses; <c>false</c> once nothing is left.</summary>
-    private bool PassesCell(List<int> cell, Viewer viewer, double px, double py, Wall? target, ref double low, ref double high)
-    {
-        double eye = viewer.EyeHeight;
-        foreach (int index in cell)
-        {
-            if (_testedBy[index] == _sightLine)
-            {
-                continue;
-            }
-
-            _testedBy[index] = _sightLine;
-            Segment segment = _segments[index];
-            Wall wall = segment.Wall;
-            if (ReferenceEquals(wall, target) ||
-                !TryCrossing(viewer.X, viewer.Y, px, py, segment.Ax, segment.Ay, segment.Bx, segment.By, out double t) ||
-                wall["INVISIBLE"] > 0 ||
-                wall["TRANSPARENT"] > 0)
-            {
-                continue;
-            }
-
-            if (!TryOpening(_level, wall, out double floor, out double ceiling))
-            {
-                return false;
-            }
-
-            // The sight line to height h passes the wall at eye + (h − eye)·t, which must lie in the opening.
-            low = Math.Max(low, eye + ((floor - eye) / t));
-            high = Math.Min(high, eye + ((ceiling - eye) / t));
-            if (low >= high)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /// <summary>Whether heights <paramref name="low"/>…<paramref name="high"/> at the map point fall within the screen's vertical window.</summary>
@@ -479,22 +643,6 @@ public sealed class ViewTest
         double screenLow = viewer.EyeHeight + (depth * (-tangent - shear));
         double screenHigh = viewer.EyeHeight + (depth * (tangent - shear));
         return low < screenHigh && high > screenLow;
-    }
-
-    /// <summary>The see-through opening of a wall between two regions; <c>false</c> for a solid wall.</summary>
-    private static bool TryOpening(Level level, Wall wall, out double floor, out double ceiling)
-    {
-        floor = ceiling = 0;
-        if (wall.LeftRegion == wall.RightRegion ||
-            !TryGetRegion(level, wall.LeftRegion, out Region? left) ||
-            !TryGetRegion(level, wall.RightRegion, out Region? right))
-        {
-            return false;
-        }
-
-        floor = Math.Max(left.FloorHeight, right.FloorHeight);
-        ceiling = Math.Min(left.CeilHeight, right.CeilHeight);
-        return ceiling > floor;
     }
 
     private static (double Bottom, double Top) WallSpan(Level level, Wall wall)

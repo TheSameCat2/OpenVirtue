@@ -37,6 +37,22 @@ public static class WdlPlayerMotion
                 (float)(requestedVelocityY * timeCorrection))
             : Vector2.Zero;
 
+        // OV-20261029-actor-step: like a CAREFULLY actor, the player stepping with no X part (or no
+        // Y part) is then moved 4/1024 along that axis, always positive (the border-climb walker went
+        // from x −8 to −7.992 in two steps along +y).
+        if (timeCorrection > 0)
+        {
+            const float Nudge = 4f / 1024;
+            if (requestedVelocityX == 0 && requestedVelocityY != 0)
+            {
+                player.Position += new Vector3(Nudge, 0, 0);
+            }
+            else if (requestedVelocityY == 0 && requestedVelocityX != 0)
+            {
+                player.Position += new Vector3(0, 0, Nudge);
+            }
+        }
+
         double actualVelocityX = timeCorrection > 0 ? displacement.X / timeCorrection : requestedVelocityX;
         double actualVelocityY = timeCorrection > 0 ? displacement.Y / timeCorrection : requestedVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
@@ -67,6 +83,7 @@ public static class WdlPlayerMotion
         runtime.SetSkill(
             "ACCELERATION",
             timeCorrection > 0 ? (speed - previousSpeed) / timeCorrection : 0);
+        player.Settle();
         Synchronize(runtime, player);
     }
 

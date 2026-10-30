@@ -3,6 +3,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenVirtue.Formats\OpenVirtue.Formats.csproj" />
     <ProjectReference Include="..\..\src\OpenVirtue.Engine\OpenVirtue.Engine.csproj" />
+    <ProjectReference Include="..\..\src\OpenVirtue.Host\OpenVirtue.Host.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenVirtue.Tools.Tests" />
   </ItemGroup>
 
   <ItemGroup>

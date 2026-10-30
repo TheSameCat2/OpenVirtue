@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Globalization;
+using System.Numerics;
 using System.Text.Json;
 using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Engine.Tests.TestSupport;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Engine.Tests.Interpreter;
@@ -22,22 +25,28 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
         Assert.Equal(1, runtime.GetSkill("ASPECT"));
         Assert.Equal(1, runtime.GetSkill("SOUND_VOL"));
-        Assert.Equal(1, runtime.GetSkill("MUSIC_VOL"));
+        Assert.Equal(0.5, runtime.GetSkill("MUSIC_VOL")); // V3.963's start values (scheduler-order round 4)
         Assert.Equal(0, runtime.GetSkill("MOUSE_MODE"));
         Assert.Equal(1, runtime.GetSkill("TOUCH_MODE"));
         Assert.Equal(0, runtime.GetSkill("MOUSE_MOVING"));
-        Assert.Equal(3, runtime.GetSkill("MOUSE_CALM"));
+        Assert.Equal(1, runtime.GetSkill("MOUSE_CALM"));
         Assert.Equal(4, runtime.GetSkill("MOUSE_TIME"));
         Assert.Equal(0, runtime.GetSkill("MICKEY_X"));
         Assert.Equal(0, runtime.GetSkill("MICKEY_Y"));
         Assert.Equal(4, runtime.GetSkill("WALK_PERIOD"));
         Assert.Equal(4, runtime.GetSkill("WALK_TIME"));
-        Assert.Equal(16, runtime.GetSkill("WAVE_PERIOD"));
+        Assert.Equal(20, runtime.GetSkill("WAVE_PERIOD"));
+        Assert.Equal(3.5, runtime.GetSkill("PLAYER_SIZE"));
+        Assert.Equal(2, runtime.GetSkill("PLAYER_CLIMB"));
+        Assert.Equal(1, runtime.GetSkill("KEY_SENSE"));
+        Assert.Equal(1, runtime.GetSkill("BUFFER_MODE")); // a 0 here slows the original after a load
+        Assert.Equal(3216 / 1024.0, runtime.GetSkill("PI"));
         Assert.Equal(0, runtime.GetSkill("WALK"));
         Assert.Equal(0, runtime.GetSkill("WAVE"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_VOL"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_TONE"));
-        Assert.Equal(-1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL")); // OV-20261029-audio
+        Assert.Equal(1000, runtime.GetSkill("DARK_DIST")); // OV-20261029-shading
         for (int channel = 0; channel < 8; channel++)
         {
             Assert.Equal(0, runtime.GetSkill($"CHANNEL_{channel}"));
@@ -50,7 +59,7 @@ public class WdlRuntimeTests
         WdlRuntime runtime = new(Load(
             "MAPFILE <m.wmp>; SKILL FRICTION; SKILL INERTIA { VAL 0; } SKILL PLAYER_ARC;"));
 
-        Assert.Equal(0.5, runtime.GetSkill("FRICTION"));
+        Assert.Equal(0, runtime.GetSkill("FRICTION")); // not the manual's 0.5 (OV-20261029-motion-timing)
         Assert.Equal(0, runtime.GetSkill("INERTIA"));
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
     }
@@ -529,29 +538,143 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_SoundChannels_SaturateSynchronouslyAndReuseCompletedSlot()
+    public void Runtime_SoundChannels_NinthSoundTakesTheOldestChannel()
     {
+        // OV-20261029-audio: nine sounds in one cycle take channels 0-7, then 0 again; one cycle
+        // apart, the ninth and tenth take channels 0 and 1.
         Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
         var runtime = new WdlRuntime(level);
 
-        for (int i = 0; i < 9; i++)
+        for (int i = 0; i < 8; i++)
+        {
+            runtime.PlaySound("alert", null, 1, null, null);
+            Assert.Equal(i, runtime.GetSkill("CHANNEL"));
+        }
+
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.AudioRequests[^1].Sound.Channel);
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(10, runtime.AudioRequests.Count);
+        Assert.All(Enumerable.Range(0, 8), channel =>
+            Assert.Equal(1, runtime.GetSkill($"CHANNEL_{channel}")));
+    }
+
+    [Fact]
+    public void Runtime_SoundChannels_LoopsAreNeverTakenAndAllLoopsGiveMinusOne()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlayTextureSound("alert", 1, loop: true);
+        for (int i = 0; i < 7; i++)
         {
             runtime.PlaySound("alert", null, 1, null, null);
         }
 
-        Assert.Equal(8, runtime.AudioRequests.Count);
-        Assert.Equal(-1, runtime.GetSkill("CHANNEL"));
-        Assert.All(Enumerable.Range(0, 8), channel =>
-            Assert.Equal(1, runtime.GetSkill($"CHANNEL_{channel}")));
-
-        Assert.True(runtime.CompleteSound(3));
-        Assert.False(runtime.CompleteSound(3));
         runtime.PlaySound("alert", null, 1, null, null);
 
-        Assert.Equal(9, runtime.AudioRequests.Count);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
+
+        var loops = new WdlRuntime(level);
+        for (int i = 0; i < 8; i++)
+        {
+            loops.PlayTextureSound("alert", 1, loop: true);
+        }
+
+        loops.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(-1, loops.GetSkill("CHANNEL"));
+    }
+
+    [Fact]
+    public void Runtime_CompletedSound_FreesItsChannelAtTheNextWorldCycleOnly()
+    {
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        Assert.True(runtime.CompleteSound(0));
+        Assert.False(runtime.CompleteSound(0));
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        runtime.TickFlic(0.07);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_0"));
+
+        runtime.PlaySound("alert", null, 1, null, null);
+        Assert.Equal(0, runtime.GetSkill("CHANNEL"));
+    }
+
+    [Fact]
+    public void Runtime_SoundPlayedOutBeforeACycle_FreesItsChannelInThatCycle()
+    {
+        // OV-20261029-audio: a quarter-second sound started at 13.438 read free at 17.625, the first
+        // cycle after it ended; the host is asked once the cycle's TICKS are set.
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>; SKILL seen { VAL -1; } ACTION look { SET seen, CHANNEL_0; }");
+        double end = double.PositiveInfinity;
+        var runtime = new WdlRuntime(level);
+        runtime.SoundPlayedOut = channel => channel == 0 && runtime.GetSkill("TICKS") >= end;
+        runtime.SetEachTickAction(1, "look");
+        runtime.Tick(1 / 16.0);
+        runtime.PlaySound("alert", null, 1, null, null);
+        end = runtime.GetSkill("TICKS") + 0.5;
+
+        runtime.Tick(0.25 / 16); // TICKS 0.25: still playing
+        Assert.Equal(1, runtime.GetSkill("seen"));
+
+        runtime.Tick(0.25 / 16); // TICKS 0.5: played out, and this cycle's action sees it free
+
+        Assert.Equal(0, runtime.GetSkill("seen"));
+    }
+
+    [Fact]
+    public void Runtime_StopSound_FreesNormalChannelsTwoCyclesLaterAndKeepsLoops()
+    {
+        // OV-20261029-audio stop-lag and stop-sloop.
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>;");
+        var runtime = new WdlRuntime(level);
+        runtime.PlayTextureSound("alert", 1, loop: true);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        runtime.StopSounds();
+        runtime.PlaySound("alert", null, 1, null, null);
+
         Assert.Equal(3, runtime.GetSkill("CHANNEL"));
-        Assert.Equal(3, runtime.AudioRequests[^1].Sound.Channel);
+        Assert.Equal([WdlSoundOperation.StopChannel, WdlSoundOperation.StopChannel], runtime.AudioRequests.Skip(3).Take(2).Select(r => r.Operation));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL_1"));
+        runtime.Tick(1 / 60.0);
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_1"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_2"));
         Assert.Equal(1, runtime.GetSkill("CHANNEL_3"));
+    }
+
+    [Theory]
+    [InlineData("ACTION play { PLAY_SOUND alert, 0; }")]
+    [InlineData("ACTION play { SET SOUND_VOL, 0; PLAY_SOUND alert, 1; }")]
+    [InlineData("ACTION play { PLAY_SOUND alert, 1, source; }")]
+    public void Runtime_InaudibleSound_IsSkippedAndKeepsChannel(string action)
+    {
+        // OV-20261029-audio skip-channel: the thing is 25 steps away and its texture has SDIST 5.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "THING source 25 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>; BMAP b,<B.PCX>; TEXTURE t { BMAPS b; SDIST 5; } THING source { TEXTURE t; } " + action);
+        var runtime = new WdlRuntime(level);
+        runtime.PlaySound("alert", null, 1, null, null);
+        runtime.PlaySound("alert", null, 1, null, null);
+
+        Assert.True(runtime.RunAction("play"));
+
+        Assert.Equal(2, runtime.SoundRequests.Count);
+        Assert.Equal(1, runtime.GetSkill("CHANNEL"));
+        Assert.Equal(0, runtime.GetSkill("CHANNEL_2"));
     }
 
     [Fact]
@@ -569,7 +692,7 @@ public class WdlRuntimeTests
         Assert.Equal(0.4, play.Sound.Volume);
         Assert.Equal(-0.25, play.Sound.Balance);
         Assert.True(play.Sound.Loop);
-        Assert.Equal(1, runtime.GetSkill("CHANNEL_0"));
+        Assert.Equal(2, runtime.GetSkill("CHANNEL_0"));
 
         Assert.True(runtime.StopSoundChannel(channel));
         Assert.False(runtime.StopSoundChannel(channel));
@@ -591,6 +714,256 @@ public class WdlRuntimeTests
 
         Assert.All(Enumerable.Range(0, 8), channel =>
             Assert.Equal(0, runtime.GetSkill($"CHANNEL_{channel}")));
+    }
+
+    [Fact]
+    public void Runtime_RestoreSnapshot_KeepsLocalSkillsAsTheyAreNow()
+    {
+        // OV-20261029-save-body round 7: after a full LOAD, a LOCAL skill read what it was set to
+        // before the load, while the others took the save's values.
+        Level level = Load("MAPFILE <m.wmp>; SKILL l { TYPE LOCAL; VAL 0; } SKILL p { VAL 0; }");
+        var runtime = new WdlRuntime(level);
+        runtime.SetSkill("l", 1);
+        runtime.SetSkill("p", 7);
+        WdlRuntimeSnapshot snapshot = runtime.CaptureSnapshot();
+        runtime.SetSkill("l", 2);
+        runtime.SetSkill("p", 9);
+
+        runtime.RestoreSnapshot(snapshot);
+
+        Assert.Equal(2, runtime.GetSkill("l"));
+        Assert.Equal(7, runtime.GetSkill("p"));
+    }
+
+    [Fact]
+    public void Runtime_FullSave_KeepsWaitingActionsButNotTheOneSaving()
+    {
+        // OV-20261029-save-body round 7: after a LOAD the CALLed action waiting at the SAVE resumed
+        // (inside its WHILE), and the action that ran the SAVE did not go on.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL after { VAL 0; } SKILL k { VAL 0; } " +
+            "ACTION note { WHILE (k < 1) { WAIT 2; RULE k = k + 1; } SET n, 1; } " +
+            "ACTION main { CALL note; SAVE \"s\", 1; WAIT 1; SET after, 1; }");
+        var runtime = new WdlRuntime(level);
+        Assert.True(runtime.RunAction("main"));
+        WdlRuntimeSnapshot saved = Assert.Single(runtime.PersistenceRequests).Snapshot!;
+        WdlRuntimeSnapshot snapshot = JsonSerializer.Deserialize<WdlRuntimeSnapshot>(JsonSerializer.Serialize(saved))!;
+        Assert.Single(snapshot.WaitingActions!);
+
+        var loaded = new WdlRuntime(level);
+        loaded.RestoreSnapshot(snapshot);
+        for (int i = 0; i < 4; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1, loaded.GetSkill("n"));
+        Assert.Equal(0, loaded.GetSkill("after"));
+    }
+
+    [Fact]
+    public void Runtime_ImportOriginalActions_ResumesAtTheSavedFlatPlaces()
+    {
+        // OV-20261029-save-body round 8: places count every instruction, IF/ELSE bodies in line and a
+        // WHILE's end; actions are numbered from 11 in declaration order.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL k { VAL 0; } SKILL n { VAL 0; } SKILL a { VAL 0; } SKILL done { VAL 0; } " +
+            "SKILL b { VAL 0; } SKILL e { VAL 0; } SKILL ran { VAL 0; } " +
+            "ACTION loop { SET a, 1; WHILE (k < 1) { RULE n = n + 1; WAITT 2; RULE k = k + 1; } SET done, 1; } " +
+            "ACTION branch { IF (e > 5) { RULE b = 1; } ELSE { RULE b = 2; } WAIT 2; SET e, 9; } " +
+            "ACTION saver { SET ran, 1; }");
+        var runtime = new WdlRuntime(level);
+        int taken = runtime.ImportOriginalActions(
+            [
+                new SaveAction(11, 1024, 3, 4, -1, -1, Running: false), // loop in WAITT 2: SET 0, WHILE 1, RULE 2, WAITT 3
+                new SaveAction(12, 1024, 4, 5, -1, -1, Running: false), // branch in WAIT 2: IF 0, RULE 1, ELSE 2, RULE 3, WAIT 4
+                new SaveAction(13, 0, 0, 1, -1, -1, Running: true),
+            ],
+            null);
+
+        Assert.Equal(2, taken);
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(0, runtime.GetSkill("a")); // resumed after the SET, inside the loop body
+        Assert.Equal(0, runtime.GetSkill("n")); // after the WAITT, not at the body's start
+        Assert.Equal(1, runtime.GetSkill("k"));
+        Assert.Equal(1, runtime.GetSkill("done"));
+        Assert.Equal(0, runtime.GetSkill("b")); // after the IF/ELSE
+        Assert.Equal(9, runtime.GetSkill("e"));
+        Assert.Equal(0, runtime.GetSkill("ran")); // the action that ran the SAVE does not go on
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_RoundTripsThroughTheOriginalsFormat()
+    {
+        // OV-20261029-save-body round 9: the original loaded a save written this way.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL k { VAL 0; } SKILL n { VAL 0; } SKILL l { TYPE LOCAL; VAL 0; } SKILL done { VAL 0; } " +
+            "ACTION tick { RULE k = k + 1; } " +
+            "ACTION loop { SET n, 1; WHILE (k < 50) { WAITT 2; RULE n = n + 1; } SET done, 1; }");
+        var runtime = new WdlRuntime(level);
+        runtime.SetEachTickAction(2, "tick");
+        Assert.True(runtime.RunAction("loop"));
+        runtime.SetSkill("n", 7);
+        runtime.SetSkill("l", 3);
+
+        byte[] body = AcknexFullSave.Write(runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS"));
+        var loaded = new WdlRuntime(level);
+        loaded.RestoreSavedSkills(AcknexSaveFile.ReadSkills(body), _ => true);
+        loaded.ImportOriginalActions(AcknexSaveFile.ReadActions(body)!, AcknexSaveFile.ReadSlots(body));
+
+        Assert.Equal(7, loaded.GetSkill("n"));
+        Assert.Equal(0, loaded.GetSkill("l")); // LOCAL skills are not in a full save
+        Assert.Equal("tick", loaded.CaptureSnapshot().EachTickActions[1]);
+        Assert.Equal(1, loaded.WaitingActionCount); // the loop, at its WAITT inside the WHILE
+        for (int i = 0; i < 12; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.True(loaded.GetSkill("n") > 7); // went on round the loop from the saved WAITT
+    }
+
+    [Fact]
+    public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
+    {
+        // Saints of Virtue drops pickups this way: IF (HealthUp1.INVISIBLE == 1) { SET HealthUp1.X, MY.X; … }
+        Level level = Load(
+            "MAPFILE <m.wmp>; THING drop { } SKILL was { VAL 0; } " +
+            "ACTION bring { IF (drop.INVISIBLE == 1) { SET was, 1; SET drop.X, 3; SET drop.INVISIBLE, 0; } }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("bring"));
+
+        AcknexObject drop = Assert.IsAssignableFrom<AcknexObject>(runtime.GetObject("drop"));
+        Assert.Equal(1, runtime.GetSkill("was"));
+        Assert.Equal(0, drop["INVISIBLE"]);
+        Assert.Equal(3, ((Thing)drop).X);
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_WallLengthAndVerticesAsTheOriginalComputesThem()
+    {
+        // OV-20261029-save-body round 13, a retail wall: the map's coordinates are cut toward zero
+        // (−579730.4 → −579730), and the length's squares each lose their low 10 bits before the
+        // square root, so a 245-step wall reads 243.
+        const string map =
+            "VERTEX -566.143 0 0;#0\nVERTEX -566.382 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 1 1 270 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL w { } THING t { IF_HIT hit; } ACTION hit { }");
+        var runtime = new WdlRuntime(level);
+
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        FullSaveWall wall = Assert.Single(save.Walls);
+        Assert.Equal((-579730, 0), wall.First);
+        Assert.Equal((-579975, 0), wall.Second);
+        Assert.Equal(243, wall.RawLength);
+        Assert.Equal(1, wall.RawSkills["OFFSET_Y"]); // a placed wall's OFFSET_Y starts one step up
+        FullSaveEntity thing = Assert.Single(save.Entities);
+        Assert.Equal(4825, thing.RawSkills["ANGLE"]); // 270°, from 0 to 2π and cut toward zero
+        Assert.Equal(11, thing.Events["IF_HIT"]);
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_SaveTexturesRegionsAndPaletteAsTheOriginalWritesThem()
+    {
+        // OV-20261029-save-body rounds 15 and 15b, from LEGALISM's save: a SAVE texture's values and its
+        // sound by number; a declared region the map does not place is saved after the map's; AMBIENT 0.2
+        // is cut to 204; a region's events and its GENIUS by map object number; the palette is the last
+        // FADE_PAL's by declaration.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING lamp 1 1 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SOUND s1,<A.WAV>; SOUND s2,<B.WAV>; PALETTE p1 { PALFILE <P1.PCX>; } PALETTE p2 { PALFILE <P2.PCX>; } " +
+            "WALL w { } THING lamp { } ACTION enter { } ACTION fade { FADE_PAL p1, 1; } " +
+            "TEXTURE tx { SCALE_XY 14, 16; ALBEDO 0.4; SOUND s2; FLAGS SAVE; } " +
+            "REGION r { AMBIENT 0.2; FLAGS SAVE, CEIL_DESCEND; IF_ENTER enter; GENIUS lamp; } REGION spare { FLOOR_HGT -49; FLAGS SAVE; }");
+        var runtime = new WdlRuntime(level);
+
+        FullSave before = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+        Assert.True(runtime.RunAction("fade"));
+        FullSave after = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        FullSaveTexture texture = Assert.Single(before.Textures);
+        Assert.Equal((409, 14336, 16384, 2, 512, 102400), (texture.Words["ALBEDO"], texture.Words["SCALE_X"], texture.Words["SCALE_Y"],
+            texture.Words["SOUND"], texture.Words["SVOL"], texture.Words["SDIST"]));
+        Assert.Equal(2, before.Regions.Count);
+        Assert.Equal(-49 * 1024, before.Regions[0].RawSkills["FLOOR_HGT"]); // spare, after the map's region: saved first
+        FullSaveRegion room = before.Regions[1];
+        Assert.Equal(204, room.RawSkills["AMBIENT"]);
+        Assert.Equal(["CEIL_DESCEND"], room.Flags);
+        Assert.True(room.Here);
+        Assert.Equal(2, room.Genius);
+        Assert.Contains("IF_ENTER", room.Events.Keys);
+        Assert.Equal((2, 1), (before.Palette, after.Palette));
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_SlotsSynonymsAndSkillsAsTheOriginalWritesThem()
+    {
+        // OV-20261029-save-body round 16: key hooks at their scan codes and EACH_SEC.n at 134 + 2n; action
+        // and string synonyms by number; a re-declared skill at its first place and an engine skill in the
+        // engine's block with its range, which SET x.MAX changes; the map's bounds take in its things.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 5 7 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL h { MIN 0; MAX 100; VAL 5; } SKILL r { VAL 0; } SKILL PLAYER_SIZE { MIN 0; VAL 3; } SKILL h { VAL 1; } " +
+            "STRING s1, \"a\"; STRING s2, \"b\"; WALL w { } THING t { } " +
+            "ACTION go { SET r, h.MAX; SET h.MAX, 50; SET PLAYER_SIZE.MAX, 5; SET IF_ESC, go; SET IF_Z, go; SET EACH_SEC.2, go; } " +
+            "SYNONYM sa { TYPE ACTION; DEFAULT go; } SYNONYM ss { TYPE STRING; DEFAULT s2; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("go"));
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        int go = level.ActionOrder.ToList().IndexOf("go") + 11;
+        Assert.Equal(100, runtime.GetSkill("r"));
+        Assert.Equal((go, go, go), (save.Slots[1], save.Slots[44], save.Slots[138]));
+        Assert.Equal([2, go], save.Synonyms.Take(2));
+        Assert.Equal(["r", "h"], save.Skills.Take(2).Select(static k => k.Name));
+        Assert.Equal(50 * 1024, save.Skills[1].RawMax);
+        SaveSkill size = Assert.Single(save.Skills, static k => k.Name == "PLAYER_SIZE");
+        Assert.Equal((0, 5 * 1024), (size.RawMin, size.RawMax));
+        Assert.Equal((5, 7), (runtime.GetSkill("MAP_MAXX"), runtime.GetSkill("MAP_MAXY")));
+    }
+
+    [Fact]
+    public void Runtime_CaptureOriginalSave_ObjectEventActionsKeepTheirMy()
+    {
+        // OV-20261029-save-body round 17: an action an object's event started is saved in the action
+        // section's second list, after the record of the action running the SAVE, with MY as the object's
+        // map number and YOU 0; the load resumes it for that object.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 5 7 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL w { } THING t { IF_NEAR go; } ACTION go { WAITT 20; SET MY.X, 25; }");
+        var runtime = new WdlRuntime(level);
+        AcknexObject thing = Assert.IsAssignableFrom<AcknexObject>(runtime.GetObject("t"));
+        Assert.True(runtime.TriggerObjectActionHook(thing, "IF_NEAR"));
+
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        int go = level.ActionOrder.ToList().IndexOf("go") + 11;
+        Assert.Equal(new SaveAction(11, 0, 0, 1, -1, -1, Running: true), save.Actions[0]);
+        Assert.Equal(2, save.Actions.Count);
+        SaveAction waiting = save.Actions[1];
+        Assert.Equal((go, true, 0, 1, 2, 0), (waiting.Action, waiting.Running, waiting.Position, waiting.Next, waiting.My, waiting.You));
+        var loaded = new WdlRuntime(level);
+        Assert.Equal(1, loaded.ImportOriginalActions(AcknexSaveFile.ReadActions(AcknexFullSave.Write(save))!, null));
+        for (int i = 0; i < 200 && ((Thing)loaded.GetObject("t")!).X != 25; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(25, ((Thing)loaded.GetObject("t")!).X);
     }
 
     [Fact]
@@ -643,8 +1016,7 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.StopSoundCount);
         Assert.Equal(1, runtime.GetSkill("after"));
         Assert.Empty(runtime.SoundRequests);
-        WdlAudioRequest request = Assert.Single(runtime.AudioRequests);
-        Assert.Equal(WdlSoundOperation.StopAll, request.Operation);
+        Assert.Empty(runtime.AudioRequests); // nothing was playing
     }
 
     [Fact]
@@ -667,7 +1039,8 @@ public class WdlRuntimeTests
             },
             request =>
             {
-                Assert.Equal(WdlSoundOperation.StopAll, request.Operation);
+                Assert.Equal(WdlSoundOperation.StopChannel, request.Operation);
+                Assert.Equal(0, request.Channel);
             },
             request =>
             {
@@ -991,6 +1364,22 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("after"));
     }
 
+    [Theory]
+    [InlineData("0.1")]
+    [InlineData("0.5")]
+    [InlineData("0.99")]
+    public void Runtime_WaittBelowOne_GoesStraightOn(string amount)
+    {
+        // OV-20261029-scheduler-order round 5: WAITT 0, 0.1 … 0.99 resumed in the cycle that armed them.
+        Level level = Load($"MAPFILE <m.wmp>; SKILL order {{ VAL 0; }} ACTION waitSome {{ SET order, 1; WAITT {amount}; SET order, 2; }}");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("waitSome"));
+
+        Assert.Equal(2, runtime.GetSkill("order"));
+        Assert.Equal(0, runtime.WaitingActionCount);
+    }
+
     [Fact]
     public void Runtime_WaitInstruction_SuspendsAndResumesAfterFrameCycles()
     {
@@ -1013,6 +1402,30 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.Equal(2, runtime.GetSkill("order"));
         Assert.Equal(0, runtime.WaitingActionCount);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0)]
+    [InlineData(1.5, 2)]
+    [InlineData(2.5, 3)]
+    public void Runtime_FractionalWait_WaitsWhileOneOrMoreCyclesAreLeft(double amount, int ticks)
+    {
+        // OV-20261029-scheduler-order round 3: WAIT 0.5 went straight on, WAIT 1.5 took one cycle
+        // and WAIT 2.5 two. Armed before the first frame, a wait resumes a frame later than one armed
+        // inside a cycle (OV-20261015-flic-scheduler-detail).
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            string.Create(CultureInfo.InvariantCulture, $"ACTION waitSome {{ SET order, 1; WAIT {amount}; SET order, 2; }}"));
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("waitSome"));
+        for (int i = 0; i < ticks; i++)
+        {
+            Assert.Equal(1, runtime.GetSkill("order"));
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(2, runtime.GetSkill("order"));
     }
 
     [Fact]
@@ -1642,6 +2055,37 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_SaveInfoAndLoadInfo_UseTheOriginalsFileAndKeepGlobalAndLocalSkills()
+    {
+        // OV-20261029-save-format: SAVE_INFO writes NAME<n>.SAV with the GLOBAL and LOCAL skills;
+        // LOAD_INFO brings those back in the instruction and leaves PLAYER skills alone.
+        string saveDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-save-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; SKILL g { TYPE GLOBAL; VAL 1234.5; } SKILL l { TYPE LOCAL; VAL 77; } SKILL p { VAL 5; } " +
+                "SKILL after { VAL 0; } " +
+                "ACTION run { SAVE_INFO \"ovsav\", 3; RULE g = 1; RULE l = 1; RULE p = 1; LOAD_INFO \"ovsav\", 3; RULE after = g + l + p; }");
+            var runtime = new WdlRuntime(level) { SaveDirectory = saveDir };
+
+            Assert.True(runtime.RunAction("run"));
+
+            Assert.True(File.Exists(Path.Combine(saveDir, "OVSAV3.SAV")));
+            Assert.Equal(1234.5, runtime.GetSkill("g"));
+            Assert.Equal(77, runtime.GetSkill("l"));
+            Assert.Equal(1, runtime.GetSkill("p"));
+            Assert.Equal(1234.5 + 77 + 1, runtime.GetSkill("after"));
+        }
+        finally
+        {
+            if (Directory.Exists(saveDir))
+            {
+                Directory.Delete(saveDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Runtime_PrintInstructions_AppendToSelectedTextFile()
     {
         string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
@@ -1656,12 +2100,10 @@ public class WdlRuntimeTests
             Assert.True(runtime.RunAction("log"));
             Assert.True(runtime.RunAction("log"));
 
-            string outputPath = Path.Combine(outputDir, "ovsta007.TXT");
+            string outputPath = Path.Combine(outputDir, "OVSTA7.TXT");
             string text = File.ReadAllText(outputPath);
-            string expectedRun =
-                "12.346" + Environment.NewLine +
-                "hello" + Environment.NewLine +
-                "worlddone" + Environment.NewLine;
+            // 12.3456 is held as 12641/1024 = 12.3447 (OV-20261029-numeric-edge).
+            const string expectedRun = "12.345hello\nworlddone\n";
             Assert.Equal(expectedRun + expectedRun, text);
         }
         finally
@@ -1745,6 +2187,10 @@ public class WdlRuntimeTests
         var player = new Player(level);
         player.MoveTo(0, 15, 5);
         runtime.RegisterObject("player", player);
+        // The host keeps PLAYER_X/PLAYER_Y on the player's position; LOCATE reads them, since a script
+        // beams the player by setting them (OV-20261029-slope).
+        runtime.SetSkill("PLAYER_X", player.Position.X);
+        runtime.SetSkill("PLAYER_Y", player.Position.Z);
 
         Assert.True(runtime.RunAction("locatePlayer"));
 
@@ -1802,8 +2248,8 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("dropIt"));
 
-        Assert.Equal(5, pickup.X, 6);
-        Assert.Equal(9, pickup.Y, 6);
+        Assert.Equal(5, pickup.X, 2); // the angle literal is held as 1.5703 (OV-20261029-numeric-edge)
+        Assert.Equal(9, pickup.Y, 2);
         Assert.Equal(0, pickup.Region);
         Assert.Equal("pickup", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
@@ -1861,8 +2307,11 @@ public class WdlRuntimeTests
 
         Assert.Same(level.Things.Single(thing => thing.Name == "far"), runtime.GetObject("hit"));
         Assert.Equal(7, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(1, runtime.GetSkill("HIT_X"));
-        Assert.Equal(3, runtime.GetSkill("HIT_Y"));
+        // The texel column the renderer steps to at the centre column: 0.714 pixels past the half-way
+        // point at a texels-per-pixel step cut to 22.10 (24/1024 here), a little short of 1
+        // (OV-20261009-shoot-mapping, sweep).
+        Assert.Equal(1012 / 1024.0, runtime.GetSkill("HIT_X"), 6);
+        Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -1889,7 +2338,7 @@ public class WdlRuntimeTests
 
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(1, runtime.GetSkill("HIT_X"));
-        Assert.Equal(3, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -1921,7 +2370,7 @@ public class WdlRuntimeTests
         // (HIT_Y 5). HIT_DIST is the depth along the line of sight (4), not the ray length.
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(6, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -1952,7 +2401,7 @@ public class WdlRuntimeTests
         // and the same SHOOT_Y would pass under the sprite.)
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(4, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(5, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -1983,7 +2432,7 @@ public class WdlRuntimeTests
         // the hit 3.2 steps at 44 steps).
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(5, runtime.GetSkill("HIT_Y"));
+        Assert.Equal(6, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
     [Fact]
@@ -2285,15 +2734,17 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("turn"));
 
-        Assert.Equal(10, level.Vertices[0].X, 6);
-        Assert.Equal(0, level.Vertices[0].Y, 6);
-        Assert.Equal(10, level.Vertices[1].X, 6);
-        Assert.Equal(10, level.Vertices[1].Y, 6);
-        Assert.Equal(5, pickup.X, 6);
-        Assert.Equal(7, pickup.Y, 6);
-        Assert.Equal(1.5707963267948966, pickup.Angle, 12);
-        Assert.Equal(5f, player.Position.X, 6);
-        Assert.Equal(7f, player.Position.Z, 6);
+        // The literal angle is held as 1.5703 (fixed point, OV-20261029-numeric-edge), a quarter
+        // turn to within 0.0005 rad.
+        Assert.Equal(10, level.Vertices[0].X, 2);
+        Assert.Equal(0, level.Vertices[0].Y, 2);
+        Assert.Equal(10, level.Vertices[1].X, 2);
+        Assert.Equal(10, level.Vertices[1].Y, 2);
+        Assert.Equal(5, pickup.X, 2);
+        Assert.Equal(7, pickup.Y, 2);
+        Assert.Equal(1.5707963267948966, pickup.Angle, 2);
+        Assert.Equal(5f, player.Position.X, 2);
+        Assert.Equal(7f, player.Position.Z, 2);
         Assert.Equal("room", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
 
@@ -2341,9 +2792,27 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_FirstCycle_KeepsTimeCorrAtOneAndTicksAtZero()
+    {
+        // OV-20261029-scheduler-order: IF_START and the first cycle read TIME_CORR 1; TICKS counts
+        // from the second cycle on, whatever the first cycle lasted.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        Assert.Equal(1.0, runtime.GetSkill("TIME_CORR"), 9);
+
+        double tc = runtime.Tick(0.5);
+
+        Assert.Equal(1.0, tc, 9);
+        Assert.Equal(1.0, runtime.GetSkill("TIME_FAC"), 9);
+        Assert.Equal(0.0, runtime.GetSkill("TICKS"), 9);
+        Assert.Equal(0.25, runtime.Tick(1.0 / 64), 9);
+        Assert.Equal(0.25, runtime.GetSkill("TICKS"), 9);
+    }
+
+    [Fact]
     public void Tick_SetsTimeCorrectionSkill()
     {
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        runtime.Tick(0); // the start-up cycle
 
         double tc = runtime.Tick(1.0 / 16); // a 16 fps frame
 
@@ -2360,8 +2829,9 @@ public class WdlRuntimeTests
         Level level = Load(
             "MAPFILE <m.wmp>; SKILL observed { VAL 0; } " +
             "EACH_TICK probe; " +
-            "ACTION probe { SET observed, TIME_FAC * 100 + TICKS * 10 + SECS; SET EACH_TICK.1, NULL; }");
+            "ACTION probe { SET observed, TIME_FAC * 100 + TICKS * 10 + SECS; IF (TICKS > 0) { SET EACH_TICK.1, NULL; } }");
         var runtime = new WdlRuntime(level);
+        runtime.Tick(0); // the start-up cycle
 
         runtime.Tick(1.0 / 32);
 
@@ -2410,7 +2880,7 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("accelRunner"));
 
-        Assert.Equal(5, runner["SPEED"], 9);
+        Assert.Equal(5.25, runner["SPEED"], 9); // 4 + 0.5·(6 - 0.25·4) / 2 (OV-20261029-motion-timing)
     }
 
     [Fact]
@@ -2572,6 +3042,7 @@ public class WdlRuntimeTests
             "ACTION object_cycle { RULE my.x += 2; RULE cycles += 1; }");
         Thing runner = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
 
@@ -2607,6 +3078,7 @@ public class WdlRuntimeTests
             "TEXTURE loopTex { CYCLES 2; BMAPS p1,p2; DELAY 1,1; SOUND step; FLAGS SLOOP; } " +
             "THING normal { TEXTURE normalTex; } THING looped { TEXTURE loopTex; }");
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
         Assert.Empty(runtime.TextureSoundRequests);
@@ -2637,13 +3109,14 @@ public class WdlRuntimeTests
         Region room = Assert.Single(level.Regions);
         Wall gate = Assert.Single(level.Walls);
         var runtime = new WdlRuntime(level);
+        runtime.Tick(1.0 / 16); // the animation starts its first phase here (OV-20261029-anim-timing)
 
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(2, room["CYCLE"]);
         Assert.Equal(1, gate["CYCLE"]);
         Assert.Equal(0.25, room["POSITION"]);
-        Assert.Equal(0.9, gate["POSITION"]);
+        Assert.Equal(WdlFixed.Literal(0.9), gate["POSITION"]); // 0.8994: fixed point (OV-20261029-numeric-edge)
         Assert.Empty(runtime.ShakeRequests);
 
         runtime.Tick(1.0 / 16);
@@ -2676,7 +3149,11 @@ public class WdlRuntimeTests
         Assert.Equal(1, runner["CYCLE"]);
         Assert.Equal(0, runtime.GetSkill("cycles"));
 
+        // The loop was fixed in the first cycle (TIME_CORR 1), so the phases last 1 and 2 frames,
+        // counted from the cycle after PLAY is seen (OV-20261029-anim-timing).
         runner["PLAY"] = 1;
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runner["CYCLE"]);
         runtime.Tick(1.0 / 16);
         Assert.Equal(2, runner["CYCLE"]);
         Assert.Equal(1, runner["PLAY"]);
@@ -2688,6 +3165,53 @@ public class WdlRuntimeTests
         Assert.Equal(2, runner["CYCLE"]);
         Assert.Equal(0, runner["PLAY"]);
         Assert.Equal(1, runtime.GetSkill("cycles"));
+    }
+
+    [Theory]
+    [InlineData(0.25, new[] { 4, 8, 12 })]
+    [InlineData(0.28125, new[] { 3, 7, 10 })]
+    public void Tick_AnimationLoop_FixesPhaseFramesFromTheWrapCyclesTimeCorr(double timeCorrection, int[] frames)
+    {
+        // OV-20261029-anim-timing anim-delay: DELAY 1, 2, 3 lasted 4, 8, 12 frames in a loop that
+        // started at TIME_CORR 0.25 and 3, 7, 10 in one that started at 0.281.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; BMAP p3,<p3.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 3; BMAPS p1,p2,p3; DELAY 1,2,3; } " +
+            "THING runner { TEXTURE runnerTex; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+        double seconds = timeCorrection / 16;
+
+        // The first loop counts with the first cycle's TIME_CORR of 1: 1 + 2 + 3 frames, from the cycle
+        // after the one that starts it.
+        for (int i = 0; i < 7; i++)
+        {
+            runtime.Tick(seconds);
+        }
+
+        Assert.Equal(1, runner["CYCLE"]);
+        Assert.Equal(timeCorrection, runtime.GetSkill("TIME_CORR"), 3);
+        var lengths = new List<int>();
+        int run = 0;
+        double phase = runner["CYCLE"];
+        while (lengths.Count < 3)
+        {
+            runtime.Tick(seconds);
+            run++;
+            if (runner["CYCLE"] != phase)
+            {
+                lengths.Add(run);
+                run = 0;
+                phase = runner["CYCLE"];
+            }
+        }
+
+        Assert.Equal(frames, lengths);
     }
 
     [Fact]
@@ -2795,15 +3319,42 @@ public class WdlRuntimeTests
         Assert.Equal(11, runtime.GetSkill("region_hits"));
 
         Assert.True(runtime.TriggerObjectActionHook(gate, "IF_NEAR"));
-        Assert.Equal(3, gate.OffsetY);
+        Assert.Equal(3 + (1 / 1024.0), gate.OffsetY); // a placed wall starts one raw step up
         Assert.Equal("wall_hit", gate.ActionHooks["IF_HIT"]);
         Assert.Equal(1, runtime.GetSkill("wall_hits"));
 
         Assert.True(runtime.TriggerObjectActionHook(gate, "IF_HIT"));
-        Assert.Equal(7, gate.OffsetY);
+        Assert.Equal(7 + (1 / 1024.0), gate.OffsetY);
         Assert.Equal(11, runtime.GetSkill("wall_hits"));
         Assert.Same(previousMy, runtime.GetObject("my"));
         Assert.Same(previousThere, runtime.GetObject("there"));
+    }
+
+    [Fact]
+    public void Tick_PlayerRegionChange_EntersAfterTheGlobalSlots()
+    {
+        // OV-20261019-actor-contact round 8: the border-climb walkers' ENTER prints the cycle count the
+        // global EACH_TICK slot has just raised, so region events come after the global slots; the
+        // slot already reads the new region through HERE (clip-contact border traces).
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "REGION old_room 0 10;#0\nREGION new_room 5 15;#1\nPLAYER_START 1 1 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL seen { VAL 0; } SKILL h { VAL 0; } SKILL hseen { VAL 0; } " +
+            "REGION new_room { SKILL1 7; IF_ENTER enter_new; } " +
+            "ACTION count { RULE n = n + 1; RULE h = HERE.SKILL1; } ACTION enter_new { RULE seen = n; RULE hseen = h; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetEachTickAction(1, "count");
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(1, 1, 1);
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(2, runtime.GetSkill("seen"));
+        Assert.Equal(7, runtime.GetSkill("hseen")); // HERE moved with the player, before the slot read it
     }
 
     [Fact]
@@ -3307,7 +3858,7 @@ public class WdlRuntimeTests
 
         player.MoveHorizontal(4, 0);
         runtime.Tick(1.0 / 16);
-        Assert.Equal(7.8f, player.Position.X, 3);
+        Assert.Equal(10 - LevelCollisionWorld.ContactDistance(2.2f), player.Position.X, 3);
         Assert.Equal(1, runtime.GetSkill("near_count"));
         player.MoveHorizontal(1, 0);
         runtime.Tick(1.0 / 16);
@@ -3404,7 +3955,7 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.True(MapEntitySizing.TryGetSize(level, pusher, out MapEntitySize size));
         Assert.Equal(3, pusher.X, 3);
-        Assert.Equal(3 + (size.Width / 2) + player.Width, player.Position.X, 3);
+        Assert.Equal(3 + LevelCollisionWorld.ContactDistance((size.Width / 2) + player.Width), player.Position.X, 3);
         Assert.Equal(2, runtime.GetSkill("near_count"));
     }
 
@@ -3428,8 +3979,10 @@ public class WdlRuntimeTests
             runtime.Tick(1.0 / 16);
         }
 
+        // SPEED 1.6 is held as 1.5996 (fixed point, OV-20261029-numeric-edge), so the halved steps
+        // land a little differently than with an exact 1.6.
         double gap = player.Position.X - pusher.X;
-        Assert.InRange(gap, 1 + player.Width, 1 + player.Width + 0.15);
+        Assert.InRange(gap, 1 + player.Width, 1 + player.Width + 0.16);
         Assert.Equal(10.05, player.Position.X, 3);
         Assert.True(runtime.GetSkill("near_count") >= 1);
     }
@@ -3449,12 +4002,47 @@ public class WdlRuntimeTests
 
         player.MoveTo(0, 9, 0.5f);
         WdlPlayerMotion.Apply(runtime, player, 1);
+        // Round 8: the contact's IF_NEAR runs right after the movement, in the beam's own cycle.
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
         runtime.Tick(1.0 / 16);
 
-        float contact = 1 + player.Width;
+        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
         Assert.Equal(10 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
         Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
         Assert.Equal(1, runtime.GetSkill("near_count"));
+    }
+
+    [Theory]
+    [InlineData(10f, 0.5f, false)]
+    [InlineData(11f, 0f, true)]
+    public void Apply_PlayerInsideTwoActors_IsPushedOutOfTheLastPlacedOnlyAndOnlyOnce(float x, float y, bool onCentre)
+    {
+        // OV-20261029-overlap: the first overlapping object in reverse map order decides; on its exact
+        // centre the player stays, and it is not pushed out of the other one afterwards either.
+        Level level = LoadWithMap(
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR first 9 0 0 0;#0\nACTOR last 11 0 0 0;#1\nPLAYER_START 5 0 0 0;#2",
+            "MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex { BMAPS postMap; } " +
+            "ACTOR first { TEXTURE postTex; } ACTOR last { TEXTURE postTex; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        player.MoveTo(0, x, y);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        if (onCentre)
+        {
+            Assert.Equal(new Vector2(x, y), new Vector2(player.Position.X, player.Position.Z));
+            return;
+        }
+
+        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
+        Assert.Equal(11 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
+        Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
+        Assert.True(Vector2.Distance(new Vector2(9, 0), new Vector2(player.Position.X, player.Position.Z)) < contact);
     }
 
     [Fact]

@@ -36,7 +36,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   bitmap's upper-left as drawn and are valid inside `IF_HIT`, `RESULT` follows the manual's
   formula; thing bitmaps are unmirrored and a wall's bitmap starts at its second vertex for a
   viewer in its left region. Eight DOSBox-X runs; implemented in `ProjectionModel.ShootRay`,
-  the `WdlRuntime` hitscan and `MeshBuilder`.
+  the `WdlRuntime` hitscan and `MeshBuilder`. A 19-run sweep (2026-10-29) adds:
+  - the shot goes through the whole pixel `floor(W/2 + SHOOT_X·W/2)`, `floor(H/2 − SHOOT_Y·H/2)`;
+  - a sprite's fractional `HIT_X` is the renderer's texel step at that column, from the projected
+    left edge plus 0.714 pixels, in 22.10 steps;
+  - 24 of 27 carriers replay.
 
 ## BRANCH probe (2026-10-15 — confirmed and implemented)
 
@@ -185,3 +189,157 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   of the player walks; a script's `SET` of a thing's or actor's position refreshes nothing, its own
   `DISTANCE` included. A region is `VISIBLE` while some of its floor, ceiling or walls is on the
   screen, and keeps `SEEN`. Six DOSBox-X runs; implemented in `ViewTest` and `WdlRuntime`.
+
+## Print output (2026-10-29 — confirmed from existing runs and implemented)
+
+- `OV-20261029-print-output.md` — `PRINTFILE "name", 0` writes `NAME0.TXT` (number unpadded, upper
+  case), `PRINT_VALUE` appends the three-decimal value with nothing after it, and `\n` in a
+  `PRINT_STRING` is a bare line feed. Read from the trace files of the earlier runs; the oracle-diff
+  harness needs it to compare files byte for byte. Implemented in `WdlRuntime`/`WdlInterpreter`.
+
+## Scheduler order (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-scheduler-order.md` — `IF_START` and the first cycle read `TIME_CORR` 1 and
+  `TICKS` 0; `TICKS` counts from the second cycle, and `IF_START` counts as a cycle for the `WAIT`s
+  and `WAITT`s it arms (so `WAITT 16` there ends at `TICKS` 13.4 at 60 Hz). A cycle runs the resumed waits, the
+  `EACH_SEC` slots, the global slots in slot order, then regions, actors, things and walls, each
+  kind from the last placed to the first, each object's `EACH_TICK` before its animation step and
+  `EACH_CYCLE`. A `SET EACH_TICK` counts in the same cycle. Regions too run from the last placed
+  (round 2). Six DOSBox-X runs; implemented in `WdlRuntime`.
+
+## Number format (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-numeric-edge.md` — skills are 22.10 fixed point (steps of 1/1024, ±2097152). Literals
+  truncate and saturate, `+ − *` wrap in 32 bits, `INT` rounds down, `%` and the bitwise operators act
+  on the raw bits, functions truncate their results and read −2097151.999 when undefined, and a
+  division by zero is fatal in the original. Seven DOSBox-X runs; implemented in `WdlFixed`.
+
+## Motion timing (2026-10-29 — ACCEL confirmed and implemented; animation phases open)
+
+- `OV-20261029-motion-timing.md` — `FRICTION` defaults to 0 (not 0.5). `ACCEL v, a` integrates
+  `(a − FRICTION·v)/INERTIA` per tick over `TIME_CORR`, a tick at a time, so the speed tends to
+  `a/FRICTION`; it fits all 247 traced calls. `CYCLE` counts from 1, an object's `EACH_TICK` runs
+  before its animation step, and a `ONESHOT` rests on its last phase. Phase lengths follow a
+  frame-rate estimate that is not yet understood. Fourteen DOSBox-X runs; `ACCEL` implemented in
+  `WdlInterpreter`.
+
+## Actor events (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-actor-events.md` — actors step `SPEED·TIME_CORR` in \|dx\| + \|dy\| toward a point or
+  along their angle, land on the point when the step reaches it or arrive within about 1/8, advance
+  `WAYPOINT` before `IF_ARRIVED` (with `TARGET_X/Y` still the point reached), trigger `IF_ARRIVED` in
+  every cycle at a `VERTEX` or object target and `IF_HIT` in every cycle a `BULLET` is blocked, and
+  move in their own turn of the object pass. Six DOSBox-X runs (three more failed to compile on a
+  declared `TARGET MOVE/BULLET/VERTEX`); implemented in `WdlRuntime`.
+
+## Save files (2026-10-29 — SAVE_INFO confirmed and implemented; full SAVE partly read)
+
+- `OV-20261029-save-format.md` — a save is the WRS entry framing (big-endian sizes, LZSS) around a
+  little-endian body of self-locating sections; skill records are name, raw value, raw min, raw max.
+  OpenVirtue writes `SAVE_INFO` files byte-identical to the original's, `LOAD_INFO` restores the
+  `GLOBAL` and `LOCAL` skills at once, and a full original `SAVE` yields its `GLOBAL`/`PLAYER` skills
+  and player position. Seven DOSBox-X runs; implemented in `AcknexSaveFile` and `WdlRuntime`.
+
+## Sky (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-sky.md` — the sky's sides spread over the full turn at `SCREEN_WIDTH/PLAYER_ARC`
+  pixels per radian, half a field of view off the world (the right edge shows the view angle),
+  `SKY_OFFS_X` moving it right; vertically unscaled, its last row on the tilted eye line, `SKY_OFFS_Y`
+  moving it down, edge rows repeated. Fourteen DOSBox-X runs (ten failed to compile in round 1);
+  implemented in `SkyPanorama`.
+
+## Shading (2026-10-29 — confirmed and implemented; AUTORANGE table open)
+
+- `OV-20261029-shading.md` — the shade level is `30 − 32·AMBIENT − 30.4·PLAYER_LIGHT·LIGHT_DIST/d`,
+  rounded down to even and clamped to 0…30 (16 grades over a 32-colour range): inverse-distance
+  falloff, `AMBIENT` 0.5 brightening by 16 levels, `PLAYER_LIGHT` 0 giving level 30. Fifteen DOSBox-X
+  runs; implemented in `PaletteShading` and the GL backend's indexed path.
+
+## Slopes (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-slope.md` — vertex heights tilt a region only with its slope flags: `FLOOR_ASCEND`
+  and `FLOOR_LIFTED` raise the floor by them, `FLOOR_DESCEND` lowers it, `CEIL_ASCEND` raises the
+  ceiling, and `CEIL_DESCEND` and `CEIL_LIFTED` lower it; without a flag the surface is flat. Sixteen
+  DOSBox-X runs (eight failed to compile in round 1); implemented in `LevelTopology.SlopeSign`.
+
+## Sound channels (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-audio.md` — channel allocation and timing as scripts see them:
+  - a sound takes the lowest free channel, or else the oldest normal sound's channel;
+  - `SLOOP` channels (2) are never taken;
+  - inaudible sounds are skipped and leave `CHANNEL` alone;
+  - a channel frees at the first world cycle after its sound ends, and not during a flic;
+  - `STOP_SOUND` frees the normal channels two cycles later and leaves loops playing.
+
+  Eighteen DOSBox-X runs; implemented in `WdlRuntime`.
+
+## Animation phase timing (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-anim-timing.md` — the phase lengths of a texture animation loop are fixed in frames
+  when the loop starts: ⌊DELAY·(1 + RANDOM·u) / TIME_CORR⌋, with that cycle's `TIME_CORR` and one random
+  draw per loop. A `ONESHOT` plays with the step fixed when its last run (or the level) started. A
+  re-analysis of the motion-timing traces; implemented in `WdlRuntime.AdvanceAnimationTarget`.
+
+## Shade tables (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-autorange.md` — the colour drawn for each palette index and shade level:
+  - a sorted range moves place i of n by `⌊(n + 1 − i)·L/32⌋`, past the end to `INFINITY`;
+  - `AUTORANGE` fades each colour toward `INFINITY` in whole 6-bit steps, `(c·(32−L) + I·L) >> 5`,
+    then takes the nearest range colour.
+
+  Thirty-two DOSBox-X screenshots, every cell reproduced; implemented in `PaletteShading.BuildTable`.
+
+## Full-save objects (2026-10-29 — confirmed and implemented for reading)
+
+- `OV-20261029-save-body.md` — a full `SAVE`'s fourth section holds 170-byte thing/actor records and
+  178-byte wall records in reverse map order, with fixed offsets for position, angle, speeds, `DIST`,
+  `CYCLE`, targets, offsets and skills; regions are not saved; the 672-byte section holds the action
+  slots. Original saves now load object state too.
+
+## BELOW stacks in the view test (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-below-view.md` — a sight line passes walls only through openings between storeys and
+  keeps to one storey across a stack's footprint, so the underpass shows through the opening beside
+  it and the slab hides it from above. Four DOSBox-X runs; `VISIBLE` matches in every view.
+
+## Actor steps along ANGLE (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-actor-step.md` — a `MOVE`/`BULLET` step is `SPEED·TIME_CORR` in 22.10, split into
+  `round(step·cos θ)` and `round(step·sin θ)` raw units. cos and sin are first cut toward zero to
+  22.10, which the long out-of-view steps show. 20 of 25 carriers replay line for line.
+
+## INKEY editing (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-inkey.md` — the input edits the old content with the cursor at its start, inserting
+  and cutting to the declared length (the last character is replaced at the end); BackSpace deletes
+  before the cursor; the world keeps running. Eleven DOSBox-X runs with scripted keys.
+
+## DIGITS and TEXT layout (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-ui-layout.md` — `DIGITS` rounds the value and right-aligns it with drawn spaces, keeps
+  the last `len` digits and draws a digit font's missing minus as a space; `CONDENSED`/`NARROW`
+  shorten only the advance. Nine DOSBox-X screenshots.
+
+## Panel widgets and the pointer (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-ui-widgets.md`:
+  - bars show from `trunc(fac·skill)` and wrap past their range;
+  - `WINDOW` Y counts from the bitmap's bottom and X stops one pixel short;
+  - `PICTURE` 0 is side 1;
+  - the pointer is drawn at `MOUSE_X`/`MOUSE_Y`.
+
+  Five DOSBox-X screenshots.
+
+## Multi-line TEXT (2026-10-29 — confirmed and implemented)
+
+- `OV-20261029-ui-text.md` — lines are drawn whole or not at all within `POS_Y…POS_Y+SIZE_Y`
+  after `OFFSET_Y`; `CENTER_Y` centres the first line, `CENTER_X` each line. Six DOSBox-X screenshots.
+
+## Overlapping the player start (2026-10-29 — implemented)
+
+- `OV-20261029-overlap.md` — at start-up or after a beam, the player is pushed out of one object
+  only: the first overlapping one in reverse map order, and not at all on its exact centre.
+  - The push goes along the centre line to √(c² + 0.093), the player's measured contact distance
+    with objects in general.
+  - A zero component gets the 4/1024 nudge.
+  - Off-axis residuals of up to 0.008 are open.

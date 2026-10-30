@@ -120,6 +120,16 @@ fired nothing). The on-the-line double `N` (rule 1) rests on one crossing, and p
 printed to three decimals. What "on the line" means in the original's own number format is not
 measured.
 
+## Replay note (2026-10-30)
+In the oracle-diff replay, `pass-dist0`, `pass-dist6` (and wall-distance's `wall-front`) differ
+from their first `W` line: the original prints it at `TICKS` 15.000 in the probe's cycle 7, and the
+replay a few cycles earlier. The wall's `EACH_TICK` sampler prints whenever `TICKS` passes `pw_t`
+and then sets `pw_t` two ticks on. It runs from the level's first cycle, before the probe opens
+its `PRINTFILE`, so those early prints are lost but still set `pw_t`. The first printed `W`
+therefore depends on the start-up frames' exact times, which no trace records. Planning the
+replay's start-up from the sampler's cycle counter did not help (tried 2026-10-30, reverted).
+A probe that wants a comparable first sample has to start its sampler from the probe action.
+
 ## Open Questions
 Measured further by OV-20261019-clip-contact: region-border crossings, `LIBER`, the other gated
 object actions, actor movement, thing and actor contact, and regions with different `CLIP_DIST`s.

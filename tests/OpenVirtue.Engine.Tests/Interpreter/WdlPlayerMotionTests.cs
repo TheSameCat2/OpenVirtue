@@ -99,8 +99,8 @@ public sealed class WdlPlayerMotionTests
         WdlPlayerMotion.Apply(runtime, player, 1);
 
         Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
-        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 3);
-        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 3);
+        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 2); // PLAYER_WIDTH is 1228/1024, not 1.2
+        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2);
     }
 
     [Fact]
@@ -231,7 +231,8 @@ public sealed class WdlPlayerMotionTests
             "WALL a 0 1 0 -1 0 0;#0\nWALL b 1 2 0 -1 0 0;#1\n" +
             "WALL c 2 3 0 -1 0 0;#2\nWALL d 3 0 0 -1 0 0;#3\n" +
             "PLAYER_START 5 5 0 0;#4";
-        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>;");
+        // The vertex heights tilt the region only with its slope flags (OV-20261029-slope).
+        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>; REGION ramp { FLAGS FLOOR_ASCEND, CEIL_ASCEND; }");
 
         WdlPlayerMotion.Synchronize(runtime, player);
 
@@ -351,6 +352,7 @@ public sealed class WdlPlayerMotionTests
             main,
             name => resources.GetValueOrDefault(Path.GetFileName(name)));
         var runtime = new WdlRuntime(level);
+        runtime.SetSkill("PLAYER_SIZE", 3); // the scenarios were worked out for a 3-step player (V3.963 starts at 3.5)
         var player = new Player(level);
         runtime.RegisterObject("player", player);
         return (runtime, player);

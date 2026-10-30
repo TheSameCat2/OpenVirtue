@@ -30,4 +30,14 @@ public sealed class AudioMixerTests
         Assert.Equal(0.5f, left);
         Assert.Equal(0.5f, right);
     }
+
+    [Theory]
+    [InlineData(11025, 11111)]
+    [InlineData(22050, 22222)]
+    [InlineData(8000, 8000)]
+    public void SoundBlasterRate_CutsTheSamplePeriodToWholeMicroseconds(int sampleRate, int played)
+    {
+        // OV-20261029-audio round 3: a one-second 11025 Hz sound freed its channel at TICKS 29.406.
+        Assert.Equal(played, RuntimeHost.SoundBlasterRate(sampleRate));
+    }
 }

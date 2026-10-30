@@ -80,7 +80,7 @@ public sealed class WdlViewActivityTests
 
         runtime.Tick(Cycle);
 
-        Assert.Equal(expected * 0.2, mover.X, 6);
+        Assert.Equal(expected * WdlFixed.Literal(0.2), mover.X, 6); // SPEED 0.2 is held as 0.1992
     }
 
     // The player at the origin facing +X; a walker 22 behind it walking straight at it, and a pacer
@@ -188,9 +188,10 @@ public sealed class WdlViewActivityTests
             runtime.Tick(Cycle);
         }
 
-        Assert.Equal(1 + 9, jumper.Y, 4); // 1.5 x 6 from y 1 to 10, beyond the pad (y 4..8)
+        // 1.5 x 6 from y 1 to about 10, beyond the pad (y 4..8); sin 90° is 1023/1024 in 22.10 (OV-20261029-actor-step)
+        Assert.Equal(1 + (9 * 1023.0 / 1024), jumper.Y, 4);
         Assert.Equal(0, jumper.Region);
-        Assert.Equal(4 - 1 - Player.WallClearance, stopper.Y, 3); // 6 from y -1 would end at 5, inside
+        Assert.Equal(Math.Truncate((4 - 1 - Player.WallClearance) * 1024) / 1024, stopper.Y, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step) // 6 from y -1 would end at 5, inside
     }
 
     // ---- BERKELEY walls ----------------------------------------------------------------------

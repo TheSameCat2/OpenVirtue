@@ -79,13 +79,13 @@ public static class UiOverlayBuilder
             return;
         }
 
-        float hotspotX = NumberProperty(element, "POS_X") ?? 0;
-        float hotspotY = NumberProperty(element, "POS_Y") ?? 0;
+        // OV-20261029-ui-widgets: the pointer's bitmap has its corner at MOUSE_X/MOUSE_Y; the hot spot
+        // (POS_X/POS_Y) marks where it clicks, not where it is drawn.
         sprites.Add(new UiOverlaySprite(
             element.Name,
             bitmapName,
-            (float)skills.GetValueOrDefault("MOUSE_X") - hotspotX,
-            (float)skills.GetValueOrDefault("MOUSE_Y") - hotspotY,
+            (float)skills.GetValueOrDefault("MOUSE_X"),
+            (float)skills.GetValueOrDefault("MOUSE_Y"),
             bitmap.Width,
             bitmap.Height,
             (int)(NumberProperty(element, "LAYER") ?? 0),
@@ -213,7 +213,7 @@ public static class UiOverlayBuilder
                 continue;
             }
 
-            var slider = new UiSliderTarget(skillName, vertical, panelX + localX, panelY + localY, length, range.Min, range.Max);
+            var slider = new UiSliderTarget(skillName, vertical, panelX + localX, panelY + localY, length, range.Min, range.Max, vertical ? size.Height : size.Width);
             double value = skills.GetValueOrDefault(skillName, range.Min);
             float offset = slider.OffsetFor(value);
             sprites.Add(new UiOverlaySprite(
@@ -267,9 +267,21 @@ public static class UiOverlayBuilder
                 continue;
             }
 
+            // OV-20261029-ui-widgets: the bitmap shows from fac·skill (truncated) on; past the end the
+            // offset wraps around the free range (60 on a 62-pixel bitmap with len 16 shows from 14).
+            int range = vertical ? bitmapSize.Height - height : bitmapSize.Width - width;
             int sourceOffset = Math.Max(0, (int)Math.Truncate(factor * skills.GetValueOrDefault(skillName)));
-            int sourceX = vertical ? 0 : Math.Clamp(sourceOffset, 0, Math.Max(0, bitmapSize.Width - width));
-            int sourceY = vertical ? Math.Clamp(sourceOffset, 0, Math.Max(0, bitmapSize.Height - height)) : 0;
+            if (range > 0 && sourceOffset > range)
+            {
+                sourceOffset %= range;
+            }
+            else if (range <= 0)
+            {
+                sourceOffset = 0;
+            }
+
+            int sourceX = vertical ? 0 : sourceOffset;
+            int sourceY = vertical ? sourceOffset : 0;
             sprites.Add(new UiOverlaySprite(
                 panel.Name,
                 bitmapName,
@@ -363,8 +375,10 @@ public static class UiOverlayBuilder
             if (bitmapSizes is not null &&
                 bitmapSizes.TryGetValue(bitmapName, out UiBitmapSize bitmapSize))
             {
-                sourceX = Math.Clamp(sourceX, 0, Math.Max(0, bitmapSize.Width - width));
-                sourceY = Math.Clamp(sourceY, 0, Math.Max(0, bitmapSize.Height - height));
+                // OV-20261029-ui-widgets: X stops one pixel short of the bitmap's right end, and Y
+                // counts up from the bitmap's bottom (0 shows the last dy rows).
+                sourceX = Math.Clamp(sourceX, 0, Math.Max(0, bitmapSize.Width - width - 1));
+                sourceY = Math.Clamp(bitmapSize.Height - height - sourceY, 0, Math.Max(0, bitmapSize.Height - height));
             }
 
             sprites.Add(new UiOverlaySprite(

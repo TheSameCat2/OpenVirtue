@@ -445,6 +445,24 @@ First targets:
 5. Palette lighting/shading behavior.
 6. Save/load semantics, if retail-save compatibility remains a goal.
 
+### Status (2026-10-30)
+
+The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
+against the original's traces and saves; 277 of 584 match in full (2026-10-30). Most of the rest differ only in the
+`TICKS` of input-timed lines or after a sampler stops.
+
+| Target | Measured and implemented | Still open |
+|---|---|---|
+| 1. Numbers | 22.10 fixed point, wrap and saturation, `*` and `/` toward zero, `INT` down, `%` and bitwise on raw bits, function results (`numeric-edge`) | engine-written values (rounded or truncated) |
+| 2. Scheduler | cycle order, start-up `TIME_CORR`, waits armed in `IF_START`, fractional `WAIT`s, same-cycle `SET EACH_TICK`, each kind and the regions from the last placed (`scheduler-order`, `flic-*`, `each-sec-cadence`) | waits armed by key hooks (`WAITT` below 1 goes straight on, scheduler-order round 5) |
+| 3. Player movement | projection, tilt, steps and nudges, climbing, eye clamp, wall and object contact, push-out (`projection-*`, `tilt-*`, `border-*`, `eye-clamp`, `clip-*`, `actor-contact`, `overlap`) | the push direction off the axes (≤ 0.008) |
+| 4. Actors | steps along `ANGLE` and toward points, `CAREFULLY`, way arrival, facing, events, view activity, animation phases (`actor-*`, `view-activity`, `anim-timing`, `motion-timing`) | `CAREFULLY` residuals and slides, the `RANDOM` distribution (the one-unit residuals of steps toward points are the engine's rounded products, actor-step round 6) |
+| 5. Shading | depth curve, `AMBIENT` (region, texture, negative), sorted ranges and `AUTORANGE` tables, sky (`shading`, `autorange`, `sky`) | `GENIUS` light at grazing angles (a facing wall's `ALBEDO` gain is in; `ALBEDO` alone does nothing, `LIGHT_ANGLE` is unknown in V3.963), `HARD` on unsorted palettes |
+| 6. Save/load | `SAVE_INFO` both ways, reading full saves' skills and objects, how `LOAD` restores (deferred, waiting actions back, `LOCAL` kept), edited saves accepted, waiting actions and slots imported from the original's saves, full saves the original loads written, on two retail levels at their start and in play (`save-format`, `save-body`) | the screen elements' section, the objects' view words, run-time statistics skills; whether the original loads a save with an object's event action waiting (it hung on its own, round 17) |
+
+Also measured: slopes, `BELOW` storeys and their view test, sound channels, `INKEY`, panel
+text, widgets and sliders, and shots (`HIT_X`/`HIT_Y`).
+
 ## Definition Of Done For This Phase
 
 - `main` stays warning-clean under `dotnet build -warnaserror`.

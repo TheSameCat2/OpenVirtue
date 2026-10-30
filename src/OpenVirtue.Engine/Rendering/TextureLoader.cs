@@ -6,8 +6,11 @@ using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Engine.Rendering;
 
-/// <summary>A CPU-side 32-bit RGBA image ready to upload as a GPU texture.</summary>
-public readonly record struct TextureImage(int Width, int Height, byte[] Rgba);
+/// <summary>
+/// A CPU-side 32-bit RGBA image ready to upload as a GPU texture, with the palette indices it was
+/// decoded from when it came from a PCX (the renderer shades by index, OV-20261029-shading).
+/// </summary>
+public readonly record struct TextureImage(int Width, int Height, byte[] Rgba, byte[]? Indices = null);
 
 /// <summary>
 /// Decodes a level's referenced textures (via its <see cref="Level.Textures"/> catalog)
@@ -205,13 +208,16 @@ public static class TextureLoader
         height = Math.Max(1, height);
 
         byte[] rgba = new byte[width * height * 4];
+        byte[] indices = new byte[width * height];
         int dst = 0;
+        int dstIndex = 0;
         for (int row = 0; row < height; row++)
         {
             int srcRow = (y + row) * pcx.Width;
             for (int col = 0; col < width; col++)
             {
                 byte index = pcx.PixelIndices[srcRow + x + col];
+                indices[dstIndex++] = index;
                 Rgb24 color = pcx.Palette[index];
                 rgba[dst++] = color.R;
                 rgba[dst++] = color.G;
@@ -220,6 +226,6 @@ public static class TextureLoader
             }
         }
 
-        return new TextureImage(width, height, rgba);
+        return new TextureImage(width, height, rgba, indices);
     }
 }
