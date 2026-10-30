@@ -258,6 +258,35 @@ engine's) and 85 synonyms (64 and 21). Loading such a save in the retail game is
   and the saving action not resuming;
 - testing it needs a visible run driven through the title menu.
 
+## Round 11: a retail level (2026-10-30, partly)
+The test level is a local, patched copy of the retail `apathy` level in `real-apathy/`; nothing from it
+is committed.
+- **Patches.** The DOS runtime rejects the retail scripts' two `SET APPEND_MODE` lines (V3.963 does not
+  know the skill), so they are commented out. `start_game`'s `SAVE "START", 0` (the level-restart save
+  the game reloads on death) is replaced by a `CALL`.
+- **Loading OpenVirtue's save.** With a `LOAD` of OpenVirtue's capture of the level (`ovtool save
+  capture`, a marker skill and a sampler slot set), the original loaded it and then crashed:
+  `Engine crash at NEW_SIDE region prayerAltar2SideBelow`. Without the save file the patched level
+  runs and the `LOAD` fails cleanly.
+- **The original's own save.** With the `CALL`ed action doing `SAVE "ovorg", 1` it wrote one (hash
+  `c063e44c`). Compared with OpenVirtue's capture:
+  - the header keeps the map file's case (`apathy.WMP`);
+  - the region section is the same size (29 × 156);
+  - OpenVirtue listed 19 skills twice: the level declares them again, and the original lists each name
+    once (633);
+  - section 4 is 2804 bytes, not 200: a count (124), then four-word records holding coordinates. It
+    looks like the level's ways;
+  - the object section is 7900 bytes longer than 630 × 170 + 5894 × 178. No record carries `0x607` or
+    `0x627` at +20 at a 170-byte stride. The +20 word is the object's flags, which the synthetic
+    level's plain objects shared, not a kind marker.
+
+Fixed: the duplicate skills and the name case. Still needed for retail levels:
+- the flags word bit by bit (a probe setting one `FLAGS` at a time);
+- the object section's extra data;
+- section 4's way records.
+
+`RuntimeHost.WriteOriginalSaves` stays off by default until then.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.

@@ -187,9 +187,26 @@ internal static class Cli
             {
                 // A level's state as loaded (no action run), in the original's full-save format.
                 WrsArchive archive = WrsArchive.ReadFile(args[1]);
-                string mainWdl = args.Length > 3 ? args[3] : Path.GetFileNameWithoutExtension(args[1]) + ".WDL";
+                string[] rest = args[3..];
+                string mainWdl = rest.Length > 0 && !rest[0].StartsWith("--", StringComparison.Ordinal)
+                    ? rest[0]
+                    : Path.GetFileNameWithoutExtension(args[1]) + ".WDL";
                 OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
                 var runtime = new OpenVirtue.Engine.Interpreter.WdlRuntime(level);
+                for (int i = 0; i + 1 < rest.Length; i++)
+                {
+                    // --skill NAME=VALUE sets a skill, --slot N=ACTION an EACH_TICK slot, before the capture.
+                    string[] pair = rest[i + 1].Split('=', 2);
+                    if (rest[i] == "--skill" && pair.Length == 2)
+                    {
+                        runtime.SetSkill(pair[0], double.Parse(pair[1], System.Globalization.CultureInfo.InvariantCulture));
+                    }
+                    else if (rest[i] == "--slot" && pair.Length == 2)
+                    {
+                        runtime.SetEachTickAction(int.Parse(pair[0], System.Globalization.CultureInfo.InvariantCulture), pair[1]);
+                    }
+                }
+
                 FullSave save = runtime.CaptureOriginalSave(mainWdl, level.MapFileName, Path.GetFileName(args[1]));
                 File.WriteAllBytes(args[2], AcknexSaveFile.Pack(AcknexFullSave.Write(save)));
                 Console.WriteLine(
@@ -675,7 +692,8 @@ internal static class Cli
               ovtool wav info <sound.wav>
               ovtool save unpack <file.sav> <body>      (an Acknex save to its uncompressed body)
               ovtool save pack   <body> <file.sav>      (and back)
-              ovtool save capture <archive.wrs> <file.sav> [main.wdl]   (a level as loaded, in the original's format)
+              ovtool save capture <archive.wrs> <file.sav> [main.wdl] [--skill NAME=VALUE] [--slot N=ACTION]
+                                                        (a level as loaded, in the original's format)
               ovtool wdl info <script.wdl>
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]

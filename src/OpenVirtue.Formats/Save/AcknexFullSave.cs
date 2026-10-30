@@ -119,7 +119,7 @@ public static class AcknexFullSave
     private static void WriteName(Stream body, string name)
     {
         byte[] field = new byte[NameField];
-        byte[] text = Encoding.Latin1.GetBytes(name.ToUpperInvariant());
+        byte[] text = Encoding.Latin1.GetBytes(name); // as named: apathy's save holds "apathy.WMP"
         text.AsSpan(0, Math.Min(text.Length, NameField - 1)).CopyTo(field);
         body.Write(field);
     }

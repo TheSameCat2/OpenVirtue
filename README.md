@@ -209,8 +209,9 @@ Not yet complete:
 - full save compatibility on more than the probe level. OpenVirtue:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
-  - can write full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default),
-    checked on one synthetic level only;
+  - can write full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default) for
+    synthetic levels. The original crashes on one for the retail `apathy` level, whose objects' flags
+    words, ways section and extra object data are not written yet;
   - does not yet write object actions' `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY`
     strings;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides

@@ -652,7 +652,10 @@ public sealed class WdlRuntime :
             skills.Add(new SaveSkill(name, Raw(GetSkill(name)), min, max));
         }
 
-        skills.AddRange(AcknexPredefinedSkills.Names.Select(n => new SaveSkill(n, Raw(GetSkill(n)))));
+        // A level may declare a predefined skill again; the original lists each name once (apathy:
+        // 633 records, not 652).
+        var listed = new HashSet<string>(skills.Select(static k => k.Name), StringComparer.OrdinalIgnoreCase);
+        skills.AddRange(AcknexPredefinedSkills.Names.Where(listed.Add).Select(n => new SaveSkill(n, Raw(GetSkill(n)))));
 
         List<SaveAction> actions = [];
         foreach (ActiveAction action in _waitingActions)
