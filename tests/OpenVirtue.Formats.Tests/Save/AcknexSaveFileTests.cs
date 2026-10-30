@@ -223,11 +223,50 @@ public class AcknexSaveFileTests
         Assert.Equal(second, System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(record + 22)));
     }
 
+    [Fact]
+    public void WriteFull_SaveTexturesAndRegions_TakeTheMeasuredLayout()
+    {
+        // OV-20261029-save-body round 15b: a SAVE texture's 68-byte record in the second section, its
+        // references −1 when unset and +36 0; round 15: a region's flags, events and GENIUS.
+        var save = new FullSave("T.WDL", "T.WMP", "T.WRS", [], [], [], [], [], [])
+        {
+            Textures =
+            [
+                new FullSaveTexture(new Dictionary<string, int> { ["ALBEDO"] = 409, ["SCALE_X"] = 14 * 1024, ["SCALE_Y"] = 16 * 1024, ["SVOL"] = 512, ["SDIST"] = 100 * 1024, ["POS_X"] = 20 * 1024 }),
+                new FullSaveTexture(new Dictionary<string, int> { ["FONT"] = 3, ["IF_KLICK"] = 17, ["TOUCH"] = 4, ["SOUND"] = 2 }),
+            ],
+            Regions =
+            [
+                new FullSaveRegion(new Dictionary<string, int>(), 1, 2, SaveAll: false) { Flags = ["CEIL_DESCEND", "FLAG1", "FLAG5"], Events = new Dictionary<string, int> { ["IF_ENTER"] = 386, ["EACH_CYCLE"] = 16 }, Genius = 6678 },
+                new FullSaveRegion(new Dictionary<string, int>(), 1, 2, SaveAll: true) { Here = true, Flags = ["FLOOR_ASCEND", "STICKY"] },
+            ],
+        };
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        int at = FindSection(body, 1);
+        int Word(int offset) => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at + offset));
+        int Half(int offset) => System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(at + offset));
+        Assert.Equal(136, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at - 8)));
+        Assert.Equal([0, 409, 14336, 16384, -1, -1, -1, -1, -1, 0, -1, -1, 512, 102400, 0, 20480, 0], Enumerable.Range(0, 17).Select(i => Word(4 * i)));
+        at += AcknexFullSave.TextureRecordSize;
+        Assert.Equal([3, -1, -1, 17, 4, 0, -1, 2], Enumerable.Range(4, 8).Select(i => Word(4 * i)));
+        at = FindSection(body, 2);
+        Assert.Equal((0x1002, 0x981), (Half(32), Half(34)));
+        Assert.Equal([386, -1, -1, -1, -1, 16, 6678], Enumerable.Range(0, 7).Select(i => Word(128 + (4 * i))));
+        at += AcknexFullSave.RegionRecordSize;
+        Assert.Equal((0xf02, 0x2d10), (Half(32), Half(34))); // the player's region: the runtime bits, less the floor's
+        Assert.Equal(-1, Word(152));
+    }
+
     /// <summary>The object section's payload: the fourth section, after the header, three sections and their 8-byte heads.</summary>
-    private static int FindObjects(byte[] body)
+    private static int FindObjects(byte[] body) => FindSection(body, 3);
+
+    /// <summary>Section <paramref name="index"/>'s payload, past the header and the sections before it with their 8-byte heads.</summary>
+    private static int FindSection(byte[] body, int index)
     {
         int at = 51; // the first section's own-offset field
-        for (int section = 0; section < 3; section++)
+        for (int section = 0; section < index; section++)
         {
             at += 4 + System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at - 4)) + 4;
         }

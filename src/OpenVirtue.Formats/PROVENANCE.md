@@ -163,5 +163,9 @@ and validate against real game data used only locally (never committed).
     regions, the fixed-point wall length and the first section's player and palette words. Probe
     carriers settled what the comparison could not. The original then loaded OpenVirtue's save of
     that level without errors.
+  - Round 15 did the same with a second retail level. The `SAVE` textures' 68-byte records (the
+    second section) and the region records' flag bits, events and `GENIUS` word were then laid out
+    by synthetic carriers that each set one property to its own value. Splicing sections between
+    the two engines' saves showed which ones the load needs.
 
   Not ported from any third-party source.

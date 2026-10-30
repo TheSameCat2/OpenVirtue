@@ -652,7 +652,7 @@ internal static class ProjectionProbeGenerator
                 SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
         }
 
-        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName)
+        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName or SaveBodyProbeName)
         {
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.FontFile), SyntheticPcx.Write(128, 64, UiLayoutProbeCases.FontPixel, palette));
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.DigitFile), SyntheticPcx.Write(88, 8, UiLayoutProbeCases.DigitPixel, palette));
@@ -667,7 +667,7 @@ internal static class ProjectionProbeGenerator
             }
         }
 
-        if (plan.ProbeName == AudioProbeName)
+        if (plan.ProbeName is AudioProbeName or SaveBodyProbeName)
         {
             foreach ((string file, int rate, int samples, int tone) in AudioProbeCases.Sounds)
             {

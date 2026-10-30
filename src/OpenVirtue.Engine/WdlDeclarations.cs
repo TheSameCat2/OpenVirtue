@@ -84,6 +84,9 @@ public sealed class WdlDeclarations
     private readonly List<string> _actionOrder = [];
     private readonly List<string> _textureDeclarations = [];
     private readonly List<(string Kind, string Name)> _objectDeclarations = [];
+    private readonly List<string> _regionDeclarations = [];
+    private readonly List<SaveTextureDeclaration> _saveTextures = [];
+    private readonly Dictionary<string, List<string>> _numbered = new(Ci) { ["FONT"] = [], ["STRING"] = [], ["SOUND"] = [] };
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
@@ -111,6 +114,12 @@ public sealed class WdlDeclarations
     /// </summary>
     public IReadOnlyList<(string Kind, string Name)> ObjectDeclarations => _objectDeclarations;
 
+    /// <summary>The <c>REGION</c> declarations with a body, by name in declaration order; a repeated name keeps its first place.</summary>
+    public IReadOnlyList<string> RegionDeclarations => _regionDeclarations;
+
+    /// <summary>The <c>TEXTURE</c> declarations with <c>FLAGS SAVE</c>, in declaration order (OV-20261029-save-body round 15b).</summary>
+    public IReadOnlyList<SaveTextureDeclaration> SaveTextures => _saveTextures;
+
     /// <summary>Builds the index from a flattened program.</summary>
     public static WdlDeclarations Index(WdlProgram program)
     {
@@ -119,6 +128,11 @@ public sealed class WdlDeclarations
 
         foreach (WdlItem item in program.Items)
         {
+            if (declarations._numbered.TryGetValue(item.Keyword, out List<string>? numbered) && item.Header.Count > 0)
+            {
+                numbered.Add(item.Header[0].Text);
+            }
+
             switch (item.Keyword.ToUpperInvariant())
             {
                 case "BMAP":
@@ -130,6 +144,11 @@ public sealed class WdlDeclarations
                     break;
                 case "REGION" when item.HasBody:
                     declarations.IndexRegion(item);
+                    if (item.Header.Count > 0 && !declarations._regionDeclarations.Exists(n => n.Equals(item.Header[0].Text, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        declarations._regionDeclarations.Add(item.Header[0].Text);
+                    }
+
                     break;
                 case "WALL" when item.HasBody:
                     declarations.IndexWall(item);
@@ -150,6 +169,19 @@ public sealed class WdlDeclarations
         foreach (WdlItem item in program.Items)
         {
             declarations.AddActionMentions(item, seen);
+        }
+
+        // A save names a texture's font, touch string and sound by their number among the declarations
+        // of their kind, from 1 (round 15b: the third FONT reads 3, the fourth STRING 4, the second SOUND 2).
+        for (int i = 0; i < declarations._saveTextures.Count; i++)
+        {
+            SaveTextureDeclaration texture = declarations._saveTextures[i];
+            declarations._saveTextures[i] = texture with
+            {
+                Font = declarations.Number("FONT", texture.FontName),
+                Touch = declarations.Number("STRING", texture.TouchName),
+                Sound = declarations.Number("SOUND", texture.SoundName),
+            };
         }
 
         return declarations;
@@ -190,6 +222,9 @@ public sealed class WdlDeclarations
             _objectDeclarations.Add((item.Keyword.ToUpperInvariant(), item.Header[0].Text));
         }
     }
+
+    private int Number(string kind, string? name) =>
+        name is null ? -1 : _numbered[kind].FindIndex(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + 1 : -1;
 
     /// <summary>The floor/ceiling texture names for a region type, if defined.</summary>
     public RegionTextures? GetRegionTextures(string name) =>
@@ -299,8 +334,38 @@ public sealed class WdlDeclarations
         bool isShadow = false;
         bool isOneShot = false;
         bool isSoundLoop = false;
+        bool isSave = false;
+        double posX = 0, posY = 0;
+        string? fontName = null, touchName = null, attachName = null;
+        var events = new Dictionary<string, string>(Ci);
         foreach (WdlItem property in body.Items)
         {
+            if (property.Keyword.ToUpperInvariant() is "IF_TOUCH" or "IF_RELEASE" or "IF_KLICK" &&
+                FirstIdentifierOrNull(property.Header) is { } eventAction)
+            {
+                events[property.Keyword] = eventAction;
+            }
+            else if (property.Keyword.Equals("POS_X", StringComparison.OrdinalIgnoreCase) && FirstNumber(property.Header) is { } parsedPosX)
+            {
+                posX = parsedPosX;
+            }
+            else if (property.Keyword.Equals("POS_Y", StringComparison.OrdinalIgnoreCase) && FirstNumber(property.Header) is { } parsedPosY)
+            {
+                posY = parsedPosY;
+            }
+            else if (property.Keyword.Equals("FONT", StringComparison.OrdinalIgnoreCase))
+            {
+                fontName = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("TOUCH", StringComparison.OrdinalIgnoreCase))
+            {
+                touchName = FirstIdentifierOrNull(property.Header);
+            }
+            else if (property.Keyword.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
+            {
+                attachName = FirstIdentifierOrNull(property.Header);
+            }
+
             // The manual names the list BMAPS; the original also takes BMAP, which Saints of Virtue's
             // music room uses (its retail save holds those sprites' sizes, OV-20261029-save-body round 13).
             if ((property.Keyword.Equals("BMAPS", StringComparison.OrdinalIgnoreCase) ||
@@ -400,7 +465,21 @@ public sealed class WdlDeclarations
                 isShadow |= property.Header.Any(static t => t.Text.Equals("SHADOW", StringComparison.OrdinalIgnoreCase));
                 isOneShot |= property.Header.Any(static t => t.Text.Equals("ONESHOT", StringComparison.OrdinalIgnoreCase));
                 isSoundLoop |= property.Header.Any(static t => t.Text.Equals("SLOOP", StringComparison.OrdinalIgnoreCase));
+                isSave |= property.Header.Any(static t => t.Text.Equals("SAVE", StringComparison.OrdinalIgnoreCase));
             }
+        }
+
+        if (isSave)
+        {
+            _saveTextures.Add(new SaveTextureDeclaration(
+                item.Header[0].Text, ambient, albedo, scaleX, scaleY, soundVolume, soundDistance, soundVerticalDistance, posX, posY)
+            {
+                FontName = fontName,
+                TouchName = touchName,
+                SoundName = soundName,
+                AttachName = attachName,
+                Events = events,
+            });
         }
 
         _textureDeclarations.Add(item.Header[0].Text);
@@ -846,4 +925,45 @@ public sealed class WdlDeclarations
         IReadOnlyDictionary<string, string?> ActionHooks,
         IReadOnlyDictionary<string, string?> Strings,
         IReadOnlyDictionary<string, double> Skills);
+    /// <summary>
+    /// A <c>TEXTURE</c> declared with <c>FLAGS SAVE</c>: the values and references a full save keeps of
+    /// it (OV-20261029-save-body round 15b). The font, touch string and sound are numbered among their
+    /// kind's declarations from 1, or −1 for none.
+    /// </summary>
+    public sealed record SaveTextureDeclaration(
+        string Name,
+        double Ambient,
+        double Albedo,
+        double ScaleX,
+        double ScaleY,
+        double SoundVolume,
+        double SoundDistance,
+        double SoundVerticalDistance,
+        double PosX,
+        double PosY)
+    {
+        /// <summary>The <c>FONT</c> named.</summary>
+        public string? FontName { get; init; }
+
+        /// <summary>The <c>TOUCH</c> string named.</summary>
+        public string? TouchName { get; init; }
+
+        /// <summary>The <c>SOUND</c> named.</summary>
+        public string? SoundName { get; init; }
+
+        /// <summary>The <c>ATTACH</c> texture named.</summary>
+        public string? AttachName { get; init; }
+
+        /// <summary>The <c>IF_TOUCH</c>, <c>IF_RELEASE</c> and <c>IF_KLICK</c> actions, by event.</summary>
+        public IReadOnlyDictionary<string, string> Events { get; init; } = new Dictionary<string, string>();
+
+        /// <summary>The font's number.</summary>
+        public int Font { get; init; } = -1;
+
+        /// <summary>The touch string's number.</summary>
+        public int Touch { get; init; } = -1;
+
+        /// <summary>The sound's number.</summary>
+        public int Sound { get; init; } = -1;
+    }
 }

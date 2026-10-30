@@ -45,6 +45,28 @@ public class BelowRegionTests
         Assert.Equal("bridge", top);
     }
 
+    [Fact]
+    public void LoadCore_RegionsOutsideTheMap_FollowItInDeclarationOrder()
+    {
+        // OV-20261030-save-body round 15: the original saves the regions the map does not list by the
+        // order their types are declared in, an unused declaration included, not by their tops' order.
+        string main = Main.Replace("REGION under", "REGION alone { FLOOR_HGT 3; } REGION under", StringComparison.Ordinal) +
+            " REGION deep { FLOOR_HGT -4; CEIL_HGT 0; } REGION street { BELOW deep; }";
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.Equal(["street", "bridge", "alone", "under", "deep"], level.Regions.Select(static r => r.Name));
+        Region alone = level.Regions[2];
+        Assert.Equal(3, alone.FloorHeight);
+        Assert.Equal(-1, alone.AboveRegion);
+        Assert.Same(alone, alone.Top);
+        Assert.Equal(3, level.Regions[1].BelowRegion);
+        Assert.Equal(1, level.Regions[3].AboveRegion);
+        Assert.Equal(4, level.Regions[0].BelowRegion);
+        Assert.Equal(0, level.Regions[4].AboveRegion);
+        Assert.Equal(0, level.Regions[4].FootprintRegion);
+    }
+
     [Theory]
     [InlineData("", 0, 1)]
     [InlineData("FLAGS GROUND;", 2, 2)]

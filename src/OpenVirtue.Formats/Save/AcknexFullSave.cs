@@ -82,7 +82,31 @@ public sealed record FullSaveWall(
 /// round 10). It carries its skills by name (<see cref="AcknexFullSave.RegionFieldOffsets"/>), its floor
 /// and ceiling textures' numbers, and whether it is <c>SAVE_ALL</c>.
 /// </summary>
-public sealed record FullSaveRegion(IReadOnlyDictionary<string, int> RawSkills, int FloorTexture, int CeilingTexture, bool SaveAll);
+public sealed record FullSaveRegion(IReadOnlyDictionary<string, int> RawSkills, int FloorTexture, int CeilingTexture, bool SaveAll)
+{
+    /// <summary>Its <c>FLAGS</c> by name (round 15); <c>SAVE</c> and <c>SAVE_ALL</c> are written regardless.</summary>
+    public IReadOnlyCollection<string> Flags { get; init; } = [];
+
+    /// <summary>
+    /// Whether the player is in it, which sets the runtime bits a region out of sight lacks: the
+    /// probe's room, the player's, saves <c>0x702</c>/<c>0xF00</c>, every SAVE region of a retail save
+    /// <c>0x2</c>/<c>0x900</c> (round 15). Whether a region merely in view sets them is unmeasured.
+    /// </summary>
+    public bool Here { get; init; }
+
+    /// <summary>Its event actions' numbers by event (<see cref="AcknexFullSave.RegionEventNames"/>; round 15).</summary>
+    public IReadOnlyDictionary<string, int> Events { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>Its <c>GENIUS</c> object's number, counting the map's walls, things and actors from 1; −1 for none (round 15).</summary>
+    public int Genius { get; init; } = -1;
+}
+
+/// <summary>
+/// A texture with the <c>SAVE</c> flag, as a full save's second section holds it (OV-20261029-save-body
+/// round 15b): its words by name (<see cref="AcknexFullSave.TextureWordOffsets"/>), raw values and
+/// numbers alike. A reference left out reads −1.
+/// </summary>
+public sealed record FullSaveTexture(IReadOnlyDictionary<string, int> Words);
 
 /// <summary>What a full save holds, as <see cref="AcknexFullSave.Write"/> lays it out.</summary>
 /// <param name="WdlName">The level's main WDL file name (up to 12 characters).</param>
@@ -105,6 +129,9 @@ public sealed record FullSave(
     IReadOnlyList<SaveSkill> Skills,
     IReadOnlyList<SaveAction> Actions)
 {
+    /// <summary>The <c>SAVE</c> textures, newest declaration first (round 15b).</summary>
+    public IReadOnlyList<FullSaveTexture> Textures { get; init; } = [];
+
     /// <summary>The <c>SAVE</c> regions, in reverse map order.</summary>
     public IReadOnlyList<FullSaveRegion> Regions { get; init; } = [];
 
@@ -177,7 +204,7 @@ public static class AcknexFullSave
         Int32(first, 64, save.PlayerRegion);
         Int32(first, 68, -1);
         AcknexSaveFile.WriteSection(body, first);
-        AcknexSaveFile.WriteSection(body, []);
+        AcknexSaveFile.WriteSection(body, Textures(save.Textures));
         AcknexSaveFile.WriteSection(body, Regions(save.Regions));
         AcknexSaveFile.WriteSection(body, Objects(save));
         AcknexSaveFile.WriteSection(body, Words([0, .. Enumerable.Repeat(-1, 49)]));
@@ -240,6 +267,22 @@ public static class AcknexFullSave
     /// <summary>The events an object record holds, in <see cref="FullSaveObject.Events"/>'s keys.</summary>
     public static IReadOnlyList<string> EventNames { get; } = ["IF_NEAR", "IF_FAR", "IF_ARRIVED", "IF_HIT", "EACH_TICK", "EACH_CYCLE"];
 
+    /// <summary>The events a region record holds, in the order of their slots from +128 (round 15).</summary>
+    public static IReadOnlyList<string> RegionEventNames { get; } = ["IF_ENTER", "IF_LEAVE", "IF_DIVE", "IF_ARISE", "EACH_TICK", "EACH_CYCLE"];
+
+    /// <summary>
+    /// The bits <c>FLAGS</c> set in a region record's two flag words (+32, +34), found by declaring one
+    /// flag at a time (round 15). A slope flag also clears a runtime bit of the player's region:
+    /// <c>FLOOR_*</c> <c>0x200</c>, <c>CEIL_*</c> <c>0x400</c>. V3.963 rejects <c>SEEN</c> and <c>PLAY</c> on a region.
+    /// </summary>
+    private static readonly Dictionary<string, (int First, int Second)> RegionFlagBits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["BASE"] = (0x10, 0), ["STICKY"] = (0x800, 0),
+        ["FLAG1"] = (0x1000, 0), ["FLAG2"] = (0x2000, 0), ["FLAG3"] = (0x4000, 0), ["FLAG4"] = (0x8000, 0),
+        ["FLAG5"] = (0, 0x1), ["FLAG6"] = (0, 0x2), ["FLAG7"] = (0, 0x4), ["FLAG8"] = (0, 0x8),
+        ["FLOOR_ASCEND"] = (0, 0x10), ["FLOOR_DESCEND"] = (0, 0x20), ["CEIL_ASCEND"] = (0, 0x40), ["CEIL_DESCEND"] = (0, 0x80),
+    };
+
     /// <summary>Where a thing's or actor's record holds each event's action (round 13); a wall's are 8 bytes on.</summary>
     private static readonly Dictionary<string, int> EntityEventOffsets = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -260,6 +303,35 @@ public static class AcknexFullSave
     // MAP_COLOR is the low byte of the word at +92; the high byte holds 0xFF (round 13).
     private static void MapColor(Span<byte> record, int mapColor) => Int16(record, 92, unchecked((short)(0xFF00 | (mapColor & 0xFF))));
 
+    /// <summary>The size of a <c>SAVE</c> texture's record.</summary>
+    public const int TextureRecordSize = 68;
+
+    /// <summary>
+    /// Where a texture record holds each word (round 15b): values raw, the font, touch string and sound
+    /// by their number among their kind's declarations, the events by action number, <c>ATTACH</c> by
+    /// texture number. <c>RADIANCE</c> and <c>RANDOM</c> are not saved; +36 reads 0.
+    /// </summary>
+    public static IReadOnlyList<(string Name, int Offset)> TextureWordOffsets { get; } =
+    [
+        ("AMBIENT", 0), ("ALBEDO", 4), ("SCALE_X", 8), ("SCALE_Y", 12), ("FONT", 16), ("IF_TOUCH", 20), ("IF_RELEASE", 24),
+        ("IF_KLICK", 28), ("TOUCH", 32), ("ATTACH", 40), ("SOUND", 44), ("SVOL", 48), ("SDIST", 52), ("SVDIST", 56),
+        ("POS_X", 60), ("POS_Y", 64),
+    ];
+
+    private static byte[] Textures(IReadOnlyList<FullSaveTexture> textures)
+    {
+        byte[] bytes = new byte[textures.Count * TextureRecordSize];
+        for (int i = 0; i < textures.Count; i++)
+        {
+            Span<byte> record = bytes.AsSpan(i * TextureRecordSize, TextureRecordSize);
+            Fill(record, 16, 36);
+            Fill(record, 40, 48);
+            Skills(record, TextureWordOffsets, textures[i].Words);
+        }
+
+        return bytes;
+    }
+
     /// <summary>The size of a <c>SAVE</c> region's record.</summary>
     public const int RegionRecordSize = 156;
 
@@ -277,17 +349,39 @@ public static class AcknexFullSave
         for (int i = 0; i < regions.Count; i++)
         {
             Span<byte> record = bytes.AsSpan(i * RegionRecordSize, RegionRecordSize);
+            FullSaveRegion region = regions[i];
+            int here = 0x600;
+            if (region.Flags.Any(static f => f.StartsWith("FLOOR_", StringComparison.OrdinalIgnoreCase)))
+            {
+                here &= ~0x200;
+            }
+
+            if (region.Flags.Any(static f => f.StartsWith("CEIL_", StringComparison.OrdinalIgnoreCase)))
+            {
+                here &= ~0x400;
+            }
+
+            (int first, int second) = FlagWords(region.Flags, RegionFlagBits, region.Here ? 0x702 : 0x2, 0x900 | (region.Here ? here : 0));
             Int16(record, 30, 3);
-            Int16(record, 32, 0x702);
-            Int16(record, 34, regions[i].SaveAll ? 0x2f00 : 0xf00);
+            Int16(record, 32, first);
+            Int16(record, 34, second | (region.SaveAll ? 0x2000 : 0));
             Int32(record, 36, 1024);
             Int32(record, 44, 1024);
             Int32(record, 52, 1024);
             Int32(record, 60, 1024);
-            Int32(record, 100, regions[i].FloorTexture);
-            Int32(record, 104, regions[i].CeilingTexture);
+            Int32(record, 100, region.FloorTexture);
+            Int32(record, 104, region.CeilingTexture);
             Fill(record, 108, RegionRecordSize);
-            Skills(record, RegionFieldOffsets, regions[i].RawSkills);
+            Skills(record, RegionFieldOffsets, region.RawSkills);
+            for (int e = 0; e < RegionEventNames.Count; e++)
+            {
+                if (region.Events.TryGetValue(RegionEventNames[e], out int action))
+                {
+                    Int32(record, 128 + (4 * e), action);
+                }
+            }
+
+            Int32(record, 152, region.Genius);
         }
 
         return bytes;

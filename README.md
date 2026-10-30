@@ -210,9 +210,10 @@ Not yet complete:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
   - writes full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default). The
-    original loads OpenVirtue's save of the retail `apathy` level without errors. That covers a save
-    made at the level's start and one made in play with an action waiting, which the original resumes
-    at its own pace (OV-20261029-save-body rounds 13 and 14);
+    original loads OpenVirtue's saves of the retail `apathy` and `legalism` levels. That covers a save
+    made at the level's start and ones made in play with an action waiting, which the original resumes
+    at its own pace. The `SAVE` textures and `SAVE` regions sections match the original's byte for byte
+    on `legalism` (OV-20261029-save-body rounds 13 to 15);
   - does not yet write the screen elements' section, two run-time words of the first section,
     object actions' `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY` strings;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides

@@ -146,6 +146,9 @@ public sealed class Level
     /// </summary>
     public IReadOnlyList<AcknexObject> UnplacedObjects { get; init; } = [];
 
+    /// <summary>The textures declared with <c>FLAGS SAVE</c>, in declaration order (a full save's second section; round 15b).</summary>
+    public IReadOnlyList<WdlDeclarations.SaveTextureDeclaration> SaveTextures { get; init; } = [];
+
     /// <summary>
     /// The objects in the order of a full save's object records: the unplaced ones in reverse
     /// declaration order, then the placed actors, things and walls, each in reverse map order

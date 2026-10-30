@@ -142,6 +142,11 @@ public sealed class WdlRuntime :
     private readonly List<WdlAudioRequest> _audioRequests = [];
     private readonly List<WdlTextureSoundRequest> _textureSoundRequests = [];
     private readonly List<WdlPaletteFadeRequest> _paletteFadeRequests = [];
+
+    // The palette a full save names, by declaration number: the last declared at the start (apathy's
+    // six palettes save 6, the probe's one 1; round 13), then the last FADE_PAL's (LEGALISM, which
+    // declares five and fades to its fourth, saves 4; round 15).
+    private int? _savedPalette;
     private readonly List<WdlShakeRequest> _shakeRequests = [];
     private readonly List<WdlFlicRequest> _flicRequests = [];
     private readonly List<WdlScreenshotRequest> _screenshotRequests = [];
@@ -582,7 +587,10 @@ public sealed class WdlRuntime :
     /// </summary>
     public FullSave CaptureOriginalSave(string wdlName, string wmpName, string wrsName)
     {
-        static int Raw(double value) => (int)Math.Clamp(Math.Round(value * 1024), -int.MaxValue, int.MaxValue);
+        // Values are cut toward zero to 1/1024, as the original reads literals: AMBIENT 0.2 is saved as
+        // 204, FLOOR_HGT 26.2 as 26828 (round 15). The rounding to six places first keeps a value that is
+        // a whole number of 1/1024 steps, give or take double error, on that step.
+        static int Raw(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value * 1024, 6)), -int.MaxValue, int.MaxValue);
 
         // Map coordinates are cut toward zero to 1/1024, not rounded (round 13). The map writes three
         // decimals and OpenVirtue keeps them as floats, so the decimal value is recovered first.
@@ -768,22 +776,58 @@ public sealed class WdlRuntime :
             }
         }
 
+        // A region's GENIUS is saved as the number of the first map object of that name, counting the
+        // map's walls, things and actors from 1 (round 15).
+        List<AcknexObject> mapObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        int GeniusNumber(string? name) =>
+            string.IsNullOrWhiteSpace(name) ? -1 : mapObjects.FindIndex(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int found ? found + 1 : -1;
         string[] regionFields = [.. AcknexFullSave.RegionFieldOffsets.Select(static f => f.Name)];
+        string[] regionFlags = ["BASE", "STICKY", "FLOOR_ASCEND", "FLOOR_DESCEND", "CEIL_ASCEND", "CEIL_DESCEND",
+            "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+        int playerRegion = (int)GetSkill("PLAYER_REGION");
         List<FullSaveRegion> regions =
         [
-            .. _level.Regions.AsEnumerable().Reverse()
-                .Where(static r => r["SAVE"] > 0 || r["SAVE_ALL"] > 0)
-                .Select(r => new FullSaveRegion(Fields(r, regionFields), TextureNumber(r.FloorTexture), TextureNumber(r.CeilTexture), r["SAVE_ALL"] > 0)),
+            .. _level.Regions.Select(static (r, i) => (Region: r, Index: i)).Reverse()
+                .Where(static p => p.Region["SAVE"] > 0 || p.Region["SAVE_ALL"] > 0)
+                .Select(p => new FullSaveRegion(Fields(p.Region, regionFields), TextureNumber(p.Region.FloorTexture), TextureNumber(p.Region.CeilTexture), p.Region["SAVE_ALL"] > 0)
+                {
+                    Flags = [.. regionFlags.Where(f => p.Region[f] > 0)],
+                    Here = p.Index == playerRegion,
+                    Events = AcknexFullSave.RegionEventNames
+                        .Select(e => (Event: e, Action: p.Region.TryGetString(e, out string? action) ? ActionNumber(action) : -1))
+                        .Where(static e => e.Action >= 0)
+                        .ToDictionary(static e => e.Event, static e => e.Action, StringComparer.OrdinalIgnoreCase),
+                    Genius = GeniusNumber(p.Region.GeniusName),
+                }),
+        ];
+
+        List<FullSaveTexture> saveTextures =
+        [
+            .. _level.SaveTextures.Reverse().Select(t =>
+            {
+                var words = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["AMBIENT"] = Raw(t.Ambient), ["ALBEDO"] = Raw(t.Albedo), ["SCALE_X"] = Raw(t.ScaleX), ["SCALE_Y"] = Raw(t.ScaleY),
+                    ["FONT"] = t.Font, ["TOUCH"] = t.Touch, ["SOUND"] = t.Sound, ["ATTACH"] = AttachNumber(t.AttachName),
+                    ["SVOL"] = Raw(t.SoundVolume), ["SDIST"] = Raw(t.SoundDistance), ["SVDIST"] = Raw(t.SoundVerticalDistance),
+                    ["POS_X"] = Raw(t.PosX), ["POS_Y"] = Raw(t.PosY),
+                };
+                foreach ((string e, string action) in t.Events)
+                {
+                    words[e] = ActionNumber(action);
+                }
+
+                return new FullSaveTexture(words);
+            }),
         ];
 
         return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions)
         {
+            Textures = saveTextures,
             Regions = regions,
             Unplaced = prefix,
             PlayerRegion = (int)GetSkill("PLAYER_REGION"),
-            // Apathy's six palettes save 6 and the probe's one 1: the last declared, as far as
-            // a level start shows (round 13).
-            Palette = _level.Palettes.Count,
+            Palette = _savedPalette ?? _level.Palettes.Count,
         };
     }
 
@@ -1300,6 +1344,11 @@ public sealed class WdlRuntime :
         }
 
         _paletteFadeRequests.Add(new WdlPaletteFadeRequest(paletteName, fileName, factor));
+        int number = _palettes.Keys.ToList().FindIndex(n => n.Equals(paletteName, StringComparison.OrdinalIgnoreCase));
+        if (number >= 0)
+        {
+            _savedPalette = number + 1;
+        }
     }
 
     /// <inheritdoc/>

@@ -108,8 +108,70 @@ internal static class SaveBodyProbeCases
         Predict(("fixed slots", "each event's action number once, in the same order in every record")),
         Map: World);
 
+    private static readonly string[] RegionFlags =
+        ["FLOOR_ASCEND", "CEIL_ASCEND", "FLOOR_DESCEND", "CEIL_DESCEND", "SEEN", "BASE", "STICKY", "PLAY",
+         "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+
+    /// <summary>Round 15: the room declared with <paramref name="body"/>.</summary>
+    private static TraceProbeCase RegionDeclared(string label, string question, string body) => new(
+        label,
+        question,
+        EventActions + Declarations,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("fixed slots", "each event's action number once in the region's record")),
+        Map: World with { RoomBody = body });
+
+    /// <summary>Round 15b: SAVE textures declared after <see cref="Declarations"/>, none of them shown.</summary>
+    private static TraceProbeCase TextureSave(string label, string question, string textures) => new(
+        label,
+        question,
+        EventActions + "SOUND sb_snd,<" + AudioProbeCases.Quarter + ">;\n" + $"FONT sb_font,<{UiLayoutProbeCases.FontFile}>,8,8;\n" +
+        "STRING sb_str, \"t\";\n" + Declarations + textures,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("one record per SAVE texture", "the second section holds a 68-byte record for each")),
+        Map: World);
+
+    /// <summary>Round 15b: the texture properties a value can be given, each set to its own pattern (<see cref="FieldValue"/>).</summary>
+    private static readonly string[] TextureValues =
+        ["AMBIENT", "ALBEDO", "RADIANCE", "SCALE_X", "SCALE_Y", "SVOL", "SDIST", "SVDIST", "POS_X", "POS_Y", "RANDOM"];
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        TextureSave(
+            "texture-values",
+            "Round 15b. A SAVE texture with each valued property set to its own raw pattern 0x201 + 64·i: where is each in its record?",
+            "TEXTURE sb_x1 { BMAPS grn_map; " +
+            string.Concat(TextureValues.Select((f, i) => FormattableString.Invariant($"{f} {FieldValue(i)}; "))) + "FLAGS SAVE; }\n"),
+        TextureSave(
+            "texture-refs",
+            "Round 15b. A SAVE texture with SOUND, ATTACH, TOUCH, FONT, IF_TOUCH, IF_RELEASE and IF_KLICK: which of the -1 slots holds which?",
+            "TEXTURE sb_x1 { BMAPS grn_map; SOUND sb_snd; ATTACH mag_tex; TOUCH sb_str; FONT sb_font; " +
+            "IF_TOUCH ev_near; IF_RELEASE ev_far; IF_KLICK ev_klick; FLAGS SAVE; }\n"),
+        TextureSave(
+            "texture-refs2",
+            "Round 15b. The second SOUND, third FONT and fourth STRING declared, on a SAVE texture: which slot holds which number?",
+            "SOUND sb_snd2,<" + AudioProbeCases.Quarter + ">;\n" + $"FONT sb_font2,<{UiLayoutProbeCases.FontFile}>,8,8;\n" +
+            $"FONT sb_font3,<{UiLayoutProbeCases.FontFile}>,8,8;\n" + "STRING sb_str2, \"u\";\nSTRING sb_str3, \"v\";\nSTRING sb_str4, \"w\";\n" +
+            "TEXTURE sb_x1 { BMAPS grn_map; SOUND sb_snd2; TOUCH sb_str4; FONT sb_font3; FLAGS SAVE; }\n"),
+        TextureSave(
+            "texture-two",
+            "Round 15b. Two SAVE textures, AMBIENT 0.25 then 0.5, and a third without SAVE between them: in which order are they saved?",
+            "TEXTURE sb_x1 { BMAPS grn_map; AMBIENT 0.25; FLAGS SAVE; }\nTEXTURE sb_x2 { BMAPS grn_map; AMBIENT 0.75; }\n" +
+            "TEXTURE sb_x3 { BMAPS grn_map; AMBIENT 0.5; FLAGS SAVE; }\n"),
+        TextureSave(
+            "texture-anim",
+            "Round 15b. A SAVE texture of three cycles on the wall sb_w, DELAY 1 each, saved a few ticks in: does a slot count its frame?",
+            "TEXTURE sb_x1 { CYCLES 3; BMAPS grn_map, mag_map, yel_map; DELAY 1, 1, 1; FLAGS SAVE; }\n" +
+            "WALL sb_xw { TEXTURE sb_x1; }\n"),
+        RegionDeclared(
+            "region-events",
+            "Round 15. The SAVE room with every region event, each naming its own action, and GENIUS sb_t: which slot of the " +
+            "region record holds which, and how is the GENIUS object named?",
+            "FLAGS SAVE; IF_ENTER ev_near; IF_LEAVE ev_far; IF_DIVE ev_arr; IF_ARISE ev_hit; EACH_TICK ev_tick; EACH_CYCLE ev_cycle; GENIUS sb_t;"),
+        .. RegionFlags.Select(static f => RegionDeclared(
+            "region-flag-" + f.ToLowerInvariant(),
+            $"Round 15. The SAVE room declared FLAGS SAVE, {f}: which bits of its record's flag words change?",
+            "FLAGS SAVE, " + f + ";")),
         Declared(
             "events",
             "Round 13. Every event a wall takes, and every event a thing or actor takes but IF_KLICK, each naming its own action: " +

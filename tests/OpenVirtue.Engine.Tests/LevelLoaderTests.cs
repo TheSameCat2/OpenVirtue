@@ -1033,10 +1033,12 @@ public class LevelLoaderTests
         Level level = LevelLoader.Load(archive, "APATHY.WDL");
 
         Assert.Equal(5192, level.Vertices.Count);
-        // 1073 map regions, then the 69 BELOW regions the map stacks under 69 of them.
-        Assert.Equal(1073 + 69, level.Regions.Count);
+        // 1073 map regions, then the 69 BELOW regions the map stacks under 69 of them and the 12
+        // declared regions the map does not place, which stand alone.
+        Assert.Equal(1073 + 69 + 12, level.Regions.Count);
         Assert.Equal(69, level.Regions.Count(static r => r.AboveRegion >= 0));
-        Assert.All(level.Regions.Skip(1073), static r => Assert.InRange(r.FootprintRegion, 0, 1072));
+        Assert.All(level.Regions.Skip(1073).Where(static r => r.AboveRegion >= 0), static r => Assert.InRange(r.FootprintRegion, 0, 1072));
+        Assert.All(level.Regions.Skip(1073).Where(static r => r.AboveRegion < 0), static r => Assert.Same(r, r.Top));
         Assert.Equal(5894, level.Walls.Count);
         // 492 placed things and 138 placed actors, then the 46 declared objects the map does not
         // place (21 things, 15 actors, 10 walls), as many as the original's retail save holds.

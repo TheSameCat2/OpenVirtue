@@ -438,6 +438,68 @@ every cycle. The original ran `src6` itself (save `e6adcfcc`), and OpenVirtue ra
     types (19 of 176 `galWall2b`). Region heights do not explain it; it looks like view state.
   - +20 `0x2` is clear on the five button walls and the four TV-channel walls.
 
+## Round 15: a second retail level (2026-10-30)
+The same mid-play test on LEGALISM (patched archives `fce58b44` saving, `e4581dff` loading only).
+The original resumed its own save (`930ff4a9`), but not OpenVirtue's: after the `LOAD`, the probe
+counter went on instead of starting again. Splicing showed sections 2 and 3 (the textures and the
+regions) each stopped the load.
+- **Regions outside the map.** The original saves 123 `SAVE` regions where OpenVirtue saved 122. The
+  extra one is `abstractElevator10`, declared with `FLAGS SAVE` but placed nowhere in the map. Every
+  declared region the map does not place becomes a region of its own after the map's regions. The
+  `BELOW` regions are among them, and their order is the order their types are declared in, not their
+  top regions' map order: `trapRoomTunnelBelow`, `trapRoomTunnel2Below`, `trapRoomCageBelow`,
+  `trapRoomCage2Below`, then `abstractElevator10`. How a type stacked under several top regions is
+  numbered is not measured; each such region type is used once in LEGALISM.
+- **Values are cut, not rounded.** `AMBIENT 0.2` reads 204 and −0.2 −204, and `FLOOR_HGT 26.2`
+  reads 26828: cut toward zero to 1/1024.
+- **The region record's other words** (`round15/`, one SAVE room per case; region-events `e6bc9de1`,
+  base `4502f874`):
+  - +128 to +148 hold the events: `IF_ENTER`, `IF_LEAVE`, `IF_DIVE`, `IF_ARISE`, `EACH_TICK`,
+    `EACH_CYCLE`, as action numbers.
+  - +152 holds `GENIUS`, as its object's number among the map's walls, things and actors, from 1,
+    with `PLAYER_START` not counted. The probe's `sb_t` (13 walls before it) reads 14. LEGALISM's
+    `trapDoor_hinge` reads 6678.
+  - Flag bits, one flag declared per case:
+
+    | Word | Bits |
+    |---|---|
+    | +32 | `BASE` `0x10`, `STICKY` `0x800`, `FLAG1`–`FLAG4` `0x1000`–`0x8000` |
+    | +34 | `FLAG5`–`FLAG8` `0x1`–`0x8`, `FLOOR_ASCEND` `0x10`, `FLOOR_DESCEND` `0x20`, `CEIL_ASCEND` `0x40`, `CEIL_DESCEND` `0x80` |
+
+  - The probe's room, the player's own, reads `0x702`/`0xF00`. Every region of both retail saves reads
+    `0x2`/`0x900`. So `0x700` and `0x600` are runtime state. In the player's region, a floor slope
+    flag clears `0x200` and a ceiling slope flag clears `0x400`.
+  - V3.963 rejects `SEEN` and `PLAY` on a region ("Flag unknown").
+- **The palette word** is the palette last set by `FADE_PAL`, by declaration number. LEGALISM
+  declares five palettes and fades to the fourth, `levelPal`, and saves 4. Apathy's 6 is its last
+  declared palette, which is also its level palette.
+- **Section 2 is the `SAVE` textures.** LEGALISM's two 68-byte records are `pillarWallCr_tex` and
+  `pillarCrack_tex`, both `SCALE_XY 14, 16` and `FLAGS ONESHOT, SAVE`. They are present from the
+  `START` save on, and the same in every save. Neither record alone loads, and two zeroed records stop
+  the probe. A `round15b/` case per question measured the layout (texture-values `8a9c2d57`,
+  texture-refs `b5130b7c`, texture-refs2 `f6bc5747`, texture-two `f7195c32`):
+
+  | Offset | Word |
+  |---|---|
+  | +0, +4 | `AMBIENT`, `ALBEDO` |
+  | +8, +12 | `SCALE_X`, `SCALE_Y` (default 16) |
+  | +16 | `FONT`, numbered among the `FONT` declarations from 1 |
+  | +20, +24, +28 | `IF_TOUCH`, `IF_RELEASE`, `IF_KLICK`, as action numbers |
+  | +32 | `TOUCH`, numbered among the `STRING` declarations |
+  | +36 | 0 |
+  | +40 | `ATTACH`, as a texture number |
+  | +44 | `SOUND`, numbered among the `SOUND` declarations |
+  | +48, +52, +56 | `SVOL` (0.5), `SDIST` (100), `SVDIST` (0) |
+  | +60, +64 | `POS_X`, `POS_Y` |
+
+  An unset reference reads −1. `RADIANCE` and `RANDOM` are not saved. The newest declaration comes
+  first. An animated `SAVE` texture on an unplaced wall saved +36 as 0 too, so whether +36 counts a
+  shown texture's frame is open.
+- **Result.** With these changes OpenVirtue's second and third sections match the original's byte for byte.
+  The original resumes OpenVirtue's save (`6a61a437`) as it does its own: the counter starts again
+  and goes on. The first section's words +36/+40 (86304/5408 here) and the screen elements' section
+  are still written as 0 and empty, and the original accepts both. Apathy's save still loads.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups

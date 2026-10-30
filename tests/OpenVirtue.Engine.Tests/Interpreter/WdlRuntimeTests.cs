@@ -869,6 +869,42 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_SaveTexturesRegionsAndPaletteAsTheOriginalWritesThem()
+    {
+        // OV-20261029-save-body rounds 15 and 15b, from LEGALISM's save: a SAVE texture's values and its
+        // sound by number; a declared region the map does not place is saved after the map's; AMBIENT 0.2
+        // is cut to 204; a region's events and its GENIUS by map object number; the palette is the last
+        // FADE_PAL's by declaration.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING lamp 1 1 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SOUND s1,<A.WAV>; SOUND s2,<B.WAV>; PALETTE p1 { PALFILE <P1.PCX>; } PALETTE p2 { PALFILE <P2.PCX>; } " +
+            "WALL w { } THING lamp { } ACTION enter { } ACTION fade { FADE_PAL p1, 1; } " +
+            "TEXTURE tx { SCALE_XY 14, 16; ALBEDO 0.4; SOUND s2; FLAGS SAVE; } " +
+            "REGION r { AMBIENT 0.2; FLAGS SAVE, CEIL_DESCEND; IF_ENTER enter; GENIUS lamp; } REGION spare { FLOOR_HGT -49; FLAGS SAVE; }");
+        var runtime = new WdlRuntime(level);
+
+        FullSave before = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+        Assert.True(runtime.RunAction("fade"));
+        FullSave after = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        FullSaveTexture texture = Assert.Single(before.Textures);
+        Assert.Equal((409, 14336, 16384, 2, 512, 102400), (texture.Words["ALBEDO"], texture.Words["SCALE_X"], texture.Words["SCALE_Y"],
+            texture.Words["SOUND"], texture.Words["SVOL"], texture.Words["SDIST"]));
+        Assert.Equal(2, before.Regions.Count);
+        Assert.Equal(-49 * 1024, before.Regions[0].RawSkills["FLOOR_HGT"]); // spare, after the map's region: saved first
+        FullSaveRegion room = before.Regions[1];
+        Assert.Equal(204, room.RawSkills["AMBIENT"]);
+        Assert.Equal(["CEIL_DESCEND"], room.Flags);
+        Assert.True(room.Here);
+        Assert.Equal(2, room.Genius);
+        Assert.Contains("IF_ENTER", room.Events.Keys);
+        Assert.Equal((2, 1), (before.Palette, after.Palette));
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =
