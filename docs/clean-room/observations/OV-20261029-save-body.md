@@ -91,6 +91,32 @@ the skills.
   offsets above, as raw 22.10 values.
 - Region state is not saved: a load keeps the level's region values.
 
+## Round 7: loading (2026-10-30)
+Carrier `load-edit`, run several times on one work directory. It sets `EACH_TICK.2` to a sampler that
+appends a line every cycle (`TICKS`, its count `sb_k`, the `LOCAL` skill `sb_m`, `sb_n`, the actor's
+X), waits 2 cycles, then runs `LOAD "ovsav", 2; WAIT 3; sb_m = 2; sb_n = 7; CALL sb_note; SAVE
+"ovsav", 2;` and prints. `sb_note` waits 2 cycles and prints `N` with `sb_k` and `sb_m`. Hashes
+(run 2): `OVSVT1.TXT` `6c2ad2d1`, `OVSVN0.TXT` `cb95a2ea`.
+
+| Run | Observed | Reading |
+|---|---|---|
+| 1 (no save yet) | the action goes on past `LOAD`; it prints `L 2 7 …` and `N 7 2` | a `LOAD` of a missing file does nothing |
+| `LOAD` then straight on to `SAVE` | run 1's values again, and the file is rewritten | the `LOAD` had not happened yet: it is deferred to the end of the cycle |
+| 2 (`WAIT 3` after `LOAD`) | cycles 1–3 as before; from the next the sampler reads `sb_k` 6, `TICKS` 15.188, `sb_n` 7, `sb_m` 0; `N 6 0`; no `L` line; the run never ends | the save's world, slots and skills come back. `LOCAL` skills keep their current values. The `CALL`ed waiting action resumes, but the action that ran `SAVE` does not |
+| 3 (the save edited: actor X 25, `sb_n` 5, repacked by `ovtool save pack` as literal-only LZSS) | the sampler reads `sb_n` 5 and X 25 after the load | the original loads an edited save: no checksum, and OpenVirtue's packing is accepted |
+
+The save written by run 1 lists three action numbers in its 96-byte seventh section: 13, 15 and 14,
+the sampler, the probe action and `sb_note` (actions count from 11). The tenth section holds two
+7-word records, `[1][15][0][ip][ip][−1][−1]` and `sb_note`'s.
+
+Object records also hold, besides the fields above:
+- pointer-like pairs, such as walls' +28/+30 `−23568, 90`;
+- flags at +20/+22;
+- `16383` at +0 and +4, and `−255` at +92;
+- runs of −1 from +130 or +146.
+
+Writing a save from scratch needs these understood.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.
@@ -106,4 +132,7 @@ the skills.
   when a full `LOAD` finds only an original save.
 - Tests: `AcknexSaveFileTests.ReadObjects_ReadsTheFourthSectionsEntityAndWallRecords`, and the
   guarded `ReadObjects_SavesTheDosRuntimeWrote_HoldTheMovedThing`.
-- Writing full saves the original can load needs the remaining sections.
+- `ovtool save unpack|pack` turns a save into its body and back.
+- `WdlRuntime.RestoreSkills` keeps `LOCAL` skills on a full `LOAD` (round 7).
+- Writing full saves the original can load needs the remaining record fields and sections; resuming
+  saved actions needs the original's instruction positions.

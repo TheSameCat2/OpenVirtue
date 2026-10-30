@@ -711,6 +711,25 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_RestoreSnapshot_KeepsLocalSkillsAsTheyAreNow()
+    {
+        // OV-20261029-save-body round 7: after a full LOAD, a LOCAL skill read what it was set to
+        // before the load, while the others took the save's values.
+        Level level = Load("MAPFILE <m.wmp>; SKILL l { TYPE LOCAL; VAL 0; } SKILL p { VAL 0; }");
+        var runtime = new WdlRuntime(level);
+        runtime.SetSkill("l", 1);
+        runtime.SetSkill("p", 7);
+        WdlRuntimeSnapshot snapshot = runtime.CaptureSnapshot();
+        runtime.SetSkill("l", 2);
+        runtime.SetSkill("p", 9);
+
+        runtime.RestoreSnapshot(snapshot);
+
+        Assert.Equal(2, runtime.GetSkill("l"));
+        Assert.Equal(7, runtime.GetSkill("p"));
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =

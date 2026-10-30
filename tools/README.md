@@ -12,6 +12,8 @@ dotnet run --project tools/OpenVirtue.Tools -- wrs pack    <input-dir> <archive.
 dotnet run --project tools/OpenVirtue.Tools -- pcx info     <image.pcx>
 dotnet run --project tools/OpenVirtue.Tools -- wmp info     <map.wmp>
 dotnet run --project tools/OpenVirtue.Tools -- wav info     <sound.wav>
+dotnet run --project tools/OpenVirtue.Tools -- save unpack  <file.sav> <body>   # a save to its body
+dotnet run --project tools/OpenVirtue.Tools -- save pack    <body> <file.sav>   # and back (the original loads it)
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]

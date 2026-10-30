@@ -63,6 +63,24 @@ internal static class SaveBodyProbeCases
         Fields("wall-b", "sb_ws", ["SKILL1", "SKILL2", "SKILL3", "SKILL4"]),
         Fields("wall-c", "sb_ws", ["DIST"]),
         Fields("wall-d", "sb_ws", ["AMBIENT"]),
+        new TraceProbeCase(
+            "load-edit",
+            "Round 7, run twice. The probe LOADs OVSAV2.SAV (missing on the first run), SAVEs it and prints the world. " +
+            "On the second run the LOAD resumes the saved action after its SAVE: does the original load a save edited in between, and which values does it take? " +
+            "sb_m is LOCAL (not in a full save): 2 means the LOAD failed and the action went on, 0 that it loaded.",
+            Declarations + "SKILL sb_m { TYPE LOCAL; VAL 0; }\nSKILL sb_k { VAL 0; }\n" +
+            "ACTION sb_tick\n{\n    RULE sb_k = sb_k + 1;\n    IF (sb_k < 40) {\n        PRINTFILE \"ovsvt\", 1;\n" +
+            "        PRINT_STRING \"T \";\n        PRINT_VALUE TICKS;\n        PRINT_STRING \" \";\n        PRINT_VALUE sb_k;\n" +
+            "        PRINT_STRING \" \";\n        PRINT_VALUE sb_m;\n        PRINT_STRING \" \";\n        PRINT_VALUE sb_n;\n" +
+            "        PRINT_STRING \" \";\n        PRINT_VALUE sb_as.X;\n        PRINT_STRING \"\\n\";\n    }\n}\n" +
+            "ACTION sb_note\n{\n    WAIT 2;\n    PRINTFILE \"ovsvn\", 0;\n    PRINT_STRING \"N \";\n    PRINT_VALUE sb_k;\n    PRINT_STRING \" \";\n    PRINT_VALUE sb_m;\n    PRINT_STRING \"\\n\";\n}\n",
+            "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    SET EACH_TICK.2, sb_tick;\n    WAIT 2;\n" +
+            "    LOAD \"ovsav\", 2;\n    WAIT 3;\n    RULE sb_m = 2;\n    RULE sb_n = 7;\n    CALL sb_note;\n    SAVE \"ovsav\", 2;\n    PRINTFILE \"ovsvl\", 0;\n" +
+            V("L", "sb_m", "sb_n", "sb_ts.X", "sb_as.X", "sb_as.Y", "sb_ws.OFFSET_X") + P("RET"),
+            Predict(
+                ("the edit loads", "the second run prints the edited values"),
+                ("a check rejects it", "the second run prints the first run's values, or LOAD fails")),
+            Map: World),
     ];
 
     /// <summary>The object skills round 2 sets, each to <see cref="FieldValue"/> of its place in the list.</summary>

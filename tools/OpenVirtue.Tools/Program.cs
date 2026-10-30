@@ -5,6 +5,7 @@ using System.Text;
 using System.Numerics;
 using OpenVirtue.Engine;
 using OpenVirtue.Formats.Pcx;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wav;
 using OpenVirtue.Formats.Wdl;
 using OpenVirtue.Formats.Wmp;
@@ -29,6 +30,7 @@ internal static class Cli
                 "pcx" => Pcx(args[1..]),
                 "wmp" => Wmp(args[1..]),
                 "wav" => Wav(args[1..]),
+                "save" => Save(args[1..]),
                 "wdl" => Wdl(args[1..]),
                 "level" => Level(args[1..]),
                 "oracle" => Oracle(args[1..]),
@@ -162,6 +164,27 @@ internal static class Cli
 
             default:
                 return Usage($"Unknown wav subcommand '{verb}'.");
+        }
+    }
+
+    /// <summary><c>save unpack|pack &lt;in&gt; &lt;out&gt;</c>: an Acknex save file to its body and back.</summary>
+    private static int Save(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            return Usage("save requires a subcommand, an input and an output path.");
+        }
+
+        switch (args[0].ToLowerInvariant())
+        {
+            case "unpack":
+                File.WriteAllBytes(args[2], AcknexSaveFile.Unpack(File.ReadAllBytes(args[1])));
+                return 0;
+            case "pack":
+                File.WriteAllBytes(args[2], AcknexSaveFile.Pack(File.ReadAllBytes(args[1])));
+                return 0;
+            default:
+                return Usage($"Unknown save subcommand '{args[0]}'.");
         }
     }
 
@@ -636,6 +659,8 @@ internal static class Cli
               ovtool pcx info <image.pcx>
               ovtool wmp info <map.wmp>
               ovtool wav info <sound.wav>
+              ovtool save unpack <file.sav> <body>      (an Acknex save to its uncompressed body)
+              ovtool save pack   <body> <file.sav>      (and back)
               ovtool wdl info <script.wdl>
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]

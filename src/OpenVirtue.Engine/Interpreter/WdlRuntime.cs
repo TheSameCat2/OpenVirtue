@@ -4937,10 +4937,26 @@ public sealed class WdlRuntime :
             strings);
     }
 
+    /// <summary>
+    /// Restores a full save's skills. <c>LOCAL</c> skills keep the values they have now: the original's
+    /// full <c>SAVE</c> leaves them out, and after a <c>LOAD</c> one read what it was set to before
+    /// (OV-20261029-save-body round 7).
+    /// </summary>
     private void RestoreSkills(IReadOnlyDictionary<string, double> skills)
     {
+        Dictionary<string, double> locals = _skills
+            .Where(pair => _level.LocalSkills.Contains(pair.Key))
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         _skills.Clear();
         foreach ((string name, double value) in skills)
+        {
+            if (!_level.LocalSkills.Contains(name))
+            {
+                SetSkill(name, value);
+            }
+        }
+
+        foreach ((string name, double value) in locals)
         {
             SetSkill(name, value);
         }
