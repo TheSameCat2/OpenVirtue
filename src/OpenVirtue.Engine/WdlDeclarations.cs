@@ -244,7 +244,7 @@ public sealed class WdlDeclarations
             texture.Mirrors, texture.FrameOffsetsX, texture.FrameOffsetsY,
             texture.SoundDistance, texture.SoundVerticalDistance,
             texture.SoundName, texture.SoundVolume, texture.SoundCycles, texture.IsSoundLoop,
-            texture.RandomDelayFactor);
+            texture.RandomDelayFactor, texture.Albedo);
     }
 
     private void IndexBitmap(WdlItem item)
@@ -280,6 +280,7 @@ public sealed class WdlDeclarations
         var bitmaps = new List<string>();
         double scaleX = DefaultTextureScale, scaleY = DefaultTextureScale;
         double ambient = 0;
+        double albedo = 0;
         double soundDistance = 100;
         double soundVerticalDistance = 0;
         string? soundName = null;
@@ -363,6 +364,11 @@ public sealed class WdlDeclarations
             {
                 ambient = parsedAmbient;
             }
+            else if (property.Keyword.Equals("ALBEDO", StringComparison.OrdinalIgnoreCase) &&
+                     FirstNumber(property.Header) is { } parsedAlbedo)
+            {
+                albedo = parsedAlbedo;
+            }
             else if (property.Keyword.Equals("SOUND", StringComparison.OrdinalIgnoreCase))
             {
                 soundName = FirstIdentifierOrNull(property.Header);
@@ -402,7 +408,7 @@ public sealed class WdlDeclarations
             bitmap, bitmaps.ToArray(), scaleX, scaleY, ambient, isSky, isLightmap, isBehind, isShadow,
             sides, cycles, delays, isOneShot,
             mirrors, frameOffsetsX, frameOffsetsY, soundDistance, soundVerticalDistance,
-            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor);
+            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor, albedo);
     }
 
     private void IndexRegion(WdlItem item)
@@ -798,7 +804,8 @@ public sealed class WdlDeclarations
         double SoundVolume,
         IReadOnlyList<bool> SoundCycles,
         bool IsSoundLoop,
-        double RandomDelayFactor);
+        double RandomDelayFactor,
+        double Albedo);
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
     public readonly record struct WallDef(

@@ -112,6 +112,10 @@ show in the screenshots. Shade levels, where region `AMBIENT` 0.5 alone gives 14
 - **Angle.** The grazing cases gain less: the right wall with the lamp at (2, −20), and with
   `ALBEDO` 1 at (20, −20). A cosine at each wall point does not fit them. The rule may be one value
   a wall segment, from the segment's midpoint, but these screenshots cannot show it.
+- **What OpenVirtue does.** The first-order rule: a wall whose left region names a `GENIUS` with a
+  lit texture gains `ALBEDO` × 0.5 of ambient (16 levels a 1.0) when the lamp stands on that face's
+  side (`MeshBuilder.GeniusLight`). The grazing falloff is not modelled. apathy uses `GENIUS` 13
+  times and `ALBEDO` 33 times.
 
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,

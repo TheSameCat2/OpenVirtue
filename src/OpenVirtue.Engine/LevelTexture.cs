@@ -37,7 +37,8 @@ public readonly record struct LevelTexture(
     double SoundVolume,
     IReadOnlyList<bool> SoundCycles,
     bool IsSoundLoop,
-    double RandomDelayFactor);
+    double RandomDelayFactor,
+    double Albedo = 0);
 
 /// <summary>
 /// A catalog <see cref="LevelTexture"/> held by reference (<see cref="Level.FindTexture"/>), so a

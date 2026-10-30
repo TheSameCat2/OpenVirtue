@@ -371,9 +371,38 @@ public static class MeshBuilder
     /// the view from the right region is unmeasured.
     /// </summary>
     private static float WallAmbient(Level level, Wall wall) =>
-        RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient
+        (RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient
         : RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient
-        : 0;
+        : 0) + (float)GeniusLight(level, wall);
+
+    /// <summary>
+    /// The light a region's <c>GENIUS</c> object gives a wall of it: a thing or actor whose texture has
+    /// <c>AMBIENT</c> &gt; 0 brightens the face it stands in front of by 16 shade levels per 1.0 of the
+    /// wall texture's <c>ALBEDO</c> — half what an <c>AMBIENT</c> gives (32 a 1.0, <see cref="PaletteShading"/>) —
+    /// as a facing wall gains in OV-20261029-shading rounds 4 and 5. A wall seen at a grazing angle
+    /// gains less there; that is not modelled.
+    /// </summary>
+    private static double GeniusLight(Level level, Wall wall)
+    {
+        if (wall.Texture is not { } textureName ||
+            !level.Textures.TryGetValue(textureName, out LevelTexture texture) ||
+            texture.Albedo <= 0 ||
+            RegionAt(level, wall.LeftRegion) is not { GeniusName: { } geniusName } ||
+            level.Things.Cast<MapEntity>().Concat(level.Actors).FirstOrDefault(e => e.Name.Equals(geniusName, StringComparison.OrdinalIgnoreCase)) is not { } lamp ||
+            lamp.Texture is not { } lampTexture ||
+            !level.Textures.TryGetValue(lampTexture, out LevelTexture lampLevelTexture) ||
+            lampLevelTexture.Ambient <= 0 ||
+            (uint)wall.Vertex1 >= (uint)level.Vertices.Count ||
+            (uint)wall.Vertex2 >= (uint)level.Vertices.Count)
+        {
+            return 0;
+        }
+
+        Vertex a = level.Vertices[wall.Vertex1];
+        Vertex b = level.Vertices[wall.Vertex2];
+        double side = ((b.X - a.X) * (lamp.Y - a.Y)) - ((b.Y - a.Y) * (lamp.X - a.X));
+        return side > 0 ? texture.Albedo * 0.5 : 0;
+    }
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)
     {

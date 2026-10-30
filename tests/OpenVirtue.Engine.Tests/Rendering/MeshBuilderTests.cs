@@ -41,6 +41,36 @@ public class MeshBuilderTests
         Assert.All(batch.Vertices, vertex => Assert.Equal(0.6f, vertex.Ambient));
     }
 
+    [Theory]
+    [InlineData(2, 1, 0.5f)] // the lamp on the room's side: ALBEDO 1 adds 16 levels (0.5 of ambient)
+    [InlineData(2, -1, 0f)] // behind the wall: nothing
+    public void BuildWalls_GeniusLamp_BrightensTheFaceItStandsBefore(int lampX, int lampY, float expected)
+    {
+        // OV-20261029-shading rounds 4 and 5: a region's GENIUS with an AMBIENT texture lights ALBEDO walls.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 10;#0\nREGION solid 10 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\n" + FormattableString.Invariant($"THING lamp {lampX} {lampY} 0 0;#1\n") + "PLAYER_START 0 0 0 0;#2",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { BMAPS m; ALBEDO 1; }
+            TEXTURE lampTex { BMAPS m; AMBIENT 1; }
+            THING lamp { TEXTURE lampTex; }
+            WALL w { TEXTURE wallTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; GENIUS lamp; }
+            REGION solid { FLOOR_HGT 10; CEIL_HGT 10; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Assert.All(
+            MeshBuilder.BuildWalls(level).Batches.SelectMany(static batch => batch.Vertices),
+            vertex => Assert.Equal(expected, vertex.Ambient));
+    }
+
     [Fact]
     public void BuildWalls_WallToASolidRegion_TakesTheLeftRegionsAmbient()
     {
