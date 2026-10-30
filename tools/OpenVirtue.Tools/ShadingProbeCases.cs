@@ -61,6 +61,21 @@ internal static class ShadingProbeCases
         View("tex-ambient", "Round 3. Eye at 2, the floor's texture with AMBIENT 0.25 (p.37), PLAYER_LIGHT 1: the floor 8 levels brighter than the walls?",
             LowEye, "FLOOR_TEX sh_flr;", textures: "TEXTURE sh_flr { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; AMBIENT 0.25; }\n"),
         Albedo("round4/albedo", "", "V3.963 has no LIGHT_ANGLE skill (\"Parameter unknown\")"),
+        new TraceProbeCase(
+            "round4/genius",
+            "Round 4. As albedo, with the room's GENIUS an invisible thing near the right wall (20, -20) whose texture has " +
+            "AMBIENT 1 (p.58): do the walls' shades now follow their facing toward it?",
+            "",
+            "    SET PLAYER_LIGHT, 0;\n    WAIT 2;\n" + V("VIEW", "PLAYER_LIGHT", "LIGHT_DIST", "DARK_DIST"),
+            Predict(
+                ("a light source", "the left, right and far walls take different shades than in albedo"),
+                ("no effect", "the same screenshot as albedo")),
+            Map: new TraceProbeMap(
+                RoomBody: "AMBIENT 0.5; GENIUS sh_lamp;",
+                PaletteBody: Range,
+                WallTextureBody: "ALBEDO 1; ",
+                Textures: "TEXTURE sh_lamp_tex { SCALE_X 4; SCALE_Y 4; BMAPS cel_map; AMBIENT 1; }\nTHING sh_lamp { TEXTURE sh_lamp_tex; FLAGS INVISIBLE; }\n",
+                Placements: ["THING sh_lamp 20 -20 0 0"])),
     ];
 
     /// <summary>

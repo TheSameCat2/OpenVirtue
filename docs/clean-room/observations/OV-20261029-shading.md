@@ -86,7 +86,15 @@ textures: `PLAYER_LIGHT` 0, region `AMBIENT` 0.5.
 - **No `LIGHT_ANGLE`.** The skill the manual names as the light's direction (p.33) does not exist
   in V3.963: `PRINT_VALUE LIGHT_ANGLE` stops the compile with "Error(63): Parameter unknown". Cases
   that set it could not run.
-- **Still open.** `GENIUS` light (a region's light source object) is not probed.
+- **`GENIUS` lights the walls.** `round4/genius` (hash `8ef1b4ea`) adds `GENIUS sh_lamp` to the room.
+  `sh_lamp` is an invisible thing at (20, −20), near the right wall, whose texture has `AMBIENT 1`.
+  - **Left side wall.** It faces the lamp from 44 steps away and goes from shade level 14 to 0.
+  - **Right side wall.** It is 4 steps from the lamp, which it sees at a grazing angle, and goes
+    from 14 to 2.
+  - **Floor.** It does not change.
+  - **Not enough for a curve.** Two walls, one of them clamped at full brightness, cannot settle
+    the formula; cases with a smaller `ALBEDO` and other lamp positions are needed. OpenVirtue does
+    not model `GENIUS` light.
 
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
