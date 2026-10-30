@@ -896,10 +896,11 @@ public sealed partial class RuntimeHost
     /// <item>its <c>GLOBAL</c> and <c>PLAYER</c> skills, the predefined ones and so the player's
     /// position included (OV-20261029-save-format);</item>
     /// <item>the things', actors' and walls' positions, angles, speeds, offsets and skills
-    /// (OV-20261029-save-body).</item>
+    /// (OV-20261029-save-body);</item>
+    /// <item>the global <c>EACH_TICK</c> slots and the waiting actions (OV-20261029-save-body
+    /// rounds 7 and 8).</item>
     /// </list>
-    /// Regions keep their level values, as the original's saves do. Waiting actions and the global
-    /// slots are not read yet.
+    /// Regions keep their level values, as the original's saves do.
     /// </summary>
     private void ImportOriginalSave(WdlPersistenceRequest request, string path)
     {
@@ -912,10 +913,14 @@ public sealed partial class RuntimeHost
             RebuildWorldResources();
         }
 
+        int actions = AcknexSaveFile.ReadActions(body) is { } saved
+            ? _runtime.ImportOriginalActions(saved, AcknexSaveFile.ReadSlots(body))
+            : 0;
+
         _hasPlayerRuntimeSnapshot = false;
         ApplyRuntimePlayerState();
         AdoptRuntimeHeading();
-        _lastPersistenceStatus = $"loaded {restored} skills and {objects} objects of {PersistenceSlotName(request)} (original save)";
+        _lastPersistenceStatus = $"loaded {restored} skills, {objects} objects and {actions} waiting actions of {PersistenceSlotName(request)} (original save)";
     }
 
     /// <summary>

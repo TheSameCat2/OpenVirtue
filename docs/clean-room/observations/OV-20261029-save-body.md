@@ -117,6 +117,44 @@ Object records also hold, besides the fields above:
 
 Writing a save from scratch needs these understood.
 
+## Round 8: the action records (2026-10-30)
+Carriers `ip`, `ip2`, `ip3`. Each `CALL`s several actions that run different instructions before
+`WAITT 100`, then `WAIT 3` and `SAVE`. Hashes of `OVSAV2.SAV`: ip `ca5db9f4`, ip2 `f238a904`, ip3 `2cf70971`.
+
+The tenth section is `[0][0][n]`, then n six-word records for the waiting actions,
+`[action][remaining raw][place][next][MY][YOU]`, then one seven-word record per action that was
+running, `[1][action][…]`, and a closing 0.
+
+| Action body (the wait is `WAITT 100`) | place, next |
+|---|---|
+| `WAITT` | 0, 0 |
+| `RULE; WAITT` (and `SET`, `PRINTFILE`, `PRINT_STRING`, `PRINT_VALUE`, a long expression, `WAIT 1` in place of the `RULE`) | 1, 0 |
+| `RULE; RULE; WAITT` | 2, 0 |
+| `WAITT; RULE` (one to three `RULE`s after) | 0, 1 |
+| `RULE; WAITT; RULE` | 1, 2 |
+| `IF (…) { RULE } WAITT` | 2, 0 |
+| `IF (…) { RULE } ELSE { RULE } WAITT` | 4, 0 |
+| `IF (…) { WAITT } RULE` | 1, 2 |
+| `WHILE (…) { WAITT }`, with or without a `RULE` after the loop or the wait | 1, 2 |
+| `WHILE (…) { RULE; WAITT }`; `RULE; WHILE (…) { WAITT }` | 2, 3 |
+| the action running `SAVE`, the 67th instruction counting from 0 | 65, 66 |
+
+- **The place.** The waiting instruction's index when the action's instructions are counted in
+  order, each taking one, with `IF` and `ELSE` bodies in line.
+- **Next.** The place after it, or 0 when it is the action's last. A `WHILE` body is followed by a
+  place of its own for the loop's end.
+- **The running action.** It records the place before the `SAVE` and the `SAVE`'s own.
+- `MY` and `YOU` read −1 for these global actions; their form for object actions is unread.
+
+Implementation:
+- `AcknexSaveFile.ReadActions` and `ReadSlots` read the records and the slot words.
+- `WdlRuntime.ImportOriginalActions` maps action numbers through the declaration order
+  (`Level.ActionOrder`, from 11) and places through `WdlFlatPosition`. It replaces the waiting
+  actions and the `EACH_TICK` slots, and skips the running action.
+- `RuntimeHost.ImportOriginalSave` now loads them with the skills and objects.
+- Tests: `Runtime_ImportOriginalActions_ResumesAtTheSavedFlatPlaces`, and the guarded
+  `ReadActions_TheIpProbesSave_ListsTheWaitingActionsThenTheSavingOne`.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.
@@ -141,5 +179,5 @@ Writing a save from scratch needs these understood.
   - `RestoreSnapshot` puts them in place of the ones waiting at the load.
 
   Tested by `Runtime_FullSave_KeepsWaitingActionsButNotTheOneSaving`.
-- Writing full saves the original can load needs the remaining record fields and sections; resuming
-  saved actions needs the original's instruction positions.
+- Writing full saves the original can load needs the remaining record fields and sections; the
+  instruction positions are now known (round 8).

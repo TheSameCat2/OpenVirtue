@@ -8,6 +8,7 @@ using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Engine.Tests.TestSupport;
+using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Engine.Tests.Interpreter;
@@ -753,6 +754,41 @@ public class WdlRuntimeTests
 
         Assert.Equal(1, loaded.GetSkill("n"));
         Assert.Equal(0, loaded.GetSkill("after"));
+    }
+
+    [Fact]
+    public void Runtime_ImportOriginalActions_ResumesAtTheSavedFlatPlaces()
+    {
+        // OV-20261029-save-body round 8: places count every instruction, IF/ELSE bodies in line and a
+        // WHILE's end; actions are numbered from 11 in declaration order.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL k { VAL 0; } SKILL n { VAL 0; } SKILL a { VAL 0; } SKILL done { VAL 0; } " +
+            "SKILL b { VAL 0; } SKILL e { VAL 0; } SKILL ran { VAL 0; } " +
+            "ACTION loop { SET a, 1; WHILE (k < 1) { RULE n = n + 1; WAITT 2; RULE k = k + 1; } SET done, 1; } " +
+            "ACTION branch { IF (e > 5) { RULE b = 1; } ELSE { RULE b = 2; } WAIT 2; SET e, 9; } " +
+            "ACTION saver { SET ran, 1; }");
+        var runtime = new WdlRuntime(level);
+        int taken = runtime.ImportOriginalActions(
+            [
+                new SaveAction(11, 1024, 3, 4, -1, -1, Running: false), // loop in WAITT 2: SET 0, WHILE 1, RULE 2, WAITT 3
+                new SaveAction(12, 1024, 4, 5, -1, -1, Running: false), // branch in WAIT 2: IF 0, RULE 1, ELSE 2, RULE 3, WAIT 4
+                new SaveAction(13, 0, 0, 1, -1, -1, Running: true),
+            ],
+            null);
+
+        Assert.Equal(2, taken);
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(0, runtime.GetSkill("a")); // resumed after the SET, inside the loop body
+        Assert.Equal(0, runtime.GetSkill("n")); // after the WAITT, not at the body's start
+        Assert.Equal(1, runtime.GetSkill("k"));
+        Assert.Equal(1, runtime.GetSkill("done"));
+        Assert.Equal(0, runtime.GetSkill("b")); // after the IF/ELSE
+        Assert.Equal(9, runtime.GetSkill("e"));
+        Assert.Equal(0, runtime.GetSkill("ran")); // the action that ran the SAVE does not go on
     }
 
     [Fact]

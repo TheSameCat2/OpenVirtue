@@ -518,6 +518,53 @@ public sealed class WdlRuntime :
         return captured;
     }
 
+    /// <summary>
+    /// Takes the global <c>EACH_TICK</c> slots and the waiting actions of a full save the original wrote,
+    /// in place of the current ones (OV-20261029-save-body rounds 7 and 8). Actions are numbered from 11
+    /// in declaration order; a waiting action goes on after the instruction in its saved place. The
+    /// action that ran the <c>SAVE</c> is not resumed, as in the original. Their <c>MY</c> and
+    /// <c>YOU</c> are not read yet.
+    /// </summary>
+    /// <returns>The number of waiting actions taken.</returns>
+    public int ImportOriginalActions(IReadOnlyList<SaveAction> actions, IReadOnlyList<int>? slots)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        string? NameOf(int number) =>
+            number >= FirstActionNumber && number - FirstActionNumber < _level.ActionOrder.Count
+                ? _level.ActionOrder[number - FirstActionNumber]
+                : null;
+
+        if (slots is not null)
+        {
+            for (int slot = 1; slot <= EachTickSlotCount && EachTickSlotWord + slot < slots.Count; slot++)
+            {
+                SetEachTickAction(slot, NameOf(slots[EachTickSlotWord + slot]));
+            }
+        }
+
+        _waitingActions.Clear();
+        foreach (SaveAction saved in actions)
+        {
+            if (saved.Running || NameOf(saved.Action) is not { } name || !_actions.TryGetValue(name, out WdlBlock? block) ||
+                !WdlFlatPosition.TryResumeAfter(block, saved.Position, out WdlExecutionState state, out WdlItem item))
+            {
+                continue;
+            }
+
+            WdlWaitMode mode = item.Keyword.Equals("WAIT", StringComparison.OrdinalIgnoreCase) ? WdlWaitMode.FrameCycles : WdlWaitMode.Ticks;
+            var scope = new ActionScope(false, null, false, null, null);
+            _waitingActions.Add(new ActiveAction(state, new WdlWaitRequest(saved.Remaining / 1024.0, mode), scope));
+        }
+
+        return _waitingActions.Count;
+    }
+
+    /// <summary>The number the original's saves give the first declared action (OV-20261029-save-body).</summary>
+    private const int FirstActionNumber = 11;
+
+    /// <summary>The slot section's word before <c>EACH_TICK.1</c> (OV-20261029-save-body).</summary>
+    private const int EachTickSlotWord = 138;
+
     /// <summary>Replaces the waiting actions with saved ones (the original drops the ones waiting at the load).</summary>
     private void RestoreWaitingActions(List<WdlWaitingActionSnapshot> waiting)
     {

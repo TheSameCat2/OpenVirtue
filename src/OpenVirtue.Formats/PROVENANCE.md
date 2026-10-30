@@ -146,5 +146,8 @@ and validate against real game data used only locally (never committed).
   object skill was changed. A second set wrote each skill of a thing, actor or wall to its own
   raw bit pattern, and the patterns were searched for in the bytes. Thing/actor records are 170
   bytes and wall records 178. The skill sections, the object section and the global action
-  slots are understood; the regions are not saved (only `SAVE_ALL` regions might be), and the
-  waiting actions are not yet read. Not ported from any third-party source.
+  slots are understood; the regions are not saved (only `SAVE_ALL` regions might be).
+- **Action section** (OV-20261029-save-body rounds 7 and 8): the tenth section's records were read
+  from saves of synthetic actions that each ran a different mix of instructions before the same
+  wait, against our own count of the instructions (`ReadActions`, `ReadSlots`). Not ported from any
+  third-party source.

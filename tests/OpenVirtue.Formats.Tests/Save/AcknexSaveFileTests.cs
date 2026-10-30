@@ -120,4 +120,26 @@ public class AcknexSaveFileTests
         Assert.Equal(0x241, saved.Value.Entities[1].RawSkills["Z"]);
         Assert.Equal(0x281, saved.Value.Entities[1].RawSkills["ANGLE"]);
     }
+
+    [Fact]
+    public void ReadActions_TheIpProbesSave_ListsTheWaitingActionsThenTheSavingOne()
+    {
+        // Guarded: the save-body probe's round-8b save, eleven actions waiting in WAITT 100, when present locally.
+        string? root = ResearchData.Directory;
+        string path = root is null ? "" : Path.Combine(root, "oracle-runs", "OV-20261029-save-body", "round8b", "ip2", "work", "OVSAV2.SAV");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        IReadOnlyList<SaveAction>? actions = AcknexSaveFile.ReadActions(AcknexSaveFile.Unpack(File.ReadAllBytes(path)));
+
+        Assert.NotNull(actions);
+        Assert.Equal(12, actions.Count);
+        Assert.Equal(new SaveAction(11, 101312, 0, 0, -1, -1, Running: false), actions[0]); // WAITT 100 alone
+        Assert.Equal(new SaveAction(12, 101312, 0, 1, -1, -1, Running: false), actions[1]); // WAITT 100, then more
+        Assert.Equal(new SaveAction(20, 101312, 4, 0, -1, -1, Running: false), actions[9]); // after IF/ELSE
+        Assert.True(actions[11].Running);
+        Assert.Equal(22, actions[11].Action);
+    }
 }

@@ -121,6 +121,12 @@ public sealed class Level
     /// <summary>Skills declared with <c>TYPE LOCAL</c>, which <c>SAVE_INFO</c> keeps and <c>SAVE</c> does not (p.111).</summary>
     public IReadOnlySet<string> LocalSkills { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// The actions in the order they are first declared. The original numbers them from 11 in this
+    /// order in its saves (OV-20261029-save-body).
+    /// </summary>
+    public IReadOnlyList<string> ActionOrder { get; init; } = [];
+
     /// <summary>The declared skills in declaration order (the last declaration of a name counts).</summary>
     public IReadOnlyList<string> SkillDeclarationOrder { get; init; } = [];
 

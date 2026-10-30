@@ -145,6 +145,7 @@ public static class LevelLoader
         {
             LocalSkills = localSkills,
             SkillDeclarationOrder = skillOrder,
+            ActionOrder = declarations.ActionOrder,
             PaletteShading = GatherPaletteShading(program),
         };
     }

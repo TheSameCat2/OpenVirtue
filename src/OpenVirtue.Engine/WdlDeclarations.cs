@@ -81,6 +81,7 @@ public sealed class WdlDeclarations
     private readonly Dictionary<string, WallDef> _walls = new(Ci);
     private readonly Dictionary<string, EntityDef> _entities = new(Ci);
     private readonly Dictionary<string, WdlBlock> _actions = new(Ci);
+    private readonly List<string> _actionOrder = [];
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
@@ -90,6 +91,9 @@ public sealed class WdlDeclarations
 
     /// <summary>The body of each <c>ACTION</c> declaration, by name.</summary>
     public IReadOnlyDictionary<string, WdlBlock> Actions => _actions;
+
+    /// <summary>The actions in the order they are first declared.</summary>
+    public IReadOnlyList<string> ActionOrder => _actionOrder;
 
     /// <summary>Builds the index from a flattened program.</summary>
     public static WdlDeclarations Index(WdlProgram program)
@@ -119,6 +123,11 @@ public sealed class WdlDeclarations
                     declarations.IndexEntity(item);
                     break;
                 case "ACTION" when item.HasBody && item.Header.Count > 0:
+                    if (!declarations._actions.ContainsKey(item.Header[0].Text))
+                    {
+                        declarations._actionOrder.Add(item.Header[0].Text);
+                    }
+
                     declarations._actions[item.Header[0].Text] = item.Body!;
                     break;
             }

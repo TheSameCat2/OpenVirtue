@@ -197,6 +197,70 @@ public static class AcknexSaveFile
         return (entities, walls);
     }
 
+    /// <summary>
+    /// The actions of a full <c>SAVE</c> body (its tenth section): the waiting ones, then the ones that
+    /// were running the <c>SAVE</c> (the original does not resume those). <c>null</c> when the body has no
+    /// such section (OV-20261029-save-body rounds 7 and 8).
+    /// </summary>
+    public static IReadOnlyList<SaveAction>? ReadActions(ReadOnlySpan<byte> body)
+    {
+        if (Sections(body) is not { Count: > 9 } sections)
+        {
+            return null;
+        }
+
+        (int payload, int size) = sections[9];
+        int count = size / 4;
+        int[] words = new int[count];
+        for (int i = 0; i < count; i++)
+        {
+            words[i] = BinaryPrimitives.ReadInt32LittleEndian(body[(payload + (i * 4))..]);
+        }
+
+        int Word(int i) => words[i];
+        if (count < 3)
+        {
+            return null;
+        }
+
+        var actions = new List<SaveAction>();
+        int waiting = Word(2);
+        int at = 3;
+        for (int i = 0; i < waiting && at + 6 <= count; i++, at += 6)
+        {
+            actions.Add(new SaveAction(Word(at), Word(at + 1), Word(at + 2), Word(at + 3), Word(at + 4), Word(at + 5), Running: false));
+        }
+
+        while (at + 7 <= count && Word(at) == 1)
+        {
+            actions.Add(new SaveAction(Word(at + 1), Word(at + 2), Word(at + 3), Word(at + 4), Word(at + 5), Word(at + 6), Running: true));
+            at += 7;
+        }
+
+        return actions;
+    }
+
+    /// <summary>
+    /// The 168 words of a full <c>SAVE</c> body's slot section (its seventh): action numbers, −1 for none.
+    /// <c>EACH_TICK.n</c> is word 138 + n (OV-20261029-save-body). <c>null</c> when there is no such section.
+    /// </summary>
+    public static IReadOnlyList<int>? ReadSlots(ReadOnlySpan<byte> body)
+    {
+        if (Sections(body) is not { Count: > 6 } sections || sections[6].Size != 168 * 4)
+        {
+            return null;
+        }
+
+        int payload = sections[6].Payload;
+        int[] words = new int[168];
+        for (int i = 0; i < words.Length; i++)
+        {
+            words[i] = BinaryPrimitives.ReadInt32LittleEndian(body[(payload + (i * 4))..]);
+        }
+
+        return words;
+    }
+
     private static SaveObjectState ReadRecord(ReadOnlySpan<byte> record, (string Name, int Offset)[] fields)
     {
         var skills = new Dictionary<string, int>(fields.Length, StringComparer.OrdinalIgnoreCase);
@@ -292,3 +356,18 @@ public static class AcknexSaveFile
         stream.Write(bytes);
     }
 }
+
+/// <summary>
+/// An action in a full save (OV-20261029-save-body rounds 7 and 8).
+/// <list type="bullet">
+/// <item><see cref="Action"/>: its number, counted from 11 in declaration order.</item>
+/// <item><see cref="Remaining"/>: the raw wait left.</item>
+/// <item><see cref="Position"/>: the waiting instruction's place among the action's instructions,
+/// counted flat: <c>IF</c> and <c>ELSE</c> bodies in line, a <c>WHILE</c>'s end taking a place of its
+/// own.</item>
+/// <item><see cref="Next"/>: the place after it, or 0 when it is the action's last.</item>
+/// <item><see cref="My"/> and <see cref="You"/>: the objects it runs for (−1 for none).</item>
+/// <item><see cref="Running"/>: whether it was the action running the <c>SAVE</c>.</item>
+/// </list>
+/// </summary>
+public sealed record SaveAction(int Action, int Remaining, int Position, int Next, int My, int You, bool Running);

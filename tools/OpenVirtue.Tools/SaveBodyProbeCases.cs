@@ -64,6 +64,60 @@ internal static class SaveBodyProbeCases
         Fields("wall-c", "sb_ws", ["DIST"]),
         Fields("wall-d", "sb_ws", ["AMBIENT"]),
         new TraceProbeCase(
+            "ip",
+            "Round 8. Nine actions, each running a different mix of instructions before WAITT 100, are CALLed before a SAVE: " +
+            "how do the two position words of each waiting action's record count?",
+            "SKILL ip_x { VAL 0; }\nSKILL ip_k { VAL 0; }\n" +
+            "ACTION ip_a0\n{\n    WAITT 100;\n}\n" +
+            "ACTION ip_a1\n{\n    RULE ip_x = 1;\n    WAITT 100;\n}\n" +
+            "ACTION ip_a2\n{\n    RULE ip_x = 1;\n    RULE ip_x = 2;\n    WAITT 100;\n}\n" +
+            "ACTION ip_a3\n{\n    SET ip_x, 1;\n    WAITT 100;\n}\n" +
+            "ACTION ip_a4\n{\n    RULE ip_x = 1 + 2 * 3 - 4;\n    WAITT 100;\n}\n" +
+            "ACTION ip_a5\n{\n    IF (ip_x > 0) {\n        RULE ip_k = 1;\n    }\n    WAITT 100;\n}\n" +
+            "ACTION ip_a6\n{\n    WHILE (ip_k < 5) {\n        WAITT 100;\n    }\n}\n" +
+            "ACTION ip_a7\n{\n    WAITT 100;\n    RULE ip_x = 1;\n    WAITT 100;\n}\n" +
+            "ACTION ip_a8\n{\n    WAIT 1;\n    WAITT 100;\n}\n",
+            "    CALL ip_a0;\n    CALL ip_a1;\n    CALL ip_a2;\n    CALL ip_a3;\n    CALL ip_a4;\n    CALL ip_a5;\n    CALL ip_a6;\n    CALL ip_a7;\n    CALL ip_a8;\n" +
+            "    WAIT 3;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+            Predict(
+                ("instructions counted from the action's start", "a0 0, a1 1, a2 2, a3 1 …"),
+                ("compiled words", "a1–a4 differ by their expressions' length"))),
+        new TraceProbeCase(
+            "ip2",
+            "Round 8b. More actions waiting in WAITT 100 with instructions after the wait, in WHILE bodies and after IF/ELSE: what is the second position word?",
+            "SKILL ip_x { VAL 0; }\nSKILL ip_k { VAL 0; }\n" +
+            "ACTION ip_b0\n{\n    WAITT 100;\n}\n" +
+            "ACTION ip_b1\n{\n    WAITT 100;\n    RULE ip_x = 1;\n}\n" +
+            "ACTION ip_b2\n{\n    WAITT 100;\n    RULE ip_x = 1;\n    RULE ip_x = 2;\n}\n" +
+            "ACTION ip_b3\n{\n    WAITT 100;\n    RULE ip_x = 1;\n    RULE ip_x = 2;\n    RULE ip_x = 3;\n}\n" +
+            "ACTION ip_b4\n{\n    RULE ip_x = 1;\n    WAITT 100;\n    RULE ip_x = 2;\n}\n" +
+            "ACTION ip_c2\n{\n    WHILE (ip_k < 5) {\n        RULE ip_x = 1;\n        WAITT 100;\n    }\n}\n" +
+            "ACTION ip_c3\n{\n    RULE ip_x = 1;\n    WHILE (ip_k < 5) {\n        WAITT 100;\n    }\n}\n" +
+            "ACTION ip_c4\n{\n    WHILE (ip_k < 5) {\n        WAITT 100;\n        RULE ip_x = 1;\n    }\n}\n" +
+            "ACTION ip_c5\n{\n    WHILE (ip_k < 5) {\n        WAITT 100;\n    }\n    RULE ip_x = 1;\n}\n" +
+            "ACTION ip_d1\n{\n    IF (ip_x > 50) {\n        RULE ip_k = 1;\n    } ELSE {\n        RULE ip_k = 2;\n    }\n    WAITT 100;\n}\n" +
+            "ACTION ip_d2\n{\n    IF (ip_x < 50) {\n        WAITT 100;\n    }\n    RULE ip_k = 2;\n}\n" +
+            "",
+            "    CALL ip_b0;\n    CALL ip_b1;\n    CALL ip_b2;\n    CALL ip_b3;\n    CALL ip_b4;\n    CALL ip_c2;\n    CALL ip_c3;\n    CALL ip_c4;\n    CALL ip_c5;\n    CALL ip_d1;\n    CALL ip_d2;\n" +
+            "    WAIT 3;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+            Predict(("a pointer past the block", "the second word grows with what follows the wait"))),
+        new TraceProbeCase(
+            "ip3",
+            "Round 8c. One instruction of each kind the carrier scaffold uses before WAITT 100: which of them take a place?",
+            "SKILL ip_x { VAL 0; }\n" +
+            "ACTION ip_e1\n{\n    PRINTFILE \"ovsvx\", 0;\n    WAITT 100;\n}\n" +
+            "ACTION ip_e2\n{\n    PRINT_STRING \"x\";\n    WAITT 100;\n}\n" +
+            "ACTION ip_e3\n{\n    PRINT_VALUE ip_x;\n    WAITT 100;\n}\n" +
+            "ACTION ip_e4\n{\n    SET PLAYER_ARC, 1;\n    WAITT 100;\n}\n" +
+            "ACTION ip_e5\n{\n    SET RENDER_MODE, 2;\n    WAITT 100;\n}\n" +
+            "ACTION ip_e6\n{\n    SET MOTION_BLUR, 0;\n    WAITT 100;\n}\n" +
+            "ACTION ip_e7\n{\n    PRINT_STRING \"\\n\";\n    WAITT 100;\n}\n" +
+            "ACTION ip_e8\n{\n    SET PLAYER_SIZE, 8;\n    WAITT 100;\n}\n" +
+            "",
+            "    CALL ip_e1;\n    CALL ip_e2;\n    CALL ip_e3;\n    CALL ip_e4;\n    CALL ip_e5;\n    CALL ip_e6;\n    CALL ip_e7;\n    CALL ip_e8;\n" +
+            "    WAIT 3;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+            Predict(("each takes one place", "every action waits at 1"))),
+        new TraceProbeCase(
             "load-edit",
             "Round 7, run twice. The probe LOADs OVSAV2.SAV (missing on the first run), SAVEs it and prints the world. " +
             "On the second run the LOAD resumes the saved action after its SAVE: does the original load a save edited in between, and which values does it take? " +
