@@ -2697,11 +2697,13 @@ public sealed class WdlRuntime :
         }
     }
 
+    // An engine default is a 22.10 value like every skill, cut toward zero: PLAYER_WIDTH's 1.2 prints
+    // 1.199 in the original (OV-20261019-eye-clamp GO lines).
     private void EnsureSkillDefault(string name, double value)
     {
         if (!_skills.ContainsKey(name) || !_level.ExplicitlyInitializedSkills.Contains(name))
         {
-            _skills[name] = value;
+            _skills[name] = Math.Truncate(Math.Round(value * 1024, 6)) / 1024;
         }
     }
 
@@ -2712,7 +2714,7 @@ public sealed class WdlRuntime :
             !double.IsFinite(current) ||
             !isValid(current))
         {
-            _skills[name] = value;
+            _skills[name] = Math.Truncate(Math.Round(value * 1024, 6)) / 1024;
         }
     }
 

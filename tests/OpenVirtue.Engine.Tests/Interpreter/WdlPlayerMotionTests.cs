@@ -99,8 +99,8 @@ public sealed class WdlPlayerMotionTests
         WdlPlayerMotion.Apply(runtime, player, 1);
 
         Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
-        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 3);
-        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 3);
+        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 2); // PLAYER_WIDTH is 1228/1024, not 1.2
+        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2);
     }
 
     [Fact]
