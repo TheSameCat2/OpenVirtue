@@ -124,6 +124,22 @@ internal static class SchedulerOrderProbeCases
             OrderPredictions,
             Map: OrderMap(declarationOrder: true)),
         new TraceProbeCase(
+            "round4/anim-clock",
+            "Round 4. A thing whose 2-phase texture (DELAY 1, 1) runs EACH_CYCLE, with TIME_CORR and the unmanualled " +
+            "TOTAL_TIME, TOTAL_FRAMES and SECS printed every cycle: does one of them count the texture's clock, which " +
+            "order-wmp showed runs about 6% ahead of TICKS?",
+            Skills +
+            Action("so_tcy", "    IF (so_on > 0) {\n" + Indent(L("TC", "TOTAL_TIME", "TOTAL_FRAMES")) + "    }\n") +
+            "TEXTURE so_anim { SCALE_X 32; SCALE_Y 32; CYCLES 2; BMAPS red_map, grn_map; DELAY 1, 1; }\n" +
+            "THING so_tc { TEXTURE so_anim; EACH_CYCLE so_tcy; }\n",
+            "    RULE so_on = 1;\n    RULE so_k = 0;\n" +
+            "    WHILE (so_k < 140) {\n" + Indent(L("M", "TIME_CORR", "TOTAL_TIME", "TOTAL_FRAMES", "SECS")) +
+            "        RULE so_k = so_k + 1;\n        WAIT 1;\n    }\n    RULE so_on = 0;\n" + P("RET"),
+            Predict(
+                ("a real-time counter", "TOTAL_TIME advances 10 per 36 cycles where TICKS advances 9.4"),
+                ("a frame counter", "TOTAL_FRAMES advances 1 a cycle")),
+            Map: new TraceProbeMap(Placements: ["THING so_tc 24 0 0 0"])),
+        new TraceProbeCase(
             "set-midcycle",
             "Does a SET EACH_TICK made by an action take effect in the same cycle? Global slot 1 arms slot 2 and the thing's EACH_TICK when so_n reaches 5, and clears slot 2 at 9.",
             Skills +

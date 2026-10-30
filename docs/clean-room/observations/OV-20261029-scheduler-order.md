@@ -111,8 +111,21 @@ per-cycle sampler.
   be read from this trace.
 
 OpenVirtue advances textures by `TIME_CORR`, so in the replay it fires every 8 cycles after its
-first firing (cycle 2). Finding this needs a probe that prints a texture's frame against a clock
-other than `TICKS`, if the runtime exposes one.
+first firing (cycle 2).
+
+`round4/anim-clock` (hash `69f6d4b9`) has one such thing and prints `TIME_CORR`, `TOTAL_TIME`,
+`TOTAL_FRAMES` and `SECS` every cycle. These skills are not in the A3 manual, but the original's
+saves list them.
+- **`TOTAL_TIME`** equals `TICKS` on every line, so it is not another clock.
+- **`TOTAL_FRAMES`** counts cycles. **`SECS`** counts 16-tick seconds; its first step comes at
+  cycle 58.
+- **Firings.** All 19 `EACH_CYCLE` firings fall on even `TOTAL_FRAMES`, 6 or 8 cycles apart
+  (never 7), and the gaps change within one second. So it is not a per-second frame rate either.
+- **Every-other-frame models.** A check every other cycle, accumulating the `TICKS` passed at any
+  rate from 0.9 to 1.25 with carry, does not fit either.
+
+What drives the texture clock is still open; the even frames suggest the object's animation is
+stepped every second cycle.
 
 ## Open Questions
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
