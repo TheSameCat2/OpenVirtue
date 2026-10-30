@@ -151,8 +151,58 @@ internal static class SaveBodyProbeCases
         Predict(("scan codes", "each key's action number at its PC scan code in the slot section")),
         Map: World);
 
+    private const string ScreenResources =
+        "BMAP se_pan,<" + UiLayoutProbeCases.PanelFile + ">;\n" + "FONT se_font,<" + UiLayoutProbeCases.FontFile + ">,8,8;\n" +
+        "STRING se_s,\"Ab\";\nOVLY se_om,<PRBRED.PCX>;\n";
+
+    private const string ScreenPanel = "PANEL se_p { PAN_MAP se_pan; POS_X 11; POS_Y 22; LAYER 3; FLAGS VISIBLE; }\n";
+    private const string ScreenText = "TEXT se_t { POS_X 33; POS_Y 44; LAYER 5; FONT se_font; STRING se_s; FLAGS VISIBLE; }\n";
+    private const string ScreenOverlay = "OVERLAY se_o { OVLYS se_om; POS_X 55; POS_Y 66; LAYER 7; FLAGS VISIBLE; }\n";
+
+    /// <summary>Round 18: the screen elements <paramref name="elements"/> declared, saved as they start.</summary>
+    private static TraceProbeCase Screen(string label, string question, string elements) => new(
+        label,
+        question,
+        ScreenResources + Declarations + elements,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("one record per element", "the screen elements' section counts them and holds their places")),
+        Map: World);
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        Screen("se-panel", "Round 18. One PANEL at 11, 22, LAYER 3, VISIBLE: its record in the screen elements' section?", ScreenPanel),
+        Screen("se-text", "Round 18. One TEXT at 33, 44, LAYER 5, VISIBLE.", ScreenText),
+        Screen("se-ovly", "Round 18. One OVERLAY at 55, 66, LAYER 7, VISIBLE.", ScreenOverlay),
+        Screen("se-ovly-abs", "Round 18. The OVERLAY with FLAGS VISIBLE, ABSPOS.", ScreenOverlay.Replace("FLAGS VISIBLE;", "FLAGS VISIBLE, ABSPOS;", StringComparison.Ordinal)),
+        Screen("se-ovly-hidden", "Round 18. The OVERLAY without VISIBLE.", ScreenOverlay.Replace(" FLAGS VISIBLE;", "", StringComparison.Ordinal)),
+        Screen("se-layers", "Round 18. Three OVERLAYs declared with LAYER 7, 3, 5 at x 10, 20, 30: in which order are they saved?",
+            "OVERLAY se_a { OVLYS se_om; POS_X 10; POS_Y 1; LAYER 7; FLAGS VISIBLE; }\n" +
+            "OVERLAY se_b { OVLYS se_om; POS_X 20; POS_Y 2; LAYER 3; FLAGS VISIBLE; }\n" +
+            "OVERLAY se_c { OVLYS se_om; POS_X 30; POS_Y 3; LAYER 5; FLAGS VISIBLE; }\n"),
+        Screen("se-same", "Round 18. Three OVERLAYs all LAYER 5 at x 10, 20, 30, the middle one not VISIBLE.",
+            "OVERLAY se_a { OVLYS se_om; POS_X 10; POS_Y 1; LAYER 5; FLAGS VISIBLE; }\n" +
+            "OVERLAY se_b { OVLYS se_om; POS_X 20; POS_Y 2; LAYER 5; }\n" +
+            "OVERLAY se_c { OVLYS se_om; POS_X 30; POS_Y 3; LAYER 5; FLAGS VISIBLE; }\n"),
+        Screen("se-digits", "Round 18. A PANEL with DIGITS 4,4,5,font,1,se_v1 and DIGITS 40,14,3,font,2,se_v2 (skills 7 and 9): its items?",
+            "SKILL se_v1 { VAL 7; }\nSKILL se_v2 { VAL 9; }\n" +
+            "PANEL se_p { PAN_MAP se_pan; POS_X 11; POS_Y 22; LAYER 3; DIGITS 4,4,5,se_font,1,se_v1; DIGITS 40,14,3,se_font,2,se_v2; FLAGS VISIBLE; }\n"),
+        Screen("se-button", "Round 18. A PANEL with BUTTON 60,4,se_pan,se_pan,NULL,NULL and HSLIDER 4,30,32,se_pan,se_v1.",
+            "SKILL se_v1 { VAL 7; }\n" +
+            "PANEL se_p { PAN_MAP se_pan; POS_X 11; POS_Y 22; LAYER 3; BUTTON 60,4,se_pan,se_pan,NULL,NULL; HSLIDER 4,30,32,se_pan,se_v1; FLAGS VISIBLE; }\n"),
+        Screen("se-nolayer", "Round 18. OVERLAYs with LAYER 5 (x 10), no LAYER (x 20) and LAYER 1 (x 30), and a TEXT without LAYER (x 40): their order?",
+            "OVERLAY se_a { OVLYS se_om; POS_X 10; POS_Y 1; LAYER 5; FLAGS VISIBLE; }\n" +
+            "OVERLAY se_b { OVLYS se_om; POS_X 20; POS_Y 2; FLAGS VISIBLE; }\n" +
+            "OVERLAY se_c { OVLYS se_om; POS_X 30; POS_Y 3; LAYER 1; FLAGS VISIBLE; }\n" +
+            "TEXT se_t { POS_X 40; POS_Y 4; FONT se_font; STRING se_s; FLAGS VISIBLE; }\n"),
+        Screen("se-flags", "Round 18. Texts with CENTER_X (x 1), CENTER_Y (x 2), CONDENSED (x 3), NARROW (x 4); panels with TRANSPARENT (x 6), RELPOS (x 7), REFRESH (x 8); all LAYER 2: their flag words?",
+            "TEXT se_t1 { POS_X 1; LAYER 2; FONT se_font; STRING se_s; FLAGS CENTER_X; }\n" +
+            "TEXT se_t2 { POS_X 2; LAYER 2; FONT se_font; STRING se_s; FLAGS CENTER_Y; }\n" +
+            "TEXT se_t3 { POS_X 3; LAYER 2; FONT se_font; STRING se_s; FLAGS CONDENSED; }\n" +
+            "TEXT se_t4 { POS_X 4; LAYER 2; FONT se_font; STRING se_s; FLAGS NARROW; }\n" +
+            "PANEL se_p6 { PAN_MAP se_pan; POS_X 6; LAYER 2; FLAGS TRANSPARENT; }\n" +
+            "PANEL se_p7 { PAN_MAP se_pan; POS_X 7; LAYER 2; FLAGS RELPOS; }\n" +
+            "PANEL se_p8 { PAN_MAP se_pan; POS_X 8; LAYER 2; FLAGS REFRESH; }\n"),
+        Screen("se-all", "Round 18. A TEXT, an OVERLAY and a PANEL declared in that order: in which order are they saved?", ScreenText + ScreenOverlay + ScreenPanel),
         new TraceProbeCase(
             "my-load",
             "Round 17, run twice. The thing's IF_NEAR (DIST 100) starts sb_go, which waits WAITT 20 and then sets MY.X to 25. The probe LOADs " +

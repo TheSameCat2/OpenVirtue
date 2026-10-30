@@ -108,6 +108,14 @@ public sealed record FullSaveRegion(IReadOnlyDictionary<string, int> RawSkills, 
 /// </summary>
 public sealed record FullSaveTexture(IReadOnlyDictionary<string, int> Words);
 
+/// <summary>
+/// A panel, text or overlay as a full save's fifth section holds it (OV-20261029-save-body round 18):
+/// <c>POS_X</c>, <c>POS_Y</c> (raw), a flags word (<c>VISIBLE</c> <c>0xC000</c>, <c>ABSPOS</c> <c>0x10</c>), then
+/// −1 for a panel and 1.0 for an overlay; a text adds 1.0, <c>0x7FFFFFFF</c>, 0 and its font's and
+/// string's numbers (the string twice).
+/// </summary>
+public sealed record FullSaveScreenElement(IReadOnlyList<int> Words);
+
 /// <summary>What a full save holds, as <see cref="AcknexFullSave.Write"/> lays it out.</summary>
 /// <param name="WdlName">The level's main WDL file name (up to 12 characters).</param>
 /// <param name="WmpName">Its map's file name.</param>
@@ -129,6 +137,9 @@ public sealed record FullSave(
     IReadOnlyList<SaveSkill> Skills,
     IReadOnlyList<SaveAction> Actions)
 {
+    /// <summary>The screen elements, by <c>LAYER</c> and then declaration order (round 18).</summary>
+    public IReadOnlyList<FullSaveScreenElement> ScreenElements { get; init; } = [];
+
     /// <summary>The <c>SAVE</c> textures, newest declaration first (round 15b).</summary>
     public IReadOnlyList<FullSaveTexture> Textures { get; init; } = [];
 
@@ -252,7 +263,9 @@ public static class AcknexFullSave
         AcknexSaveFile.WriteSection(body, Textures(save.Textures));
         AcknexSaveFile.WriteSection(body, Regions(save.Regions));
         AcknexSaveFile.WriteSection(body, Objects(save));
-        AcknexSaveFile.WriteSection(body, Words([0, .. Enumerable.Repeat(-1, 49)]));
+        // The screen elements: their count, their records by LAYER (then declaration order), and 49
+        // words of -1 (OV-20261029-save-body round 18).
+        AcknexSaveFile.WriteSection(body, Words([save.ScreenElements.Count, .. save.ScreenElements.SelectMany(static e => e.Words), .. Enumerable.Repeat(-1, 49)]));
         AcknexSaveFile.WriteSection(body, new byte[4]);
         AcknexSaveFile.WriteSection(body, Words(Fit(save.Slots, SlotWords)));
         AcknexSaveFile.WriteSection(body, Words(save.Synonyms));

@@ -910,8 +910,55 @@ public sealed class WdlRuntime :
             }),
         ];
 
+        // The screen elements, by LAYER and then declaration order (round 18: a TEXT, an OVERLAY and a
+        // PANEL with layers 5, 7, 3 were saved panel, text, overlay; equal layers keep their order).
+        List<FullSaveScreenElement> screen = [];
+        if (_level.NumberedDeclarations.TryGetValue(WdlDeclarations.ScreenElements, out List<string>? elementNames))
+        {
+            var ordered = elementNames
+                // An overlay without LAYER sorts as 50: after LAYER 5 (se-nolayer) and among LEGALISM's
+                // layer-50 texts, before its layer-100 ones; a text without LAYER as 0 (inferred).
+                .Select((name, index) => (Name: name, Index: index, Layer: TryGetUiNumber(name, "LAYER", out double layer) && HasUiProperty(name, "LAYER")
+                    ? layer
+                    : _uiElements.TryGetValue(name, out WdlUiElement? declared) && declared.Keyword.Equals("OVERLAY", StringComparison.OrdinalIgnoreCase) ? 50 : 0))
+                .Where(e => _uiElements.ContainsKey(e.Name))
+                .OrderBy(static e => e.Layer)
+                .ThenBy(static e => e.Index);
+            foreach ((string name, _, _) in ordered)
+            {
+                WdlUiElement element = _uiElements[name];
+                int x = TryGetUiNumber(name, "POS_X", out double posX) ? Raw(posX) : 0;
+                int y = TryGetUiNumber(name, "POS_Y", out double posY) ? Raw(posY) : 0;
+                string kind = element.Keyword.ToUpperInvariant();
+                int flags = 0;
+                foreach ((string flag, int bit) in ScreenFlagBits(kind))
+                {
+                    if (TryGetUiNumber(name, flag, out double set) && set > 0)
+                    {
+                        flags |= bit;
+                    }
+                }
+
+                switch (kind)
+                {
+                    case "PANEL":
+                        screen.Add(new FullSaveScreenElement([x, y, flags, -1]));
+                        break;
+                    case "TEXT":
+                        int font = TryGetUiKeyword(name, "FONT", out string? fontName) ? Numbered("FONT", fontName) : -1;
+                        int text = TryGetUiKeyword(name, "STRING", out string? stringName) ? Numbered("STRING", stringName) : -1;
+                        screen.Add(new FullSaveScreenElement([x, y, flags, 1024, int.MaxValue, 0, font, text, text]));
+                        break;
+                    default:
+                        screen.Add(new FullSaveScreenElement([x, y, flags, 1024]));
+                        break;
+                }
+            }
+        }
+
         return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions)
         {
+            ScreenElements = screen,
             Textures = saveTextures,
             Regions = regions,
             Unplaced = prefix,
@@ -5270,6 +5317,23 @@ public sealed class WdlRuntime :
         _bounds[skillName] = memberName.Equals("MIN", StringComparison.OrdinalIgnoreCase) ? range with { Min = value } : range with { Max = value };
         return true;
     }
+
+    /// <summary>
+    /// The bits a screen element's flags set in its save record (OV-20261029-save-body round 18, one
+    /// flag per element): <c>VISIBLE</c> <c>0xC000</c> on every kind; a panel's <c>REFRESH</c> 1,
+    /// <c>TRANSPARENT</c> 8 and <c>RELPOS</c> 0x10; an overlay's <c>ABSPOS</c> 0x10; a text's
+    /// <c>CONDENSED</c> 2, <c>CENTER_X</c> 4, <c>CENTER_Y</c> 8 and <c>NARROW</c> 0x2000.
+    /// </summary>
+    private static (string Flag, int Bit)[] ScreenFlagBits(string kind) => kind switch
+    {
+        "PANEL" => [("VISIBLE", 0xC000), ("REFRESH", 0x1), ("TRANSPARENT", 0x8), ("RELPOS", 0x10)],
+        "TEXT" => [("VISIBLE", 0xC000), ("CONDENSED", 0x2), ("CENTER_X", 0x4), ("CENTER_Y", 0x8), ("NARROW", 0x2000)],
+        _ => [("VISIBLE", 0xC000), ("ABSPOS", 0x10)],
+    };
+
+    private bool HasUiProperty(string name, string property) =>
+        _uiElements.TryGetValue(name, out WdlUiElement? element) &&
+        element.Properties.Any(p => p.Keyword.Equals(property, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>What a keyword synonym names, through any synonyms it names in turn; null for none.</summary>
     private string? KeywordTarget(string name)

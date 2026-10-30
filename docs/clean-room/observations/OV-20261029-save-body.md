@@ -603,6 +603,31 @@ then 49 words of −1, which the original accepts.
 
 Writing this section needs a probe that changes one element of each kind at a time.
 
+## Round 18: the screen elements' section (2026-10-30)
+Twelve carriers in `round18/` each declare a few elements and save at once.
+- **Layout.** The count comes first, then one record per element, then 49 words of −1.
+  - A panel is 4 words: `POS_X`, `POS_Y`, flags, −1. Its `DIGITS`, `BUTTON` and `HSLIDER` items
+    are not saved (se-digits, se-button).
+  - An overlay is 4 words: `POS_X`, `POS_Y`, flags, 1.0.
+  - A text is 9 words: `POS_X`, `POS_Y`, flags, 1.0, `0x7FFFFFFF`, 0, its font's number, and its
+    string's number twice.
+- **Flags.** `VISIBLE` sets `0xC000` on every kind.
+  - Panels: `REFRESH` 1, `TRANSPARENT` 8, `RELPOS` 0x10.
+  - Overlays: `ABSPOS` 0x10.
+  - Texts: `CONDENSED` 2, `CENTER_X` 4, `CENTER_Y` 8, `NARROW` 0x2000.
+  - V3.963 rejects `REFRESH` and `TRANSPARENT` on an overlay.
+- **Order.** By `LAYER`, lowest first, and declaration order among equal layers. Layers 7, 3, 5
+  were saved 3, 5, 7; a hidden element keeps its place.
+  - A text without `LAYER` came first.
+  - An overlay without `LAYER` came after one at 5. LEGALISM's `crosshair` sits between its layer-50
+    and layer-100 texts, so OpenVirtue sorts such an overlay as 50 (inferred from the two).
+- **Result.** OpenVirtue writes the section this way. All twelve carriers' sections match byte for
+  byte, and the original still loads OpenVirtue's LEGALISM and apathy saves and resumes them.
+- **Open.** LEGALISM's own order differs. Its visible arrow overlay (layer 50) comes first of all,
+  and its debug panels and texts come late. The list seems to change as elements are shown in
+  play, which these carriers, all set up at the start, do not show. LEGALISM's scroll panels also
+  hold a number in the panel's last word (235, 258) where −1 was measured.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups

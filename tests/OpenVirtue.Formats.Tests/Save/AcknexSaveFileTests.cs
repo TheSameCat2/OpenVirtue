@@ -278,6 +278,29 @@ public class AcknexSaveFileTests
         Assert.Equal(save.Actions, AcknexSaveFile.ReadActions(body));
     }
 
+    [Fact]
+    public void WriteFull_ScreenElements_CountRecordsAndTail()
+    {
+        // OV-20261029-save-body round 18: se-all's panel, text and overlay, by layer.
+        var save = new FullSave("T.WDL", "T.WMP", "T.WRS", [], [], [], [], [], [])
+        {
+            ScreenElements =
+            [
+                new FullSaveScreenElement([11 * 1024, 22 * 1024, 0xC000, -1]),
+                new FullSaveScreenElement([33 * 1024, 44 * 1024, 0xC000, 1024, int.MaxValue, 0, 1, 1, 1]),
+                new FullSaveScreenElement([55 * 1024, 66 * 1024, 0xC000, 1024]),
+            ],
+        };
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        int at = FindSection(body, 4);
+        Assert.Equal(268, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at - 8)));
+        int Word(int i) => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at + (4 * i)));
+        Assert.Equal([3, 11 * 1024, 22 * 1024, 0xC000, -1, 33 * 1024], Enumerable.Range(0, 6).Select(Word));
+        Assert.Equal(-1, Word(66));
+    }
+
     /// <summary>The object section's payload: the fourth section, after the header, three sections and their 8-byte heads.</summary>
     private static int FindObjects(byte[] body) => FindSection(body, 3);
 

@@ -120,7 +120,7 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   Full saves (`OV*.SAV`) are compared by their unpacked bodies, section by section: the report names
   each differing section, and for the skills section each differing skill. Differences confined to
   what OpenVirtue does not model are set aside and named, and the save still counts as a match: the
-  first section's run-time words (+36, +40), the screen elements, and the run-time statistics skills
+  first section's run-time words (+36, +40) and the run-time statistics skills
   (`TIME_*`, `ACTIONS`, `ACTIVE_*`, `MAX_DIST`, `VISIBLES`, `VESA_MODE`, `RANDOM`).
   Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
   detected by default: the first non-negative, never-decreasing column of the densest token; a

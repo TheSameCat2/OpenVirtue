@@ -460,7 +460,7 @@ internal static class OracleReplay
     /// <summary>
     /// Compares two full save bodies section by section: the sections and skills that differ, and what
     /// was set aside because OpenVirtue does not model it (the first section's run-time words at +36
-    /// and +40, the screen elements, <see cref="UnmodelledSkills"/>). Null when either body has no sections.
+    /// and +40, <see cref="UnmodelledSkills"/>). Null when either body has no sections.
     /// </summary>
     internal static (List<string> Differing, List<string> SetAside)? CompareSaveSections(byte[] a, byte[] b)
     {
@@ -487,11 +487,7 @@ internal static class OracleReplay
                 continue;
             }
 
-            if (i == 4)
-            {
-                setAside.Add(section);
-            }
-            else if (i == 0 && x.Length == y.Length && x.Length >= 44 && x[..36].SequenceEqual(y[..36]) && x[44..].SequenceEqual(y[44..]))
+            if (i == 0 && x.Length == y.Length && x.Length >= 44 && x[..36].SequenceEqual(y[..36]) && x[44..].SequenceEqual(y[44..]))
             {
                 setAside.Add("section 0 +36/+40");
             }
