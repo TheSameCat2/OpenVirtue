@@ -145,6 +145,10 @@ public static class AcknexSaveFile
     public const int WallRecordSize = 178;
 
     /// <summary>Where the skills of a thing's or actor's record lie (OV-20261029-save-body).</summary>
+    internal static IReadOnlyList<(string Name, int Offset)> EntityFieldOffsets => EntityFields;
+
+    internal static IReadOnlyList<(string Name, int Offset)> WallFieldOffsets => WallFields;
+
     private static readonly (string Name, int Offset)[] EntityFields =
     [
         ("ANGLE", 8), ("TARGET_X", 12), ("TARGET_Y", 16), ("HEIGHT", 36), ("SPEED", 40), ("VSPEED", 44), ("DIST", 52),
@@ -242,7 +246,7 @@ public static class AcknexSaveFile
 
     /// <summary>
     /// The 168 words of a full <c>SAVE</c> body's slot section (its seventh): action numbers, −1 for none.
-    /// <c>EACH_TICK.n</c> is word 138 + n (OV-20261029-save-body). <c>null</c> when there is no such section.
+    /// <c>EACH_TICK.n</c> is word 135 + 2n (OV-20261029-save-body round 9). <c>null</c> when there is no such section.
     /// </summary>
     public static IReadOnlyList<int>? ReadSlots(ReadOnlySpan<byte> body)
     {
@@ -342,14 +346,14 @@ public static class AcknexSaveFile
     private static bool IsSkillName(string name) =>
         name.Length > 0 && name.All(static c => c == '_' || char.IsAsciiLetterOrDigit(c)) && !char.IsAsciiDigit(name[0]);
 
-    private static void WriteSection(Stream body, byte[] payload)
+    internal static void WriteSection(Stream body, byte[] payload)
     {
         WriteUInt32(body, (uint)payload.Length);
         WriteUInt32(body, (uint)body.Position);
         body.Write(payload);
     }
 
-    private static void WriteUInt32(Stream stream, uint value)
+    internal static void WriteUInt32(Stream stream, uint value)
     {
         Span<byte> bytes = stackalloc byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);

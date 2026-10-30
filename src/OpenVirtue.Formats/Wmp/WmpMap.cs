@@ -36,8 +36,10 @@ public sealed class WmpMap
         IReadOnlyList<WmpPlacement> things,
         IReadOnlyList<WmpPlacement> actors,
         IReadOnlyList<WmpWay> ways,
-        WmpPlayerStart? playerStart)
+        WmpPlayerStart? playerStart,
+        IReadOnlyList<(string Kind, int Index)> objectOrder)
     {
+        ObjectOrder = objectOrder;
         Vertices = vertices;
         Regions = regions;
         Walls = walls;
@@ -55,6 +57,13 @@ public sealed class WmpMap
     public IReadOnlyList<WmpWay> Ways { get; }
     public WmpPlayerStart? PlayerStart { get; }
 
+    /// <summary>
+    /// The map's objects in file order, as (record kind, index in that kind's list): walls, things,
+    /// actors, ways and the player start share one count, the one the editor writes after <c>#</c>.
+    /// The original numbers objects this way in its saves (OV-20261029-save-body round 9).
+    /// </summary>
+    public IReadOnlyList<(string Kind, int Index)> ObjectOrder { get; }
+
     /// <summary>Parses a WMP map from its text.</summary>
     /// <exception cref="InvalidDataException">A record is malformed or of an unknown type.</exception>
     public static WmpMap Read(string text)
@@ -68,10 +77,26 @@ public sealed class WmpMap
         var actors = new List<WmpPlacement>();
         var ways = new List<WmpWay>();
         WmpPlayerStart? playerStart = null;
+        var order = new List<(string, int)>();
 
         foreach (string[] record in EnumerateRecords(text))
         {
-            switch (record[0].ToUpperInvariant())
+            string kind = record[0].ToUpperInvariant();
+            int count = kind switch
+            {
+                "WALL" => walls.Count,
+                "THING" => things.Count,
+                "ACTOR" => actors.Count,
+                "WAY" => ways.Count,
+                "PLAYER_START" => 0,
+                _ => -1,
+            };
+            if (count >= 0)
+            {
+                order.Add((kind, count));
+            }
+
+            switch (kind)
             {
                 case "VERTEX":
                     vertices.Add(new WmpVertex(Float(record, 1), Float(record, 2), Float(record, 3)));
@@ -103,7 +128,7 @@ public sealed class WmpMap
             }
         }
 
-        return new WmpMap(vertices, regions, walls, things, actors, ways, playerStart);
+        return new WmpMap(vertices, regions, walls, things, actors, ways, playerStart, order);
     }
 
     /// <summary>Parses a WMP map from bytes (decoded as Latin1 DOS text).</summary>

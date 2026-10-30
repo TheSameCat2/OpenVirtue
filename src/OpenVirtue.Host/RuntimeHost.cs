@@ -122,6 +122,29 @@ public sealed partial class RuntimeHost : IDisposable
     /// </summary>
     public Func<double>? FrameClock { get; set; }
 
+    /// <summary>
+    /// Whether a full <c>SAVE</c> also writes the original's own save file, which the DOS runtime loads
+    /// (OV-20261029-save-body round 9). Off by default until it has been checked against more levels;
+    /// OpenVirtue's own saves are written either way.
+    /// </summary>
+    public bool WriteOriginalSaves
+    {
+        get => _writeOriginalSaves;
+        set
+        {
+            _writeOriginalSaves = value;
+            if (_runtime is not null)
+            {
+                _runtime.OriginalSaveNames = OriginalSaveNames();
+            }
+        }
+    }
+
+    private bool _writeOriginalSaves;
+
+    private (string, string, string)? OriginalSaveNames() =>
+        _writeOriginalSaves ? (_mainWdlName, _level.MapFileName, Path.GetFileName(_archivePath ?? "TITLE.WRS")) : null;
+
     /// <summary>The eye. Tests read it after <see cref="Boot"/>.</summary>
     public Camera Camera => _camera;
 
@@ -354,6 +377,7 @@ public sealed partial class RuntimeHost : IDisposable
             SaveDirectory = _contentRoot,
             SoundPlayedOut = channel => _hostedChannels.Contains(channel) && !_audio.IsChannelPlaying(channel),
         };
+        _runtime.OriginalSaveNames = OriginalSaveNames();
         _clearColor = ChooseBackgroundColor();
         _booted = false;
         _geometryReady = false;

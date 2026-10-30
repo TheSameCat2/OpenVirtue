@@ -151,3 +151,11 @@ and validate against real game data used only locally (never committed).
   from saves of synthetic actions that each ran a different mix of instructions before the same
   wait, against our own count of the instructions (`ReadActions`, `ReadSlots`). Not ported from any
   third-party source.
+- **Writing full saves** (`AcknexFullSave`, `AcknexPredefinedSkills`, round 9):
+  - which parts the original needs was found by blanking or swapping parts of its own saves and
+    loading them;
+  - the fields' meanings come from comparing records with the synthetic level's geometry;
+  - the predefined skill names are the ones its saves list that the level does not declare;
+  - checked by the original loading a save OpenVirtue wrote.
+
+  Not ported from any third-party source.

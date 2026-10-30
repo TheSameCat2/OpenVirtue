@@ -64,7 +64,7 @@ the skills.
     `SKILL1` changed nothing but bytes that also differ between two saves of one world.
 - **Global slots.** Setting `EACH_TICK.3` changed 4 bytes of the 672-byte section (168 words)
   from −1 to 12, at word 141. So that section holds the action slots, as action numbers, and
-  `EACH_TICK.1` is word 139.
+  `EACH_TICK.1` is word 139 (corrected in round 9: `EACH_TICK.n` is word 135 + 2n).
 - **Action numbers.** Actions are numbered from 11 in declaration order: `probe_start` was 11 when
   it was the only action, and 13 after `sb_wait` (11) and `sb_slot` (12). Numbers 0–10 are the
   engine's own actions. The base slot table holds them at words 11–13, 15, 27, 53, 60, 61, 63, 64,
@@ -174,11 +174,50 @@ original quit without its end marker, the buffered traces lost.
 | every unread byte except +20 and +102 | crash |
 | cumulatively: the thing and actor ranges, then wall +0…+11 and +18…+35 | loads; adding wall +90…+99 crashes |
 
+Later variants (copies of the carrier run six at a time):
+- **Record fields.** Writing the records as a writer would loaded: pointers zeroed, flags
+  normalised, vertices zeroed. The varying wall fields read:
+  - +8: the length;
+  - +0: the length × the texture's `SCALE_X`;
+  - +142: the texture's number (from 1, in declaration order; +134 for things and actors);
+  - +138: the right region;
+  - +110…+128: the vertices.
+- **Optional parts.** Sections 0 and 4, the header's word after the names, and the engine's default
+  slot words can each be left out.
+- **Synonyms.** Section 7 holds the synonyms' objects in reverse declaration order, the level's first,
+  then 21 predefined ones. An object's number is its place among the map's walls, things and actors
+  plus 1 (12 read room wall #11, 13 `sb_w`, 14 the thing, 15 the actor).
+- **Skills.** They are matched by name: a reversed section loads. A section with only the level's
+  six skills is not loaded at all, so every one of the engine's 238 own skills must be there.
+- **Actions.** The record of the action running the `SAVE` must be there, but any action at any place
+  will do.
+- **Slots.** `EACH_TICK.n` is slot word 135 + 2n (`.2` word 139, `.3` word 141), not 138 + n as
+  round 1 assumed.
+- **Waits.** A wait is saved as it stands after the current cycle's count.
+
+**OpenVirtue's save loads in the original.** OpenVirtue replayed `load-edit` and wrote
+`OVSAV2.SAV` with `AcknexFullSave`. The original then loaded it: the sampler continued from
+OpenVirtue's `sb_k` and `sb_n`, the `LOCAL` `sb_m` kept 0, and the waiting `sb_note` resumed
+(`N 6 0`). Hashes in `round7/ov-written-load/`: the save `4837063a`, `OVSVT1.TXT` `a70e78fb`,
+`OVSVN0.TXT` `cb95a2ea`.
+
 The +20 word is `0x607` for things, `0x627` for actors, and `0x602` or `0x002` for walls in every
 save. The `0x600` bits differ between walls in one save, so they look like view state. A writer
 needs at least the +20 flags and +102 = 1.0. It also needs some of wall +90…+99 (−255 at +92) together
-with other unread bytes, so it cannot write zeros for everything it does not understand. OpenVirtue
-does not write the original's format yet.
+with other unread bytes, so it cannot write zeros for everything it does not understand. It writes
+the constants the original's saves hold instead.
+
+Implementation:
+- `AcknexFullSave.Write` writes a body from a `FullSave`. `AcknexPredefinedSkills` lists the
+  engine's skills.
+- `WdlRuntime.CaptureOriginalSave` fills the `FullSave`. It uses `Level.MapObjects` (the map's
+  object order, from `WmpMap.ObjectOrder`), `Level.ActionOrder`, `Level.MapFileName` and
+  `WdlFlatPosition.TryPositionOf`.
+- `RuntimeHost.WriteOriginalSaves` writes the original's file on a full `SAVE`, next to
+  OpenVirtue's own save. It is off by default, and the oracle replay turns it on.
+- The importer's slot words are corrected to 135 + 2n.
+- Tests: `WriteFull_ReadsBackThroughTheReaders` and
+  `Runtime_CaptureOriginalSave_RoundTripsThroughTheOriginalsFormat`.
 
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had

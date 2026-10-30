@@ -121,6 +121,15 @@ public sealed class Level
     /// <summary>Skills declared with <c>TYPE LOCAL</c>, which <c>SAVE_INFO</c> keeps and <c>SAVE</c> does not (p.111).</summary>
     public IReadOnlySet<string> LocalSkills { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The map file the level's <c>MAPFILE</c> (or a <c>LEVEL</c> override) names.</summary>
+    public string MapFileName { get; init; } = "";
+
+    /// <summary>
+    /// The map's walls, things and actors in file order, ways and the player start as <c>null</c>
+    /// places: an object's original save number is its place here + 1 (OV-20261029-save-body round 9).
+    /// </summary>
+    public IReadOnlyList<AcknexObject?> MapObjects { get; init; } = [];
+
     /// <summary>
     /// The actions in the order they are first declared. The original numbers them from 11 in this
     /// order in its saves (OV-20261029-save-body).

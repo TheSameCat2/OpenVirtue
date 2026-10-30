@@ -146,6 +146,14 @@ public static class LevelLoader
             LocalSkills = localSkills,
             SkillDeclarationOrder = skillOrder,
             ActionOrder = declarations.ActionOrder,
+            MapFileName = Path.GetFileName(mapName),
+            MapObjects = [.. map.ObjectOrder.Select(o => o.Kind switch
+            {
+                "WALL" => (AcknexObject?)walls[o.Index],
+                "THING" => things[o.Index],
+                "ACTOR" => actors[o.Index],
+                _ => null,
+            })],
             PaletteShading = GatherPaletteShading(program),
         };
     }

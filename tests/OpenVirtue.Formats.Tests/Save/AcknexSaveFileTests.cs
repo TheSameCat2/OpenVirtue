@@ -122,6 +122,34 @@ public class AcknexSaveFileTests
     }
 
     [Fact]
+    public void WriteFull_ReadsBackThroughTheReaders()
+    {
+        var save = new FullSave(
+            "TITLE.WDL",
+            "TITLE.WMP",
+            "TITLE.WRS",
+            [new FullSaveEntity(true, new Dictionary<string, int> { ["X"] = 25 * 1024, ["SKILL1"] = 7 }, 3)],
+            [new FullSaveWall(new Dictionary<string, int> { ["OFFSET_X"] = 512 }, 8 * 1024, 32 * 1024, (30 * 1024, -4 * 1024), (30 * 1024, 4 * 1024), 0, 2)],
+            [.. Enumerable.Repeat(-1, 139), 13],
+            [-1, 14],
+            [new SaveSkill("sb_n", 5 * 1024), .. AcknexPredefinedSkills.Names.Select(static n => new SaveSkill(n, 0))],
+            [new SaveAction(14, 1024, 1, 2, -1, -1, Running: false)]);
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        var objects = AcknexSaveFile.ReadObjects(body, entityCount: 1, wallCount: 1);
+        Assert.NotNull(objects);
+        Assert.Equal(25 * 1024, objects.Value.Entities[0].RawSkills["X"]);
+        Assert.Equal(1024, objects.Value.Entities[0].RawSkills["CYCLE"]); // a 0 there does not load
+        Assert.Equal(512, objects.Value.Walls[0].RawSkills["OFFSET_X"]);
+        Assert.Equal([.. save.Actions, new SaveAction(11, 0, 0, 1, -1, -1, Running: true)], AcknexSaveFile.ReadActions(body));
+        Assert.Equal(13, AcknexSaveFile.ReadSlots(body)![139]);
+        Assert.Equal(239, AcknexSaveFile.ReadSkills(body).Count);
+        Assert.Equal(5 * 1024, AcknexSaveFile.ReadSkills(body)[0].RawValue);
+        Assert.Equal(238, AcknexPredefinedSkills.Names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
     public void ReadActions_TheIpProbesSave_ListsTheWaitingActionsThenTheSavingOne()
     {
         // Guarded: the save-body probe's round-8b save, eleven actions waiting in WAITT 100, when present locally.

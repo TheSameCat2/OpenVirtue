@@ -200,6 +200,7 @@ internal static class OracleReplay
         using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender()))
         {
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
+            host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
             audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
             host.Boot();
             string? replayPrimary = primary is null ? null : Path.Combine(replayDirectory, "openvirtue-prints", WorldName, primary);

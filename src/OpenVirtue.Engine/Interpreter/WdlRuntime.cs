@@ -343,6 +343,13 @@ public sealed class WdlRuntime :
     /// </summary>
     public Func<string, bool>? FlicFileExists { get; set; }
 
+    /// <summary>
+    /// The level's WDL, map and archive file names. When set, a full <c>SAVE</c> also writes the
+    /// original's file (<see cref="CaptureOriginalSave"/>) in <see cref="SaveDirectory"/>, in the
+    /// instruction.
+    /// </summary>
+    public (string Wdl, string Wmp, string Wrs)? OriginalSaveNames { get; set; }
+
     /// <summary>Screenshot requests emitted by WDL <c>SCREENSHOT</c> instructions.</summary>
     public IReadOnlyList<WdlScreenshotRequest> ScreenshotRequests => _screenshotRequests;
 
@@ -536,9 +543,9 @@ public sealed class WdlRuntime :
 
         if (slots is not null)
         {
-            for (int slot = 1; slot <= EachTickSlotCount && EachTickSlotWord + slot < slots.Count; slot++)
+            for (int slot = 1; slot <= EachTickSlotCount && EachTickSlot(slot) < slots.Count; slot++)
             {
-                SetEachTickAction(slot, NameOf(slots[EachTickSlotWord + slot]));
+                SetEachTickAction(slot, NameOf(slots[EachTickSlot(slot)]));
             }
         }
 
@@ -559,11 +566,122 @@ public sealed class WdlRuntime :
         return _waitingActions.Count;
     }
 
+    /// <summary>
+    /// The state as the original's full <c>SAVE</c> holds it (OV-20261029-save-body rounds 7 to 9),
+    /// for <see cref="AcknexFullSave.Write"/>:
+    /// <list type="bullet">
+    /// <item>actors, then things, then walls, each in reverse map order, with their skills, textures
+    /// and geometry;</item>
+    /// <item>the <c>EACH_TICK</c> slots;</item>
+    /// <item>the synonyms' objects;</item>
+    /// <item>the level's non-<c>LOCAL</c> skills and the engine's own;</item>
+    /// <item>the waiting actions at their flat places (the action running the <c>SAVE</c> is not
+    /// among them).</item>
+    /// </list>
+    /// </summary>
+    public FullSave CaptureOriginalSave(string wdlName, string wmpName, string wrsName)
+    {
+        static int Raw(double value) => (int)Math.Clamp(Math.Round(value * 1024), -int.MaxValue, int.MaxValue);
+        List<string> textures = [.. _level.Textures.Keys];
+        int TextureNumber(string? name) =>
+            name is null ? 0 : textures.FindIndex(t => t.Equals(TextureAnimation.LogicalTextureName(name), StringComparison.OrdinalIgnoreCase)) + 1;
+        Dictionary<string, int> Fields(AcknexObject obj, IEnumerable<string> names) =>
+            names.ToDictionary(static n => n, n => Raw(obj[n]), StringComparer.OrdinalIgnoreCase);
+
+        string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4",
+            "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
+        string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
+        List<FullSaveEntity> entities =
+        [
+            .. _level.Actors.AsEnumerable().Reverse().Select(a => new FullSaveEntity(true, Fields(a, entityFields), TextureNumber(a.Texture))),
+            .. _level.Things.AsEnumerable().Reverse().Select(t => new FullSaveEntity(false, Fields(t, entityFields), TextureNumber(t.Texture))),
+        ];
+        List<FullSaveWall> walls = [];
+        foreach (Wall wall in _level.Walls.AsEnumerable().Reverse())
+        {
+            Vertex a = _level.Vertices[Math.Clamp(wall.Vertex1, 0, _level.Vertices.Count - 1)];
+            Vertex b = _level.Vertices[Math.Clamp(wall.Vertex2, 0, _level.Vertices.Count - 1)];
+            double length = Math.Sqrt(((b.X - a.X) * (b.X - a.X)) + ((b.Y - a.Y) * (b.Y - a.Y)));
+            double scale = wall.Texture is { } tex && _level.Textures.TryGetValue(tex, out LevelTexture texture) && texture.ScaleX > 0 ? texture.ScaleX : 1;
+            walls.Add(new FullSaveWall(
+                Fields(wall, wallFields),
+                Raw(length),
+                Raw(length * scale),
+                (Raw(a.X), Raw(a.Y)),
+                (Raw(b.X), Raw(b.Y)),
+                Math.Max(0, wall.RightRegion),
+                TextureNumber(wall.Texture)));
+        }
+
+        int ActionNumber(string? name) =>
+            name is null ? -1 : _level.ActionOrder.ToList().FindIndex(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + FirstActionNumber : -1;
+        int[] slots = [.. Enumerable.Repeat(-1, AcknexFullSave.SlotWords)];
+        foreach ((int word, int engineAction) in EngineSlotWords)
+        {
+            slots[word] = engineAction;
+        }
+
+        for (int slot = 1; slot <= EachTickSlotCount; slot++)
+        {
+            slots[EachTickSlot(slot)] = ActionNumber(_eachTickActions[slot - 1]);
+        }
+
+        List<int> synonyms = [];
+        foreach (string synonym in _level.Synonyms.Keys.Reverse())
+        {
+            AcknexObject? target = GetObject(synonym);
+            int place = target is null ? -1 : _level.MapObjects.ToList().IndexOf(target);
+            synonyms.Add(place >= 0 ? place + 1 : -1);
+        }
+
+        synonyms.AddRange(Enumerable.Repeat(-1, AcknexFullSave.PredefinedSynonyms));
+
+        List<SaveSkill> skills = [];
+        foreach (string name in _level.SkillDeclarationOrder.Reverse().Where(n => !_level.LocalSkills.Contains(n)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            (int min, int max) = _bounds.TryGetValue(name, out SkillRange range)
+                ? (double.IsFinite(range.Min) ? Raw(range.Min) : SaveSkill.NoMin, double.IsFinite(range.Max) ? Raw(range.Max) : SaveSkill.NoMax)
+                : (SaveSkill.NoMin, SaveSkill.NoMax);
+            skills.Add(new SaveSkill(name, Raw(GetSkill(name)), min, max));
+        }
+
+        skills.AddRange(AcknexPredefinedSkills.Names.Select(n => new SaveSkill(n, Raw(GetSkill(n)))));
+
+        List<SaveAction> actions = [];
+        foreach (ActiveAction action in _waitingActions)
+        {
+            if (action.State.Frames.Count == 0)
+            {
+                continue;
+            }
+
+            WdlExecutionFrame bottom = action.State.Frames.Last();
+            string? name = _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, bottom.Items)).Key;
+            if (name is not null && WdlFlatPosition.TryPositionOf(_actions[name], action.State, out int position, out int next))
+            {
+                // The original saves a wait as it stands after this cycle's count: sb_note's WAIT 2,
+                // armed in the cycle of the SAVE, was saved as 1 (round 9), and WAITT 100 armed four
+                // cycles earlier as 100 less four cycles' TIME_CORR (round 8).
+                double step = action.Mode == WdlWaitMode.FrameCycles ? 1 : GetSkill(Timing.TimeCorrectionSkill);
+                actions.Add(new SaveAction(ActionNumber(name), Raw(Math.Max(0, action.Remaining - step)), position, next, -1, -1, Running: false));
+            }
+        }
+
+        return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions);
+    }
+
     /// <summary>The number the original's saves give the first declared action (OV-20261029-save-body).</summary>
     private const int FirstActionNumber = 11;
 
-    /// <summary>The slot section's word before <c>EACH_TICK.1</c> (OV-20261029-save-body).</summary>
-    private const int EachTickSlotWord = 138;
+    /// <summary>
+    /// The slot section's word for <c>EACH_TICK.n</c>: 135 + 2n, every other word from 137 to 167
+    /// (<c>EACH_TICK.2</c> was word 139 and <c>EACH_TICK.3</c> word 141, OV-20261029-save-body round 9).
+    /// </summary>
+    private static int EachTickSlot(int slot) => 135 + (2 * slot);
+
+    /// <summary>The engine's own entries in the slot section, the same in every save the original wrote.</summary>
+    private static readonly (int Word, int Action)[] EngineSlotWords =
+        [(11, 9), (12, 7), (13, 8), (15, 6), (27, 7), (53, 8), (60, 0), (61, 1), (63, 2), (64, 3), (68, 4), (88, 5)];
 
     /// <summary>Replaces the waiting actions with saved ones (the original drops the ones waiting at the load).</summary>
     private void RestoreWaitingActions(List<WdlWaitingActionSnapshot> waiting)
@@ -1348,6 +1466,11 @@ public sealed class WdlRuntime :
             Snapshot = infoOnly ? null : CaptureSnapshot(),
         };
         _persistenceRequests.Add(request);
+        if (!infoOnly && OriginalSaveNames is { } names && SaveFilePath(request) is { } fullPath)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            File.WriteAllBytes(fullPath, AcknexSaveFile.Pack(AcknexFullSave.Write(CaptureOriginalSave(names.Wdl, names.Wmp, names.Wrs))));
+        }
         if (infoOnly && SaveFilePath(request) is { } path)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);

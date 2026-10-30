@@ -54,6 +54,61 @@ internal static class WdlFlatPosition
         return true;
     }
 
+    /// <summary>
+    /// The place of the instruction a waiting action waits in (the one before its innermost block's
+    /// next), and the place after it, or 0 when that is the action's last; <c>false</c> when the state
+    /// does not lie in <paramref name="action"/>.
+    /// </summary>
+    public static bool TryPositionOf(WdlBlock action, WdlExecutionState state, out int position, out int next)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        ArgumentNullException.ThrowIfNull(state);
+        position = next = 0;
+        if (state.Frames.Count == 0 || state.Frames.Peek() is not { Index: > 0 } top)
+        {
+            return false;
+        }
+
+        int counter = 0;
+        int found = -1;
+        Count(action.Items, top.Items, top.Index - 1, ref counter, ref found);
+        if (found < 0)
+        {
+            return false;
+        }
+
+        position = found;
+        next = found + 1 < counter ? found + 1 : 0;
+        return true;
+    }
+
+    private static void Count(IReadOnlyList<WdlItem> items, IReadOnlyList<WdlItem> target, int targetIndex, ref int counter, ref int found)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            WdlItem item = items[i];
+            if (item.IsLabel)
+            {
+                continue;
+            }
+
+            if (found < 0 && ReferenceEquals(items, target) && i == targetIndex)
+            {
+                found = counter;
+            }
+
+            counter++;
+            if (item.Body is { } body && (Keyword(item, "IF") || Keyword(item, "ELSE") || IsWhile(item)))
+            {
+                Count(body.Items, target, targetIndex, ref counter, ref found);
+                if (IsWhile(item))
+                {
+                    counter++;
+                }
+            }
+        }
+    }
+
     /// <summary>Where a block goes on after the body of its item <paramref name="index"/>, as the interpreter leaves it.</summary>
     private static int ParentResume(IReadOnlyList<WdlItem> items, int index) =>
         Keyword(items[index], "IF") && index + 1 < items.Count && Keyword(items[index + 1], "ELSE") ? index + 2 : index + 1;

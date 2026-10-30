@@ -206,13 +206,13 @@ Not yet complete:
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
-- writing full `SAVE`s the original can load:
-  - OpenVirtue writes `SAVE_INFO` files the original reads, and loads the skills and object state
-    of the original's full saves;
-  - its own full saves keep waiting actions as the original's do;
-  - its import of the original's full saves takes their waiting actions and `EACH_TICK` slots too;
-  - the original loads an edited save, but the rest of the record and section layout is still
-    unread, so OpenVirtue cannot yet write one from scratch;
+- full save compatibility on more than the probe level. OpenVirtue:
+  - reads and writes `SAVE_INFO`;
+  - imports the original's full saves (skills, objects, waiting actions, slots);
+  - can write full saves the original loads (`RuntimeHost.WriteOriginalSaves`, off by default),
+    checked on one synthetic level only;
+  - does not yet write object actions' `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY`
+    strings;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides
   (steps along an `ANGLE` and the split of a step toward a point match unit for unit,
   OV-20261029-actor-step);

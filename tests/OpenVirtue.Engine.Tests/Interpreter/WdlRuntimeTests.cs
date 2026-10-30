@@ -792,6 +792,37 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_RoundTripsThroughTheOriginalsFormat()
+    {
+        // OV-20261029-save-body round 9: the original loaded a save written this way.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL k { VAL 0; } SKILL n { VAL 0; } SKILL l { TYPE LOCAL; VAL 0; } SKILL done { VAL 0; } " +
+            "ACTION tick { RULE k = k + 1; } " +
+            "ACTION loop { SET n, 1; WHILE (k < 50) { WAITT 2; RULE n = n + 1; } SET done, 1; }");
+        var runtime = new WdlRuntime(level);
+        runtime.SetEachTickAction(2, "tick");
+        Assert.True(runtime.RunAction("loop"));
+        runtime.SetSkill("n", 7);
+        runtime.SetSkill("l", 3);
+
+        byte[] body = AcknexFullSave.Write(runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS"));
+        var loaded = new WdlRuntime(level);
+        loaded.RestoreSavedSkills(AcknexSaveFile.ReadSkills(body), _ => true);
+        loaded.ImportOriginalActions(AcknexSaveFile.ReadActions(body)!, AcknexSaveFile.ReadSlots(body));
+
+        Assert.Equal(7, loaded.GetSkill("n"));
+        Assert.Equal(0, loaded.GetSkill("l")); // LOCAL skills are not in a full save
+        Assert.Equal("tick", loaded.CaptureSnapshot().EachTickActions[1]);
+        Assert.Equal(1, loaded.WaitingActionCount); // the loop, at its WAITT inside the WHILE
+        for (int i = 0; i < 12; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.True(loaded.GetSkill("n") > 7); // went on round the loop from the saved WAITT
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =
