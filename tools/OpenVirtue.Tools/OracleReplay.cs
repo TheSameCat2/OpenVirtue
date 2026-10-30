@@ -169,7 +169,8 @@ internal static class OracleReplay
         IReadOnlyList<OracleTraceLine> timingSource = primary is not null && originalFiles.TryGetValue(primary, out string? primaryPath)
             ? OracleTrace.Parse(File.ReadAllText(primaryPath, Encoding.Latin1))
             : [];
-        OracleTimingColumn? timing = options.Timing ?? (options.FixedTimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
+        OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
+            (options.FixedTimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t) : [];
 
         string replayDirectory = Path.Combine(carrier, ReplayDirectoryName);
@@ -440,7 +441,11 @@ internal static class OracleReplay
         IReadOnlyDictionary<string, string> ReplayFiles);
 
     /// <summary>The parts of a carrier's <c>case.json</c> the replay needs.</summary>
-    private sealed record CarrierCase(string? TraceFile, bool ScriptedInput, string? Autotype = null)
+    /// <param name="Timing">
+    /// The timing column a carrier names (<c>"timing": "TK:1"</c>) when detection would pick the wrong one:
+    /// the flic carriers print <c>FLIC_FRAME</c>, whole and never falling, before <c>TICKS</c>.
+    /// </param>
+    private sealed record CarrierCase(string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -457,7 +462,11 @@ internal static class OracleReplay
             JsonElement root = json.RootElement;
             string? trace = root.TryGetProperty("trace_file", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
             string? autotype = root.TryGetProperty("autotype", out JsonElement a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype);
+            OracleTimingColumn? timing = root.TryGetProperty("timing", out JsonElement tm) && tm.ValueKind == JsonValueKind.String &&
+                OracleTimingColumn.TryParse(tm.GetString(), out OracleTimingColumn parsed)
+                ? parsed
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing);
         }
     }
 

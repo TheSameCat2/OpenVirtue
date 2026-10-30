@@ -134,6 +134,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
   original's first sample at the original's `TICKS`. A carrier's `AUTOTYPE` keys are typed into the
   first `INKEY` it opens; clicks and key hooks are still not replayed.
+  A carrier's `case.json` may name its timing column (`"timing": "TK:1"`) where detection picks a
+  wrong one: the flic carriers print `FLIC_FRAME`, whole and never falling, before `TICKS`. The
+  local flic carriers carry these hints; with them the flic probes match 126 more lines and replay to
+  their end. `--timing` on the command line still wins.
   `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
