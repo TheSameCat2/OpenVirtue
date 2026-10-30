@@ -250,6 +250,14 @@ Implementation:
 - `CaptureOriginalSave` writes `SAVE` regions and region synonyms;
 - the import applies region records and synonyms (`ImportOriginalSynonyms`).
 
+`ovtool save capture` writes a level as loaded in this format. For the retail `apathy` level it gives
+630 things and actors, 5894 walls, 29 `SAVE` regions, 650 skills (412 of the level's and 238 of the
+engine's) and 85 synonyms (64 and 21). Loading such a save in the retail game is not tried yet:
+- the game saves as `GAM1_` + the slot through its menu (`menu.wdl`);
+- before its `SAVE` it sets `EACH_TICK.3` to reload its strings, relying on the slots being restored
+  and the saving action not resuming;
+- testing it needs a visible run driven through the title menu.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.

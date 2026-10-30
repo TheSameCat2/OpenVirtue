@@ -183,6 +183,20 @@ internal static class Cli
             case "pack":
                 File.WriteAllBytes(args[2], AcknexSaveFile.Pack(File.ReadAllBytes(args[1])));
                 return 0;
+            case "capture":
+            {
+                // A level's state as loaded (no action run), in the original's full-save format.
+                WrsArchive archive = WrsArchive.ReadFile(args[1]);
+                string mainWdl = args.Length > 3 ? args[3] : Path.GetFileNameWithoutExtension(args[1]) + ".WDL";
+                OpenVirtue.Engine.Level level = LevelLoader.Load(archive, mainWdl);
+                var runtime = new OpenVirtue.Engine.Interpreter.WdlRuntime(level);
+                FullSave save = runtime.CaptureOriginalSave(mainWdl, level.MapFileName, Path.GetFileName(args[1]));
+                File.WriteAllBytes(args[2], AcknexSaveFile.Pack(AcknexFullSave.Write(save)));
+                Console.WriteLine(
+                    $"{save.Entities.Count} things and actors, {save.Walls.Count} walls, {save.Regions.Count} SAVE regions, " +
+                    $"{save.Skills.Count} skills, {save.Synonyms.Count} synonyms, {save.Actions.Count} waiting actions");
+                return 0;
+            }
             default:
                 return Usage($"Unknown save subcommand '{args[0]}'.");
         }
@@ -661,6 +675,7 @@ internal static class Cli
               ovtool wav info <sound.wav>
               ovtool save unpack <file.sav> <body>      (an Acknex save to its uncompressed body)
               ovtool save pack   <body> <file.sav>      (and back)
+              ovtool save capture <archive.wrs> <file.sav> [main.wdl]   (a level as loaded, in the original's format)
               ovtool wdl info <script.wdl>
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]
