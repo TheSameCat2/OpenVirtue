@@ -337,7 +337,14 @@ public readonly record struct WdlPersistenceRequest(
     WdlPersistenceOperation Operation,
     string BaseName,
     int Number,
-    bool InfoOnly);
+    bool InfoOnly)
+{
+    /// <summary>
+    /// A full <c>SAVE</c>'s state, taken in the instruction: the action running it is not among the
+    /// waiting actions, and the original does not resume it after a load (OV-20261029-save-body round 7).
+    /// </summary>
+    public WdlRuntimeSnapshot? Snapshot { get; init; }
+}
 
 /// <summary>Optional runtime surface for documented save/load instructions.</summary>
 public interface IWdlPersistenceContext

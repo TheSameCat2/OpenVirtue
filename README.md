@@ -206,9 +206,12 @@ Not yet complete:
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
 - two- and four-sided wall textures, and a player beamed into a `BELOW` stack;
-- writing full `SAVE`s the original can load (OpenVirtue writes `SAVE_INFO` files the original
-  reads, and loads the skills and object state of the original's full saves, but not their
-  waiting actions);
+- writing full `SAVE`s the original can load:
+  - OpenVirtue writes `SAVE_INFO` files the original reads, and loads the skills and object state
+    of the original's full saves;
+  - its own full saves keep waiting actions as the original's do;
+  - the original loads an edited save, but the rest of the record and section layout, and the
+    original's instruction positions for waiting actions, are still unread;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides
   (steps along an `ANGLE` and the split of a step toward a point match unit for unit,
   OV-20261029-actor-step);

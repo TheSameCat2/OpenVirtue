@@ -730,6 +730,32 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_FullSave_KeepsWaitingActionsButNotTheOneSaving()
+    {
+        // OV-20261029-save-body round 7: after a LOAD the CALLed action waiting at the SAVE resumed
+        // (inside its WHILE), and the action that ran the SAVE did not go on.
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL after { VAL 0; } SKILL k { VAL 0; } " +
+            "ACTION note { WHILE (k < 1) { WAIT 2; RULE k = k + 1; } SET n, 1; } " +
+            "ACTION main { CALL note; SAVE \"s\", 1; WAIT 1; SET after, 1; }");
+        var runtime = new WdlRuntime(level);
+        Assert.True(runtime.RunAction("main"));
+        WdlRuntimeSnapshot saved = Assert.Single(runtime.PersistenceRequests).Snapshot!;
+        WdlRuntimeSnapshot snapshot = JsonSerializer.Deserialize<WdlRuntimeSnapshot>(JsonSerializer.Serialize(saved))!;
+        Assert.Single(snapshot.WaitingActions!);
+
+        var loaded = new WdlRuntime(level);
+        loaded.RestoreSnapshot(snapshot);
+        for (int i = 0; i < 4; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1, loaded.GetSkill("n"));
+        Assert.Equal(0, loaded.GetSkill("after"));
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =

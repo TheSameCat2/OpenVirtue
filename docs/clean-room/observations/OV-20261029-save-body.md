@@ -134,5 +134,12 @@ Writing a save from scratch needs these understood.
   guarded `ReadObjects_SavesTheDosRuntimeWrote_HoldTheMovedThing`.
 - `ovtool save unpack|pack` turns a save into its body and back.
 - `WdlRuntime.RestoreSkills` keeps `LOCAL` skills on a full `LOAD` (round 7).
+- OpenVirtue's own full saves follow round 7's load behaviour:
+  - `SaveGame` takes the state in the instruction, so the action running `SAVE` is left out;
+  - the snapshot keeps the waiting actions, each as its action, its open blocks (item paths into
+    the action), its wait and its objects;
+  - `RestoreSnapshot` puts them in place of the ones waiting at the load.
+
+  Tested by `Runtime_FullSave_KeepsWaitingActionsButNotTheOneSaving`.
 - Writing full saves the original can load needs the remaining record fields and sections; resuming
   saved actions needs the original's instruction positions.

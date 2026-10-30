@@ -27,7 +27,35 @@ public sealed record WdlRuntimeSnapshot(
     /// written before it existed.
     /// </summary>
     public double? SecondFraction { get; init; }
+
+    /// <summary>
+    /// The actions waiting at the save, which resume after a load in place of the ones waiting then
+    /// (OV-20261029-save-body round 7); <c>null</c> in snapshots written before they were kept, which
+    /// leave the waiting actions alone.
+    /// </summary>
+    public List<WdlWaitingActionSnapshot>? WaitingActions { get; init; }
 }
+
+/// <summary>
+/// A waiting action: the action its outermost block belongs to, its open blocks from the outermost in,
+/// how it waits and how long it still has, and the objects it runs for (as places in the level's list
+/// of regions, walls, things and actors; −1 for none).
+/// </summary>
+public sealed record WdlWaitingActionSnapshot(
+    string Action,
+    List<WdlFrameSnapshot> Frames,
+    bool FrameCycles,
+    double Remaining,
+    int My,
+    int There,
+    int Target);
+
+/// <summary>
+/// One open block of a waiting action: the item indices leading to it from the action's own block
+/// (each into the previous block, ending at the item whose body it is), whether it is a <c>WHILE</c>
+/// body, and the index of the next item to run.
+/// </summary>
+public sealed record WdlFrameSnapshot(List<int> Path, bool While, int Index);
 
 /// <summary>A saved runtime object state for a region, wall, thing, or actor.</summary>
 public sealed record WdlObjectSnapshot(

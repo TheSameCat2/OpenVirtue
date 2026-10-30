@@ -853,7 +853,7 @@ public sealed partial class RuntimeHost
         }
 
         using FileStream stream = File.Create(path);
-        JsonSerializer.Serialize(stream, _runtime.CaptureSnapshot(), SaveJsonOptions);
+        JsonSerializer.Serialize(stream, request.Snapshot ?? _runtime.CaptureSnapshot(), SaveJsonOptions);
         _lastPersistenceStatus = $"saved {PersistenceSlotName(request)}";
     }
 

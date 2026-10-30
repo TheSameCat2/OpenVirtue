@@ -426,6 +426,7 @@ public sealed class WdlRuntime :
         {
             EachSecActions = _eachSecActions.ToList(),
             SecondFraction = _secondFraction,
+            WaitingActions = CaptureWaitingActions(),
         };
 
     /// <summary>Restores a state previously captured with <see cref="CaptureSnapshot"/>.</summary>
@@ -456,6 +457,114 @@ public sealed class WdlRuntime :
         _actorTargetStates.Clear();
         _textureAnimationStates.Clear();
         _observedPlayerRegion = null;
+        if (snapshot.WaitingActions is { } waiting)
+        {
+            RestoreWaitingActions(waiting);
+        }
+    }
+
+    /// <summary>
+    /// The waiting actions as <see cref="WdlWaitingActionSnapshot"/>s. An action whose blocks cannot be
+    /// traced back to a declared action (it never happens for parsed WDL) is left out.
+    /// </summary>
+    private List<WdlWaitingActionSnapshot> CaptureWaitingActions()
+    {
+        List<AcknexObject> objects = MutableLevelObjects();
+        int IndexOf(AcknexObject? obj) => obj is null ? -1 : objects.IndexOf(obj);
+        var captured = new List<WdlWaitingActionSnapshot>();
+        foreach (ActiveAction action in _waitingActions)
+        {
+            WdlExecutionFrame[] frames = [.. action.State.Frames.Reverse()];
+            if (frames.Length == 0 ||
+                _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, frames[0].Items)).Key is not { } name)
+            {
+                continue;
+            }
+
+            var saved = new List<WdlFrameSnapshot> { new([], false, frames[0].Index) };
+            var path = new List<int>();
+            bool traced = true;
+            for (int i = 1; i < frames.Length && traced; i++)
+            {
+                IReadOnlyList<WdlItem> parent = frames[i - 1].Items;
+                int item = -1;
+                for (int j = 0; j < parent.Count; j++)
+                {
+                    if (parent[j].Body is { } body && ReferenceEquals(body.Items, frames[i].Items))
+                    {
+                        item = j;
+                        break;
+                    }
+                }
+
+                traced = item >= 0;
+                path.Add(item);
+                saved.Add(new WdlFrameSnapshot([.. path], frames[i].Kind == WdlExecutionFrameKind.While, frames[i].Index));
+            }
+
+            if (traced)
+            {
+                captured.Add(new WdlWaitingActionSnapshot(
+                    name,
+                    saved,
+                    action.Mode == WdlWaitMode.FrameCycles,
+                    action.Remaining,
+                    action.Scope.HasMy ? IndexOf(action.Scope.My) : -1,
+                    action.Scope.HasThere ? IndexOf(action.Scope.There) : -1,
+                    IndexOf(action.Scope.Target)));
+            }
+        }
+
+        return captured;
+    }
+
+    /// <summary>Replaces the waiting actions with saved ones (the original drops the ones waiting at the load).</summary>
+    private void RestoreWaitingActions(List<WdlWaitingActionSnapshot> waiting)
+    {
+        List<AcknexObject> objects = MutableLevelObjects();
+        AcknexObject? At(int index) => index >= 0 && index < objects.Count ? objects[index] : null;
+        _waitingActions.Clear();
+        foreach (WdlWaitingActionSnapshot saved in waiting)
+        {
+            if (!_actions.TryGetValue(saved.Action, out WdlBlock? block) || saved.Frames.Count == 0)
+            {
+                continue;
+            }
+
+            var state = new WdlExecutionState(block);
+            state.Frames.Peek().Index = saved.Frames[0].Index;
+            bool restored = true;
+            for (int i = 1; i < saved.Frames.Count && restored; i++)
+            {
+                IReadOnlyList<WdlItem> items = block.Items;
+                WdlItem? owner = null;
+                foreach (int index in saved.Frames[i].Path)
+                {
+                    if (index < 0 || index >= items.Count || items[index].Body is not { } body)
+                    {
+                        restored = false;
+                        break;
+                    }
+
+                    owner = items[index];
+                    items = body.Items;
+                }
+
+                if (restored && owner is not null)
+                {
+                    WdlExecutionFrame frame = saved.Frames[i].While ? WdlExecutionFrame.While(owner) : WdlExecutionFrame.Block(items);
+                    frame.Index = saved.Frames[i].Index;
+                    state.Frames.Push(frame);
+                }
+            }
+
+            if (restored)
+            {
+                var scope = new ActionScope(saved.My >= 0, At(saved.My), saved.There >= 0, At(saved.There), At(saved.Target));
+                var wait = new WdlWaitRequest(saved.Remaining, saved.FrameCycles ? WdlWaitMode.FrameCycles : WdlWaitMode.Ticks);
+                _waitingActions.Add(new ActiveAction(state, wait, scope));
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -1178,7 +1287,8 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     /// <remarks>
     /// <c>SAVE_INFO</c> writes the original's file at once when <see cref="SaveDirectory"/> is set
-    /// (OV-20261029-save-format); a full <c>SAVE</c> is left to the host.
+    /// (OV-20261029-save-format). A full <c>SAVE</c> takes the state at once, without the action running
+    /// it, and leaves the writing to the host.
     /// </remarks>
     public void SaveGame(string baseName, int number, bool infoOnly)
     {
@@ -1186,7 +1296,10 @@ public sealed class WdlRuntime :
             WdlPersistenceOperation.Save,
             NormalizePrintBaseName(baseName),
             Math.Clamp(number, 0, 999),
-            infoOnly);
+            infoOnly)
+        {
+            Snapshot = infoOnly ? null : CaptureSnapshot(),
+        };
         _persistenceRequests.Add(request);
         if (infoOnly && SaveFilePath(request) is { } path)
         {
