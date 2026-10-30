@@ -224,7 +224,8 @@ public static class MeshBuilder
         TextureMapping mapping = TextureMappingFor(level, wall.Texture);
         // OV-20261009-shoot-mapping: viewed from the wall's left region (the room side of the
         // retail convention), the bitmap's left half sits at the SECOND vertex, so u starts at
-        // v2 and grows toward v1; the right-region view and the OFFSET_X sense are unprobed.
+        // v2 and grows toward v1. OV-20261030-wall-sides: from the other face it is the same, the
+        // bitmap fixed to the wall and so seen mirrored. The OFFSET_X sense is unprobed.
         float uAtV2 = (float)wall.OffsetX * mapping.OffsetToU;
         float v0 = (float)wall.OffsetY * mapping.OffsetToV;
         float uAtV1 = uAtV2 + (length * mapping.WorldToU);

@@ -32,8 +32,32 @@ internal static class WallSidesProbeCases
                 : "TEXTURE ws_tex { SCALE_X 4; SCALE_Y 4; SIDES 2; BMAPS red_map, grn_map; }\nWALL ws_w { TEXTURE ws_tex; }\n",
             Walls: [new TraceProbeWall("ws_w", 24, -6, 24, 6)]));
 
+    /// <summary>The split bitmap (left half red, right half blue) the mirror cases use.</summary>
+    public const string SplitFile = "PRBSPL.PCX";
+
+    /// <summary>
+    /// A wall from (24, −8) to (24, 8), as long as one 64-pixel bitmap at scale 4, whose four sides are
+    /// all the split bitmap: the screenshot shows which half lies towards which vertex from each face.
+    /// </summary>
+    private static TraceProbeCase Mirror(string label, string question, double x, double angle) => new(
+        label,
+        question,
+        "",
+        FormattableString.Invariant(
+            $"    SET PLAYER_X, {x};\n    SET PLAYER_Y, 0;\n    SET PLAYER_SIZE, 4;\n    SET PLAYER_Z, 8;\n    SET PLAYER_ANGLE, {angle};\n    LOCATE;\n    WAIT 3;\n") +
+        V("V", "PLAYER_X", "PLAYER_Y", "PLAYER_ANGLE"),
+        Predict(
+            ("the back face mirrors", "red on the same screen side from both faces"),
+            ("the bitmap runs v1 to v2 on both faces", "red and blue swap screen sides between the faces")),
+        Map: new TraceProbeMap(
+            Textures: "BMAP ws_spl,<" + SplitFile + ">;\n" +
+                "TEXTURE ws_tex { SCALE_X 4; SCALE_Y 4; SIDES 4; BMAPS ws_spl, ws_spl, ws_spl, ws_spl; }\nWALL ws_w { TEXTURE ws_tex; }\n",
+            Walls: [new TraceProbeWall("ws_w", 24, -8, 24, 8)]));
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        Mirror("m4-west", "The split bitmap on all four sides of a wall one bitmap long, eye 20 west facing +x: which half is where?", 4, 0),
+        Mirror("m4-east", "The same from 20 east, facing −x.", 44, 3.1416),
         View("s4-west", "Four sides, eye at (8, 0) facing +x (the wall's west face, square on): which colours?", 4, 8, 0, 0),
         View("s4-east", "Four sides, eye at (40, 0) facing −x (the east face): which colours?", 4, 40, 0, 3.1416),
         View("s4-west-v1", "Four sides, eye at (8, −12), off towards v1, facing the wall's middle: which colours?", 4, 8, -12, 0.6435),

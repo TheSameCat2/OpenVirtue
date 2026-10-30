@@ -63,6 +63,15 @@ In every screenshot the wall shows one colour across its whole width.
 - Tested by `MeshBuilderTests.BuildWalls_SidedTexture_ShowsTheSideTheViewpointPicks`, with the
   11 views above.
 
+## Round 2: the bitmap on the back face (2026-10-30)
+`m4-west` and `m4-east` (`OVWSS0.PCX` `fcb3bcb5`, `1ae990d9`): a wall from (24, −8) to (24, 8), one
+64-pixel bitmap long at scale 4, has all four sides set to a split bitmap (left half red, right half
+blue). The eye is 20 west facing +x, or 20 east facing −x.
+- From the west, red is on the screen's left (+y, the v2 end). From the east, red is on the screen's
+  right, again the v2 end.
+- So the bitmap is fixed to the wall, its left half at v2 from either face, and it is seen mirrored
+  from the back. OpenVirtue's walls are one quad with u running from v2 to v1, which already draws
+  this; no change was needed.
+
 ## Open Questions
-- Whether the back face mirrors the bitmap's u direction (solid colours cannot show it).
 - The lower storeys of a `BELOW` stack still take side 4·storey without the viewpoint rule.

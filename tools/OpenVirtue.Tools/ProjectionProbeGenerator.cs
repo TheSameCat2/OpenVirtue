@@ -681,6 +681,11 @@ internal static class ProjectionProbeGenerator
             }
         }
 
+        if (plan.ProbeName == WallSidesProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, WallSidesProbeCases.SplitFile), SyntheticPcx.HalfHalf(64, 64, (byte)Ink.Red, (byte)Ink.Blue, palette));
+        }
+
         if (plan.ProbeName is AudioProbeName or SaveBodyProbeName)
         {
             foreach ((string file, int rate, int samples, int tone) in AudioProbeCases.Sounds)
