@@ -138,8 +138,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   tick): then it is one long frame of the original's (view-activity's first frames take 8 ticks;
   174 more lines matched over all carriers). A carrier
   without a per-cycle timing column is anchored on the template's start-up stamp (`TCK=` in
-  `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line;
-  `KEY=value` lines compare their numbers, the stamp within one start-up cycle.
+  `OVPRB0.TXT`, printed by carriers prepared from 2026-10-29 on) or else on the trace's first line.
+  A token's first column is shifted by that stamp when it reads like `TICKS`: never below the stamp,
+  never going down, and printed more than once or within a tick of the stamp (so a lone position
+  line is compared as it is). `KEY=value` lines compare their numbers, the stamp within one
+  start-up cycle.
   Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
   original's first sample at the original's `TICKS`. A carrier's `AUTOTYPE` keys are typed into the
   first `INKEY` it opens; clicks and key hooks are still not replayed.

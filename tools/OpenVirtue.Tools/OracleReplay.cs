@@ -274,7 +274,9 @@ internal static class OracleReplay
                 previous = value;
             }
 
-            if (ticks)
+            // A token printed once shows no rise: take it for TICKS only near the stamp (the GO line),
+            // not a lone position such as wall-sides' V 40.000.
+            if (ticks && (group.Count() > 1 || Math.Abs(group.First().Value(0)!.Value - originalStamp.Value) <= 1))
             {
                 columns.Add((group.Key, 0));
             }
