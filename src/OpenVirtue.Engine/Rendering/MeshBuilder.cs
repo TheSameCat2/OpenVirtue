@@ -364,12 +364,16 @@ public static class MeshBuilder
     private static Region? RegionAt(Level level, int index) =>
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
 
-    private static float WallAmbient(Level level, Wall wall)
-    {
-        float left = RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient : 0;
-        float right = RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient : 0;
-        return Math.Max(left, right);
-    }
+    /// <summary>
+    /// A wall's region <c>AMBIENT</c>: its left region's, the room side of the retail convention. A
+    /// room with <c>AMBIENT</c> −0.25 darkened its walls to a solid region by 8 levels
+    /// (OV-20261029-shading round 3), so the brighter side does not win. One mesh serves both sides;
+    /// the view from the right region is unmeasured.
+    /// </summary>
+    private static float WallAmbient(Level level, Wall wall) =>
+        RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient
+        : RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient
+        : 0;
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)
     {

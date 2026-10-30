@@ -42,6 +42,33 @@ public class MeshBuilderTests
     }
 
     [Fact]
+    public void BuildWalls_WallToASolidRegion_TakesTheLeftRegionsAmbient()
+    {
+        // OV-20261029-shading round 3: a room with AMBIENT −0.25 darkened its walls to the solid
+        // region (AMBIENT 0) by 8 levels, so the brighter side does not win.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 10;#0\nREGION solid 10 10;#1\n" +
+                        "WALL w 0 1 0 1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 10; AMBIENT -0.25; }
+            REGION solid { FLOOR_HGT 10; CEIL_HGT 10; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        LevelMesh mesh = MeshBuilder.BuildWalls(level);
+
+        Assert.NotEmpty(mesh.Batches);
+        Assert.All(mesh.Batches.SelectMany(static batch => batch.Vertices), vertex => Assert.Equal(-0.25f, vertex.Ambient));
+    }
+
+    [Fact]
     public void BuildWalls_TwoSidedWallWithMatchingHeights_IsOpenPortal()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

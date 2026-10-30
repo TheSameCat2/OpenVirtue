@@ -31,6 +31,12 @@ public class PaletteShadingTests
     [InlineData(30.0, 0, 10, 0, 30)]
     [InlineData(30.0, 0, 10, 0.5, 14)]
     [InlineData(40.0, 1, 10, 0.5, 6)]
+    // Round 3: AMBIENT −0.25 darkens by 8 levels up to 30, and AMBIENT 1 leaves level 0 everywhere.
+    [InlineData(40.0, 1, 10, -0.25, 30)]
+    [InlineData(16.0, 1, 10, -0.25, 18)]
+    [InlineData(40.0, 1, 10, 1, 0)]
+    // Region 0 plus the floor texture's AMBIENT 0.25: 8 levels brighter.
+    [InlineData(40.0, 1, 10, 0.25, 14)]
     public void Level_MatchesTheMeasuredFloor(double distance, double playerLight, double lightDistance, double ambient, int expected)
     {
         Assert.Equal(expected, PaletteShading.Level(distance, playerLight, lightDistance, ambient));

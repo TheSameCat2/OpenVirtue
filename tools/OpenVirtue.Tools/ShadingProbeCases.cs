@@ -27,7 +27,7 @@ internal static class ShadingProbeCases
         CultureInfo.InvariantCulture,
         $"RANGE {ProjectionProbeGenerator.ShadeRampStart},{ProjectionProbeGenerator.ShadeRampLength}; ");
 
-    private static TraceProbeCase View(string label, string question, string setup, string? roomBody = null, string? paletteFlags = null) => new(
+    private static TraceProbeCase View(string label, string question, string setup, string? roomBody = null, string? paletteFlags = null, string? textures = null) => new(
         label,
         question,
         "",
@@ -35,7 +35,7 @@ internal static class ShadingProbeCases
         Predict(
             ("linear fade from LIGHT_DIST to DARK_DIST", "the side wall's index climbs the ramp steadily between the two distances"),
             ("stepped", "the index changes in steps (16 or 32 grades)")),
-        Map: new TraceProbeMap(RoomBody: roomBody ?? "", PaletteBody: Range + (paletteFlags ?? "")));
+        Map: new TraceProbeMap(RoomBody: roomBody ?? "", PaletteBody: Range + (paletteFlags ?? ""), Textures: textures));
 
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
@@ -54,7 +54,15 @@ internal static class ShadingProbeCases
         Low("low-p05-ld10", 0.5, 10),
         Low("low-p025-ld10", 0.25, 10),
         Low("low-p05-ld20", 0.5, 20),
+        View("neg-ambient", "Round 3. Eye at 2, region AMBIENT -0.25 with PLAYER_LIGHT 1: does a negative ambient darken by 8 levels, clamped at 30?",
+            LowEye, "AMBIENT -0.25;"),
+        View("big-ambient", "Round 3. Eye at 2, region AMBIENT 1 with PLAYER_LIGHT 1: clamped at level 0 everywhere?",
+            LowEye, "AMBIENT 1;"),
+        View("tex-ambient", "Round 3. Eye at 2, the floor's texture with AMBIENT 0.25 (p.37), PLAYER_LIGHT 1: the floor 8 levels brighter than the walls?",
+            LowEye, "FLOOR_TEX sh_flr;", textures: "TEXTURE sh_flr { SCALE_X 4; SCALE_Y 4; BMAPS flr_map; AMBIENT 0.25; }\n"),
     ];
+
+    private const string LowEye = "    SET PLAYER_SIZE, 2;\n    SET PLAYER_Z, 2;\n";
 
     /// <summary>
     /// Round 2: the eye lowered to 2, so the floor shows from about 5.5 steps out to the far wall at 48,

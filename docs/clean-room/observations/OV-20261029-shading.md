@@ -58,13 +58,34 @@ Every trace printed `DARK_DIST` as 1000, whatever `PLAYER_LIGHT` (0 to 1) and `L
 were, although the manual says it is recalculated from `PLAYER_LIGHT`. OpenVirtue now starts it at
 1000; with that the `light-*` and `low-*` traces replay line for line.
 
+## Round 3: depth, texture and negative ambients (2026-10-30)
+Three carriers ran with the eye at 2, `PLAYER_LIGHT` 1 and `LIGHT_DIST` 10, read off `OVSHS0.PCX`
+(hashes neg-ambient `40616d5b`, big-ambient `430d4268`, tex-ambient `cffe6cbf`).
+
+| Case | Floor (down the centre column) | Side walls |
+|---|---|---|
+| round 2 `low-p1-ld10` (reference) | 22, 20, … 0 from row 268 to 363 | 22 |
+| region `AMBIENT` −0.25 | 30, 28, … 4: 8 levels darker, clamped at 30 | 30 |
+| region `AMBIENT` 1 | 0 everywhere | 0 |
+| the floor's texture `AMBIENT` 0.25 | 14, 12, … 0: 8 levels brighter | 22, unchanged |
+
+- **Depth, not distance.** The round-2 screenshots already answer this. A floor boundary falls on the
+  same row in every column, from x 20 to 620. A side-wall column keeps one level from row 33 to 274,
+  rows up to about 14 steps above and below the eye. A Euclidean distance would bend the first and
+  break the second, so d is the depth along the line of sight for floors and walls.
+- **`AMBIENT`.** A texture's `AMBIENT` adds to its region's. Negative values darken, and the level is
+  clamped to 0…30 at both ends.
+- **Walls.** A wall between the room (`AMBIENT` −0.25) and the solid region (0) took the room's −0.25,
+  its left region's: the brighter side does not win.
+
 ## Open Questions
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
   then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).
-- Texture `AMBIENT` and negative ambients, `ALBEDO`/`GENIUS` light, `HARD` on an unsorted palette, and whether d is the depth or the Euclidean distance off the screen centre.
+- Answered in round 3: d is the depth, texture `AMBIENT` adds, negative ambients darken.
+- `ALBEDO`/`GENIUS` light, `HARD` on an unsorted palette, and a wall seen from its right region.
 
 ## Implementation
-`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), the palette `RANGE`/`FLAGS`
+`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`), the palette `RANGE`/`FLAGS`
 in `Level.PaletteShading`, palette indices in `TextureImage`, and the GL backend's shaded path
 (index texture → shade table → palette, level from the clip-space depth). Tests: `PaletteShadingTests`
 reproduce the measured levels.
