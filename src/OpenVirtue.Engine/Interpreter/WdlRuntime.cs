@@ -641,7 +641,7 @@ public sealed class WdlRuntime :
         string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "ASPEED", "DIST", "SKILL1", "SKILL2", "SKILL3",
             "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
         string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
-        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CANDELABER", "IMMATERIAL", "SENSITIVE",
+        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CAREFULLY", "CANDELABER", "IMMATERIAL", "SENSITIVE",
             "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
         string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
 

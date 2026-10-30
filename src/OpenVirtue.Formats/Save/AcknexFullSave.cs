@@ -299,7 +299,7 @@ public static class AcknexFullSave
     /// </summary>
     private static readonly Dictionary<string, (int First, int Second)> EntityFlagBits = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["GROUND"] = (0x10, 0), ["FAR"] = (0x80, 0), ["PASSABLE"] = (0x100, 0), ["BERKELEY"] = (0x800, 0),
+        ["CAREFULLY"] = (0x8, 0), ["GROUND"] = (0x10, 0), ["FAR"] = (0x80, 0), ["PASSABLE"] = (0x100, 0), ["BERKELEY"] = (0x800, 0),
         ["FLAG1"] = (0x1000, 0), ["FLAG2"] = (0x2000, 0), ["FLAG3"] = (0x4000, 0), ["FLAG4"] = (0x8000, 0),
         ["FLAG5"] = (0, 0x1), ["FLAG6"] = (0, 0x2), ["FLAG7"] = (0, 0x4), ["FLAG8"] = (0, 0x8),
         ["SENSITIVE"] = (0, 0x10), ["FRAGILE"] = (0, 0x20), ["LIBER"] = (0, 0x40), ["CANDELABER"] = (0, 0x400),

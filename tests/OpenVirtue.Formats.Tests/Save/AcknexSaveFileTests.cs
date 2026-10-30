@@ -208,6 +208,7 @@ public class AcknexSaveFileTests
     [InlineData(true, new string[0], 0x627, 0x180)]
     [InlineData(false, new[] { "PASSABLE", "FLAG2", "FLAG6" }, 0x2707, 0x182)]
     [InlineData(true, new[] { "INVISIBLE" }, 0x67, 0x100)]
+    [InlineData(true, new[] { "CAREFULLY" }, 0x62f, 0x180)] // apathy's floating TVs (save-body round 14)
     [InlineData(false, new[] { "IMMATERIAL", "LIBER", "GROUND" }, 0x617, 0x9c0)]
     public void WriteFull_EntityFlags_SetTheMeasuredBits(bool actor, string[] flags, int first, int second)
     {

@@ -427,6 +427,16 @@ every cycle. The original ran `src6` itself (save `e6adcfcc`), and OpenVirtue ra
   values the probe saves hold (scheduler-order round 4 adds the movement and input ones).
 - **After the fix.** The original resumes OpenVirtue's save at the same pace as its own: `ov_w` goes on
   from 4 and steps every 4 cycles.
+- **Screenshots.** Forty cycles after each load, a screenshot shows the same status panels and
+  message text either way. OpenVirtue writes the screen elements' section empty, and the panels
+  still come back. The one visible difference is an enemy that each engine had walked to a slightly
+  different place.
+- **Flags.** `CAREFULLY` on an actor sets +20 `0x8` (the floating TVs and hopping spheres), which
+  the writer now encodes.
+- **Unexplained wall bits.**
+  - +22 `0x200` is set on 77 walls between two different regions, scattered instances of common
+    types (19 of 176 `galWall2b`). Region heights do not explain it; it looks like view state.
+  - +20 `0x2` is clear on the five button walls and the four TV-channel walls.
 
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
