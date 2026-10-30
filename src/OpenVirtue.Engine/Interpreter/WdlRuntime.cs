@@ -737,11 +737,28 @@ public sealed class WdlRuntime :
         return true;
     }
 
-    /// <summary>Frees the channels whose sounds ended or were stopped, at the start of a world cycle.</summary>
+    /// <summary>
+    /// Whether the host's sound on a channel has played out, asked at the start of every world cycle
+    /// once the cycle's <c>TICKS</c> are set. <c>null</c> leaves it to <see cref="CompleteSound"/>.
+    /// </summary>
+    public Func<int, bool>? SoundPlayedOut { get; set; }
+
+    /// <summary>
+    /// Frees the channels whose sounds ended or were stopped, at the start of a world cycle. A sound
+    /// that played out before this cycle's <c>TICKS</c> frees its channel in this cycle: a
+    /// quarter-second sound started at 13.438 read free at 17.625, the first cycle after 17.438
+    /// (OV-20261029-audio).
+    /// </summary>
     private void ReleaseFinishedChannels()
     {
         for (int channel = 0; channel < 8; channel++)
         {
+            if (_channelRelease[channel] == 0 && SoundPlayedOut is { } playedOut &&
+                GetSkill($"CHANNEL_{channel}") == 1 && playedOut(channel))
+            {
+                _channelRelease[channel] = 1;
+            }
+
             if (_channelRelease[channel] > 0 && --_channelRelease[channel] == 0)
             {
                 SetSkill($"CHANNEL_{channel}", 0);

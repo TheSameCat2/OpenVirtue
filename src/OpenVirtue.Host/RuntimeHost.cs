@@ -352,6 +352,7 @@ public sealed partial class RuntimeHost : IDisposable
         {
             FlicFileExists = HasArchiveEntry,
             SaveDirectory = _contentRoot,
+            SoundPlayedOut = channel => _hostedChannels.Contains(channel) && !_audio.IsChannelPlaying(channel),
         };
         _clearColor = ChooseBackgroundColor();
         _booted = false;
