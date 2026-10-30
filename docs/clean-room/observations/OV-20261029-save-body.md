@@ -274,8 +274,8 @@ is committed.
   - the region section is the same size (29 × 156);
   - OpenVirtue listed 19 skills twice: the level declares them again, and the original lists each name
     once (633);
-  - section 4 is 2804 bytes, not 200: a count (124), then four-word records holding coordinates. It
-    looks like the level's ways;
+  - section 4 is 2804 bytes, not 200: a count (124), then records holding coordinates (round 13: screen
+    elements, not ways);
   - the object section is 7900 bytes longer than 630 × 170 + 5894 × 178. No record carries `0x607` or
     `0x627` at +20 at a 170-byte stride. The +20 word is the object's flags, which the synthetic
     level's plain objects shared, not a kind marker.
@@ -383,10 +383,15 @@ position.
   61 frames with the marker skill set. Section by section, splicing OpenVirtue's sections into the
   original's own save showed that only the first section caused the "2 Errors" the engine reported
   at shutdown. With the palette words written, OpenVirtue's whole save loads without errors.
-  Section 4 (ways) and the per-region object order were still OpenVirtue's (200 bytes, reverse map
+  Section 4 and the per-region object order were still OpenVirtue's (200 bytes, reverse map
   order), so the original accepts both.
+- **Section 4 is not the ways.** apathy's map has no `WAY` at all. The section opens with a count (124
+  in apathy, 0 in the probe level) and holds screen-positioned records: x 50.0 and y 30, 60, 80…
+  in steps of about 20, a layer-like 2, 1.0, and 2³¹−1. These look like the level's panels, texts and
+  overlays. The original loads a save with none of them, but what that does to the screen after a
+  load is not checked.
 
-Left open: section 4's way records, +36/+40 of the first section, +106 (the current frame's
+Left open: section 4's screen-element records, +36/+40 of the first section, +106 (the current frame's
 `DELAY`, run-time state), the floor height on slopes (4 objects one raw step or more off), the
 original's per-region object order, and whether a `FADE_PAL` changes the palette words.
 
