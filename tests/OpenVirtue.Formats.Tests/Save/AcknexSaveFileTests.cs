@@ -259,6 +259,25 @@ public class AcknexSaveFileTests
         Assert.Equal(-1, Word(152));
     }
 
+    [Fact]
+    public void WriteFull_ActionSection_HoldsThreeCountedLists()
+    {
+        // OV-20261029-save-body round 17: the global waiting actions, then the action running the SAVE and
+        // those objects' events started (with MY), then those objects' EACH_TICK started (3 words each).
+        var save = new FullSave("T.WDL", "T.WRS", "T.WRS", [], [], [], [], [],
+            [new SaveAction(20, 1024, 1, 2, -1, -1, Running: false), new SaveAction(14, 0, 62, 63, -1, -1, Running: true), new SaveAction(11, 4704, 0, 1, 14, 0, Running: true)])
+        {
+            ObjectActions = [new SaveObjectAction(22, 152576, 0)],
+        };
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        int at = FindSection(body, 9);
+        int[] words = [.. Enumerable.Range(0, 22).Select(i => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at + (4 * i))))];
+        Assert.Equal([0, 0, 1, 20, 1024, 1, 2, -1, -1, 2, 14, 0, 62, 63, -1, -1, 11, 4704, 0, 1, 14, 0], words);
+        Assert.Equal(save.Actions, AcknexSaveFile.ReadActions(body));
+    }
+
     /// <summary>The object section's payload: the fourth section, after the header, three sections and their 8-byte heads.</summary>
     private static int FindObjects(byte[] body) => FindSection(body, 3);
 

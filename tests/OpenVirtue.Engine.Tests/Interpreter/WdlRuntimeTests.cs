@@ -936,6 +936,37 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_ObjectEventActionsKeepTheirMy()
+    {
+        // OV-20261029-save-body round 17: an action an object's event started is saved in the action
+        // section's second list, after the record of the action running the SAVE, with MY as the object's
+        // map number and YOU 0; the load resumes it for that object.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 5 7 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL w { } THING t { IF_NEAR go; } ACTION go { WAITT 20; SET MY.X, 25; }");
+        var runtime = new WdlRuntime(level);
+        AcknexObject thing = Assert.IsAssignableFrom<AcknexObject>(runtime.GetObject("t"));
+        Assert.True(runtime.TriggerObjectActionHook(thing, "IF_NEAR"));
+
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        int go = level.ActionOrder.ToList().IndexOf("go") + 11;
+        Assert.Equal(new SaveAction(11, 0, 0, 1, -1, -1, Running: true), save.Actions[0]);
+        Assert.Equal(2, save.Actions.Count);
+        SaveAction waiting = save.Actions[1];
+        Assert.Equal((go, true, 0, 1, 2, 0), (waiting.Action, waiting.Running, waiting.Position, waiting.Next, waiting.My, waiting.You));
+        var loaded = new WdlRuntime(level);
+        Assert.Equal(1, loaded.ImportOriginalActions(AcknexSaveFile.ReadActions(AcknexFullSave.Write(save))!, null));
+        for (int i = 0; i < 200 && ((Thing)loaded.GetObject("t")!).X != 25; i++)
+        {
+            loaded.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(25, ((Thing)loaded.GetObject("t")!).X);
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =

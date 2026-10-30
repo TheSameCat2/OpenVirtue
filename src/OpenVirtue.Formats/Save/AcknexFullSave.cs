@@ -132,6 +132,9 @@ public sealed record FullSave(
     /// <summary>The <c>SAVE</c> textures, newest declaration first (round 15b).</summary>
     public IReadOnlyList<FullSaveTexture> Textures { get; init; } = [];
 
+    /// <summary>The waiting actions objects' <c>EACH_TICK</c> started, which the action section lists last (round 17).</summary>
+    public IReadOnlyList<SaveObjectAction> ObjectActions { get; init; } = [];
+
     /// <summary>The <c>SAVE</c> regions, in reverse map order.</summary>
     public IReadOnlyList<FullSaveRegion> Regions { get; init; } = [];
 
@@ -254,7 +257,7 @@ public static class AcknexFullSave
         AcknexSaveFile.WriteSection(body, Words(Fit(save.Slots, SlotWords)));
         AcknexSaveFile.WriteSection(body, Words(save.Synonyms));
         AcknexSaveFile.WriteSection(body, Skills(save.Skills));
-        AcknexSaveFile.WriteSection(body, Actions(save.Actions));
+        AcknexSaveFile.WriteSection(body, Actions(save.Actions, save.ObjectActions));
         AcknexSaveFile.WriteSection(body, new byte[4]);
         AcknexSaveFile.WriteSection(body, new byte[4]);
         AcknexSaveFile.WriteSection(body, []);
@@ -583,7 +586,7 @@ public static class AcknexFullSave
         return payload.ToArray();
     }
 
-    private static byte[] Actions(IReadOnlyList<SaveAction> actions)
+    private static byte[] Actions(IReadOnlyList<SaveAction> actions, IReadOnlyList<SaveObjectAction> objectActions)
     {
         List<SaveAction> waiting = [.. actions.Where(static a => !a.Running)];
         var words = new List<int> { 0, 0, waiting.Count };
@@ -592,20 +595,26 @@ public static class AcknexFullSave
             words.AddRange([action.Action, action.Remaining, action.Position, action.Next, action.My, action.You]);
         }
 
-        // The action running the SAVE: a load needs its record but does not resume it, and any action
-        // at any place does (OV-20261029-save-body round 9).
-        List<SaveAction> running = [.. actions.Where(static a => a.Running)];
-        if (running.Count == 0)
+        // The second list: the action running the SAVE, which a load needs but does not resume (any action
+        // at any place does, round 9), then the actions objects' events started, with their MY (round 17).
+        List<SaveAction> second = [.. actions.Where(static a => a.Running)];
+        if (second.Count == 0)
         {
-            running.Add(new SaveAction(FirstAction, 0, 0, 1, -1, -1, Running: true));
+            second.Add(new SaveAction(FirstAction, 0, 0, 1, -1, -1, Running: true));
         }
 
-        foreach (SaveAction action in running)
+        words.Add(second.Count);
+        foreach (SaveAction action in second)
         {
-            words.AddRange([1, action.Action, action.Remaining, action.Position, action.Next, action.My, action.You]);
+            words.AddRange([action.Action, action.Remaining, action.Position, action.Next, action.My, action.You]);
         }
 
-        words.Add(0);
+        words.Add(objectActions.Count);
+        foreach (SaveObjectAction action in objectActions)
+        {
+            words.AddRange([action.Action, action.Remaining, action.Position]);
+        }
+
         return Words(words);
     }
 

@@ -153,6 +153,38 @@ internal static class SaveBodyProbeCases
 
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        new TraceProbeCase(
+            "my-load",
+            "Round 17, run twice. The thing's IF_NEAR (DIST 100) starts sb_go, which waits WAITT 20 and then sets MY.X to 25. The probe LOADs " +
+            "OVSAV2.SAV (missing on the first run), SAVEs while sb_go waits and prints the thing's X 40 ticks on. Does the loaded " +
+            "sb_go still know its MY? sb_m is LOCAL: 2 means the LOAD failed and the action went on, 0 that it loaded.",
+            Declarations.Replace("THING sb_t { TEXTURE mag_tex; }", "THING sb_t { TEXTURE mag_tex; DIST 100; IF_NEAR sb_go; }", StringComparison.Ordinal) +
+            "SKILL sb_m { TYPE LOCAL; VAL 0; }\n" +
+            "ACTION sb_go\n{\n    WAITT 20;\n    SET MY.X, 25;\n}\n",
+            "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    LOAD \"ovsav\", 2;\n    WAIT 3;\n" +
+            "    RULE sb_m = 2;\n    SAVE \"ovsav\", 2;\n    WAITT 40;\n    PRINTFILE \"ovsvl\", 0;\n" +
+            V("L", "sb_m", "sb_ts.X", "sb_as.X", "sb_ws.OFFSET_X") + P("RET"),
+            Predict(
+                ("MY kept", "the second run prints X 25"),
+                ("MY lost", "the second run prints X 20")),
+            Map: World),
+        Declared(
+            "my-you2",
+            "Round 17. As my-you, but the thing's action waits after two instructions and the wall's CALLs a waiting action: " +
+            "is the short record's last word a place, and does a CALLed action keep MY?",
+            "EACH_TICK sb_gw;",
+            "EACH_TICK sb_go;",
+            "ACTION sb_sub\n{\n    WAITT 150;\n}\n" +
+            "ACTION sb_go\n{\n    SET MY.EACH_TICK, NULL;\n    RULE sb_n = 3;\n    WAITT 200;\n}\n" +
+            "ACTION sb_gw\n{\n    SET MY.EACH_TICK, NULL;\n    CALL sb_sub;\n    WAITT 200;\n}\n"),
+        Declared(
+            "my-you",
+            "Round 17. The thing, the actor and the wall each start a waiting action from EACH_TICK (WAITT 200): how do the " +
+            "waiting actions' MY words name them? (V3.963 rejects SET YOU.)",
+            "EACH_TICK sb_gw;",
+            "EACH_TICK sb_go;",
+            "ACTION sb_go\n{\n    SET MY.EACH_TICK, NULL;\n    WAITT 200;\n}\n" +
+            "ACTION sb_gw\n{\n    SET MY.EACH_TICK, NULL;\n    WAITT 200;\n}\n"),
         Slots(
             "keys",
             "Round 16. Every key hook the manual and Saints of Virtue name, each SET to its own action: at which word of the slot section is each?",

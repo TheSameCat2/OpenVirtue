@@ -571,16 +571,23 @@ public sealed class WdlRuntime :
         }
 
         _waitingActions.Clear();
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        bool savingAction = true;
         foreach (SaveAction saved in actions)
         {
-            if (saved.Running || NameOf(saved.Action) is not { } name || !_actions.TryGetValue(name, out WdlBlock? block) ||
+            // The second list opens with the action that ran the SAVE, which is not resumed; the actions
+            // objects' events started follow it, with their MY (round 17).
+            bool skip = saved.Running && savingAction;
+            savingAction &= !saved.Running;
+            if (skip || NameOf(saved.Action) is not { } name || !_actions.TryGetValue(name, out WdlBlock? block) ||
                 !WdlFlatPosition.TryResumeAfter(block, saved.Position, out WdlExecutionState state, out WdlItem item))
             {
                 continue;
             }
 
             WdlWaitMode mode = item.Keyword.Equals("WAIT", StringComparison.OrdinalIgnoreCase) ? WdlWaitMode.FrameCycles : WdlWaitMode.Ticks;
-            var scope = new ActionScope(false, null, false, null, null);
+            AcknexObject? my = saved.Running && saved.My >= 1 && saved.My <= placedObjects.Count ? placedObjects[saved.My - 1] : null;
+            var scope = new ActionScope(my is not null, my, false, null, null);
             _waitingActions.Add(new ActiveAction(state, new WdlWaitRequest(saved.Remaining / 1024.0, mode), scope));
         }
 
@@ -813,7 +820,20 @@ public sealed class WdlRuntime :
             .. AcknexPredefinedSkills.Names.Distinct(StringComparer.OrdinalIgnoreCase).Select(SkillRecord),
         ];
 
+        // The action running the SAVE opens the second list: the waiting action being resumed, with its MY.
         List<SaveAction> actions = [];
+        if (_resumedRecord is { } resumed)
+        {
+            actions.Add(resumed.Action.Scope.HasMy && resumed.Action.Scope.My is { } runningMy
+                ? resumed.Record with { My = placedObjects.IndexOf(runningMy) is >= 0 and int at ? at + 1 : -1, You = 0 }
+                : resumed.Record);
+        }
+        else
+        {
+            // An action that has not waited yet: any action at any place loads (round 9).
+            actions.Add(new SaveAction(FirstActionNumber, 0, 0, 1, -1, -1, Running: true));
+        }
+
         foreach (ActiveAction action in _waitingActions)
         {
             if (action.State.Frames.Count == 0)
@@ -829,7 +849,19 @@ public sealed class WdlRuntime :
                 // armed in the cycle of the SAVE, was saved as 1 (round 9), and WAITT 100 armed four
                 // cycles earlier as 100 less four cycles' TIME_CORR (round 8).
                 double step = action.Mode == WdlWaitMode.FrameCycles ? 1 : GetSkill(Timing.TimeCorrectionSkill);
-                actions.Add(new SaveAction(ActionNumber(name), Raw(Math.Max(0, action.Remaining - step)), position, next, -1, -1, Running: false));
+                int remaining = Raw(Math.Max(0, action.Remaining - step));
+                if (action.Scope.HasMy && action.Scope.My is { } my)
+                {
+                    // An action an object's event started goes in the section's second list, with MY as the
+                    // object's map number (a thing's IF_NEAR action read 14 for the 14th object) and YOU 0
+                    // (round 17). A region's MY as its index is not measured.
+                    int myNumber = my is Region region ? _level.Regions.ToList().IndexOf(region) : placedObjects.IndexOf(my) is >= 0 and int place ? place + 1 : -1;
+                    actions.Add(new SaveAction(ActionNumber(name), remaining, position, next, myNumber, 0, Running: true));
+                }
+                else
+                {
+                    actions.Add(new SaveAction(ActionNumber(name), remaining, position, next, -1, -1, Running: false));
+                }
             }
         }
 
@@ -2687,6 +2719,8 @@ public sealed class WdlRuntime :
                 continue;
             }
 
+            (SaveAction Record, ActiveAction Action)? previousRecord = _resumedRecord;
+            _resumedRecord = OriginalSaveNames is null ? null : ResumedRecord(action);
             try
             {
                 WdlExecutionResult result = ContinueWithScope(action);
@@ -2696,7 +2730,35 @@ public sealed class WdlRuntime :
             {
                 AbortAction("(resumed action)", ex);
             }
+            finally
+            {
+                _resumedRecord = previousRecord;
+            }
         }
+    }
+
+    // The waiting action being resumed, as a full save records the action running the SAVE: the wait it
+    // came out of and the time it had left, under one step (round 17). Taken only when original saves
+    // are written.
+    private (SaveAction Record, ActiveAction Action)? _resumedRecord;
+
+    private (SaveAction Record, ActiveAction Action)? ResumedRecord(ActiveAction action)
+    {
+        if (action.State.Frames.Count == 0)
+        {
+            return null;
+        }
+
+        WdlExecutionFrame bottom = action.State.Frames.Last();
+        string? name = _actions.FirstOrDefault(pair => ReferenceEquals(pair.Value.Items, bottom.Items)).Key;
+        if (name is null || !WdlFlatPosition.TryPositionOf(_actions[name], action.State, out int position, out int next))
+        {
+            return null;
+        }
+
+        int number = _level.ActionOrder.ToList().FindIndex(a => a.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int i ? i + FirstActionNumber : -1;
+        int remaining = (int)Math.Truncate(Math.Round(Math.Max(0, action.Remaining) * 1024, 6));
+        return (new SaveAction(number, remaining, position, next, -1, -1, Running: true), action);
     }
 
     /// <summary>

@@ -267,10 +267,11 @@ public static class AcknexSaveFile
             actions.Add(new SaveAction(Word(at), Word(at + 1), Word(at + 2), Word(at + 3), Word(at + 4), Word(at + 5), Running: false));
         }
 
-        while (at + 7 <= count && Word(at) == 1)
+        // The second list: the action that ran the SAVE first, then those objects' events started (round 17).
+        int second = at < count ? Word(at++) : 0;
+        for (int i = 0; i < second && at + 6 <= count; i++, at += 6)
         {
-            actions.Add(new SaveAction(Word(at + 1), Word(at + 2), Word(at + 3), Word(at + 4), Word(at + 5), Word(at + 6), Running: true));
-            at += 7;
+            actions.Add(new SaveAction(Word(at), Word(at + 1), Word(at + 2), Word(at + 3), Word(at + 4), Word(at + 5), Running: true));
         }
 
         return actions;
@@ -446,7 +447,15 @@ public static class AcknexSaveFile
 /// own.</item>
 /// <item><see cref="Next"/>: the place after it, or 0 when it is the action's last.</item>
 /// <item><see cref="My"/> and <see cref="You"/>: the objects it runs for (−1 for none).</item>
-/// <item><see cref="Running"/>: whether it was the action running the <c>SAVE</c>.</item>
+/// <item><see cref="Running"/>: whether it is in the section's second list, which holds the action that
+/// ran the <c>SAVE</c> first, then the actions objects' events started, with their <c>MY</c> (round 17).</item>
 /// </list>
 /// </summary>
 public sealed record SaveAction(int Action, int Remaining, int Position, int Next, int My, int You, bool Running);
+
+/// <summary>
+/// An action an object's <c>EACH_TICK</c> started (and any it <c>CALL</c>ed) waiting at a full save, in
+/// the action section's last list (OV-20261029-save-body round 17): its number, the raw wait left and
+/// the waiting instruction's place, and no object. The manual (p.80) forbids waits in such actions.
+/// </summary>
+public sealed record SaveObjectAction(int Action, int Remaining, int Position);

@@ -546,6 +546,35 @@ After round 15, section by section, OpenVirtue's LEGALISM save was compared with
 - Both retail saves made this way (`cf9bf954` LEGALISM, `ff05dd62` apathy) still load and resume in the
   original.
 
+## Round 17: actions objects started (2026-10-30)
+Carriers in `round17/`.
+- **The action section is three counted lists**, not one list and a flagged record:
+  - the global waiting actions (6 words each: action, wait left, place, next, `MY`, `YOU`);
+  - a second list (6 words each). It opens with the action running the `SAVE`, then the actions
+    objects' events started;
+  - a last list of actions started by an object's `EACH_TICK`, and any they `CALL`ed. These records
+    take 3 words: action, wait left, place. They name no object.
+
+  Earlier saves had 1 and 0 for the last two counts, which had read as a flag and an end marker.
+- **`MY` of an event action.** In `my-load` a thing's `IF_NEAR` (`DIST 100`) starts `sb_go`
+  (`WAITT 20; SET MY.X, 25;`). The save (`e9a04030`) lists it in the second list with `MY` 14 (the
+  thing is the 14th map object) and `YOU` 0, after the probe's own action. Without a load the thing
+  ends at X 25.
+- **The original could not load that save.** Twice, the run that loaded it hung until the timeout,
+  and an earlier attempt crashed DOSBox-X's CPU emulation (illegal interrupt 6, a 600 MB log). It is
+  not known whether every save with a waiting event action does this.
+- **`EACH_TICK` with waits** (`my-you`, `my-you2`, `46b610ef`). The manual (p.80) forbids `WAIT` in
+  `EACH_TICK` actions. The original runs them anyway and saves them in the last list. V3.963 rejects
+  `SET YOU` ("Parameter unknown").
+- **The action running the `SAVE`** is recorded with the wait it last came out of: its place, the next
+  place, and the time it had left when it resumed (under one step: LEGALISM's 832 raw). OpenVirtue now
+  records the waiting action it is resuming and writes it the same way. A `SAVE` from an action that
+  has not waited keeps the placeholder (action 11, places 0 and 1), which loads (round 9).
+- **Result.** OpenVirtue's `my-load` action section matches the original's, apart from `sb_go`'s
+  wait left (4352 against 4704 raw: when `IF_NEAR` fires). LEGALISM's saving record matches apart
+  from the time left (768 against 832). Both retail saves still load and resume in the original. A
+  save the original wrote with event actions waiting now resumes them in OpenVirtue for their `MY`.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups
