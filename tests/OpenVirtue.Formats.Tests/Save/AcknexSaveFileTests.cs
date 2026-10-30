@@ -156,6 +156,37 @@ public class AcknexSaveFileTests
         Assert.Equal([-1, 14], AcknexSaveFile.ReadSynonyms(body));
     }
 
+    [Theory]
+    [InlineData(false, new string[0], 0x607, 0x180)]
+    [InlineData(true, new string[0], 0x627, 0x180)]
+    [InlineData(false, new[] { "PASSABLE", "FLAG2", "FLAG6" }, 0x2707, 0x182)]
+    [InlineData(true, new[] { "INVISIBLE" }, 0x67, 0x100)]
+    [InlineData(false, new[] { "IMMATERIAL", "LIBER", "GROUND" }, 0x617, 0x9c0)]
+    public void WriteFull_EntityFlags_SetTheMeasuredBits(bool actor, string[] flags, int first, int second)
+    {
+        // OV-20261029-save-body round 12: each FLAGS declared alone on the original's objects.
+        var save = new FullSave("T.WDL", "T.WMP", "T.WRS", [new FullSaveEntity(actor, new Dictionary<string, int>(), 1) { Flags = flags }], [],
+            [], [], [], []);
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        int record = FindObjects(body);
+        Assert.Equal(first, System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(record + 20)));
+        Assert.Equal(second, System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(body.AsSpan(record + 22)));
+    }
+
+    /// <summary>The object section's payload: the fourth section, after the header, three sections and their 8-byte heads.</summary>
+    private static int FindObjects(byte[] body)
+    {
+        int at = 51; // the first section's own-offset field
+        for (int section = 0; section < 3; section++)
+        {
+            at += 4 + System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(at - 4)) + 4;
+        }
+
+        return at + 4;
+    }
+
     [Fact]
     public void ReadActions_TheIpProbesSave_ListsTheWaitingActionsThenTheSavingOne()
     {

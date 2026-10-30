@@ -591,10 +591,13 @@ public sealed class WdlRuntime :
         string[] entityFields = ["ANGLE", "TARGET_X", "TARGET_Y", "HEIGHT", "SPEED", "VSPEED", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4",
             "SKILL5", "SKILL6", "SKILL7", "SKILL8", "CYCLE", "X", "Y", "Z"];
         string[] wallFields = ["OFFSET_X", "OFFSET_Y", "DIST", "SKILL1", "SKILL2", "SKILL3", "SKILL4"];
+        string[] flagNames = ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CANDELABER", "IMMATERIAL", "SENSITIVE",
+            "FRAGILE", "IMPASSABLE", "TRANSPARENT", "PORTCULLIS", "FENCE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+        string[] FlagsOf(AcknexObject obj) => [.. flagNames.Where(f => obj[f] > 0)];
         List<FullSaveEntity> entities =
         [
-            .. _level.Actors.AsEnumerable().Reverse().Select(a => new FullSaveEntity(true, Fields(a, entityFields), TextureNumber(a.Texture))),
-            .. _level.Things.AsEnumerable().Reverse().Select(t => new FullSaveEntity(false, Fields(t, entityFields), TextureNumber(t.Texture))),
+            .. _level.Actors.AsEnumerable().Reverse().Select(a => new FullSaveEntity(true, Fields(a, entityFields), TextureNumber(a.Texture)) { Flags = FlagsOf(a) }),
+            .. _level.Things.AsEnumerable().Reverse().Select(t => new FullSaveEntity(false, Fields(t, entityFields), TextureNumber(t.Texture)) { Flags = FlagsOf(t) }),
         ];
         List<FullSaveWall> walls = [];
         foreach (Wall wall in _level.Walls.AsEnumerable().Reverse())
@@ -610,7 +613,11 @@ public sealed class WdlRuntime :
                 (Raw(a.X), Raw(a.Y)),
                 (Raw(b.X), Raw(b.Y)),
                 Math.Max(0, wall.RightRegion),
-                TextureNumber(wall.Texture)));
+                TextureNumber(wall.Texture))
+            {
+                Flags = FlagsOf(wall),
+                OneRegion = wall.LeftRegion == wall.RightRegion,
+            });
         }
 
         int ActionNumber(string? name) =>

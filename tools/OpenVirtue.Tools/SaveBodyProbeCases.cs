@@ -60,8 +60,35 @@ internal static class SaveBodyProbeCases
         Predict(("fixed offsets", "each pattern once in the region's record")),
         Map: World with { RoomBody = "FLAGS SAVE;" });
 
+    private static readonly string[] ThingFlags =
+        ["INVISIBLE", "PASSABLE", "BERKELEY", "LIBER", "FAR", "GROUND", "CANDELABER", "SEEN", "MOVED", "PLAY", "IMMATERIAL",
+         "SENSITIVE", "FRAGILE", "CAREFULLY", "MASTER", "SAVE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+
+    private static readonly string[] WallFlags =
+        ["INVISIBLE", "PASSABLE", "IMMATERIAL", "IMPASSABLE", "SEEN", "BERKELEY", "TRANSPARENT", "PLAY", "CURTAIN", "PORTCULLIS",
+         "FENCE", "SENSITIVE", "FRAGILE", "FAR", "SAVE", "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
+
+    /// <summary>Round 12: <paramref name="flag"/> declared on the thing, the actor and the free-standing wall where it applies.</summary>
+    private static TraceProbeCase FlagSave(string flag)
+    {
+        string thing = ThingFlags.Contains(flag) ? $" FLAGS {flag};" : "";
+        string wall = WallFlags.Contains(flag) ? $" FLAGS {flag};" : "";
+        string declarations = Declarations
+            .Replace("WALL sb_w { TEXTURE grn_tex; }", "WALL sb_w { TEXTURE grn_tex;" + wall + " }", StringComparison.Ordinal)
+            .Replace("THING sb_t { TEXTURE mag_tex; }", "THING sb_t { TEXTURE mag_tex;" + thing + " }", StringComparison.Ordinal)
+            .Replace("ACTOR sb_a { TEXTURE yel_tex; }", "ACTOR sb_a { TEXTURE yel_tex;" + thing + " }", StringComparison.Ordinal);
+        return new TraceProbeCase(
+            "flag-" + flag.ToLowerInvariant(),
+            $"Round 12. FLAGS {flag} on the thing, the actor and the wall where it applies: which bits of their records change?",
+            declarations,
+            "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+            Predict(("a bit of the +20 word", "one bit differs from base in each flagged record")),
+            Map: World);
+    }
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        .. ThingFlags.Union(WallFlags).Select(FlagSave),
         RegionFields("region-fields", ["FLOOR_HGT", "CEIL_HGT", "FLOOR_OFFS_X", "FLOOR_OFFS_Y", "CEIL_OFFS_X", "CEIL_OFFS_Y",
             "SKILL1", "SKILL2", "SKILL3", "SKILL4", "SKILL5", "SKILL6", "SKILL7", "SKILL8"]),
         RegionFields("region-ambient", ["AMBIENT"]),

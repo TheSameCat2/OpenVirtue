@@ -11,7 +11,11 @@ namespace OpenVirtue.Formats.Save;
 /// skills at their offsets (see <see cref="AcknexSaveFile.ReadObjects"/>), whether it is an actor, and
 /// its texture's number (from 1, in declaration order).
 /// </summary>
-public sealed record FullSaveEntity(bool Actor, IReadOnlyDictionary<string, int> RawSkills, int Texture);
+public sealed record FullSaveEntity(bool Actor, IReadOnlyDictionary<string, int> RawSkills, int Texture)
+{
+    /// <summary>The object's set <c>FLAGS</c>, which the record's two flag words encode (round 12).</summary>
+    public IReadOnlyCollection<string> Flags { get; init; } = [];
+}
 
 /// <summary>
 /// A wall as a full save's object section holds it (OV-20261029-save-body). It carries its skills, its
@@ -25,7 +29,14 @@ public sealed record FullSaveWall(
     (int X, int Y) First,
     (int X, int Y) Second,
     int RightRegion,
-    int Texture);
+    int Texture)
+{
+    /// <summary>The wall's set <c>FLAGS</c>, which the record's two flag words encode (round 12).</summary>
+    public IReadOnlyCollection<string> Flags { get; init; } = [];
+
+    /// <summary>Whether one region lies on both sides (its second flag word then holds <c>0x200</c>).</summary>
+    public bool OneRegion { get; init; }
+}
 
 /// <summary>
 /// A region with the <c>SAVE</c> flag, as a full save's third section holds it (OV-20261029-save-body
@@ -175,12 +186,63 @@ public static class AcknexFullSave
         return bytes;
     }
 
+    /// <summary>
+    /// The bits <c>FLAGS</c> set in a thing's or actor's two flag words (+20, +22), found by declaring one
+    /// flag at a time (OV-20261029-save-body round 12). <c>INVISIBLE</c> also clears the visibility bits.
+    /// </summary>
+    private static readonly Dictionary<string, (int First, int Second)> EntityFlagBits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GROUND"] = (0x10, 0), ["FAR"] = (0x80, 0), ["PASSABLE"] = (0x100, 0), ["BERKELEY"] = (0x800, 0),
+        ["FLAG1"] = (0x1000, 0), ["FLAG2"] = (0x2000, 0), ["FLAG3"] = (0x4000, 0), ["FLAG4"] = (0x8000, 0),
+        ["FLAG5"] = (0, 0x1), ["FLAG6"] = (0, 0x2), ["FLAG7"] = (0, 0x4), ["FLAG8"] = (0, 0x8),
+        ["SENSITIVE"] = (0, 0x10), ["FRAGILE"] = (0, 0x20), ["LIBER"] = (0, 0x40), ["CANDELABER"] = (0, 0x400),
+        ["IMMATERIAL"] = (0, 0x800),
+    };
+
+    /// <summary>The same for walls (round 12). <c>FENCE</c> also clears <c>0x200</c>, <c>INVISIBLE</c> <c>0x400</c>.</summary>
+    private static readonly Dictionary<string, (int First, int Second)> WallFlagBits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TRANSPARENT"] = (0x4, 0), ["PORTCULLIS"] = (0x10, 0), ["FAR"] = (0x80, 0), ["PASSABLE"] = (0x100, 0),
+        ["BERKELEY"] = (0x800, 0),
+        ["FLAG1"] = (0x1000, 0), ["FLAG2"] = (0x2000, 0), ["FLAG3"] = (0x4000, 0), ["FLAG4"] = (0x8000, 0),
+        ["FLAG5"] = (0, 0x1), ["FLAG6"] = (0, 0x2), ["FLAG7"] = (0, 0x4), ["FLAG8"] = (0, 0x8),
+        ["SENSITIVE"] = (0, 0x10), ["FRAGILE"] = (0, 0x20), ["FENCE"] = (0, 0x400), ["IMMATERIAL"] = (0, 0x800),
+        ["IMPASSABLE"] = (0, 0x2000),
+    };
+
+    private static (int First, int Second) FlagWords(IReadOnlyCollection<string> flags, Dictionary<string, (int, int)> bits, int first, int second)
+    {
+        foreach (string flag in flags)
+        {
+            if (bits.TryGetValue(flag, out (int First, int Second) bit))
+            {
+                first |= bit.First;
+                second |= bit.Second;
+            }
+        }
+
+        return (first, second);
+    }
+
     private static void WriteEntity(Span<byte> record, FullSaveEntity entity)
     {
+        bool Has(string flag) => entity.Flags.Contains(flag, StringComparer.OrdinalIgnoreCase);
+        (int first, int second) = FlagWords(entity.Flags, EntityFlagBits, entity.Actor ? 0x627 : 0x607, 0x180);
+        if (Has("INVISIBLE"))
+        {
+            first = (first & ~0x600) | 0x40;
+            second &= ~0x80;
+        }
+
         Int16(record, 0, 16383);
         Int16(record, 4, 16383);
-        Int16(record, 20, entity.Actor ? 0x627 : 0x607);
-        Int16(record, 22, 384);
+        Int16(record, 20, first);
+        Int16(record, 22, second);
+        if (Has("SENSITIVE"))
+        {
+            Int16(record, 24, 8);
+        }
+
         Int16(record, 26, 5);
         Int16(record, 92, -255);
         Int32(record, 102, 1024);
@@ -200,8 +262,25 @@ public static class AcknexFullSave
         Int32(record, 0, wall.RawSpan);
         Int16(record, 4, 16383);
         Int32(record, 8, wall.RawLength);
-        Int16(record, 20, 0x602);
-        Int16(record, 22, 384);
+        bool Has(string flag) => wall.Flags.Contains(flag, StringComparer.OrdinalIgnoreCase);
+        (int first, int second) = FlagWords(wall.Flags, WallFlagBits, 0x602, wall.OneRegion ? 0x380 : 0x180);
+        if (Has("INVISIBLE"))
+        {
+            first = (first & ~0x400) | 0x40;
+        }
+
+        if (Has("FENCE"))
+        {
+            second &= ~0x200;
+        }
+
+        Int16(record, 20, first);
+        Int16(record, 22, second);
+        if (Has("SENSITIVE"))
+        {
+            Int16(record, 24, 8);
+        }
+
         Int16(record, 26, 5);
         Int16(record, 92, -255);
         Int32(record, 102, 1024);

@@ -287,6 +287,33 @@ Fixed: the duplicate skills and the name case. Still needed for retail levels:
 
 `RuntimeHost.WriteOriginalSaves` stays off by default until then.
 
+## Round 12: the flag words (2026-10-30)
+29 carriers each declare one `FLAGS` on the thing, the actor and the free-standing wall (where the flag
+applies), save, and are compared with `base` (hash of `flag-invisible`'s save: `5c091b1e`). Things and
+actors start at +20 `0x607` (`0x627` for an actor) and +22 `0x180`. Walls start at +20 `0x602` and +22
+`0x180`, plus `0x200` with one region on both sides.
+
+| Flag | Thing / actor | Wall |
+|---|---|---|
+| `FLAG1`…`FLAG4` | +20 `0x1000`…`0x8000` | the same |
+| `FLAG5`…`FLAG8` | +22 `0x1`…`0x8` | the same |
+| `PASSABLE`, `BERKELEY`, `FAR` | +20 `0x100`, `0x800`, `0x80` | the same |
+| `GROUND` / `PORTCULLIS`, `TRANSPARENT` | +20 `0x10` | +20 `0x10`, `0x4` |
+| `INVISIBLE` | +20 loses `0x600`, gains `0x40`; +22 loses `0x80` | +20 loses `0x400`, gains `0x40` |
+| `LIBER`, `CANDELABER` | +22 `0x40`, `0x400` | — |
+| `FRAGILE`, `IMMATERIAL` | +22 `0x20`, `0x800` | the same |
+| `SENSITIVE` | +22 `0x10`, and +24 holds 8 | the same |
+| `IMPASSABLE` / `FENCE` | — | +22 `0x2000` / +22 gains `0x400`, loses `0x200` |
+| `SAVE`, `SEEN`, `CURTAIN` | no change | no change |
+
+`PLAY`, `MOVED`, `MASTER`, and `CAREFULLY` on a thing do not compile on this runtime ("Flag unknown").
+The writer now encodes the flags. Its words match the original's in all 25 carriers that compiled,
+for the thing, the actor and the wall.
+
+On the retail level the record "constants" are not constant: only 289 records carry 16383 at +4, 5 at
++26 and 1.0 at +102. These words vary, most likely with the texture, and still need mapping before a
+retail level's save can be written.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them.
