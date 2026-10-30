@@ -93,10 +93,32 @@ wait. `WdlInterpreter.ExecuteWait` now skips a `WAIT` below 1; `WAITT` keeps any
 (unmeasured below 1). The carrier's cycle counts replay; its `TICKS` do not, since it has no
 per-cycle sampler.
 
+## Round 4: the `EACH_CYCLE` clock, from `order-wmp` (2026-10-30, analysis only)
+`order-wmp` (hash `b1152cf8`) runs a thing and a wall that share a two-frame texture (`CYCLES 2`,
+`DELAY 1, 1`), each with an `EACH_CYCLE`.
+- **Order within a cycle.** The cycle runs AB, AA, TC, TB, TA, WC, WB, WA: an object's
+  `EACH_CYCLE` runs in its own place in the object pass. Things and walls each run in reverse map
+  order. OpenVirtue's order is the same; only the timing differs.
+- **Which cycles.** The two objects always fire in the same cycle. After their first firing
+  (cycle 5, `TICKS` 14.719) they fire every 8, 8, 6, 6, 8, 8, 8, 6, 6 cycles. The pattern repeats
+  every 36 cycles: 10 animation frames per 36 cycles. Over those 36 cycles `TIME_CORR` (equal to
+  each cycle's `TICKS` step, 0.25 or 0.28125 here) adds up to 9.4375, not 10.
+- **What does not fit.** No accumulator of `TIME_CORR` matches the cycles: with or without carry,
+  with any start phase, any per-cycle extra or any integer step and threshold. Neither does a whole
+  number of cycles per frame computed from `TIME_CORR`. A 6-cycle gap holds only 1.5625 ticks, less
+  than the two `DELAY` ticks. So the texture clock is not `TICKS`. It is likely a finer real-time
+  clock that `TICKS`, summed from truncated steps, falls behind (about 6% here). That clock cannot
+  be read from this trace.
+
+OpenVirtue advances textures by `TIME_CORR`, so in the replay it fires every 8 cycles after its
+first firing (cycle 2). Finding this needs a probe that prints a texture's frame against a clock
+other than `TICKS`, if the runtime exposes one.
+
 ## Open Questions
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
   keeps the flic's delay-based `TIME_CORR`).
-- Texture animation phase lengths (see OV-20261029-motion-timing).
+- Texture animation phase lengths (see OV-20261029-motion-timing, and round 4: the texture clock
+  is not `TICKS`).
 
 ## Implementation
 `WdlRuntime.UpdateTimingSkills` (first cycle), `WdlRuntime.RunStartup` (the `IF_START` countdown),
