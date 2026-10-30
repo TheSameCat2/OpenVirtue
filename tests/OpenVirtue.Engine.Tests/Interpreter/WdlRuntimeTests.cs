@@ -602,6 +602,28 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_SoundPlayedOutBeforeACycle_FreesItsChannelInThatCycle()
+    {
+        // OV-20261029-audio: a quarter-second sound started at 13.438 read free at 17.625, the first
+        // cycle after it ended; the host is asked once the cycle's TICKS are set.
+        Level level = Load("MAPFILE <m.wmp>; SOUND alert,<ALERT.WAV>; SKILL seen { VAL -1; } ACTION look { SET seen, CHANNEL_0; }");
+        double end = double.PositiveInfinity;
+        var runtime = new WdlRuntime(level);
+        runtime.SoundPlayedOut = channel => channel == 0 && runtime.GetSkill("TICKS") >= end;
+        runtime.SetEachTickAction(1, "look");
+        runtime.Tick(1 / 16.0);
+        runtime.PlaySound("alert", null, 1, null, null);
+        end = runtime.GetSkill("TICKS") + 0.5;
+
+        runtime.Tick(0.25 / 16); // TICKS 0.25: still playing
+        Assert.Equal(1, runtime.GetSkill("seen"));
+
+        runtime.Tick(0.25 / 16); // TICKS 0.5: played out, and this cycle's action sees it free
+
+        Assert.Equal(0, runtime.GetSkill("seen"));
+    }
+
+    [Fact]
     public void Runtime_StopSound_FreesNormalChannelsTwoCyclesLaterAndKeepsLoops()
     {
         // OV-20261029-audio stop-lag and stop-sloop.
