@@ -115,6 +115,13 @@ Confirmed for patched V3.963:
    mostly 0.045–0.05, at any speed. **`PLAYER_WIDTH` below 1.2 is not raised to 1.2:** 0.5 held the
    player 0.55 from the wall.
 
+## Replay (2026-10-30)
+`round2/vz-slow` and the `round3/vz-rate-c*` speed variants were copied by hand from `vz-rate`
+without a `case.json`, so the oracle-diff harness did not know their trace file and replayed them on a
+fixed clock. With a local `case.json` naming `OVECX0.TXT`, `vz-slow` (120 lines), `vz-rate-c3000` and
+`vz-rate-c6000` (49 lines each) match in full. `c50000` matches 81 of 106 lines, and `c12000`/`c25000`
+differ from the start-up line (`GO`) before their first sample.
+
 ## Confidence
 high for 1–3 and 5: every move of ten runs fits them. medium for the bend of rule 4 at
 `TIME_CORR` 4: the points either side are 2.4 and 4.2. `TIME_CORR` 2.4–4.2 was not reached, and
