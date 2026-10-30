@@ -135,8 +135,35 @@ internal static class SaveBodyProbeCases
     private static readonly string[] TextureValues =
         ["AMBIENT", "ALBEDO", "RADIANCE", "SCALE_X", "SCALE_Y", "SVOL", "SDIST", "SVDIST", "POS_X", "POS_Y", "RANDOM"];
 
+    /// <summary>Round 16: the key hooks probed, each set to its own action (the manual's list under IF_F1, and the ones Saints of Virtue uses).</summary>
+    public static readonly string[] KeyHooks =
+        ["IF_ESC", "IF_1", "IF_0", "IF_SZ", "IF_APO", "IF_BKSP", "IF_TAB", "IF_Q", "IF_Y", "IF_Z", "IF_BRACKL", "IF_BRACKR",
+         "IF_PLUS", "IF_MINUS", "IF_ENTER", "IF_CTRL", "IF_ALT", "IF_SPACE", "IF_CAR", "IF_CAL", "IF_F1", "IF_F10", "IF_F11",
+         "IF_F12", "IF_CUU", "IF_CUD", "IF_CUL", "IF_CUR", "IF_PGUP", "IF_PGDN", "IF_HOME", "IF_END", "IF_INS", "IF_DEL",
+         "IF_PAUSE", "IF_ANYKEY", "IF_LEFT", "IF_RIGHT", "IF_MIDDLE"];
+
+    /// <summary>Round 16: actions <c>sk_0</c>… for <paramref name="count"/> hooks, then <paramref name="body"/> setting them.</summary>
+    private static TraceProbeCase Slots(string label, string question, int count, string body) => new(
+        label,
+        question,
+        Declarations + string.Concat(Enumerable.Range(0, count).Select(static i => FormattableString.Invariant($"ACTION sk_{i}\n{{\n    RULE sb_n = {i};\n}}\n"))),
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n" + body + "    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("scan codes", "each key's action number at its PC scan code in the slot section")),
+        Map: World);
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        Slots(
+            "keys",
+            "Round 16. Every key hook the manual and Saints of Virtue name, each SET to its own action: at which word of the slot section is each?",
+            KeyHooks.Length,
+            string.Concat(KeyHooks.Select(static (k, i) => FormattableString.Invariant($"    SET {k}, sk_{i};\n")))),
+        Slots(
+            "each-sec",
+            "Round 16. EACH_SEC.1 to EACH_SEC.16 and EACH_TICK.1 set, each to its own action: where are the EACH_SEC slots?",
+            17,
+            string.Concat(Enumerable.Range(1, 16).Select(static i => FormattableString.Invariant($"    SET EACH_SEC.{i}, sk_{i - 1};\n"))) +
+            "    SET EACH_TICK.1, sk_16;\n"),
         TextureSave(
             "texture-values",
             "Round 15b. A SAVE texture with each valued property set to its own raw pattern 0x201 + 64·i: where is each in its record?",

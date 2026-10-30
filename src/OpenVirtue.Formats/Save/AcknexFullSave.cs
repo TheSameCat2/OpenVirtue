@@ -176,6 +176,48 @@ public static class AcknexFullSave
     /// <summary>The words of the slot section.</summary>
     public const int SlotWords = 168;
 
+    /// <summary>
+    /// The slot section's word for each key hook: the key's PC scan code (US layout: <c>IF_Y</c> 21,
+    /// <c>IF_Z</c> 44), then the mouse buttons and <c>IF_ANYKEY</c> from 128 (OV-20261029-save-body
+    /// round 16). <c>IF_BRACKR</c> shares 27 with <c>IF_PLUS</c>: set first, it was overwritten there.
+    /// </summary>
+    public static IReadOnlyDictionary<string, int> KeySlotWords { get; } = BuildKeySlotWords();
+
+    /// <summary>The slot section's word for <c>EACH_SEC.n</c>: 134 + 2n, between the <c>EACH_TICK</c> words (round 16).</summary>
+    public static int EachSecSlotWord(int slot) => 134 + (2 * slot);
+
+    private static Dictionary<string, int> BuildKeySlotWords()
+    {
+        var words = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["IF_ESC"] = 1, ["IF_0"] = 11, ["IF_SZ"] = 12, ["IF_APO"] = 13, ["IF_BKSP"] = 14, ["IF_TAB"] = 15,
+            ["IF_BRACKL"] = 26, ["IF_BRACKR"] = 27, ["IF_PLUS"] = 27, ["IF_ENTER"] = 28, ["IF_CTRL"] = 29,
+            ["IF_CAL"] = 51, ["IF_CAR"] = 52, ["IF_MINUS"] = 53, ["IF_ALT"] = 56, ["IF_SPACE"] = 57,
+            ["IF_PAUSE"] = 69, ["IF_HOME"] = 71, ["IF_CUU"] = 72, ["IF_PGUP"] = 73, ["IF_CUL"] = 75, ["IF_CUR"] = 77,
+            ["IF_END"] = 79, ["IF_CUD"] = 80, ["IF_PGDN"] = 81, ["IF_INS"] = 82, ["IF_DEL"] = 83, ["IF_F11"] = 87, ["IF_F12"] = 88,
+            ["IF_LEFT"] = 128, ["IF_MIDDLE"] = 129, ["IF_RIGHT"] = 130, ["IF_ANYKEY"] = 131,
+        };
+        for (int digit = 1; digit <= 9; digit++)
+        {
+            words["IF_" + digit.ToString(System.Globalization.CultureInfo.InvariantCulture)] = digit + 1;
+        }
+
+        for (int key = 1; key <= 10; key++)
+        {
+            words["IF_F" + key.ToString(System.Globalization.CultureInfo.InvariantCulture)] = 58 + key;
+        }
+
+        foreach ((string row, int first) in new[] { ("QWERTYUIOP", 16), ("ASDFGHJKL", 30), ("ZXCVBNM", 44) })
+        {
+            for (int i = 0; i < row.Length; i++)
+            {
+                words["IF_" + row[i]] = first + i;
+            }
+        }
+
+        return words;
+    }
+
     private const int NameField = 13;
 
     /// <summary>The number of the first declared action.</summary>

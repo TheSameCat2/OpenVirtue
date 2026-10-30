@@ -1808,6 +1808,12 @@ public sealed class WdlInterpreter(IWdlContext context)
                 return;
             }
 
+            if (context is IWdlSkillRangeContext ranges && ranges.TryGetSkillMargin(name, property, out double margin))
+            {
+                ranges.TrySetSkillMargin(name, property, Apply(op, margin, rvalue));
+                return;
+            }
+
             if (context is IWdlUiContext ui &&
                 ui.TryGetUiNumber(name, property, out double current))
             {

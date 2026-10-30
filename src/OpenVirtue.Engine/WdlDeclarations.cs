@@ -86,7 +86,10 @@ public sealed class WdlDeclarations
     private readonly List<(string Kind, string Name)> _objectDeclarations = [];
     private readonly List<string> _regionDeclarations = [];
     private readonly List<SaveTextureDeclaration> _saveTextures = [];
-    private readonly Dictionary<string, List<string>> _numbered = new(Ci) { ["FONT"] = [], ["STRING"] = [], ["SOUND"] = [] };
+    private readonly Dictionary<string, List<string>> _numbered = new(Ci) { ["FONT"] = [], ["STRING"] = [], ["SOUND"] = [], [ScreenElements] = [] };
+
+    /// <summary>The key under which <see cref="NumberedDeclarations"/> lists the screen elements.</summary>
+    public const string ScreenElements = "SCREEN";
 
     /// <summary>The names of all defined textures.</summary>
     public IReadOnlyCollection<string> TextureNames => _textures.Keys;
@@ -117,6 +120,13 @@ public sealed class WdlDeclarations
     /// <summary>The <c>REGION</c> declarations with a body, by name in declaration order; a repeated name keeps its first place.</summary>
     public IReadOnlyList<string> RegionDeclarations => _regionDeclarations;
 
+    /// <summary>
+    /// The <c>FONT</c>, <c>STRING</c> and <c>SOUND</c> declarations' names in order, and under
+    /// <see cref="ScreenElements"/> the <c>PANEL</c>, <c>TEXT</c> and <c>OVERLAY</c> ones together, which
+    /// a full save numbers from 1 (OV-20261029-save-body rounds 15 and 15b).
+    /// </summary>
+    public IReadOnlyDictionary<string, List<string>> NumberedDeclarations => _numbered;
+
     /// <summary>The <c>TEXTURE</c> declarations with <c>FLAGS SAVE</c>, in declaration order (OV-20261029-save-body round 15b).</summary>
     public IReadOnlyList<SaveTextureDeclaration> SaveTextures => _saveTextures;
 
@@ -128,7 +138,8 @@ public sealed class WdlDeclarations
 
         foreach (WdlItem item in program.Items)
         {
-            if (declarations._numbered.TryGetValue(item.Keyword, out List<string>? numbered) && item.Header.Count > 0)
+            string numberedKind = item.Keyword.ToUpperInvariant() is "PANEL" or "TEXT" or "OVERLAY" ? ScreenElements : item.Keyword;
+            if (declarations._numbered.TryGetValue(numberedKind, out List<string>? numbered) && item.Header.Count > 0)
             {
                 numbered.Add(item.Header[0].Text);
             }

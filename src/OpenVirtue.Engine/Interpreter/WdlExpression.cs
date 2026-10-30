@@ -116,6 +116,11 @@ public sealed class MemberExpression(string objectName, string property) : WdlEx
             return WdlFixed.Quantize(context is IWdlObjectReadContext reads ? reads.GetObjectNumber(obj, property) : obj[property]);
         }
 
+        if (context is IWdlSkillRangeContext ranges && ranges.TryGetSkillMargin(objectName, property, out double margin))
+        {
+            return margin;
+        }
+
         // PANEL / TEXT / OVERLAY members (POS_Y, VISIBLE, ...) read the same way SET writes them.
         return context is IWdlUiContext ui && ui.TryGetUiNumber(objectName, property, out double value) ? WdlFixed.Quantize(value) : 0;
     }

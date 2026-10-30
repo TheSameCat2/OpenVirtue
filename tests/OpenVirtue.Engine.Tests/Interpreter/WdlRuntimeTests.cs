@@ -905,6 +905,37 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_SlotsSynonymsAndSkillsAsTheOriginalWritesThem()
+    {
+        // OV-20261029-save-body round 16: key hooks at their scan codes and EACH_SEC.n at 134 + 2n; action
+        // and string synonyms by number; a re-declared skill at its first place and an engine skill in the
+        // engine's block with its range, which SET x.MAX changes; the map's bounds take in its things.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 5 7 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL h { MIN 0; MAX 100; VAL 5; } SKILL r { VAL 0; } SKILL PLAYER_SIZE { MIN 0; VAL 3; } SKILL h { VAL 1; } " +
+            "STRING s1, \"a\"; STRING s2, \"b\"; WALL w { } THING t { } " +
+            "ACTION go { SET r, h.MAX; SET h.MAX, 50; SET PLAYER_SIZE.MAX, 5; SET IF_ESC, go; SET IF_Z, go; SET EACH_SEC.2, go; } " +
+            "SYNONYM sa { TYPE ACTION; DEFAULT go; } SYNONYM ss { TYPE STRING; DEFAULT s2; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("go"));
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        int go = level.ActionOrder.ToList().IndexOf("go") + 11;
+        Assert.Equal(100, runtime.GetSkill("r"));
+        Assert.Equal((go, go, go), (save.Slots[1], save.Slots[44], save.Slots[138]));
+        Assert.Equal([2, go], save.Synonyms.Take(2));
+        Assert.Equal(["r", "h"], save.Skills.Take(2).Select(static k => k.Name));
+        Assert.Equal(50 * 1024, save.Skills[1].RawMax);
+        SaveSkill size = Assert.Single(save.Skills, static k => k.Name == "PLAYER_SIZE");
+        Assert.Equal((0, 5 * 1024), (size.RawMin, size.RawMax));
+        Assert.Equal((5, 7), (runtime.GetSkill("MAP_MAXX"), runtime.GetSkill("MAP_MAXY")));
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =

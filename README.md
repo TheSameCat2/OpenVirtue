@@ -215,7 +215,8 @@ Not yet complete:
     at its own pace. The `SAVE` textures and `SAVE` regions sections match the original's byte for byte
     on `legalism` (OV-20261029-save-body rounds 13 to 15);
   - does not yet write the screen elements' section, two run-time words of the first section,
-    object actions' `MY`/`YOU`, `EACH_SEC` slots, changed key hooks or `INKEY` strings;
+    object actions' `MY`/`YOU`, the saving action's last wait, the engine's run-time statistics
+    skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`, `VESA_MODE`) or `INKEY` strings;
 - one-unit residuals in actor steps toward points after many cycles, and `CAREFULLY` slides
   (steps along an `ANGLE` and the split of a step toward a point match unit for unit,
   OV-20261029-actor-step);

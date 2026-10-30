@@ -146,6 +146,12 @@ public sealed class Level
     /// </summary>
     public IReadOnlyList<AcknexObject> UnplacedObjects { get; init; } = [];
 
+    /// <summary>
+    /// Declarations a full save refers to by number, in order: <c>FONT</c>, <c>STRING</c>, <c>SOUND</c>,
+    /// and the screen elements under <see cref="WdlDeclarations.ScreenElements"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, List<string>> NumberedDeclarations { get; init; } = new Dictionary<string, List<string>>();
+
     /// <summary>The textures declared with <c>FLAGS SAVE</c>, in declaration order (a full save's second section; round 15b).</summary>
     public IReadOnlyList<WdlDeclarations.SaveTextureDeclaration> SaveTextures { get; init; } = [];
 

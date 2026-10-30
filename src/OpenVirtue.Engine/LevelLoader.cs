@@ -154,6 +154,7 @@ public static class LevelLoader
             TextureDeclarations = declarations.TextureDeclarations,
             UnplacedObjects = unplaced,
             SaveTextures = declarations.SaveTextures,
+            NumberedDeclarations = declarations.NumberedDeclarations,
             MapObjects = [.. map.ObjectOrder.Select(o => o.Kind switch
             {
                 "WALL" => (AcknexObject?)walls[o.Index],
@@ -712,8 +713,12 @@ public static class LevelLoader
 
             string name = item.Header[0].Text;
             values[name] = value;
-            order.RemoveAll(existing => existing.Equals(name, StringComparison.OrdinalIgnoreCase));
-            order.Add(name);
+            // A skill declared again keeps its first place, where the original's saves list it (LEGALISM's
+            // fadeVal, declared in its main file and again in dead.wdl; save-body round 16).
+            if (!order.Exists(existing => existing.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            {
+                order.Add(name);
+            }
             if (isLocal)
             {
                 local.Add(name);

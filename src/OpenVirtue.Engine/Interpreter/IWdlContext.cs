@@ -369,6 +369,20 @@ public interface IWdlKeywordReferenceContext
     void SetKeywordReference(string name, string? value);
 }
 
+/// <summary>
+/// A skill's <c>MIN</c> and <c>MAX</c> margins (manual p.100) as members: Saints of Virtue reads
+/// <c>myHealth.MAX</c> and sets <c>PLAYER_SIZE.MAX</c>, which the original's saves then hold
+/// (OV-20261029-save-body round 16).
+/// </summary>
+public interface IWdlSkillRangeContext
+{
+    /// <summary>Reads <paramref name="memberName"/> (<c>MIN</c> or <c>MAX</c>) of a skill; false when it is not one.</summary>
+    bool TryGetSkillMargin(string skillName, string memberName, out double value);
+
+    /// <summary>Sets <paramref name="memberName"/> (<c>MIN</c> or <c>MAX</c>) of a skill; false when it is not one.</summary>
+    bool TrySetSkillMargin(string skillName, string memberName, double value);
+}
+
 /// <summary>Optional runtime storage for mutable WDL UI declarations.</summary>
 public interface IWdlUiContext
 {

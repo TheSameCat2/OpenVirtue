@@ -500,6 +500,52 @@ regions) each stopped the load.
   and goes on. The first section's words +36/+40 (86304/5408 here) and the screen elements' section
   are still written as 0 and empty, and the original accepts both. Apathy's save still loads.
 
+## Round 16: the remaining sections of LEGALISM's save (2026-10-30)
+After round 15, section by section, OpenVirtue's LEGALISM save was compared with the original's.
+- **Synonyms of every kind.** The synonym section holds all synonyms, not only those naming objects:
+  - an `ACTION` synonym holds its action's number (`menu1_act`, `DEFAULT tunix`, reads 11);
+  - a `STRING` synonym holds the string's number among the `STRING` declarations (`empty` is the 19th);
+  - an `OVERLAY` synonym holds the element's number among the `PANEL`, `TEXT` and `OVERLAY`
+    declarations together. `crosshair` reads 17 and `swordgun1` 18; numbered among overlays alone,
+    they would be 2 and 3.
+  - Objects are numbered as `GENIUS` is (round 15), so `PLAYER_START` is not counted.
+  - With this, the section matches byte for byte.
+- **The slot section's first 136 words are the key hooks, at the key's PC scan code.** LEGALISM's
+  hooks fit the scan codes (`IF_ESC` 1, `IF_TAB` 15, `IF_F1` 59). A carrier then set 39 hooks, each to
+  its own action (`round16/keys`, `1080a0ac`):
+  - The codes follow the US layout: `IF_Y` 21, `IF_Z` 44. `IF_SZ` is 12, `IF_APO` 13, `IF_BRACKL` 26,
+    `IF_PLUS` 27, `IF_CAL` 51, `IF_CAR` 52, `IF_MINUS` 53, `IF_ALT` 56, `IF_PAUSE` 69, `IF_HOME` 71,
+    `IF_CUU` 72, `IF_PGUP` 73, `IF_CUL` 75, `IF_CUR` 77, `IF_END` 79, `IF_CUD` 80, `IF_PGDN` 81,
+    `IF_INS` 82, `IF_DEL` 83, `IF_F11` 87, `IF_F12` 88.
+  - The mouse buttons come next: `IF_LEFT` 128, `IF_MIDDLE` 129, `IF_RIGHT` 130, then `IF_ANYKEY` 131.
+  - `IF_BRACKR` was set before `IF_PLUS` and left no word of its own, so it is taken to share 27.
+  - The engine's defaults (actions 0–9 at 11, 12, 13, 15, 27, 53, 60, 61, 63, 64, 68, 88) stay
+    unless a script sets the key.
+- **`EACH_SEC.n` is word 134 + 2n**, between the `EACH_TICK` words (`round16/each-sec`, `684001a7`).
+  With hooks and slots written, LEGALISM's slot section matches byte for byte.
+- **Skills.**
+  - A skill declared twice keeps its first place (`fadeVal`: LEGALISM.WDL, then dead.wdl).
+  - A level's re-declaration of an engine skill (`PLAYER_SIZE`, `PLAYER_TILT`, `PLAYER_CLIMB` in
+    move.wdl) is listed in the engine's block at the engine's place, with the declared range.
+  - `SET PLAYER_SIZE.MAX, my_size` gave the saved range 0..5. So a skill's `MIN` and `MAX` can be set,
+    and read as members (Saints of Virtue tests `myHealth.MAX` before a pickup). OpenVirtue read them
+    as 0 and ignored the `SET`.
+  - The saves also hold engine values that OpenVirtue left 0:
+    - `HERE_INDEX` (the player's region, 499);
+    - `FRAME_WIDTH`/`FRAME_HGT` (640/480);
+    - `MAP_MINX`… `MAP_MAXY`: the bounds of the vertices and the placed things and actors (apathy's
+      `MAP_MAXX`, 1241.409, is an actor's X; its vertices end at 1225);
+    - the `WDIST_MIN*` sentinels, which are −2^31 raw, not −(2^31 − 1).
+  - With these, the skill list's order matches on both retail levels. The remaining value
+    differences are the simulation (ticks, enemy timers) and run-time statistics: `TIME_*`, `ACTIONS`,
+    `ACTIVE_NEXUS`, `MAX_DIST`, `VESA_MODE` 7, `RANDOM`.
+- **The saving action's record** (the last in the action section) holds its action and the wait it
+  last came out of. LEGALISM's `ov_save` reads position 2 (its `WAITT 5`) with 832 left. The base
+  probe's action reads position 60 (its `WAIT 2`). OpenVirtue still writes a placeholder (action 11,
+  places 0 and 1), and the original loads it.
+- Both retail saves made this way (`cf9bf954` LEGALISM, `ff05dd62` apathy) still load and resume in the
+  original.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups

@@ -26,6 +26,7 @@ public sealed class WdlRuntime :
     IWdlObjectGroupContext,
     IWdlObjectMutationContext,
     IWdlObjectReadContext,
+    IWdlSkillRangeContext,
     IWdlObjectReferenceContext,
     IWdlStringContext,
     IWdlInputContext,
@@ -123,7 +124,7 @@ public sealed class WdlRuntime :
 
     private readonly Level _level;
     private readonly Dictionary<string, double> _skills;
-    private readonly IReadOnlyDictionary<string, SkillRange> _bounds;
+    private readonly Dictionary<string, SkillRange> _bounds;
     private readonly Dictionary<string, WdlString> _strings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, WdlUiElement> _uiElements = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _keywordReferences = new(StringComparer.OrdinalIgnoreCase);
@@ -248,7 +249,7 @@ public sealed class WdlRuntime :
         _collisionWorld = new LevelCollisionWorld(level);
         _hitTextures = hitTextures ?? new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
-        _bounds = level.SkillBounds;
+        _bounds = new Dictionary<string, SkillRange>(level.SkillBounds, StringComparer.OrdinalIgnoreCase);
         InitializePredefinedSkillDefaults();
         _printDirectory = printDirectory;
         _sounds = level.Sounds;
@@ -532,7 +533,7 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Takes the global <c>EACH_TICK</c> slots and the waiting actions of a full save the original wrote,
+    /// Takes the global <c>EACH_TICK</c> and <c>EACH_SEC</c> slots, the key hooks and the waiting actions of a full save the original wrote,
     /// in place of the current ones (OV-20261029-save-body rounds 7 and 8). Actions are numbered from 11
     /// in declaration order; a waiting action goes on after the instruction in its saved place. The
     /// action that ran the <c>SAVE</c> is not resumed, as in the original. Their <c>MY</c> and
@@ -552,6 +553,20 @@ public sealed class WdlRuntime :
             for (int slot = 1; slot <= EachTickSlotCount && EachTickSlot(slot) < slots.Count; slot++)
             {
                 SetEachTickAction(slot, NameOf(slots[EachTickSlot(slot)]));
+            }
+
+            for (int slot = 1; slot <= EachSecSlotCount && AcknexFullSave.EachSecSlotWord(slot) < slots.Count; slot++)
+            {
+                SetEachSecAction(slot, NameOf(slots[AcknexFullSave.EachSecSlotWord(slot)]));
+            }
+
+            // Engine defaults (numbers below 11) have no WDL action, so their keys keep OpenVirtue's own handling.
+            foreach ((string hook, int word) in AcknexFullSave.KeySlotWords)
+            {
+                if (word < slots.Count && slots[word] >= FirstActionNumber && NameOf(slots[word]) is { } action)
+                {
+                    SetActionHook(hook, action);
+                }
             }
         }
 
@@ -590,7 +605,7 @@ public sealed class WdlRuntime :
         // Values are cut toward zero to 1/1024, as the original reads literals: AMBIENT 0.2 is saved as
         // 204, FLOOR_HGT 26.2 as 26828 (round 15). The rounding to six places first keeps a value that is
         // a whole number of 1/1024 steps, give or take double error, on that step.
-        static int Raw(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value * 1024, 6)), -int.MaxValue, int.MaxValue);
+        static int Raw(double value) => (int)Math.Clamp(Math.Truncate(Math.Round(value * 1024, 6)), int.MinValue, int.MaxValue);
 
         // Map coordinates are cut toward zero to 1/1024, not rounded (round 13). The map writes three
         // decimals and OpenVirtue keeps them as floats, so the decimal value is recovered first.
@@ -725,36 +740,78 @@ public sealed class WdlRuntime :
             slots[EachTickSlot(slot)] = ActionNumber(_eachTickActions[slot - 1]);
         }
 
-        List<int> synonyms = [];
-        foreach (string synonym in _level.Synonyms.Keys.Reverse())
+        for (int slot = 1; slot <= EachSecSlotCount; slot++)
         {
-            // A region is its index (the room read 0); a wall, thing or actor its map place + 1
-            // (OV-20261029-save-body rounds 9 and 10).
-            AcknexObject? target = GetObject(synonym);
-            int number = target switch
+            slots[AcknexFullSave.EachSecSlotWord(slot)] = ActionNumber(_eachSecActions[slot - 1]);
+        }
+
+        // A key hook the script set, or cleared, replaces the engine's default at its scan code (round 16).
+        foreach ((string hook, string? action) in _actionHooks)
+        {
+            if (AcknexFullSave.KeySlotWords.TryGetValue(hook, out int word))
             {
-                null => -1,
-                Region region => _level.Regions.ToList().IndexOf(region),
-                _ => _level.MapObjects.ToList().IndexOf(target) is >= 0 and int place ? place + 1 : -1,
-            };
+                slots[word] = ActionNumber(action);
+            }
+        }
+
+        // A region is its index (the room read 0); a wall, thing or actor its map place + 1, counting
+        // the map's walls, things and actors only (rounds 9, 10 and 15). The other kinds hold their
+        // target's number (round 15, LEGALISM): an action's, a texture's, a string's among the STRING
+        // declarations and a panel's, text's or overlay's among the three kinds' declarations together.
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
+        int Numbered(string kind, string? name) =>
+            name is not null && _level.NumberedDeclarations.TryGetValue(kind, out List<string>? names) &&
+            names.FindIndex(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)) is >= 0 and int found ? found + 1 : -1;
+        List<int> synonyms = [];
+        foreach ((string synonym, WdlSynonym declared) in _level.Synonyms.Reverse())
+        {
+            int number;
+            if (_keywordReferences.ContainsKey(synonym))
+            {
+                string? target = KeywordTarget(synonym);
+                number = declared.Type?.ToUpperInvariant() switch
+                {
+                    "ACTION" => ActionNumber(target),
+                    "TEXTURE" => target is null ? -1 : TextureNumber(target),
+                    "STRING" => Numbered("STRING", target),
+                    _ => Numbered(WdlDeclarations.ScreenElements, target),
+                };
+            }
+            else
+            {
+                number = GetObject(synonym) switch
+                {
+                    null => -1,
+                    Region region => _level.Regions.ToList().IndexOf(region),
+                    AcknexObject target => placedObjects.IndexOf(target) is >= 0 and int place ? place + 1 : -1,
+                };
+            }
+
             synonyms.Add(number);
         }
 
         synonyms.AddRange(Enumerable.Repeat(-1, AcknexFullSave.PredefinedSynonyms));
 
-        List<SaveSkill> skills = [];
-        foreach (string name in _level.SkillDeclarationOrder.Reverse().Where(n => !_level.LocalSkills.Contains(n)).Distinct(StringComparer.OrdinalIgnoreCase))
+        SaveSkill SkillRecord(string name)
         {
             (int min, int max) = _bounds.TryGetValue(name, out SkillRange range)
                 ? (double.IsFinite(range.Min) ? Raw(range.Min) : SaveSkill.NoMin, double.IsFinite(range.Max) ? Raw(range.Max) : SaveSkill.NoMax)
                 : (SaveSkill.NoMin, SaveSkill.NoMax);
-            skills.Add(new SaveSkill(name, Raw(GetSkill(name)), min, max));
+            return new SaveSkill(name, Raw(GetSkill(name)), min, max);
         }
 
-        // A level may declare a predefined skill again; the original lists each name once (apathy:
-        // 633 records, not 652).
-        var listed = new HashSet<string>(skills.Select(static k => k.Name), StringComparer.OrdinalIgnoreCase);
-        skills.AddRange(AcknexPredefinedSkills.Names.Where(listed.Add).Select(n => new SaveSkill(n, Raw(GetSkill(n)))));
+        // The level's skills, newest first, then the engine's. A level may declare an engine skill again
+        // (PLAYER_SIZE, PLAYER_TILT in move.wdl); the original lists each name once, in the engine's
+        // block at its own place, with the declared range (apathy: 633 records, not 652; LEGALISM round 16).
+        var predefined = new HashSet<string>(AcknexPredefinedSkills.Names, StringComparer.OrdinalIgnoreCase);
+        List<SaveSkill> skills =
+        [
+            .. _level.SkillDeclarationOrder.Reverse()
+                .Where(n => !_level.LocalSkills.Contains(n) && !predefined.Contains(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(SkillRecord),
+            .. AcknexPredefinedSkills.Names.Distinct(StringComparer.OrdinalIgnoreCase).Select(SkillRecord),
+        ];
 
         List<SaveAction> actions = [];
         foreach (ActiveAction action in _waitingActions)
@@ -841,6 +898,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(words);
         List<string> names = [.. _level.Synonyms.Keys.Reverse()];
+        List<AcknexObject> placedObjects = [.. _level.MapObjects.OfType<AcknexObject>()];
         int set = 0;
         for (int i = 0; i < names.Count && i < words.Count; i++)
         {
@@ -849,7 +907,7 @@ public sealed class WdlRuntime :
             AcknexObject? target = synonym.Type?.ToUpperInvariant() switch
             {
                 "REGION" => number >= 0 && number < _level.Regions.Count ? _level.Regions[number] : null,
-                "WALL" or "THING" or "ACTOR" => number >= 1 && number <= _level.MapObjects.Count ? _level.MapObjects[number - 1] : null,
+                "WALL" or "THING" or "ACTOR" => number >= 1 && number <= placedObjects.Count ? placedObjects[number - 1] : null,
                 _ => null,
             };
             if (target is not null || number == -1)
@@ -2204,6 +2262,7 @@ public sealed class WdlRuntime :
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
         _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
         _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
+        _skills["HERE_INDEX"] = GetSkill("PLAYER_REGION"); // the player's region, as the saves hold it (round 16)
         return timeCorrection;
     }
 
@@ -2568,6 +2627,25 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("SCREEN_Y", 0);
         EnsureSkillDefault("SCREEN_WIDTH", _level.VideoMode?.Width ?? 640);
         EnsureSkillDefault("SCREEN_HGT", _level.VideoMode?.Height ?? 480);
+
+        // The frame's size and the map's extent, which the retail saves hold (S640x480: 640 by 480; the
+        // bounds of the vertices and the placed things and actors, cut to 1/1024: apathy's MAP_MAXX is
+        // an actor's X; save-body round 16).
+        EnsureSkillDefault("FRAME_WIDTH", _level.VideoMode?.Width ?? 640);
+        EnsureSkillDefault("FRAME_HGT", _level.VideoMode?.Height ?? 480);
+        List<(double X, double Y)> points =
+        [
+            .. _level.Vertices.Select(static v => ((double)v.X, (double)v.Y)),
+            .. _level.MapObjects.OfType<MapEntity>().Select(static e => (e.X, e.Y)),
+        ];
+        if (points.Count > 0)
+        {
+            static double Cut(double value) => Math.Truncate(Math.Round(value, 3) * 1024) / 1024;
+            EnsureSkillDefault("MAP_MINX", Cut(points.Min(static p => p.X)));
+            EnsureSkillDefault("MAP_MAXX", Cut(points.Max(static p => p.X)));
+            EnsureSkillDefault("MAP_MINY", Cut(points.Min(static p => p.Y)));
+            EnsureSkillDefault("MAP_MAXY", Cut(points.Max(static p => p.Y)));
+        }
     }
 
     private void EnsureSkillDefault(string name, double value)
@@ -5021,6 +5099,51 @@ public sealed class WdlRuntime :
 
         value = matches.FirstOrDefault(candidate => ObjectMatchesSynonymType(candidate, type));
         return value is not null;
+    }
+
+    /// <inheritdoc/>
+    public bool TryGetSkillMargin(string skillName, string memberName, out double value)
+    {
+        bool min = memberName.Equals("MIN", StringComparison.OrdinalIgnoreCase);
+        if (!(min || memberName.Equals("MAX", StringComparison.OrdinalIgnoreCase)) || !_skills.ContainsKey(skillName))
+        {
+            value = 0;
+            return false;
+        }
+
+        // A skill without a margin reads the widest one its save record can hold.
+        SkillRange range = _bounds.TryGetValue(skillName, out SkillRange found) ? found : new SkillRange(double.NegativeInfinity, double.PositiveInfinity);
+        double margin = min ? range.Min : range.Max;
+        value = double.IsFinite(margin) ? margin : (min ? SaveSkill.NoMin : SaveSkill.NoMax) / WdlFixed.Scale;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool TrySetSkillMargin(string skillName, string memberName, double value)
+    {
+        if (!TryGetSkillMargin(skillName, memberName, out _))
+        {
+            return false;
+        }
+
+        SkillRange range = _bounds.TryGetValue(skillName, out SkillRange found) ? found : new SkillRange(double.NegativeInfinity, double.PositiveInfinity);
+        _bounds[skillName] = memberName.Equals("MIN", StringComparison.OrdinalIgnoreCase) ? range with { Min = value } : range with { Max = value };
+        return true;
+    }
+
+    /// <summary>What a keyword synonym names, through any synonyms it names in turn; null for none.</summary>
+    private string? KeywordTarget(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? current = name;
+        while (current is not null && _keywordReferences.TryGetValue(current, out string? target) && seen.Add(current))
+        {
+            current = target;
+        }
+
+        return string.IsNullOrWhiteSpace(current) || current.Equals("NULL", StringComparison.OrdinalIgnoreCase) || _keywordReferences.ContainsKey(current)
+            ? null
+            : current;
     }
 
     private string? ResolveActionName(string name)
