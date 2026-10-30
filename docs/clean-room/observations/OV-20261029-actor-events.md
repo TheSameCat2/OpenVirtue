@@ -83,6 +83,24 @@ push-back distance is not modelled (OpenVirtue holds 1.05).
 The replay used to start the bullet one step off: the first cycle's `TIME_CORR` was guessed. With
 the replay reading it off the 18-cycle step pattern (tools), the trace matches to line 285 of 569.
 
+## Round 3: a way actor from the first cycle (2026-10-30)
+`round3/way-start` (hash `fb478138`) is `way` with a slot armed in the start action. It prints `TICKS`,
+the cycle, `TIME_CORR` and the actor's X every cycle from the first.
+- **First cycle.** The cycle that reads `TIME_CORR` 1 and `TICKS` 0 moves the actor a full step
+  (10 → 10.5 at `SPEED` 0.5), as OpenVirtue does.
+- **Skipped frames.** From cycle 29 (x 14.05, |dx| + |dy| just over 20) the actor is unseen and
+  skips frames. It moves every 6th cycle by 6 × that cycle's step (0.75 at `TIME_CORR` 0.25), not
+  by the time that passed. This is the `SKIP_FRAMES` rule OpenVirtue already follows.
+- **Visibility.** It stays unseen at x 16.395, 6 to the side of an eye 8 high, and moves every cycle
+  again from x 17.145. OpenVirtue tested the screen's bottom at each sampled column's own depth.
+  The far edge of a sprite 2 wide is deeper than its centre, so OpenVirtue saw it at 16.395 and
+  stopped skipping too early. The original draws a sprite as a billboard at its centre's depth, so
+  `ViewTest.IsSpriteVisible` now tests the screen there. Over every carrier this adds 56 matching
+  lines, and four `actor-step` carriers now match in full.
+- **Step rounding.** The original's steps run a little short: about 143.4 raw where `SPEED` ×
+  `TIME_CORR` gives 144, and just under 128 where it gives 128. That is about 10 raw over 28
+  cycles. OpenVirtue takes the exact product; the cause is not found.
+
 ## Open Questions
 - Whether the arrival limit is a constant (OpenVirtue uses 1/8) or the cycle's step; the measured
   arrivals (≤ 0.098) and non-arrivals (≥ 0.134) do not separate them.

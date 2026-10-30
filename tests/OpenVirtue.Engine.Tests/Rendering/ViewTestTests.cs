@@ -36,6 +36,15 @@ public sealed class ViewTestTests
         Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 0, 0), x, y, 1, 0, 2));
     }
 
+    [Theory]
+    [InlineData(16.395, false)] // its far edge is deeper, but a billboard is drawn at its centre's depth
+    [InlineData(17.145, true)]
+    public void IsSpriteVisible_BelowTheScreensBottom_TestsTheCentresDepth(double x, bool expected)
+    {
+        // OV-20261029-actor-events round 3, way-start: a 2-high sprite 6 to the side of an eye at 8.
+        Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 0, 0), x, -6, 1, 0, 2));
+    }
+
     [Fact]
     public void IsSpriteVisible_HalfBehindTheWallsEnd_IsVisible()
     {

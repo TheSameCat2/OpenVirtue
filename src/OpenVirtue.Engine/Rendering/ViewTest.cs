@@ -199,7 +199,10 @@ public sealed class ViewTest
             double offset = halfWidth * ((2.0 * i / (SpriteSamples - 1)) - 1);
             double px = x + (sideX * offset);
             double py = y + (sideY * offset);
-            if (InCone(viewer, px, py) && Sees(viewer, px, py, bottom, top, null, region))
+            // A sprite is a billboard drawn at its centre's depth, so the screen's top and bottom are
+            // tested there for every column: a 2-high sprite 6 to the side stays below the screen at a
+            // centre depth of 16.4 though its far edge is deeper (OV-20261029-actor-events round 3).
+            if (InCone(viewer, px, py) && Sees(viewer, px, py, bottom, top, null, region, (x, y)))
             {
                 return true;
             }
@@ -285,17 +288,22 @@ public sealed class ViewTest
     private bool IsSurfaceVisible(Viewer viewer, double px, double py, double bottom, double top, Wall border) =>
         Sees(viewer, px, py, bottom, top, border, -1);
 
-    /// <summary>Whether the eye sees some of heights <paramref name="bottom"/>…<paramref name="top"/> at the map point, on the screen.</summary>
-    private bool Sees(Viewer viewer, double px, double py, double bottom, double top, Wall? target, int region)
+    /// <summary>
+    /// Whether the eye sees some of heights <paramref name="bottom"/>…<paramref name="top"/> at the map point, on
+    /// the screen; <paramref name="depthAt"/> gives the point whose depth places it on the screen, when not the same.
+    /// </summary>
+    private bool Sees(
+        Viewer viewer, double px, double py, double bottom, double top, Wall? target, int region, (double X, double Y)? depthAt = null)
     {
         if (!TryVisibleSpans(viewer, px, py, bottom, top, target, region))
         {
             return false;
         }
 
+        (double dx, double dy) = depthAt ?? (px, py);
         foreach ((_, double low, double high) in _spans)
         {
-            if (IntersectsScreen(viewer, px, py, low, high))
+            if (IntersectsScreen(viewer, dx, dy, low, high))
             {
                 return true;
             }

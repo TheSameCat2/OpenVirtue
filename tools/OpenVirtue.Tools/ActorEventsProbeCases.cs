@@ -56,6 +56,21 @@ internal static class ActorEventsProbeCases
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
         new TraceProbeCase(
+            "round3/way-start",
+            "Round 3. The WAY actor of `way`, with a slot armed in the start action printing TICKS, the cycle, TIME_CORR " +
+            "and the actor's X from the first cycle: how far does it move in the first cycles, where TIME_CORR reads 1 and " +
+            "TICKS 0? (`way` is 0.058 short of OpenVirtue by TICKS 13.4.)",
+            "WAY ae_way;\n" + Actor("TARGET ae_way; SPEED 0.5;") +
+            "SKILL ae_c { VAL 0; }\nACTION ae_y\n{\n    RULE ae_c = ae_c + 1;\n    IF (ae_c < 80) {\n" +
+            Indent(Indent(V("Y", "TICKS", "ae_c", "TIME_CORR", "ae_a.X"))) + "    }\n}\n",
+            "    SET EACH_TICK.2, NULL;\n" + P("RET"),
+            Predict(
+                ("a full first step", "X grows by 0.5 in the cycle with TIME_CORR 1"),
+                ("no first step", "X is 10 until TICKS grows")),
+            Map: new TraceProbeMap(Placements: ["ACTOR ae_a 10 -6 0 0", "WAY ae_way 20 -6 20 6 10 6"]),
+            Prelude: "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "ae_c", "TIME_CORR", "ae_a.X") +
+                "    SET EACH_TICK.2, ae_y;\n"),
+        new TraceProbeCase(
             "way",
             "A WAY actor (SPEED 0.5) on a triangle of waypoints: how close does it come to each point, does it land on it, when does WAYPOINT advance relative to IF_ARRIVED, and does it wrap from the last point to the first?",
             "WAY ae_way;\n" + Actor("TARGET ae_way; SPEED 0.5;"),
