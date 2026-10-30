@@ -1657,7 +1657,7 @@ public sealed class WdlRuntime :
             distance <= range &&
             // The original compares fixed-point angles: a full circle given as 6.2832 (truncated to
             // 6.2822) still takes in an object straight behind (OV-20261029-numeric-edge).
-            Math.Abs(delta) <= (sector / 2) + (1 / WdlFixed.Scale) &&
+            (sector <= 0 || Math.Abs(delta) <= (sector / 2) + (1 / WdlFixed.Scale)) &&
             HasPortalLineOfSight(
                 entity.X,
                 entity.Y,
@@ -2295,6 +2295,12 @@ public sealed class WdlRuntime :
         _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
         _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
         _skills["HERE_INDEX"] = GetSkill("PLAYER_REGION"); // the player's region, as the saves hold it (round 16)
+        // "RENDER_MODE is returned to 0.5 automatically after each frame cycle" (manual p.104): a probe that
+        // set 2 saved 0.5. 0, which suppresses rendering, stays (save-body round 18).
+        if (GetSkill("RENDER_MODE") > 0.5)
+        {
+            _skills["RENDER_MODE"] = 0.5;
+        }
         return timeCorrection;
     }
 
@@ -2574,7 +2580,9 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("INERTIA", 1);
         EnsureSkillDefault("SHOOT_RANGE", 500);
         EnsureSkillDefault("SHOOT_FAC", 1);
-        EnsureSkillDefault("SHOOT_SECTOR", Math.Tau);
+        // Every save V3.963 wrote holds SHOOT_SECTOR 0 where the manual says 2π (p.91), so 0 is the
+        // full circle (save-body round 18).
+        EnsureSkillDefault("SHOOT_SECTOR", 0);
         EnsureSkillDefault("SHOOT_X", 0);
         EnsureSkillDefault("SHOOT_Y", 0);
         // A fresh V3.963 level starts KEY_SENSE at 1 and MOUSE_CALM at 1 (the manual says 0.7 and 3),
@@ -2663,6 +2671,11 @@ public sealed class WdlRuntime :
         // The frame's size and the map's extent, which the retail saves hold (S640x480: 640 by 480; the
         // bounds of the vertices and the placed things and actors, cut to 1/1024: apathy's MAP_MAXX is
         // an actor's X; save-body round 16).
+        EnsureSkillDefault("RENDER_MODE", 0.5);
+        EnsureSkillDefault("MAP_EDGE_X2", _level.VideoMode?.Width ?? 640);
+        EnsureSkillDefault("MAP_EDGE_Y2", _level.VideoMode?.Height ?? 480);
+        EnsureSkillDefault("_SVOL_OLD", 0.5);
+        EnsureSkillDefault("_MVOL_OLD", 0.5);
         EnsureSkillDefault("FRAME_WIDTH", _level.VideoMode?.Width ?? 640);
         EnsureSkillDefault("FRAME_HGT", _level.VideoMode?.Height ?? 480);
         List<(double X, double Y)> points =

@@ -352,6 +352,9 @@ public static class AcknexSaveFile
         return new SaveObjectState(skills);
     }
 
+    /// <summary>A full save body's sections in order, as (payload offset, size); null when the body has none.</summary>
+    public static IReadOnlyList<(int Payload, int Size)>? ReadSections(ReadOnlySpan<byte> body) => Sections(body);
+
     /// <summary>
     /// The sections of a body in order, as (payload offset, size): the chain that starts at the first
     /// section whose offset field names itself, each next section following the last one's payload.

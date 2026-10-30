@@ -419,6 +419,16 @@ internal static class OracleReplay
             {
                 sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: match ({a.Length}-byte body)");
             }
+            else if (CompareSaveSections(a, b) is { } sections)
+            {
+                bool matches = sections.Differing.Count == 0;
+                string set = sections.SetAside.Count == 0 ? "" : $"; set aside, not modelled: {string.Join(", ", sections.SetAside)}";
+                string line = matches
+                    ? $"  {name}: match ({a.Length}-byte body{set})"
+                    : $"  {name}: DIFFERS in {string.Join("; ", sections.Differing)}{set}";
+                sb.AppendLine(line);
+                ok &= matches;
+            }
             else
             {
                 sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: DIFFERS at body byte {first} ({a.Length} original, {b.Length} replay)");
@@ -427,6 +437,106 @@ internal static class OracleReplay
         }
 
         return ok;
+    }
+
+    /// <summary>The sections of a full save, as OV-20261029-save-body names them.</summary>
+    private static readonly string[] SaveSectionNames =
+        ["first", "SAVE textures", "SAVE regions", "objects", "screen elements", "5", "slots", "synonyms", "skills", "actions", "10", "11", "12"];
+
+    /// <summary>
+    /// Engine skills a save holds that OpenVirtue does not model: the renderer's run-time statistics and
+    /// the random generator's last value (save-body round 16).
+    /// </summary>
+    private static readonly HashSet<string> UnmodelledSkills = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "TIME_TOTAL", "TIME_FBUFFER", "TIME_DRAW", "TIME_RENDER", "TIME_SLICES", "TIME_ACTIONS", "TIME_SOUND",
+        "VISIBLES", "ACTIONS", "WAIT_ACTIONS", "ACTIVE_NEXUS", "ACTIVE_TARGETS", "ACTIVE_OBJECTS", "ACTIVE_OBJTICKS",
+        "ACTIVE_REGTICKS", "MAX_DIST", "VESA_MODE", "RANDOM",
+    };
+
+    /// <summary>
+    /// Compares two full save bodies section by section: the sections and skills that differ, and what
+    /// was set aside because OpenVirtue does not model it (the first section's run-time words at +36
+    /// and +40, the screen elements, <see cref="UnmodelledSkills"/>). Null when either body has no sections.
+    /// </summary>
+    internal static (List<string> Differing, List<string> SetAside)? CompareSaveSections(byte[] a, byte[] b)
+    {
+        if (AcknexSaveFile.ReadSections(a) is not { } sa || AcknexSaveFile.ReadSections(b) is not { } sb ||
+            sa.Count != sb.Count)
+        {
+            return null;
+        }
+
+        var differing = new List<string>();
+        var setAside = new List<string>();
+        if (!a.AsSpan(0, sa[0].Payload).SequenceEqual(b.AsSpan(0, sb[0].Payload)))
+        {
+            differing.Add("the header");
+        }
+
+        for (int i = 0; i < sa.Count; i++)
+        {
+            ReadOnlySpan<byte> x = a.AsSpan(sa[i].Payload, sa[i].Size);
+            ReadOnlySpan<byte> y = b.AsSpan(sb[i].Payload, sb[i].Size);
+            string section = $"section {i} ({(i < SaveSectionNames.Length ? SaveSectionNames[i] : "?")})";
+            if (x.SequenceEqual(y))
+            {
+                continue;
+            }
+
+            if (i == 4)
+            {
+                setAside.Add(section);
+            }
+            else if (i == 0 && x.Length == y.Length && x.Length >= 44 && x[..36].SequenceEqual(y[..36]) && x[44..].SequenceEqual(y[44..]))
+            {
+                setAside.Add("section 0 +36/+40");
+            }
+            else if (i == 8)
+            {
+                List<string> skills = CompareSkills(a, b, setAside);
+                if (skills.Count > 0)
+                {
+                    differing.Add($"{section}: {string.Join(" ", skills.Take(12))}{(skills.Count > 12 ? $" and {skills.Count - 12} more" : "")}");
+                }
+            }
+            else
+            {
+                differing.Add(x.Length == y.Length ? $"{section} at +{x.CommonPrefixLength(y)}" : $"{section} ({x.Length} original, {y.Length} replay bytes)");
+            }
+        }
+
+        return (differing, setAside);
+    }
+
+    private static List<string> CompareSkills(byte[] a, byte[] b, List<string> setAside)
+    {
+        IReadOnlyList<SaveSkill> x = AcknexSaveFile.ReadSkills(a);
+        IReadOnlyList<SaveSkill> y = AcknexSaveFile.ReadSkills(b);
+        if (!x.Select(static k => k.Name).SequenceEqual(y.Select(static k => k.Name), StringComparer.OrdinalIgnoreCase))
+        {
+            return ["(the skill list's names or order)"];
+        }
+
+        var differing = new List<string>();
+        for (int i = 0; i < x.Count; i++)
+        {
+            if (x[i] == y[i] || (x[i].Name.Equals(y[i].Name, StringComparison.OrdinalIgnoreCase) && x[i] with { Name = y[i].Name } == y[i]))
+            {
+                continue;
+            }
+
+            if (UnmodelledSkills.Contains(x[i].Name))
+            {
+                setAside.Add(x[i].Name);
+            }
+            else
+            {
+                differing.Add(string.Create(CultureInfo.InvariantCulture, $"{x[i].Name} {x[i].RawValue / 1024.0:0.###}/{y[i].RawValue / 1024.0:0.###}"));
+            }
+        }
+
+        return differing;
     }
 
     private sealed record CarrierResult(

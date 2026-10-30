@@ -575,6 +575,19 @@ Carriers in `round17/`.
   from the time left (768 against 832). Both retail saves still load and resume in the original. A
   save the original wrote with event actions waiting now resumes them in OpenVirtue for their `MY`.
 
+## Round 18: what every probe save still showed (2026-10-30)
+The oracle-diff harness now compares saves section by section, which brought out engine values every
+probe save held and OpenVirtue did not:
+- `RENDER_MODE`: the probe sets 2, and the save holds 0.5. The manual (p.104) says it is returned to
+  0.5 after each frame cycle. OpenVirtue now does that for 1 and 2 (0, no rendering, stays) and
+  starts at 0.5.
+- `SHOOT_SECTOR` is 0 in every save, where the manual (p.91) gives 2π as the default. OpenVirtue
+  starts it at 0 and takes 0 or less as the full circle, so an imported save does not stop actors
+  from seeing the player.
+- `_svol_old` and `_mvol_old` start at 0.5; `MAP_EDGE_X2`/`MAP_EDGE_Y2` at the screen's size.
+- Still different: two words per wall from +28 (run-time view values, falling along the wall order)
+  and the walls' view bits at +20.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups

@@ -188,7 +188,8 @@ What works today:
 - **Oracle-diff harness** — `ovtool oracle check <probe>` prepares a probe's DOSBox-X carriers,
   runs them headless (`oracle run`) and diffs them (`oracle diff`). The diff replays each carrier
   through the headless `RuntimeHost` in step with the original run's per-cycle `TICKS` and compares
-  every trace file and save the DOS runtime wrote with OpenVirtue's, line by line.
+  every trace file the DOS runtime wrote with OpenVirtue's, line by line, and every save section by
+  section, naming the sections and skills that differ.
   `oracle summary` gives every probe's match count. These probes match in full:
   - projection, pixel aspect, tilt;
   - `BRANCH`;
@@ -196,8 +197,8 @@ What works today:
   - slopes.
 
   The timed ones list what is still off: start-up `WAITT` timing, sub-percent movement steps,
-  details the notes left open, and full `SAVE` files, whose pointer words, view bits and screen
-  elements OpenVirtue does not reproduce.
+  details the notes left open, and full `SAVE` files, whose objects' view words and bits
+  OpenVirtue does not reproduce.
 
 Not yet complete:
 - exact UI behaviour beyond `INKEY` editing (OV-20261029-inkey) and `DIGITS`/`TEXT` layout

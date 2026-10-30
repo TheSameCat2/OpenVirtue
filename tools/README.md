@@ -117,6 +117,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   the original wrote (except the autoexec's `OVDIR.TXT`/`OVCON.TXT`) with the replay's, line by line:
   same token, same field count, numbers within `--tolerance` (default 0.002). Given a probe folder it
   walks every carrier below it (round sub-folders included) and skips carriers that never ran.
+  Full saves (`OV*.SAV`) are compared by their unpacked bodies, section by section: the report names
+  each differing section, and for the skills section each differing skill. Differences confined to
+  what OpenVirtue does not model are set aside and named, and the save still counts as a match: the
+  first section's run-time words (+36, +40), the screen elements, and the run-time statistics skills
+  (`TIME_*`, `ACTIONS`, `ACTIVE_*`, `MAX_DIST`, `VISIBLES`, `VESA_MODE`, `RANDOM`).
   Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
   detected by default: the first non-negative, never-decreasing column of the densest token; a
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
