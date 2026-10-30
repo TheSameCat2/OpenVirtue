@@ -645,7 +645,7 @@ internal static class OracleReplay
         }
     }
 
-    private sealed class HeadlessWindow : IPlatformWindow
+    internal sealed class HeadlessWindow : IPlatformWindow
     {
         public int Width => 640;
 
@@ -719,7 +719,7 @@ internal static class OracleReplay
         }
     }
 
-    private sealed class HeadlessInput : IInputSource
+    internal sealed class HeadlessInput : IInputSource
     {
         public IReadOnlyCollection<HostKey> Pressed => [];
 
@@ -740,7 +740,7 @@ internal static class OracleReplay
     /// Plays nothing but keeps each voice busy for its length in engine time (16 <c>TICKS</c> a
     /// second), so channels free up when the original's would (OV-20261029-audio).
     /// </summary>
-    private sealed class TimedAudioSink : IAudioSink
+    internal sealed class TimedAudioSink : IAudioSink
     {
         private readonly double[] _ends = new double[8];
 
@@ -775,7 +775,7 @@ internal static class OracleReplay
         }
     }
 
-    private sealed class HeadlessRender : IRenderBackend
+    internal sealed class HeadlessRender : IRenderBackend
     {
         public void UploadWorld(IReadOnlyDictionary<string, TextureImage> images)
         {

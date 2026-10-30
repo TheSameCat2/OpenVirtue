@@ -127,6 +127,23 @@ saves list them.
 What drives the texture clock is still open; the even frames suggest the object's animation is
 stepped every second cycle.
 
+`round4/defaults` (hash `635c53ee`) prints the movement and input skills in the start action before the
+carrier template sets `PLAYER_SIZE` 8, after it, and after `PLAYER_SIZE` 4. They are fixed start
+values, not derived from the player's size:
+
+| Skill | V3.963 start | Manual / OpenVirtue before |
+|---|---|---|
+| `PLAYER_SIZE` | 3.5 | 3 |
+| `PLAYER_CLIMB` | 2 | 1.5 |
+| `WAVE_PERIOD` | 20 | 16 |
+| `WALK_PERIOD` | 4 | 4 |
+| `KEY_SENSE` | 1 | 0.7 |
+| `MOUSE_CALM` | 1 | 3 |
+| `MUSIC_VOL` | 0.5 | 1 |
+| `PLAYER_WIDTH` | 1.199 | 1.2 |
+
+OpenVirtue now starts with these. The oracle summary lost no match.
+
 ## Open Questions
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
   keeps the flic's delay-based `TIME_CORR`).

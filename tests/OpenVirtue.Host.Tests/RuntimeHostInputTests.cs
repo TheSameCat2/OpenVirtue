@@ -28,7 +28,7 @@ public sealed class RuntimeHostInputTests
         input.Down.Add(HostKey.W);
         host.Frame(present: false);
 
-        Assert.Equal(0.7, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6); // KEY_SENSE starts at 1 on V3.963
     }
 
     private static RuntimeHost Open(out FakeInput input, out FakeWindow window)

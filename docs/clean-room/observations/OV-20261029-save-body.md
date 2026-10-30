@@ -409,6 +409,25 @@ Left open: section 4's screen-element records, +36/+40 of the first section, +10
 `DELAY`, run-time state), the floor height on slopes (4 objects one raw step or more off), the
 original's per-region object order, and whether a `FADE_PAL` changes the palette words.
 
+## Round 14: a save made in play (2026-10-30)
+Two more patched copies of apathy put an action in a `WAITT 2` loop, `ov_wait`, which counts `ov_w`.
+Then they save 21 ticks in (`src6`), or do the same but only load (`src7`). The probe slot prints `ov_w`
+every cycle. The original ran `src6` itself (save `e6adcfcc`), and OpenVirtue ran it headless with the new
+`ovtool save play` (save `65bb55b4`). Each save went to the original running `src7`.
+- **The waiting action.** OpenVirtue's record matches the original's word for word, apart from the
+  wait left: action 565, positions 2 and 3, no `MY`/`YOU`. The slot words are identical.
+- **First load.** OpenVirtue's save loaded without errors, and `ov_w` went on from the saved value.
+  But the loop stepped once every 12 cycles instead of every 4.
+- **Bisecting the cause.** Splicing showed it was the skills section. Setting skills one by one
+  narrowed it to `BUFFER_MODE`: OpenVirtue saved 0 where the original holds 1, which changes the
+  original's frame pacing after the load.
+- **Other zeros.** OpenVirtue also saved 0 for other engine settings and constants it does not model:
+  `PI` 3.1406, `TWO_PI`, `HALF_PI`, `FLOOR_MODE`, `CLIPPING` 0.5, `GFX_DX`/`GFX_DY` 1000, `NODE` −1,
+  `TOUCH_RANGE` 100, `PLAYER_RANGE` 3, the map colours and others. They now start at the fresh-level
+  values the probe saves hold (scheduler-order round 4 adds the movement and input ones).
+- **After the fix.** The original resumes OpenVirtue's save at the same pace as its own: `ov_w` goes on
+  from 4 and steps every 4 cycles.
+
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had
   one of each; OpenVirtue reads actors first, as the scheduler visits them. The retail save groups

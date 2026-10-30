@@ -25,17 +25,22 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("PLAYER_ARC"));
         Assert.Equal(1, runtime.GetSkill("ASPECT"));
         Assert.Equal(1, runtime.GetSkill("SOUND_VOL"));
-        Assert.Equal(1, runtime.GetSkill("MUSIC_VOL"));
+        Assert.Equal(0.5, runtime.GetSkill("MUSIC_VOL")); // V3.963's start values (scheduler-order round 4)
         Assert.Equal(0, runtime.GetSkill("MOUSE_MODE"));
         Assert.Equal(1, runtime.GetSkill("TOUCH_MODE"));
         Assert.Equal(0, runtime.GetSkill("MOUSE_MOVING"));
-        Assert.Equal(3, runtime.GetSkill("MOUSE_CALM"));
+        Assert.Equal(1, runtime.GetSkill("MOUSE_CALM"));
         Assert.Equal(4, runtime.GetSkill("MOUSE_TIME"));
         Assert.Equal(0, runtime.GetSkill("MICKEY_X"));
         Assert.Equal(0, runtime.GetSkill("MICKEY_Y"));
         Assert.Equal(4, runtime.GetSkill("WALK_PERIOD"));
         Assert.Equal(4, runtime.GetSkill("WALK_TIME"));
-        Assert.Equal(16, runtime.GetSkill("WAVE_PERIOD"));
+        Assert.Equal(20, runtime.GetSkill("WAVE_PERIOD"));
+        Assert.Equal(3.5, runtime.GetSkill("PLAYER_SIZE"));
+        Assert.Equal(2, runtime.GetSkill("PLAYER_CLIMB"));
+        Assert.Equal(1, runtime.GetSkill("KEY_SENSE"));
+        Assert.Equal(1, runtime.GetSkill("BUFFER_MODE")); // a 0 here slows the original after a load
+        Assert.Equal(3216 / 1024.0, runtime.GetSkill("PI"));
         Assert.Equal(0, runtime.GetSkill("WALK"));
         Assert.Equal(0, runtime.GetSkill("WAVE"));
         Assert.Equal(1, runtime.GetSkill("PSOUND_VOL"));

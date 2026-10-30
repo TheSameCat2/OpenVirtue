@@ -352,6 +352,7 @@ public sealed class WdlPlayerMotionTests
             main,
             name => resources.GetValueOrDefault(Path.GetFileName(name)));
         var runtime = new WdlRuntime(level);
+        runtime.SetSkill("PLAYER_SIZE", 3); // the scenarios were worked out for a 3-step player (V3.963 starts at 3.5)
         var player = new Player(level);
         runtime.RegisterObject("player", player);
         return (runtime, player);

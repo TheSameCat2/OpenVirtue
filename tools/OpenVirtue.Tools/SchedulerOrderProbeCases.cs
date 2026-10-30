@@ -140,6 +140,21 @@ internal static class SchedulerOrderProbeCases
                 ("a frame counter", "TOTAL_FRAMES advances 1 a cycle")),
             Map: new TraceProbeMap(Placements: ["THING so_tc 24 0 0 0"])),
         new TraceProbeCase(
+            "round4/defaults",
+            "Round 4. The movement and input skills a fresh level starts with, printed before the carrier template sets " +
+            "PLAYER_SIZE 8 and again after it and after PLAYER_SIZE 4: are PLAYER_CLIMB 2, WAVE_PERIOD 20, KEY_SENSE 1, " +
+            "MOUSE_CALM 1 and MUSIC_VOL 0.5 (a save's values) fixed defaults, or do they follow PLAYER_SIZE?",
+            Skills,
+            L("D1", "PLAYER_SIZE", "PLAYER_CLIMB", "WAVE_PERIOD", "WALK_PERIOD", "KEY_SENSE", "MOUSE_CALM", "MUSIC_VOL", "PLAYER_WIDTH") +
+            "    SET PLAYER_SIZE, 4;\n    WAIT 1;\n" +
+            L("D2", "PLAYER_SIZE", "PLAYER_CLIMB", "WAVE_PERIOD", "WALK_PERIOD", "KEY_SENSE", "MOUSE_CALM", "MUSIC_VOL", "PLAYER_WIDTH") +
+            P("RET"),
+            Predict(
+                ("fixed defaults", "D0, D1 and D2 show the same PLAYER_CLIMB and WAVE_PERIOD"),
+                ("derived from PLAYER_SIZE", "PLAYER_CLIMB is a quarter of PLAYER_SIZE in each line")),
+            Prelude: "    PRINTFILE \"" + TraceFile + "\", 0;\n" +
+                L("D0", "PLAYER_SIZE", "PLAYER_CLIMB", "WAVE_PERIOD", "WALK_PERIOD", "KEY_SENSE", "MOUSE_CALM", "MUSIC_VOL", "PLAYER_WIDTH")),
+        new TraceProbeCase(
             "set-midcycle",
             "Does a SET EACH_TICK made by an action take effect in the same cycle? Global slot 1 arms slot 2 and the thing's EACH_TICK when so_n reaches 5, and clears slot 2 at 9.",
             Skills +

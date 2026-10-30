@@ -214,6 +214,30 @@ internal static class Cli
                     $"{save.Skills.Count} skills, {save.Synonyms.Count} synonyms, {save.Actions.Count} waiting actions");
                 return 0;
             }
+            case "play":
+            {
+                // Runs a level headless at 0.25 ticks a cycle until its EXIT (or --ticks), with full SAVEs
+                // also written in the original's format, so a save made in play can go to the DOS runtime.
+                double maxTicks = args.Length > 4 && args[3] == "--ticks"
+                    ? double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture)
+                    : 2000;
+                var audio = new OracleReplay.TimedAudioSink();
+                using var host = OpenVirtue.Host.RuntimeHost.OpenArchive(
+                    args[1], args[2], new OracleReplay.HeadlessWindow(), new OracleReplay.HeadlessInput(), audio, new OracleReplay.HeadlessRender());
+                host.FrameClock = static () => 1.0 / 64;
+                host.WriteOriginalSaves = true;
+                audio.Now = () => host.Runtime.GetSkill("TICKS") / 16;
+                host.Boot();
+                int frames = 0;
+                while (!host.ExitRequested && host.Runtime.GetSkill("TICKS") < maxTicks)
+                {
+                    host.Frame(present: false);
+                    frames++;
+                }
+
+                Console.WriteLine($"{frames} cycles to TICKS {host.Runtime.GetSkill("TICKS"):0.000}");
+                return 0;
+            }
             default:
                 return Usage($"Unknown save subcommand '{args[0]}'.");
         }

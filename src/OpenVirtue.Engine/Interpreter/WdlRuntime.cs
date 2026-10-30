@@ -2166,6 +2166,8 @@ public sealed class WdlRuntime :
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
         _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
+        _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
+        _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
         return timeCorrection;
     }
 
@@ -2448,14 +2450,17 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("SHOOT_SECTOR", Math.Tau);
         EnsureSkillDefault("SHOOT_X", 0);
         EnsureSkillDefault("SHOOT_Y", 0);
-        EnsureSkillDefault("KEY_SENSE", 0.7);
+        // A fresh V3.963 level starts KEY_SENSE at 1 and MOUSE_CALM at 1 (the manual says 0.7 and 3),
+        // PLAYER_SIZE at 3.5, PLAYER_CLIMB at 2 (manual 1.5), WAVE_PERIOD at 20 (manual 16) and MUSIC_VOL
+        // at 0.5 (OV-20261029-scheduler-order round 4, `defaults`).
+        EnsureSkillDefault("KEY_SENSE", 1);
         EnsureSkillDefault("SHIFT_SENSE", 2);
         EnsureSkillDefault("MOUSE_SENSE", 1);
         EnsureSkillDefault("JOY_SENSE", 1);
         EnsureSkillDefault("MOUSE_MODE", 0);
         EnsureSkillDefault("TOUCH_MODE", 1);
         EnsureSkillDefault("MOUSE_MOVING", 0);
-        EnsureSkillDefault("MOUSE_CALM", 3);
+        EnsureSkillDefault("MOUSE_CALM", 1);
         EnsureSkillDefault("MOUSE_TIME", 4);
         EnsureSkillDefault("MICKEY_X", 0);
         EnsureSkillDefault("MICKEY_Y", 0);
@@ -2465,8 +2470,8 @@ public sealed class WdlRuntime :
         EnsureSkillDefault("PLAYER_WIDTH", 1.2);
         EnsureSkillDefault("THING_DIST", 1);
         EnsureSkillDefault("ACTOR_DIST", 1);
-        EnsureSkillDefault("PLAYER_SIZE", 3);
-        EnsureSkillDefault("PLAYER_CLIMB", 1.5);
+        EnsureSkillDefault("PLAYER_SIZE", 3.5);
+        EnsureSkillDefault("PLAYER_CLIMB", 2);
         EnsureSkillDefault("PLAYER_TILT", 0);
         EnsureValidSkillDefault("PLAYER_ARC", 1, value => value is >= 0.2 and <= 2);
         EnsureValidSkillDefault("ASPECT", 1, value => value is >= 0.1 and <= 10);
@@ -2476,10 +2481,10 @@ public sealed class WdlRuntime :
         // 1000 at every PLAYER_LIGHT and LIGHT_DIST measured (OV-20261029-shading).
         EnsureSkillDefault("DARK_DIST", 1000);
         EnsureSkillDefault("SOUND_VOL", 1);
-        EnsureSkillDefault("MUSIC_VOL", 1);
+        EnsureSkillDefault("MUSIC_VOL", 0.5);
         EnsureSkillDefault("WALK_PERIOD", 4);
         EnsureSkillDefault("WALK_TIME", 4);
-        EnsureSkillDefault("WAVE_PERIOD", 16);
+        EnsureSkillDefault("WAVE_PERIOD", 20);
         EnsureSkillDefault("WALK", 0);
         EnsureSkillDefault("WAVE", 0);
         EnsureSkillDefault("PSOUND_VOL", 1);
@@ -2489,6 +2494,34 @@ public sealed class WdlRuntime :
         {
             EnsureSkillDefault($"CHANNEL_{channel}", 0);
         }
+
+        // Engine settings and constants OpenVirtue does not otherwise model, as a fresh V3.963 level's
+        // save holds them, so a save written for the original keeps its renderer's settings: a 0 for
+        // BUFFER_MODE changed the original's frame pacing after a load (OV-20261029-save-body round 13).
+        EnsureSkillDefault("PI", 3216 / 1024.0);
+        EnsureSkillDefault("TWO_PI", 6433 / 1024.0);
+        EnsureSkillDefault("HALF_PI", 1608 / 1024.0);
+        EnsureSkillDefault("BUFFER_MODE", 1);
+        EnsureSkillDefault("FLOOR_MODE", 1);
+        EnsureSkillDefault("MOVE_MODE", 1);
+        EnsureSkillDefault("CLIPPING", 0.5);
+        EnsureSkillDefault("EYE_DIST", 0.5);
+        EnsureSkillDefault("GFX_DX", 1000);
+        EnsureSkillDefault("GFX_DY", 1000);
+        EnsureSkillDefault("CDAUDIO_VOL", 614 / 1024.0);
+        EnsureSkillDefault("NODE", -1);
+        EnsureSkillDefault("TOUCH_RANGE", 100);
+        EnsureSkillDefault("PLAYER_RANGE", 3);
+        EnsureSkillDefault("MAP_SCALE", 921 / 1024.0);
+        EnsureSkillDefault("COLOR_BORDER", 17);
+        EnsureSkillDefault("COLOR_WALLS", 244);
+        EnsureSkillDefault("COLOR_THINGS", 13);
+        EnsureSkillDefault("COLOR_ACTORS", 3);
+        EnsureSkillDefault("COLOR_PLAYER", 7);
+        EnsureSkillDefault("WDIST_MINX", int.MinValue / 1024.0);
+        EnsureSkillDefault("WDIST_MINY", int.MinValue / 1024.0);
+        EnsureSkillDefault("WDIST_MAXX", int.MaxValue / 1024.0);
+        EnsureSkillDefault("WDIST_MAXY", int.MaxValue / 1024.0);
 
         // OV-20261019-border-kinds: the runtime starts ACTOR_CLIMB at 1.1 (the manual says 1, p.113).
         EnsureSkillDefault("ACTOR_CLIMB", 1.1);
