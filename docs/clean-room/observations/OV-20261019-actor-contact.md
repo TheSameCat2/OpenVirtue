@@ -126,6 +126,19 @@ heights), as predicted. Whether the reference is the texture centre or another p
 lower half of the texture is not fully pinned down. medium for rule 3's halving
 scheme: it fits all ten steps of one approach, at one speed.
 
+## Round 8: when the contact's `IF_NEAR` runs (2026-10-30)
+The beam-inside and beam-state traces were read again against OpenVirtue's replay. The player is
+beamed at TICKS 24, and the samplers print the beam point in that cycle. `N0` then prints in the same
+cycle (TICKS 24), with the player already pushed out to (21.126, −8.563) and `MY.DISTANCE` 34.000:
+|24| + |−10|, the distance from where the player stood before the beam.
+- **The contact `IF_NEAR` runs at once, inside the player's movement**, before any distance is
+  refreshed. It does not wait for the next cycle's proximity test. `near-beam`
+  (OV-20261019-proximity-events) shows that a `DIST` crossing does wait: its `N` comes the next cycle,
+  with the fresh distance.
+- OpenVirtue fired both in the next cycle. It now fires the contact events right after the player's
+  movement (`WdlRuntime.DispatchContactEvents`). beam-inside, beam-state and dist-2wide now match in
+  full, beam-order up to the push-out point's last unit, and 12 carriers match further, none less.
+
 ## Open Questions
 - Whether walls have a vertical part too (wall-distance tested `DIST 6` walls successfully with the
   eye at 8), and whether `THING_WIDTH`/`ACTOR_WIDTH` or a `GROUND` height change the reference.

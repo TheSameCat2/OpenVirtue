@@ -3959,6 +3959,9 @@ public class WdlRuntimeTests
 
         player.MoveTo(0, 9, 0.5f);
         WdlPlayerMotion.Apply(runtime, player, 1);
+        // Round 8: the contact's IF_NEAR runs right after the movement, in the beam's own cycle.
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
         runtime.Tick(1.0 / 16);
 
         float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);

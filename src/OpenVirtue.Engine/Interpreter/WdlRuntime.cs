@@ -3071,6 +3071,32 @@ public sealed class WdlRuntime :
         }
     }
 
+    /// <summary>
+    /// Fires <c>IF_NEAR</c> for what the player's movement just pushed against or passed through,
+    /// at once, before any distance is refreshed: a player beamed into a solid thing is pushed out in
+    /// that cycle's movement and its <c>IF_NEAR</c> runs in the same cycle, reading the thing's
+    /// <c>DISTANCE</c> from before the beam (34 for a thing 24, −10 from the origin;
+    /// OV-20261019-actor-contact round 7). A target already within its <c>DIST</c> does not fire again.
+    /// The host calls it right after the player's movement.
+    /// </summary>
+    public void DispatchContactEvents()
+    {
+        if (GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        foreach (AcknexObject target in player.TakeTouchedObjects())
+        {
+            if (ShouldTrackProximity(target) &&
+                (target is not MapEntity || IsWithinClipDistance(target)) &&
+                !(_proximityStates.TryGetValue(target, out bool near) && near))
+            {
+                TriggerObjectActionHook(target, "IF_NEAR");
+            }
+        }
+    }
+
     private IEnumerable<AcknexObject> CurrentProximityTargets()
     {
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())

@@ -437,6 +437,7 @@ public sealed partial class RuntimeHost : IDisposable
             _activeFlic is null)
         {
             WdlPlayerMotion.Apply(_runtime, _player, _lastTimeCorrection);
+            _runtime.DispatchContactEvents();
             UpdateTextureSounds();
             HandleRuntimeHostRequests();
             if (ReferenceEquals(_runtime, tickRuntime))
