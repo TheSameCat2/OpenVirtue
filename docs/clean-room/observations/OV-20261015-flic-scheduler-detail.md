@@ -166,6 +166,21 @@ high for rules 1–5: each case matches one predicted reading, every flic case h
 wait rule fits every measured wait (14 per `waits` case) at both frame rates. high for the delay/64 rule (two flic
 speeds). medium for rule 6 during a flic, because the trace after the fault was lost.
 
+## Replay notes (2026-10-30)
+- **Timing column.** The flic carriers print `FLIC_FRAME` before `TICKS`. The replay's timing
+  detection took the `FLIC_FRAME` column for the clock, so every carrier differed from line 2.
+  With a `"timing": "TK:1"` hint in each local `case.json`, the carriers replay to their end and
+  match 126 more lines.
+- **What is left.** In `waits` and `round2/near`, OpenVirtue's trace is shifted by one flic step
+  (1.094 ticks) from the `PLAY` line on. Relative to `PLAY` both runs advance the same: frame *n*
+  at `PLAY` + *n* × 1.094.
+  - In the original, the `PLAY` cycle's global slot prints `FLIC_FRAME` 1 with the ordinary
+    `TIME_CORR` (0.281); in OpenVirtue's replay it prints 1.094.
+  - The replay anchors its clock on that line, which may cause the shift rather than the engine.
+    Check the replay's start-up steps before changing the flic `TIME_CORR`.
+- **The animation clock.** For the scheduler-order round 4 clock, a check every other cycle adding the
+  `TICKS` that passed fits at most the first 3 of 19 firings, whatever the start phase.
+
 ## Open Questions
 - How far the flic plays after a missing file is requested during it, before the fault.
 - `PLAY_FLIC` with a `FLIC` keyword object, and an existing but invalid flic file.
