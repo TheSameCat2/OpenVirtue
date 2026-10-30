@@ -3318,14 +3318,16 @@ public class WdlRuntimeTests
     public void Tick_PlayerRegionChange_EntersAfterTheGlobalSlots()
     {
         // OV-20261019-actor-contact round 8: the border-climb walkers' ENTER prints the cycle count the
-        // global EACH_TICK slot has just raised, so region events come after the global slots.
+        // global EACH_TICK slot has just raised, so region events come after the global slots; the
+        // slot already reads the new region through HERE (clip-contact border traces).
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
             "REGION old_room 0 10;#0\nREGION new_room 5 15;#1\nPLAYER_START 1 1 0 0;#2";
         Level level = LoadWithMap(
             map,
-            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL seen { VAL 0; } REGION new_room { IF_ENTER enter_new; } " +
-            "ACTION count { RULE n = n + 1; } ACTION enter_new { RULE seen = n; }");
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } SKILL seen { VAL 0; } SKILL h { VAL 0; } SKILL hseen { VAL 0; } " +
+            "REGION new_room { SKILL1 7; IF_ENTER enter_new; } " +
+            "ACTION count { RULE n = n + 1; RULE h = HERE.SKILL1; } ACTION enter_new { RULE seen = n; RULE hseen = h; }");
         var player = new Player(level);
         var runtime = new WdlRuntime(level);
         runtime.RegisterObject("player", player);
@@ -3336,6 +3338,7 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
 
         Assert.Equal(2, runtime.GetSkill("seen"));
+        Assert.Equal(7, runtime.GetSkill("hseen")); // HERE moved with the player, before the slot read it
     }
 
     [Fact]

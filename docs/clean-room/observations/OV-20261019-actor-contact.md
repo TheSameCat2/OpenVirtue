@@ -145,6 +145,11 @@ cycle (TICKS 24), with the player already pushed out to (21.126, −8.563) and `
 - **Region and proximity events come after the global `EACH_TICK` slots.** That `ENTER` prints the
   cycle count the global sampler has just raised (6, where OpenVirtue printed 5). OpenVirtue ran them
   before the slots; it now runs them after, before the object pass.
+- **`HERE` moves with the player.** The clip-contact border samplers read `HERE.SKILL1` in the
+  global slot and print the pad's 2 in the same cycle whose `ENTER` runs after them. So `HERE`
+  follows the movement, and only the hooks wait. OpenVirtue now points `HERE` at the player's region
+  at the start of the cycle (border-high, border-pass, border-plain and region-beam-walk then match
+  in full).
 - Together these make 11 more traces match in full (pass-4, pass-10, ceil-4c, dist-inner,
   region-locate among them) and 36 carriers match further, none less: 232 more lines.
 

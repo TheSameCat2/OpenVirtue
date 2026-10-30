@@ -2227,6 +2227,7 @@ public sealed class WdlRuntime :
         ReleaseFinishedChannels();
         RefreshView();
         RefreshWallDistances();
+        UpdateHere();
         ResumeWaitingActions();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(elapsedSeconds))
@@ -2975,6 +2976,19 @@ public sealed class WdlRuntime :
     /// leaves the region (and <c>HERE</c>) as it was, so a beam fires nothing
     /// (OV-20261019-proximity-events).
     /// </summary>
+    /// <summary>
+    /// Points <c>HERE</c> at the player's region as the last movement left it, before the cycle's
+    /// actions run: the global slot already reads the new region's skills in the cycle whose
+    /// <c>IF_ENTER</c> runs after it (OV-20261019-clip-contact border traces, round 8 of actor-contact).
+    /// </summary>
+    private void UpdateHere()
+    {
+        if (GetObject("player") is Player player && RegionAt(player.Region) is { } currentRegion)
+        {
+            SetObjectReference("here", currentRegion);
+        }
+    }
+
     private void DispatchPlayerRegionEvents()
     {
         if (GetObject("player") is not Player player ||
