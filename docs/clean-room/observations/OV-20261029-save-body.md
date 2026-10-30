@@ -624,8 +624,10 @@ Twelve carriers in `round18/` each declare a few elements and save at once.
 - **Result.** OpenVirtue writes the section this way. All twelve carriers' sections match byte for
   byte, and the original still loads OpenVirtue's LEGALISM and apathy saves and resumes them.
 - **Open.** LEGALISM's own order differs. Its visible arrow overlay (layer 50) comes first of all,
-  and its debug panels and texts come late. The list seems to change as elements are shown in
-  play, which these carriers, all set up at the start, do not show. LEGALISM's scroll panels also
+  and its debug panels and texts come late. Showing elements in play does not explain it: in
+  `round19/se-show` (`39b66d26`) three hidden overlays (layers 1, 2, 3), the third and then the
+  first shown, kept their order, and so did `se-showhide` (`89605a48`). The arrow overlay is declared
+  once, with `LAYER 50`, and no script sets a layer. LEGALISM's scroll panels also
   hold a number in the panel's last word (235, 258) where −1 was measured.
 
 ## Open Questions

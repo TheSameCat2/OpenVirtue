@@ -159,12 +159,12 @@ internal static class SaveBodyProbeCases
     private const string ScreenText = "TEXT se_t { POS_X 33; POS_Y 44; LAYER 5; FONT se_font; STRING se_s; FLAGS VISIBLE; }\n";
     private const string ScreenOverlay = "OVERLAY se_o { OVLYS se_om; POS_X 55; POS_Y 66; LAYER 7; FLAGS VISIBLE; }\n";
 
-    /// <summary>Round 18: the screen elements <paramref name="elements"/> declared, saved as they start.</summary>
-    private static TraceProbeCase Screen(string label, string question, string elements) => new(
+    /// <summary>Round 18: the screen elements <paramref name="elements"/> declared, <paramref name="change"/> run, then saved.</summary>
+    private static TraceProbeCase Screen(string label, string question, string elements, string change = "") => new(
         label,
         question,
         ScreenResources + Declarations + elements,
-        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n" + change + "    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
         Predict(("one record per element", "the screen elements' section counts them and holds their places")),
         Map: World);
 
@@ -202,6 +202,16 @@ internal static class SaveBodyProbeCases
             "PANEL se_p6 { PAN_MAP se_pan; POS_X 6; LAYER 2; FLAGS TRANSPARENT; }\n" +
             "PANEL se_p7 { PAN_MAP se_pan; POS_X 7; LAYER 2; FLAGS RELPOS; }\n" +
             "PANEL se_p8 { PAN_MAP se_pan; POS_X 8; LAYER 2; FLAGS REFRESH; }\n"),
+        Screen("se-show", "Round 19. Hidden OVERLAYs with LAYER 1, 2, 3 (x 10, 20, 30); the probe shows the third, waits, then the first: their order?",
+            "OVERLAY se_a { OVLYS se_om; POS_X 10; POS_Y 1; LAYER 1; }\n" +
+            "OVERLAY se_b { OVLYS se_om; POS_X 20; POS_Y 2; LAYER 2; }\n" +
+            "OVERLAY se_c { OVLYS se_om; POS_X 30; POS_Y 3; LAYER 3; }\n",
+            "    SET se_c.VISIBLE, 1;\n    WAIT 1;\n    SET se_a.VISIBLE, 1;\n"),
+        Screen("se-showhide", "Round 19. The same three hidden; the probe shows the third, waits and hides it again: their order?",
+            "OVERLAY se_a { OVLYS se_om; POS_X 10; POS_Y 1; LAYER 1; }\n" +
+            "OVERLAY se_b { OVLYS se_om; POS_X 20; POS_Y 2; LAYER 2; }\n" +
+            "OVERLAY se_c { OVLYS se_om; POS_X 30; POS_Y 3; LAYER 3; }\n",
+            "    SET se_c.VISIBLE, 1;\n    WAIT 1;\n    SET se_c.VISIBLE, 0;\n"),
         Screen("se-all", "Round 18. A TEXT, an OVERLAY and a PANEL declared in that order: in which order are they saved?", ScreenText + ScreenOverlay + ScreenPanel),
         new TraceProbeCase(
             "my-load",
