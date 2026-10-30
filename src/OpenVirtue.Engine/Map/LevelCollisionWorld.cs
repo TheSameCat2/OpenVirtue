@@ -50,7 +50,10 @@ public sealed class LevelCollisionWorld
     /// wall's line touches it, and so does the next step off it (OV-20261019-wall-pass-clip).
     /// A solid wall holds the circle <paramref name="wallClearance"/> beyond <paramref name="radius"/>.
     /// <paramref name="contactSlackSquared"/> is added to the square of each contact distance with
-    /// a thing or actor (<see cref="ContactSlackSquared"/> for the player).
+    /// a thing or actor (<see cref="ContactSlackSquared"/> for the player). With
+    /// <paramref name="clearanceOnContact"/> a step is stopped only when it would come closer than
+    /// <paramref name="radius"/>, and then held at the clearance: an actor's step may end 1.031 from
+    /// a wall, and the next one is pushed back to about 1.05 (OV-20261029-actor-events round 2, bullet).
     /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
@@ -63,7 +66,8 @@ public sealed class LevelCollisionWorld
         MapEntity? ignoredEntity = null,
         ICollection<AcknexObject>? touched = null,
         float wallClearance = 0,
-        float contactSlackSquared = 0)
+        float contactSlackSquared = 0,
+        bool clearanceOnContact = false)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -75,6 +79,7 @@ public sealed class LevelCollisionWorld
 
         radius = Math.Max(0.01f, radius);
         float wallRadius = radius + Math.Max(0, wallClearance);
+        float wallContact = clearanceOnContact ? radius : wallRadius;
         Vector2 position = start;
         int region = startRegion;
         bool collided = false;
@@ -93,7 +98,7 @@ public sealed class LevelCollisionWorld
             for (int pass = 0; pass < 4; pass++)
             {
                 bool adjusted = ResolveWalls(
-                    from, region, wallRadius, canCross, crossedWallIndex, touched, ref desired);
+                    from, region, wallContact, wallRadius, canCross, crossedWallIndex, touched, ref desired);
                 adjusted |= ResolveEntities(
                     from, region, radius, contactSlackSquared, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
                 collided |= adjusted;
@@ -191,6 +196,7 @@ public sealed class LevelCollisionWorld
     private bool ResolveWalls(
         Vector2 from,
         int region,
+        float contact,
         float radius,
         Func<Wall, int, int, bool> canCross,
         int ignoredWallIndex,
@@ -220,7 +226,7 @@ public sealed class LevelCollisionWorld
             }
 
             Vector2 closest = ClosestPoint(desired, a, b, out float along);
-            if (Vector2.DistanceSquared(desired, closest) >= radius * radius)
+            if (Vector2.DistanceSquared(desired, closest) >= contact * contact)
             {
                 continue;
             }

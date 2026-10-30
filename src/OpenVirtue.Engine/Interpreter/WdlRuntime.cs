@@ -3409,7 +3409,8 @@ public sealed class WdlRuntime :
                     EntityCollisionRadius,
                     static entity => entity["INVISIBLE"] > 0,
                     actor,
-                    wallClearance: Player.WallClearance);
+                    wallClearance: Player.WallClearance,
+                    clearanceOnContact: true);
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             if (result.Collided)

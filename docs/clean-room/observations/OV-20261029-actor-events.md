@@ -66,6 +66,23 @@ scripts set those with `SET x.TARGET, …` (23 `MOVE`, 10 `BULLET`, 7 `VERTEX`),
 - Actors move in their own turn of the object pass (OV-20261029-scheduler-order), before their
   `EACH_TICK`.
 
+## Round 2 analysis: a bullet at a wall (2026-10-30)
+`round2/bullet` (hash `75c17977`) flies an actor (`TARGET BULLET`, `SPEED 0.5`) at a wall 48 steps
+out.
+- **The step before the hit.** The step that ends 1.031 from the wall (46.969) is taken in full,
+  with no `HIT`: the wall stops only a step that would come closer than the radius of 1.
+- **The hit.** The next cycle reports `HIT` and puts the actor back to about 1.05.
+- **After the hit.** From then on it is pushed back every cycle, alternating 1.049 and 1.045 from
+  the wall (46.951, 46.955), whatever the step.
+
+OpenVirtue held actors 1.05 from walls already when testing a step, so it reported the `HIT` a
+cycle early. Actor moves now test the plain radius and hold the clearance only once stopped
+(`LevelCollisionWorld.Move`, `clearanceOnContact`); the player keeps its rule. The alternating
+push-back distance is not modelled (OpenVirtue holds 1.05).
+
+The replay used to start the bullet one step off: the first cycle's `TIME_CORR` was guessed. With
+the replay reading it off the 18-cycle step pattern (tools), the trace matches to line 285 of 569.
+
 ## Open Questions
 - Whether the arrival limit is a constant (OpenVirtue uses 1/8) or the cycle's step; the measured
   arrivals (≤ 0.098) and non-arrivals (≥ 0.134) do not separate them.
