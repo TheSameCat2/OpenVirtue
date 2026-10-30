@@ -3076,7 +3076,7 @@ public sealed class WdlRuntime :
     /// at once, before any distance is refreshed: a player beamed into a solid thing is pushed out in
     /// that cycle's movement and its <c>IF_NEAR</c> runs in the same cycle, reading the thing's
     /// <c>DISTANCE</c> from before the beam (34 for a thing 24, −10 from the origin;
-    /// OV-20261019-actor-contact round 7). A target already within its <c>DIST</c> does not fire again.
+    /// OV-20261019-actor-contact round 8). A target already within its <c>DIST</c> does not fire again.
     /// The host calls it right after the player's movement.
     /// </summary>
     public void DispatchContactEvents()
