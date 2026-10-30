@@ -157,6 +157,16 @@ internal static class SchedulerOrderProbeCases
                 ("IF_START counts", "W3 with so_n 2 (resumed in cycle 3)"),
                 ("IF_START does not count", "W3 with so_n 3 (resumed in cycle 4)")),
             Prelude: "    PRINTFILE \"" + TraceFile + "\", 0;\n    SET EACH_TICK.1, so_y;\n" + L("S0") + "    WAIT 3;\n" + L("W3")),
+        new TraceProbeCase(
+            "frac-wait",
+            "Round 3. How many cycles do WAIT 1.5, WAIT 0.5, WAIT 2.5 and WAIT 0 take? The slot counts cycles.",
+            Skills + Counter,
+            "    SET EACH_TICK.1, so_g1;\n    RULE so_on = 0;\n" + L("GO") + "    WAIT 1;\n" + L("W1") + "    WAIT 1.5;\n" + L("W15") +
+            "    WAIT 0.5;\n" + L("W05") + "    WAIT 2.5;\n" + L("W25") + "    WAIT 0;\n" + L("W0") + "    WAIT 1;\n" + L("W1B") +
+            ClearSlots + P("RET"),
+            Predict(
+                ("a count below 1 resumes", "WAIT 1.5 takes 1 cycle, 0.5 none or 1, 2.5 takes 2"),
+                ("the count is rounded up", "WAIT 1.5 takes 2 cycles, 2.5 takes 3"))),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

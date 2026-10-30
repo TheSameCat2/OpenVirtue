@@ -448,13 +448,13 @@ First targets:
 ### Status (2026-10-30)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces; 211 of 473 match line for line. Most of the rest differ only in the
+against the original's traces; 211 of 474 match line for line. Most of the rest differ only in the
 `TICKS` of input-timed lines or after a sampler stops.
 
 | Target | Measured and implemented | Still open |
 |---|---|---|
 | 1. Numbers | 22.10 fixed point, wrap and saturation, `*` and `/` toward zero, `INT` down, `%` and bitwise on raw bits, function results (`numeric-edge`) | engine-written values (rounded or truncated) |
-| 2. Scheduler | cycle order, start-up `TIME_CORR`, waits armed in `IF_START`, same-cycle `SET EACH_TICK`, each kind and the regions from the last placed (`scheduler-order`, `flic-*`, `each-sec-cadence`) | fractional `WAIT`, waits armed by key hooks |
+| 2. Scheduler | cycle order, start-up `TIME_CORR`, waits armed in `IF_START`, fractional `WAIT`s, same-cycle `SET EACH_TICK`, each kind and the regions from the last placed (`scheduler-order`, `flic-*`, `each-sec-cadence`) | waits armed by key hooks, `WAITT` below 1 |
 | 3. Player movement | projection, tilt, steps and nudges, climbing, eye clamp, wall and object contact, push-out (`projection-*`, `tilt-*`, `border-*`, `eye-clamp`, `clip-*`, `actor-contact`, `overlap`) | the push direction off the axes (≤ 0.008) |
 | 4. Actors | steps along `ANGLE` and toward points, `CAREFULLY`, way arrival, facing, events, view activity, animation phases (`actor-*`, `view-activity`, `anim-timing`, `motion-timing`) | one-unit step residuals after many cycles, `CAREFULLY` slides, the `RANDOM` distribution |
 | 5. Shading | depth curve, `AMBIENT` (region, texture, negative), sorted ranges and `AUTORANGE` tables, sky (`shading`, `autorange`, `sky`) | `ALBEDO`/`GENIUS` light, `HARD` on unsorted palettes |

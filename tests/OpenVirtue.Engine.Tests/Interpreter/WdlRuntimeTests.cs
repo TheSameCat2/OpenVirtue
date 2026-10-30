@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using OpenVirtue.Engine.Interpreter;
@@ -1107,6 +1108,30 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.Equal(2, runtime.GetSkill("order"));
         Assert.Equal(0, runtime.WaitingActionCount);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0)]
+    [InlineData(1.5, 2)]
+    [InlineData(2.5, 3)]
+    public void Runtime_FractionalWait_WaitsWhileOneOrMoreCyclesAreLeft(double amount, int ticks)
+    {
+        // OV-20261029-scheduler-order round 3: WAIT 0.5 went straight on, WAIT 1.5 took one cycle
+        // and WAIT 2.5 two. Armed before the first frame, a wait resumes a frame later than one armed
+        // inside a cycle (OV-20261015-flic-scheduler-detail).
+        Level level = Load(
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            string.Create(CultureInfo.InvariantCulture, $"ACTION waitSome {{ SET order, 1; WAIT {amount}; SET order, 2; }}"));
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("waitSome"));
+        for (int i = 0; i < ticks; i++)
+        {
+            Assert.Equal(1, runtime.GetSkill("order"));
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(2, runtime.GetSkill("order"));
     }
 
     [Fact]

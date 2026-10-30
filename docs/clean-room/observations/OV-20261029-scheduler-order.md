@@ -85,6 +85,14 @@ Implementation: `WdlRuntime.RunStartup` counts down every wait `IF_START` armed,
 expects the `LOCATE` a cycle earlier. Both round-2 traces replay up to the last line, which is
 printed after the sampler has stopped, so the replay clock cannot place it.
 
+## Round 3: fractional waits (2026-10-30)
+`frac-wait`: the probe action runs `WAIT 1`, `1.5`, `0.5`, `2.5`, `0` and `1`, printing after each
+one (hash `a0fed566`). The cycle counts were 1, 1, 0, 2, 0 and 1. A wait goes on while one or more
+cycles are left, so `WAIT 1.5` takes one cycle and `WAIT 0.5` none at all: the action does not
+wait. `WdlInterpreter.ExecuteWait` now skips a `WAIT` below 1; `WAITT` keeps any positive amount
+(unmeasured below 1). The carrier's cycle counts replay; its `TICKS` do not, since it has no
+per-cycle sampler.
+
 ## Open Questions
 - Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
   keeps the flic's delay-based `TIME_CORR`).

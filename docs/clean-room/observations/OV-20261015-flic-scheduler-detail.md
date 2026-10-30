@@ -169,7 +169,8 @@ speeds). medium for rule 6 during a flic, because the trace after the fault was 
 ## Open Questions
 - How far the flic plays after a missing file is requested during it, before the fault.
 - `PLAY_FLIC` with a `FLIC` keyword object, and an existing but invalid flic file.
-- A fractional `WAIT` (`WAIT 1.5`): the rule above assumes it resumes once the count is below 1.
+- A fractional `WAIT` (`WAIT 1.5`): answered by OV-20261029-scheduler-order round 3. It resumes once
+  the count is below 1, and a `WAIT` below 1 does not wait.
 - Whether a wait armed by a key or mouse hook counts that cycle: the hooks run early in the cycle
   (`LEFT` printed the same `fd_n` as resumed actions), so OpenVirtue counts it.
 - Whether `IF_NEAR` repeating every cycle within `DIST` matches OpenVirtue's proximity dispatch:

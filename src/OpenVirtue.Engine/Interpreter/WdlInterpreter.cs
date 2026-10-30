@@ -735,7 +735,11 @@ public sealed class WdlInterpreter(IWdlContext context)
     {
         double amount = item.Header.Count > 0 ? Evaluate(item.Header, 0, item.Header.Count) : 0;
         frame.Index++;
-        return amount > 0 ? new WdlWaitRequest(amount, mode) : null;
+        // A wait resumes once less than one cycle is left, and a WAIT of less than one does not
+        // wait at all: WAIT 0.5 went straight on, WAIT 1.5 took one cycle (OV-20261029-scheduler-order
+        // round 3). WAITT keeps any positive amount (unmeasured below 1).
+        double minimum = mode == WdlWaitMode.FrameCycles ? 1 : 0;
+        return amount >= minimum && amount > 0 ? new WdlWaitRequest(amount, mode) : null;
     }
 
     private WdlExecutionResult? ExecuteInkey(WdlItem item, WdlExecutionFrame frame)
