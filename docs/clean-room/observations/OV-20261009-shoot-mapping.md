@@ -250,8 +250,27 @@ Observations:
 
 Implementation:
 - `WdlRuntime.ShootFromPlayer` snaps the shot to its pixel.
-- `WdlRuntime.SpriteHitColumn` reports a sprite's `HIT_X` by this rule. Mirrored sprites keep
+- `WdlRuntime.SpriteHitColumn` reports a sprite's `HIT_X` by this rule (in fixed point since the
+  addendum below; `WdlRuntimeTests.SpriteHitColumn_ProjectsTheEdgeWithAReciprocalOfTheDepth`). Mirrored sprites keep
   the sampled column (unmeasured), as do walls.
 - The harness treats `HIN_T`/`HOUT_T` like the start-up stamp.
 - Results: 24 of the 27 shoot carriers replay line for line. One is 0.002 off on `HIT_X`; the
   other two come from an original run whose start-up took a cycle longer (`TICKS` 14.781 at the shot).
+
+## Addendum: the sprite's edge in fixed point (2026-11-02, analysis only)
+No new carriers. Every centre-target shot matched exactly, but every shot at the right target
+(12 steps across) read 2/1024 higher than OpenVirtue's (33.176 against 33.174 at `SHOOT_X` 0.5,
+`OVHIT0.TXT` `ee05c5cf`; 21.164 against 21.162 at 0.47, `a95ecadb`) and the left target 1/1024
+lower (32.488 against 32.489 at −0.5, `c5d60f35`).
+- In raw units the original's `HIT_X` is a base per target plus 1230 per column. Solving for the
+  sprite's left edge with whole raw pixels leaves one solution: 12 steps across project to 163547
+  raw pixels, not the 163548 of 12 times the cut pixels per step (13629) nor the exact 163548.8.
+- **A 2^-20 reciprocal of the depth.** 2^30 / (44·1024) cut is 23831, and the focal length times it
+  over 2^20 gives 13628.935 raw pixels per step: 163547 for 12 steps and 27257 for the half-width,
+  each cut toward zero. The edge is their difference, the texel `floor((column·1024 + 733 − edge) ·
+  1230 / 1024)`. The texels per pixel still come from the 22.10 pixels per step (13629, so 1230).
+- **Result.** This reproduces all 27 printed `HIT_X` values; the earlier rule gave 20 and passed
+  five more within the 0.002 tolerance. 733/1024 replaces the fitted 0.714 pixels; its source is
+  still unknown. Only one depth and one focal length were measured, so the reciprocal is the most
+  natural integer form that fits, not a proven one: sprites at other depths (20, 30, 37 separate it
+  from the exact and the cut products) would pin it.

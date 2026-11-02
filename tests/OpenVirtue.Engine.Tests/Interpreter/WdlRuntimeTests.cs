@@ -877,6 +877,18 @@ public class WdlRuntimeTests
         Assert.Equal(0, runtime.GetSkill("WAVE"));
     }
 
+    [Theory]
+    [InlineData(0, 0, 32.832)] // OV-20261009-shoot-mapping: the centre sprite, 44 ahead, at the centre column
+    [InlineData(160, 12, 33.176)] // the right sprite at SHOOT_X 0.5 (the 22.10 pixels per step gave 33.174)
+    [InlineData(-160, -12, 32.488)] // the left sprite at SHOOT_X -0.5 (32.489)
+    public void SpriteHitColumn_ProjectsTheEdgeWithAReciprocalOfTheDepth(double column, double centerRight, double hitX)
+    {
+        // 640 wide at PLAYER_ARC 1: a focal length of 599680/1024; a 64-texel sprite 4 steps wide.
+        var shot = new WdlRuntime.ShotPixel(column, 599680 / 1024.0);
+
+        Assert.Equal(hitX, WdlRuntime.SpriteHitColumn(shot, centerRight, 44, 2, 64), 3);
+    }
+
     [Fact]
     public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
     {

@@ -2403,7 +2403,7 @@ public sealed class WdlRuntime :
     /// factor cut to 1/1024, the angle rounded and the sine cut toward zero. This reproduces all 19
     /// distinct phases of the original's saves (save-body round 20).
     /// </summary>
-    public static double Wave(int phaseRaw, int periodRaw)
+    internal static double Wave(int phaseRaw, int periodRaw)
     {
         if (periodRaw <= 0)
         {
@@ -6066,22 +6066,28 @@ public sealed class WdlRuntime :
     /// A shot's screen column, as an offset from the centre, and the focal length the original
     /// projects sprites with: half the width times 1/tan(<c>PLAYER_ARC</c>/2) cut to 22.10.
     /// </summary>
-    private readonly record struct ShotPixel(double Column, double FocalLength);
+    internal readonly record struct ShotPixel(double Column, double FocalLength);
 
     /// <summary>
     /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping, sweep): the texel column the renderer
     /// steps to at the shot's screen column. It counts from the sprite's projected left edge,
-    /// 0.714 pixels further on. The pixels per step at the sprite's depth and the texels per pixel
-    /// are both cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead). Fitted to
-    /// three sprites and 19 columns in one 640-wide view, within 0.0013.
+    /// 733/1024 pixels further on. The edge is projected with 1/depth as a 2^-20 reciprocal, its
+    /// centre and half-width each cut toward zero to 1/1024 pixel; the texels per pixel come from the
+    /// pixels per step cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead), and
+    /// the texel is floored. This gives all 27 shots of the sweep exactly (round 2).
     /// </summary>
-    private static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
+    internal static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
     {
+        const int EdgeOffset = 733;
+        long focal = (long)Math.Round(shot.FocalLength * 1024);
+        long reciprocal = (1L << 30) / Math.Max(1, (long)Math.Round(depth * 1024));
+        long centre = (long)Math.Truncate(centerRight * focal * reciprocal / (1 << 20));
+        long half = (long)Math.Truncate(halfWidth * focal * reciprocal / (1 << 20));
         double pixelsPerStep = Math.Truncate(1024 * shot.FocalLength / depth) / 1024;
-        double left = (centerRight - halfWidth) * pixelsPerStep;
-        double texelsPerPixel = Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep)) / 1024;
-        double texel = texelsPerPixel * (shot.Column + 0.714 - left);
-        return WdlFixed.Quantize(Math.Clamp(texel, 0, textureWidth - (1.0 / 1024)));
+        long texelsPerPixel = (long)Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep));
+        long position = (long)Math.Round(shot.Column * 1024) + EdgeOffset - (centre - half);
+        long texel = (long)Math.Floor(position * texelsPerPixel / 1024.0);
+        return Math.Clamp(texel, 0, (textureWidth * 1024L) - 1) / 1024.0;
     }
 
     private sealed record HitCandidate(
