@@ -158,12 +158,13 @@ internal static class OracleTrace
             return null;
         }
 
+        string? sampler = LeadingSampler(numbered, 0, 1);
         var ticksByCount = new Dictionary<double, double>();
         for (int i = 0; i < numbered.Count; i++)
         {
             double ticks = numbered[i].Value(0)!.Value;
-            double count = numbered[i].Value(1)!.Value;
-            if (i > 0 && (ticks < numbered[i - 1].Value(0)!.Value || count < numbered[i - 1].Value(1)!.Value))
+            double count = CycleOf(numbered[i], 1, sampler);
+            if (i > 0 && (ticks < numbered[i - 1].Value(0)!.Value || count < CycleOf(numbered[i - 1], 1, sampler)))
             {
                 return null;
             }
@@ -176,7 +177,10 @@ internal static class OracleTrace
             ticksByCount[count] = ticks;
         }
 
-        return ticksByCount.Count >= 3 ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0) : null;
+        // Three printed counts, even where the phase shift folds two of them into one cycle.
+        return numbered.Select(static l => l.Value(1)!.Value).Distinct().Count() >= 3
+            ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0)
+            : null;
     }
 
     /// <summary>
@@ -332,10 +336,14 @@ internal static class OracleTrace
             return distinct;
         }
 
+        // Where every line is a sample, those printed before the sampler counts the cycle carry the
+        // count a cycle behind. (A named sampler's other tokens are not taken as samples: an event
+        // action prints after the sampler has counted, a probe action before.)
+        string? sampler = timing.Token == OracleTimingColumn.AnyToken ? LeadingSampler(tokenLines, timing.Column, counterColumn) : null;
         var samples = new SortedDictionary<long, double>();
         foreach (OracleTraceLine line in tokenLines)
         {
-            AddSample(samples, line, timing.Column, counterColumn);
+            AddSample(samples, line, timing.Column, counterColumn, sampler);
         }
 
         var ticks = new List<double>();
@@ -365,20 +373,60 @@ internal static class OracleTrace
     }
 
     /// <summary>Adds a sampler line's (cycle count, <c>TICKS</c>) sample when both go up.</summary>
-    private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn)
+    private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn, string? sampler = null)
     {
-        if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0)
+        if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0 ||
+            line.Value(timingColumn) is null)
         {
             return;
         }
 
-        long count = (long)countValue;
+        long count = (long)CycleOf(line, counterColumn, sampler);
         double value = SnapTicks(line.Value(timingColumn)!.Value);
         if (!samples.ContainsKey(count) && (samples.Count == 0 || (count > samples.Keys.Last() && value > samples.Values.Last())))
         {
             samples[count] = value;
         }
     }
+
+    /// <summary>
+    /// The token whose counter runs a cycle ahead of the other tokens': the one whose line shares its
+    /// <c>TICKS</c> with another token's line counting exactly one less. A trace's probe action prints
+    /// before the global <c>EACH_TICK</c> sampler that raises the counter (OV-20261029-audio: <c>GO</c>
+    /// and <c>P</c> at 13.438 with count 0 beside <c>C</c> 13.438 with 1). <c>null</c> when no line
+    /// pairs so, or when two tokens would lead.
+    /// </summary>
+    internal static string? LeadingSampler(IReadOnlyList<OracleTraceLine> lines, int ticksColumn, int counterColumn)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        string? sampler = null;
+        foreach (IGrouping<long, OracleTraceLine> group in lines
+            .Where(l => l.Value(ticksColumn) is not null && l.Value(counterColumn) is { } n && n == Math.Floor(n))
+            .GroupBy(l => (long)Math.Round(SnapTicks(l.Value(ticksColumn)!.Value) * 1024)))
+        {
+            foreach (OracleTraceLine ahead in group)
+            {
+                foreach (OracleTraceLine behind in group)
+                {
+                    if (ahead.Token != behind.Token && ahead.Value(counterColumn) == behind.Value(counterColumn) + 1)
+                    {
+                        if (sampler is not null && sampler != ahead.Token)
+                        {
+                            return null;
+                        }
+
+                        sampler = ahead.Token;
+                    }
+                }
+            }
+        }
+
+        return sampler;
+    }
+
+    /// <summary>The cycle a line was printed in: its count, one more for a token other than the leading <paramref name="sampler"/>.</summary>
+    private static double CycleOf(OracleTraceLine line, int counterColumn, string? sampler) =>
+        line.Value(counterColumn)!.Value + (sampler is not null && line.Token != sampler ? 1 : 0);
 
     /// <summary>
     /// A column of <paramref name="tokenLines"/> other than the timing column that counts cycles:

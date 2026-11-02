@@ -126,7 +126,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   detected by default: the first non-negative, never-decreasing column of the densest token; a
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
   in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
-  counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`).
+  counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`; there the lines of
+  every token but the one that leads, whose line shares a `TICKS` with another's counting one
+  less, are taken as printed a cycle later: the probe action prints before the sampler counts).
   Until the replay prints its first sampled cycle every frame lasts the original's first sampled
   step. That step, the first sampled cycle's `TIME_CORR`, is read from a column that prints it,
   or else from the step 18 cycles later: DOSBox-X's 60 Hz steps repeat every 18 cycles. This

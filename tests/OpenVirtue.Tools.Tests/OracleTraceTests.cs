@@ -49,6 +49,21 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void CycleTicks_ProbeLinesCountACycleBehindTheSampler()
+    {
+        // OV-20261029-audio: the probe action prints GO and P before the EACH_TICK sampler raises the
+        // count, so its lines read a cycle behind C's at the same TICKS.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "BEGIN\nGO 13.438 0\nP 13.438 0\nC 13.438 1\nC 14.219 4\nRET 14.719 5\n");
+
+        OracleTimingColumn? timing = OracleTrace.DetectTimingColumn(lines);
+
+        Assert.Equal("C", OracleTrace.LeadingSampler(lines, 0, 1));
+        Assert.Equal(new OracleTimingColumn(OracleTimingColumn.AnyToken, 0), timing);
+        Assert.Equal([13.4375, 13.6875, 13.9375, 14.21875, 14.46875, 14.71875], OracleTrace.CycleTicks(lines, timing!.Value));
+    }
+
+    [Fact]
     public void DetectTimingColumn_OneCountWithTwoTicks_IsNotATimingColumn()
     {
         // A line printed before the counting action and one after it carry counters a cycle apart.
