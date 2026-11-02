@@ -169,6 +169,16 @@ public sealed class OracleTraceTests
     }
 
     [Theory]
+    [InlineData(13.438, 0.25)] // below-beam: the beam frame 8/32 before the first cycle at 13.688
+    [InlineData(13.406, 0.28125)]
+    [InlineData(13.188, null)] // two frames before: the first cycles' rate decides
+    [InlineData(null, null)]
+    public void StampStep_OnlyWhenTheStampIsOneFrameBeforeTheFirstSample(double? stamp, double? step)
+    {
+        Assert.Equal(step, OracleReplay.StampStep(stamp, [13.688, 13.969, 14.219]));
+    }
+
+    [Theory]
     [InlineData(false, 0.5)]
     [InlineData(true, 8.0)]
     public void ReplayClock_LongGap_IsOneFrameOnlyWhenACounterPlacedEverySample(bool consecutive, double step)

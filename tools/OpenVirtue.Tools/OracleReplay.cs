@@ -185,7 +185,9 @@ internal static class OracleReplay
         WrsArchive.WriteFile(archive, CarrierFiles(work));
 
         double? firstStep = carrierCase.StartupStep ??
-            (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ?? OracleTrace.PeriodicFirstStep(cycleTicks);
+            (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ??
+            StampStep(originalFiles.TryGetValue("OVPRB0.TXT", out string? probe) ? StartupStamp(probe) : null, cycleTicks) ??
+            OracleTrace.PeriodicFirstStep(cycleTicks);
         var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? 0.25, firstStep, counted);
         double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
         var window = new HeadlessWindow();
@@ -237,8 +239,8 @@ internal static class OracleReplay
     private static OracleTickShift? StampShift(CarrierResult result, IReadOnlyList<OracleTraceLine> original)
     {
         const string Probe = "OVPRB0.TXT";
-        double? originalStamp = result.OriginalFiles.TryGetValue(Probe, out string? originalProbe) ? Stamp(originalProbe) : null;
-        double? replayStamp = result.ReplayFiles.TryGetValue(Probe, out string? replayProbe) ? Stamp(replayProbe) : null;
+        double? originalStamp = result.OriginalFiles.TryGetValue(Probe, out string? originalProbe) ? StartupStamp(originalProbe) : null;
+        double? replayStamp = result.ReplayFiles.TryGetValue(Probe, out string? replayProbe) ? StartupStamp(replayProbe) : null;
         if ((originalStamp is null || replayStamp is null) && result.Primary is { } primary &&
             result.ReplayFiles.TryGetValue(primary, out string? replayPrimary))
         {
@@ -283,12 +285,29 @@ internal static class OracleReplay
         }
 
         return new OracleTickShift(columns, originalStamp.Value, replayStamp.Value);
+    }
 
-        static double? Stamp(string path) =>
-            File.ReadLines(path, Encoding.Latin1)
-                .Where(static l => l.StartsWith("TCK=", StringComparison.Ordinal))
-                .Select(static l => double.TryParse(l.AsSpan(4), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : (double?)null)
-                .FirstOrDefault();
+    /// <summary>The carrier template's start-up stamp: <c>TCK=</c> in <c>OVPRB0.TXT</c>, <c>TICKS</c> as the probe action starts.</summary>
+    private static double? StartupStamp(string path) =>
+        File.ReadLines(path, Encoding.Latin1)
+            .Where(static l => l.StartsWith("TCK=", StringComparison.Ordinal))
+            .Select(static l => double.TryParse(l.AsSpan(4), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : (double?)null)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The step into the first sampled cycle when the original's start-up stamp is one frame before
+    /// it: the probe action starts a frame ahead of the first sample in most carriers, and that frame
+    /// lands 8/32 or 9/32 of a tick before it, which the first cycles' rate does not tell apart.
+    /// </summary>
+    internal static double? StampStep(double? stamp, IReadOnlyList<double> cycleTicks)
+    {
+        if (cycleTicks.Count == 0 || stamp is null)
+        {
+            return null;
+        }
+
+        double step = OracleTrace.SnapTicks(cycleTicks[0]) - OracleTrace.SnapTicks(stamp.Value);
+        return OracleTrace.IsFrameStep(step) ? step : null;
     }
 
     private static double? FirstValue(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing) =>

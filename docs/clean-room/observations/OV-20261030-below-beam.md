@@ -51,8 +51,9 @@ through the slab.
 - `LevelTopology.StoreyHoldingEye` gives the storey.
 - `WdlRuntime.Locate` uses it for the player.
 - Tested by `BelowRegionTests.StoreyHoldingEye_PicksTheLowestStoreyWhoseCeilingIsNotBelowTheEye`.
-- All five carriers replay line for line from the first sampled cycle. The beam lines before it
-  differ only in the replay's start-up `TICKS`.
+- All five carriers replay line for line. The beam lines printed a frame before the first
+  sampled cycle match since the replay takes the step into that cycle from the template's start-up
+  stamp (`TCK=`, 8/32 of a tick before it here; `OracleReplay.StampStep`).
 
 ## Open Questions
 - A thing or actor `LOCATE`d into a stack (only the player was probed).

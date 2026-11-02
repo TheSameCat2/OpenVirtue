@@ -144,7 +144,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   line is compared as it is). `KEY=value` lines compare their numbers, the stamp within one
   start-up cycle.
   Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
-  original's first sample at the original's `TICKS`. A carrier's `AUTOTYPE` keys are typed into the
+  original's first sample at the original's `TICKS`. Where no column prints the first cycle's
+  `TIME_CORR` and the template's stamp lies one frame (8/32 to 10/32 of a tick) before the first
+  sample, that gap is the step into it: the probe action starts a frame ahead of the first sample
+  in most carriers, and the first cycles' rate cannot tell 8/32 from 9/32 there (below-beam's five
+  carriers then match in full). A carrier's `AUTOTYPE` keys are typed into the
   first `INKEY` it opens; clicks and key hooks are still not replayed.
   A carrier's `case.json` may name its timing column (`"timing": "TK:1"`) where detection picks a
   wrong one: the flic carriers print `FLIC_FRAME`, whole and never falling, before `TICKS`. The
