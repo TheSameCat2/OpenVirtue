@@ -160,7 +160,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   1.094-tick gaps, though its start-up ran 60 Hz frames; the 18-cycle rule accepts only such frames
   (0.25 to 0.3125). With these, the flic replays no longer start one flic step late. A
   `"time_corr"` asks for fixed frames, for a carrier whose lines print no `TICKS`.
-  `--time-corr x` runs fixed frames instead. Carriers with scripted input (`AUTOTYPE`,
+  `--time-corr x` runs fixed frames instead. With `OV_REPLAY_ROOT` set, each carrier's replay goes
+  under that folder (at the carrier's own path) instead of `<carrier>/ov-replay/`, so several
+  checkouts can diff the same carriers at once. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.
 - `tools/oracle/measure_shoot.py` — reduces the shoot-mapping outputs to one CSV row
   per variant: the marker letter, the raw `HIN_*`/`HOUT_*` values, the nearest model for

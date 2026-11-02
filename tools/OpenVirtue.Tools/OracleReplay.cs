@@ -174,7 +174,7 @@ internal static class OracleReplay
         bool counted = false;
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
 
-        string replayDirectory = Path.Combine(carrier, ReplayDirectoryName);
+        string replayDirectory = ReplayDirectoryOf(carrier);
         if (Directory.Exists(replayDirectory))
         {
             Directory.Delete(replayDirectory, recursive: true);
@@ -227,7 +227,21 @@ internal static class OracleReplay
         Dictionary<string, string> replayFiles = Directory.Exists(printDirectory)
             ? Directory.EnumerateFiles(printDirectory, "*.TXT").ToDictionary(static f => Path.GetFileName(f).ToUpperInvariant(), static f => f, StringComparer.Ordinal)
             : [];
-        return new CarrierResult(carrierCase, primary, timing, cycleTicks, clock.Anchored ? clock.Offset : null, frames, ticks, replayDirectory, originalFiles, replayFiles);
+        return new CarrierResult(carrierCase, primary, timing, cycleTicks, clock.Anchored ? clock.Offset : null, frames, ticks, replayDirectory, originalFiles, replayFiles, carrier);
+    }
+
+    /// <summary>
+    /// Where a carrier's replay goes: <c>&lt;carrier&gt;/ov-replay/</c>, or, with <c>OV_REPLAY_ROOT</c>
+    /// set, the same path below that folder, so runs from several checkouts at once do not overwrite
+    /// each other's replays.
+    /// </summary>
+    private static string ReplayDirectoryOf(string carrier)
+    {
+        string? root = Environment.GetEnvironmentVariable("OV_REPLAY_ROOT");
+        string full = Path.GetFullPath(carrier);
+        return string.IsNullOrWhiteSpace(root)
+            ? Path.Combine(full, ReplayDirectoryName)
+            : Path.Combine(Path.GetFullPath(root), full.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Replace(':', '_'), ReplayDirectoryName);
     }
 
     /// <summary>
@@ -421,7 +435,7 @@ internal static class OracleReplay
     private static bool CompareSaves(CarrierResult result, StringBuilder sb)
     {
         bool ok = true;
-        string work = Path.Combine(Path.GetDirectoryName(result.ReplayDirectory)!, "work");
+        string work = Path.Combine(result.Carrier, "work");
         foreach (string original in Directory.EnumerateFiles(work, "OV*.SAV").Order(StringComparer.Ordinal))
         {
             string name = Path.GetFileName(original).ToUpperInvariant();
@@ -568,7 +582,8 @@ internal static class OracleReplay
         double FinalTicks,
         string ReplayDirectory,
         IReadOnlyDictionary<string, string> OriginalFiles,
-        IReadOnlyDictionary<string, string> ReplayFiles);
+        IReadOnlyDictionary<string, string> ReplayFiles,
+        string Carrier);
 
     /// <summary>
     /// The parts of a carrier's <c>case.json</c> the replay needs. A carrier may name its timing column
