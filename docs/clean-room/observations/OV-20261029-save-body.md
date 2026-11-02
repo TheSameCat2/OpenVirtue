@@ -646,7 +646,10 @@ files) was read beside the save's own `TICKS` and `TIME_CORR` skills.
   the rule in two of its three saves (`15c3585d`: 14.875 at 14.15625 after 0.28125); the third
   (`3eb9efb3`) followed an 8-tick frame and holds 13.0.
 
-OpenVirtue writes both as measured (`FullSave.LastFrameTicks`, never below 0). Why setting the
+OpenVirtue writes both as measured (`FullSave.LastFrameTicks`, never below 0). The original still
+loads OpenVirtue's mid-play saves of apathy (+36 17.5, +40 2.5) and legalism (84.5, 5.5) with no
+errors, and their sampler runs print what they printed with both words 0 (rounds 14 and 15's
+`load7-ov`, rerun). Why setting the
 player's position clears +36, and what the third save-format value counts, are not known. The
 harness still sets these words aside, since they follow the replay's clock.
 
