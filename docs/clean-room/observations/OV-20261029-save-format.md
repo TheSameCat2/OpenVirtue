@@ -53,6 +53,22 @@ of name, NUL, raw value, raw minimum, raw maximum. `SAVE_INFO` writes type `0x18
 the `GLOBAL` and `LOCAL` skills (reverse declaration order), empty `FREEZE`-bitmap and `INKEY`-string
 sections and `25 26 00 00`. `LOAD_INFO` sets those skills back at once.
 
+## Round 2: `STEPS` (2026-11-02, analysis only)
+No new carriers; the full saves' skills were read again.
+- **`STEPS` counts the player's moves, beams included.** The probe sets `PLAYER_X`/`PLAYER_Y` from
+  (0, 0) to (5, 3) two cycles before its `SAVE`: `STEPS` reads 5970/1024, which is trunc(1024·√34)
+  (full-1 `15c3585d`, roundtrip-full `0fb44692`). To (6, 3) it reads 6869/1024 = trunc(1024·√45)
+  (full-2 `3eb9efb3`). save-body round 3's actor-fields save, whose player moved to (−5.6152,
+  −6.3154), holds 8653/1024, the same rule (`0a466823`).
+- The retail saves read 0 with the player at its start position, so placing the player at the
+  level start does not count. Whether steps walked over several cycles add up per cycle (as the
+  manual's "the number of steps the player covers", p.118, suggests) is not separated from the
+  straight distance by these saves.
+
+OpenVirtue adds the distance since the last cycle, cut to 1/1024, at the start of each cycle
+(`WdlRuntime.CountPlayerSteps`; `WdlRuntimeTests.Runtime_Steps_AddsEachCyclesMoveCutTo1024ths`). A
+`LOAD` restarts the count from the loaded position.
+
 ## Open Questions
 - The rest of a full `SAVE` (regions, walls, objects, actions, waits) and what `LOAD` does with a
   running action.

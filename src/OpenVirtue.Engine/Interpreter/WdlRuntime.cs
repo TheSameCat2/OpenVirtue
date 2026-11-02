@@ -233,6 +233,7 @@ public sealed class WdlRuntime :
     private bool _firstCycleRun;
     private int _wavePhaseRaw;
     private int _lastTimeCorrectionRaw;
+    private (int X, int Y)? _lastStepPosition;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -450,6 +451,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         RestoreSkills(snapshot.Skills);
+        _lastStepPosition = null; // a LOAD is not a step
         for (int channel = 0; channel < 8; channel++)
         {
             SetSkill($"CHANNEL_{channel}", 0);
@@ -1911,6 +1913,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(skills);
         ArgumentNullException.ThrowIfNull(accept);
+        _lastStepPosition = null; // a LOAD is not a step
         int restored = 0;
         foreach (SaveSkill skill in skills)
         {
@@ -2281,6 +2284,7 @@ public sealed class WdlRuntime :
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
+        CountPlayerSteps();
         ReleaseFinishedChannels();
         RefreshView();
         RefreshWallDistances();
@@ -2366,6 +2370,25 @@ public sealed class WdlRuntime :
 
         AdvanceWave();
         return timeCorrection;
+    }
+
+    /// <summary>
+    /// Adds the distance the player moved since the last cycle to <c>STEPS</c> (manual p.118), cut to
+    /// 1/1024: the original's saves hold trunc(1024·√34) after a script set the player from (0, 0) to
+    /// (5, 3), so a beam counts too (OV-20261029-save-format, round 2).
+    /// </summary>
+    private void CountPlayerSteps()
+    {
+        (int x, int y) = (WdlFixed.ToRaw(GetSkill("PLAYER_X")), WdlFixed.ToRaw(GetSkill("PLAYER_Y")));
+        if (_lastStepPosition is { } last && (last.X != x || last.Y != y))
+        {
+            double dx = x - (double)last.X;
+            double dy = y - (double)last.Y;
+            double moved = Math.Truncate(Math.Sqrt((dx * dx) + (dy * dy))) / 1024;
+            _skills["STEPS"] = WdlFixed.Add(GetSkill("STEPS"), moved);
+        }
+
+        _lastStepPosition = (x, y);
     }
 
     /// <summary>

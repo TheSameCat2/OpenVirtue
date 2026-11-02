@@ -890,6 +890,20 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_Steps_AddsEachCyclesMoveCutTo1024ths()
+    {
+        // OV-20261029-save-format round 2: a beam from (0, 0) to (5, 3) saved STEPS 5970/1024.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        runtime.Tick(0.25 / 16);
+        runtime.SetSkill("PLAYER_X", 5);
+        runtime.SetSkill("PLAYER_Y", 3);
+        runtime.Tick(0.25 / 16);
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(5970 / 1024.0, runtime.GetSkill("STEPS"));
+    }
+
+    [Fact]
     public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
     {
         // Saints of Virtue drops pickups this way: IF (HealthUp1.INVISIBLE == 1) { SET HealthUp1.X, MY.X; … }
