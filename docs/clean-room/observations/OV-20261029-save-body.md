@@ -631,27 +631,34 @@ Twelve carriers in `round18/` each declare a few elements and save at once.
   once, with `LAYER 50`, and no script sets a layer. LEGALISM's scroll panels also
   hold a number in the panel's last word (235, 258) where −1 was measured.
 
-## Round 20: the first section's +36 and +40 (2026-11-02, analysis only)
-No new carriers. The first section of every save the original wrote under `oracle-runs/` (172
-files) was read beside the save's own `TICKS` and `TIME_CORR` skills.
-- **+36 is the previous frame's `TICKS`.** In all 142 saves made in play and not spliced, +36 equals
-  `TICKS` less `TIME_CORR` as the save is made: 13.625 at 13.875 after a 0.25 frame (round 18's
+## Round 20: the first section's +36 and +40, `WAVE` and `WALK` (2026-11-02, analysis only)
+No new carriers. The first section and the skills of every save under `oracle-runs/` were read
+side by side (172 files; those the original wrote, not OpenVirtue's saves placed there for it to
+load or the spliced hybrids of rounds 13 to 15).
+- **+36 is the previous cycle's `TICKS`.** In all 142 saves the original made in play, +36 equals
+  `TICKS` less `TIME_CORR` as the save is made: 13.625 at 13.875 after a 0.25 cycle (round 18's
   base, `6eb11a90`), 17.28125 at 17.5625 after 0.28125 (apathy's own save, `e6adcfcc`), 84.28125 at
-  84.53125 (legalism's, `930ff4a9`).
-- **+40 is +36 plus 1.0, wrapped to 16 ticks.** 14.625 beside 13.625, 2.28125 beside 17.28125 and
-  5.28125 beside 84.28125: the same in all 142.
-- **Exceptions.** A save the original makes after loading one OpenVirtue wrote keeps the loaded 0s
-  (`load7-ov`, `92622b55`). A save at `TICKS` 0 holds 0. The save-format probe, which sets
-  `PLAYER_X` and `PLAYER_Y` two frames before its `SAVE`, wrote +36 as 0, while +40 still followed
-  the rule in two of its three saves (`15c3585d`: 14.875 at 14.15625 after 0.28125); the third
-  (`3eb9efb3`) followed an 8-tick frame and holds 13.0.
+  84.53125 (legalism's, `930ff4a9`). The one exception is the save-format probe, which sets
+  `PLAYER_X` and `PLAYER_Y` two cycles before its `SAVE`: all three of its full saves hold +36 = 0
+  (`15c3585d`, `3eb9efb3`).
+- **+40 is the `WAVE` phase.** It is the `TIME_CORR` of every earlier cycle, the first cycle's 1
+  included (so `TICKS` less `TIME_CORR` plus 1), wrapped at `WAVE_PERIOD`: 14.625 beside 13.625 in
+  the probe level (`WAVE_PERIOD` 20), 2.28125 beside 17.28125 in apathy (16). The save-format save
+  made after an 8-tick cycle at `TICKS` 40 holds 13.0, which is 33 wrapped at 20 (`3eb9efb3`).
+- **`WAVE` is the sine of that phase**, in fixed point: the phase times 2π/`WAVE_PERIOD` (the factor
+  cut to 1/1024), the angle rounded to 1/1024, the sine cut toward zero. This gives every one of the
+  19 distinct phase, period and `WAVE` triples of the original's saves exactly, among them −0.9912
+  at 14.625 over 20, 0.7803 at 2.28125 over 16 and −0.8037 at 13.0 over 20. The exact sine of the
+  phase misses 108 of the 151 rows by one or two units.
+- **`WALK` is 1** in every save the original made, all of them of a player who had not walked.
 
-OpenVirtue writes both as measured (`FullSave.LastFrameTicks`, never below 0). The original still
-loads OpenVirtue's mid-play saves of apathy (+36 17.5, +40 2.5) and legalism (84.5, 5.5) with no
-errors, and their sampler runs print what they printed with both words 0 (rounds 14 and 15's
-`load7-ov`, rerun). Why setting the
-player's position clears +36, and what the third save-format value counts, are not known. The
-harness still sets these words aside, since they follow the replay's clock.
+OpenVirtue now keeps the phase in `WdlRuntime` (`AdvanceWave`, `Wave`), writes +36 and +40 into
+full saves (`FullSave.LastFrameTicks`, `FullSave.WavePhase`), takes +40 back when it loads the
+original's save, and keeps `WALK` at 1 while the player stands (the host had set `WAVE` to the exact
+sine of `TICKS` over the period and `WALK` to 0). The original still loads OpenVirtue's mid-play
+saves of apathy (+36 17.5, +40 2.5) and legalism (84.5, 5.5) with no errors, and their sampler runs
+print what they printed with both words 0 (rounds 14 and 15's `load7-ov`, rerun). Open: why setting
+the player's position clears +36, and `WALK` while the player walks (`WALK_PERIOD`, `WALK_TIME`).
 
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had

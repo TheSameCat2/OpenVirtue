@@ -231,6 +231,8 @@ public sealed class WdlRuntime :
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
     private readonly List<AcknexObject> _objectPassBuffer = [];
     private bool _firstCycleRun;
+    private int _wavePhaseRaw;
+    private int _lastTimeCorrectionRaw;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -965,6 +967,7 @@ public sealed class WdlRuntime :
             PlayerRegion = (int)GetSkill("PLAYER_REGION"),
             Palette = _savedPalette ?? _level.Palettes.Count,
             LastFrameTicks = (int)Math.Round(Math.Max(0, GetSkill(Timing.TicksSkill) - GetSkill(Timing.TimeCorrectionSkill)) * 1024),
+            WavePhase = _wavePhaseRaw,
         };
     }
 
@@ -2341,6 +2344,7 @@ public sealed class WdlRuntime :
         {
             _skills[Timing.TimeCorrectionSkill] = 1;
             _skills[Timing.TimeFactorSkill] = 1;
+            AdvanceWave();
             elapsedSeconds = 0;
             return 1;
         }
@@ -2359,7 +2363,56 @@ public sealed class WdlRuntime :
         {
             _skills["RENDER_MODE"] = 0.5;
         }
+
+        AdvanceWave();
         return timeCorrection;
+    }
+
+    /// <summary>
+    /// The <c>WAVE</c> motion's phase in ticks: the <c>TIME_CORR</c> of every earlier cycle, the first
+    /// cycle's 1 included, wrapped at <c>WAVE_PERIOD</c>. A full save holds it in its first section at
+    /// +40 (OV-20261029-save-body round 20).
+    /// </summary>
+    public double WavePhase => _wavePhaseRaw / 1024.0;
+
+    /// <summary>Sets <see cref="WavePhase"/>, as a full <c>LOAD</c> of the original's save does, and <c>WAVE</c> with it.</summary>
+    public void RestoreWavePhase(double ticks)
+    {
+        _wavePhaseRaw = WdlFixed.ToRaw(ticks);
+        _skills["WAVE"] = Wave(_wavePhaseRaw, WdlFixed.ToRaw(GetSkill("WAVE_PERIOD")));
+    }
+
+    /// <summary>
+    /// Adds the last cycle's <c>TIME_CORR</c> to the wave phase and sets <c>WAVE</c> from it, so the
+    /// actions of a cycle see the phase of the cycles before it (save-body round 20).
+    /// </summary>
+    private void AdvanceWave()
+    {
+        int period = WdlFixed.ToRaw(GetSkill("WAVE_PERIOD"));
+        if (period > 0)
+        {
+            _wavePhaseRaw = (int)((((long)_wavePhaseRaw + _lastTimeCorrectionRaw) % period + period) % period);
+        }
+
+        _lastTimeCorrectionRaw = WdlFixed.ToRaw(GetSkill(Timing.TimeCorrectionSkill));
+        _skills["WAVE"] = Wave(_wavePhaseRaw, period);
+    }
+
+    /// <summary>
+    /// <c>WAVE</c> at a phase, both raw 22.10: the sine of the phase times 2π/<c>WAVE_PERIOD</c>, that
+    /// factor cut to 1/1024, the angle rounded and the sine cut toward zero. This reproduces all 19
+    /// distinct phases of the original's saves (save-body round 20).
+    /// </summary>
+    public static double Wave(int phaseRaw, int periodRaw)
+    {
+        if (periodRaw <= 0)
+        {
+            return 0;
+        }
+
+        long factor = (long)Math.Truncate(Math.Tau * 1024 * 1024 / periodRaw);
+        double angle = Math.Floor((phaseRaw * (double)factor / 1024) + 0.5) / 1024;
+        return Math.Truncate(Math.Sin(angle) * 1024) / 1024;
     }
 
     /// <summary>

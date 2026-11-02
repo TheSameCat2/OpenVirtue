@@ -843,6 +843,40 @@ public class WdlRuntimeTests
         Assert.Equal(256, save.LastFrameTicks);
     }
 
+    [Theory]
+    [InlineData(14.625, 20, -0.9912)] // the save-body probe's saves
+    [InlineData(14.5938, 20, -0.9902)]
+    [InlineData(14.8125, 20, -0.9971)]
+    [InlineData(13.0, 20, -0.8037)] // save-format full-2
+    [InlineData(2.28125, 16, 0.7803)] // apathy's own save
+    [InlineData(14.21875, 16, -0.6445)]
+    [InlineData(5.28125, 16, 0.8760)] // legalism's own save
+    public void Wave_IsTheOriginalsFixedPointSineOfThePhase(double phase, double period, double wave)
+    {
+        // OV-20261029-save-body round 20.
+        // The saves print WAVE to four places; compare it raw.
+        Assert.Equal(Math.Round(wave * 1024), WdlRuntime.Wave((int)Math.Round(phase * 1024), (int)(period * 1024)) * 1024);
+    }
+
+    [Fact]
+    public void Runtime_WavePhase_SumsEarlierCyclesTimeCorrWrappedAtTheWavePeriod()
+    {
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>; SKILL WAVE_PERIOD { VAL 2; }"));
+        runtime.Tick(0.25 / 16); // the first cycle's TIME_CORR is 1
+        Assert.Equal(0, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(1, runtime.WavePhase);
+        runtime.Tick(0.5 / 16);
+        Assert.Equal(1.25, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(1.75, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(0, runtime.WavePhase); // 2.0 wraps at WAVE_PERIOD
+
+        Assert.Equal(runtime.WavePhase * 1024, runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS").WavePhase);
+        Assert.Equal(0, runtime.GetSkill("WAVE"));
+    }
+
     [Fact]
     public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
     {
