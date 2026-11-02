@@ -478,8 +478,9 @@ internal static class OracleReplay
 
     /// <summary>
     /// Compares two full save bodies section by section: the sections and skills that differ, and what
-    /// was set aside because OpenVirtue does not model it (the first section's run-time words at +36
-    /// and +40, <see cref="UnmodelledSkills"/>). Null when either body has no sections.
+    /// was set aside: the first section's words at +36 and +40, which follow <c>TICKS</c> at the save
+    /// (round 20) and so differ wherever the replay's clock does, and <see cref="UnmodelledSkills"/>.
+    /// Null when either body has no sections.
     /// </summary>
     internal static (List<string> Differing, List<string> SetAside)? CompareSaveSections(byte[] a, byte[] b)
     {

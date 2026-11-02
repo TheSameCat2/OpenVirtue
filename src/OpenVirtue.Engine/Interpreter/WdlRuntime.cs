@@ -964,6 +964,7 @@ public sealed class WdlRuntime :
             Unplaced = prefix,
             PlayerRegion = (int)GetSkill("PLAYER_REGION"),
             Palette = _savedPalette ?? _level.Palettes.Count,
+            LastFrameTicks = (int)Math.Round(Math.Max(0, GetSkill(Timing.TicksSkill) - GetSkill(Timing.TimeCorrectionSkill)) * 1024),
         };
     }
 

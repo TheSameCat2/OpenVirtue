@@ -405,7 +405,8 @@ manual's `LOCATE` (p.90) says a beamed object's region is lost until `LOCATE`, a
 scripts never call it. Whether the original re-derives the region when `INVISIBLE` clears is not
 probed; OpenVirtue keeps region 0 until `LOCATE`.
 
-Left open: section 4's screen-element records, +36/+40 of the first section, +106 (the current frame's
+Left open: section 4's screen-element records, +36/+40 of the first section (since measured,
+round 20), +106 (the current frame's
 `DELAY`, run-time state), the floor height on slopes (4 objects one raw step or more off), the
 original's per-region object order, and whether a `FADE_PAL` changes the palette words.
 
@@ -629,6 +630,25 @@ Twelve carriers in `round18/` each declare a few elements and save at once.
   first shown, kept their order, and so did `se-showhide` (`89605a48`). The arrow overlay is declared
   once, with `LAYER 50`, and no script sets a layer. LEGALISM's scroll panels also
   hold a number in the panel's last word (235, 258) where −1 was measured.
+
+## Round 20: the first section's +36 and +40 (2026-11-02, analysis only)
+No new carriers. The first section of every save the original wrote under `oracle-runs/` (172
+files) was read beside the save's own `TICKS` and `TIME_CORR` skills.
+- **+36 is the previous frame's `TICKS`.** In all 142 saves made in play and not spliced, +36 equals
+  `TICKS` less `TIME_CORR` as the save is made: 13.625 at 13.875 after a 0.25 frame (round 18's
+  base, `6eb11a90`), 17.28125 at 17.5625 after 0.28125 (apathy's own save, `e6adcfcc`), 84.28125 at
+  84.53125 (legalism's, `930ff4a9`).
+- **+40 is +36 plus 1.0, wrapped to 16 ticks.** 14.625 beside 13.625, 2.28125 beside 17.28125 and
+  5.28125 beside 84.28125: the same in all 142.
+- **Exceptions.** A save the original makes after loading one OpenVirtue wrote keeps the loaded 0s
+  (`load7-ov`, `92622b55`). A save at `TICKS` 0 holds 0. The save-format probe, which sets
+  `PLAYER_X` and `PLAYER_Y` two frames before its `SAVE`, wrote +36 as 0, while +40 still followed
+  the rule in two of its three saves (`15c3585d`: 14.875 at 14.15625 after 0.28125); the third
+  (`3eb9efb3`) followed an 8-tick frame and holds 13.0.
+
+OpenVirtue writes both as measured (`FullSave.LastFrameTicks`, never below 0). Why setting the
+player's position clears +36, and what the third save-format value counts, are not known. The
+harness still sets these words aside, since they follow the replay's clock.
 
 ## Open Questions
 - Whether actors and things are one list in reverse map order or grouped by kind. The probe had

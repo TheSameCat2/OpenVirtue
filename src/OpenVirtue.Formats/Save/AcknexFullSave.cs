@@ -164,6 +164,13 @@ public sealed record FullSave(
     /// (round 13).
     /// </summary>
     public int Palette { get; init; }
+
+    /// <summary>
+    /// <c>TICKS</c> less <c>TIME_CORR</c> as the save is made (raw), which the first section holds at
+    /// +36; +40 holds it plus 1.0, wrapped to 16 ticks. 142 of the original's saves made in play show
+    /// both (round 20); after a script set the player's position the original wrote +36 as 0.
+    /// </summary>
+    public int LastFrameTicks { get; init; }
 }
 
 /// <summary>
@@ -249,10 +256,11 @@ public static class AcknexFullSave
         long lengthWord = body.Position;
         AcknexSaveFile.WriteUInt32(body, 0); // the body's length + 10000, filled in below
 
-        // The first section as the original's saves hold it; the words at +36 and +40, which change
-        // from save to save, are left 0, which loads (round 13).
+        // The first section as the original's saves hold it (rounds 13 and 20).
         byte[] first = new byte[80];
         Int32(first, 32, 1);
+        Int32(first, 36, save.LastFrameTicks);
+        Int32(first, 40, (int)(((long)save.LastFrameTicks + 1024) % (16 * 1024)));
         Int32(first, 48, save.Palette);
         Int32(first, 52, 1024);
         Int32(first, 56, save.Palette);

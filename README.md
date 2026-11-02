@@ -217,9 +217,11 @@ Not yet complete:
     at its own pace. The `SAVE` textures and `SAVE` regions sections match the original's byte for byte
     on `legalism` (OV-20261029-save-body rounds 13 to 15);
   - writes the screen elements' section as measured, though LEGALISM's own save orders some
-    elements differently, for a reason not yet found (rounds 18 and 19); does not yet write two run-time words of the first section,
-    the engine's run-time statistics skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`,
-    `VESA_MODE`) or `INKEY` strings. V3.963 itself hung loading its own save while an object's
+    elements differently, for a reason not yet found (rounds 18 and 19);
+  - writes the first section's two run-time words as measured (round 20), though not the 0 the
+    original wrote after a script set the player's position; does not yet write the engine's
+    run-time statistics skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`, `VESA_MODE`) or
+    `INKEY` strings. V3.963 itself hung loading its own save while an object's
     event action waited (round 17), so such saves are written as the original writes them but not
     proven to load;
 - `CAREFULLY` actors' residuals and slides (steps along an `ANGLE` and plain steps toward a

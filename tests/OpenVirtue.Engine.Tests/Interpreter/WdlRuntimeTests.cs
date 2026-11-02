@@ -828,6 +828,22 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_LastFrameTicksIsTicksLessTimeCorr()
+    {
+        // OV-20261029-save-body round 20: the first section's +36.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        Assert.Equal(0, runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS").LastFrameTicks); // TICKS 0, TIME_CORR 1
+        runtime.Tick(0.25 / 16); // the first cycle leaves TICKS at 0
+        runtime.Tick(0.25 / 16);
+        runtime.Tick(0.28125 / 16);
+
+        FullSave save = runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS");
+
+        Assert.Equal(0.53125, runtime.GetSkill("TICKS"));
+        Assert.Equal(256, save.LastFrameTicks);
+    }
+
+    [Fact]
     public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
     {
         // Saints of Virtue drops pickups this way: IF (HealthUp1.INVISIBLE == 1) { SET HealthUp1.X, MY.X; … }
