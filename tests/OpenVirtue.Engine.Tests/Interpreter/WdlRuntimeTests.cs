@@ -2303,6 +2303,36 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_LocatePlayer_RefreshesFloorAndCeilingHeightsAtOnce()
+    {
+        // OV-20261019-border-climb step-down (2026-11-03 addendum): after a beam and LOCATE into the pad
+        // (floor -4) the same action and that cycle's IF_ENTER read FLOOR_HGT -4.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "VERTEX 20 0 0;#4\nVERTEX 20 10 0;#5\n" +
+            "REGION room 0 10;#0\nREGION pad -4 12;#1\n" +
+            "WALL a 0 1 0 -1 0 0;#0\nWALL portal 1 2 0 1 0 0;#1\n" +
+            "WALL b 2 3 0 -1 0 0;#2\nWALL c 3 0 0 -1 0 0;#3\n" +
+            "WALL d 1 4 1 -1 0 0;#4\nWALL e 4 5 1 -1 0 0;#5\nWALL f 5 2 1 -1 0 0;#6\n" +
+            "PLAYER_START 5 5 0 0;#7";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL floor_read { VAL 99; } SKILL ceil_read { VAL 99; } " +
+            "ACTION beam { SET PLAYER_X, 15; SET PLAYER_Y, 5; LOCATE; RULE floor_read = FLOOR_HGT; RULE ceil_read = CEIL_HGT; }");
+        var runtime = new WdlRuntime(level);
+        var player = new Player(level);
+        runtime.RegisterObject("player", player);
+        WdlPlayerMotion.Synchronize(runtime, player);
+        Assert.Equal(0, runtime.GetSkill("FLOOR_HGT"));
+
+        Assert.True(runtime.RunAction("beam"));
+
+        Assert.Equal(-4, runtime.GetSkill("floor_read"));
+        Assert.Equal(12, runtime.GetSkill("ceil_read"));
+        Assert.Equal(1, runtime.GetSkill("PLAYER_REGION"));
+    }
+
+    [Fact]
     public void Runtime_ShakeInstruction_RecordsGeometryInvalidation()
     {
         const string map =
@@ -3898,6 +3928,38 @@ public class WdlRuntimeTests
         player.MoveHorizontal(1, 0.5f);
         runtime.Tick(1.0 / 16);
         Assert.Equal(3, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void DispatchContactEvents_WallThatStoppedThePlayer_FiresNearInTheCycleOfTheMove()
+    {
+        // OV-20261019-border-climb ceil-0 (2026-11-03 addendum): the IF_NEAR of a wall that stopped the
+        // player runs right after the move, reading the DISTANCE of the cycle's start, and not again
+        // in the next cycle; within DIST it is left to the DIST edge.
+        Level level = LoadWithMap(
+            GateMap,
+            GateCounters + "WALL gate { DIST 6; IF_NEAR near_gate; IF_FAR far_gate; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 17, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(2, 0);
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(3 + 8, runtime.GetSkill("near_dist"), 4); // from (17, 0), before the move
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 17, 4); // 3 + 4 from v1
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(2, 1); // stopped at 1.249 + 3 from v1: within DIST
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
         Assert.Equal(0, runtime.GetSkill("far_count"));
     }
 

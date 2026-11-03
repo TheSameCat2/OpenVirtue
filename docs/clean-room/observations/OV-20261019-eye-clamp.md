@@ -160,3 +160,44 @@ neither was a reading of `TIME_CORR` exactly 4.
 are on or below a floor the player cannot dive through. `LevelCollisionWorld.Move` takes a
 `wallClearance` that solid walls add to the radius, and `Player` passes
 `Player.WallClearance` (0.05). `PLAYER_WIDTH` is used as set, down to 0.
+
+## Addendum: the stop rule and the step rounding (2026-11-03)
+The oracle-diff replays of `stop-border` (`OVECX0.TXT` `afdac5e6`) and `stop-solid` (`648dc091`),
+read in raw 1/1024 units, settle the "0.01–0.05 spread" left open above. `PLAYER_WIDTH` 1.2 is
+1228 raw; the pad's south wall is y = 12 (12288) and the free-standing wall x = 24 (24576).
+- **The step.** One frame moves the player `round(raw(PLAYER_VX) · raw(TIME_CORR) / 1024)` raw
+  along x, and the same for y, rounded half away from zero as the actor's step
+  (OV-20261029-actor-step round 6). The 0.2 walk (204 raw) goes 6144, +57, +51, +57, +51, …
+  (204 · 288/1024 = 57.375 at `TIME_CORR` 0.281, 51 at 0.25); OpenVirtue's unrounded 57.375 drifted
+  to 6.579 against 6.577 by line 18. The 0.05 walk (51 raw) steps 14 and 13 (12.75 rounds up).
+- **The stop.** A step is stopped only when it would end at most `PLAYER_WIDTH` (1228) from the
+  wall, and then the player is put `PLAYER_WIDTH` + 51 from it: 12288 − 1279 = 11009 (10.751).
+  Widths 2, 3 and 0.5 stop at 2099, 3123 and 563 (9.950, 8.950, 23.450), all width + 51. A step
+  that ends between the two is not stopped: the 0.05 walk comes on from 11009 to 11022, 11035 and
+  11049 (10.790, 1239 from the wall), and the next step, to 11062, is stopped at 11009 again. From
+  11009 a step of 51 ends exactly 1228 from the wall and is stopped (no 10.801 in 1187 lines).
+- **The alternation.** A stopped part that comes out under 4/1024 becomes 4 with its sign, and +4
+  for none, as for a `CAREFULLY` actor (OV-20261029-actor-events addendum): stopped where it
+  stands the player moves 11009 → 11013 (10.755); the next stop pulls it back by 4 to 11009, which
+  stays. So a push alternates 10.751 and 10.755 in every cycle, whatever `TIME_CORR`, the 1.245 of
+  the table above. At x = 24 the same gives 22.751 and 22.755.
+
+Rule: per axis the step is the rounded 22.10 product; a solid wall or blocking border stops a step
+that would end within `PLAYER_WIDTH` of it, `PLAYER_WIDTH` included, at `PLAYER_WIDTH` + 51/1024 on
+the 1/1024 grid; then a stopped part under 4/1024 becomes ±4.
+
+Implementation: `WdlPlayerMotion.Apply` (`WdlRuntime.EngineProduct`, `MinimumPart`),
+`Player.MoveHorizontal` and `Player.WallClearance` (51/1024), `LevelCollisionWorld.Move`
+(`stopAtContact`). Tests: `WdlPlayerMotionTests.Apply_HorizontalStep_IsTheProductOfVelocityAndTimeCorrectionRoundedTo1024ths`,
+`Apply_PushingIntoASolidWall_HoldsWidthPlus51UnitsAndAlternatesByFour` and
+`Apply_StepTowardASolidWall_IsStoppedOnlyWithinPlayerWidth`.
+
+Result: both carriers still differ from line 2 on, by the start-up clock. Compared by `V` line
+without `TICKS` and the counter, stop-border's first walk (168 lines) now fits throughout, but
+for prints of an exact half (−7.8125 prints −7.813 in the original, −7.812 in OpenVirtue); the
+rest of both carriers is off by the `TIME_CORR` phase of the later walks. The step rounding alone
+moved proximity-events `near-walk` (`38a640f3`) from 4 to 10 matching lines and view-activity
+round 8 `walk-aside` (`bb597e5b`) from 21 to 24. With the OV-20261019-border-climb addendum of
+this date the whole change flips nine carriers to full matches. Two lines were lost, both lucky
+matches behind an earlier difference: border-kinds `invisible-border` line 10 (lines 6–9 already
+differ by the clock) and proximity-events `near-beam` line 33 (line 32 already differs by 142 raw).

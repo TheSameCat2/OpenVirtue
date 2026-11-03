@@ -1554,6 +1554,11 @@ public sealed class WdlRuntime :
             // The host copies PLAYER_REGION onto the player when the position changes; keep it current
             // so a beam followed by LOCATE lands in the located region (OV-20261029-slope).
             SetSkill("PLAYER_REGION", region);
+            // The heights follow at once: patched V3.963 read the new region's FLOOR_HGT −4 in the
+            // action right after LOCATE and in that cycle's IF_ENTER (OV-20261019-border-climb
+            // step-down, 2026-11-03 addendum).
+            SetSkill("FLOOR_HGT", LevelTopology.FloorHeightAt(_level, region, x, y));
+            SetSkill("CEIL_HGT", LevelTopology.CeilingHeightAt(_level, region, x, y));
             if (RegionAt(region) is { } here)
             {
                 SetObjectReference("here", here);
@@ -3210,7 +3215,8 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// Fires a wall's <c>IF_NEAR</c> in every cycle after the player's movement passed through the
-    /// wall or pushed against it, unless the player is within its <c>DIST</c>, in the wall's turn of
+    /// wall (or pushed against it, unless <see cref="DispatchContactEvents"/> took that contact right
+    /// after the move), unless the player is within its <c>DIST</c>, in the wall's turn of
     /// the object pass before its <c>EACH_TICK</c> (OV-20261019-wall-pass-clip, pass-dist0: the
     /// <c>IF_NEAR</c> comes before the wall's own <c>EACH_TICK</c> output; OV-20261019-clip-detail,
     /// berkeley-wall: after the <c>EACH_TICK</c> of a wall the pass reaches first). This leaves the
@@ -3305,7 +3311,11 @@ public sealed class WdlRuntime :
     /// that cycle's movement and its <c>IF_NEAR</c> runs in the same cycle, reading the thing's
     /// <c>DISTANCE</c> from before the beam (34 for a thing 24, −10 from the origin;
     /// OV-20261019-actor-contact round 8). A target already within its <c>DIST</c> does not fire again.
-    /// The host calls it right after the player's movement.
+    /// A wall that stopped the player fires here too, after the move and with the <c>DISTANCE</c> of
+    /// the cycle's start, unless the player is now within its <c>DIST</c> (whose edge fires instead,
+    /// as for a wall passed through): patched V3.963 printed a blocking wall's <c>IF_NEAR</c> with the
+    /// stopped position and the cycle's own counter (OV-20261019-border-climb ceil-0, 2026-11-03
+    /// addendum). The host calls it right after the player's movement.
     /// </summary>
     public void DispatchContactEvents()
     {
@@ -3318,7 +3328,11 @@ public sealed class WdlRuntime :
         {
             if (ShouldTrackProximity(target) &&
                 (target is not MapEntity || IsWithinClipDistance(target)) &&
-                !(_proximityStates.TryGetValue(target, out bool near) && near))
+                !(_proximityStates.TryGetValue(target, out bool near) && near) &&
+                !(target is Wall &&
+                  IsWithinClipDistance(target) &&
+                  TryCurrentProximity(player, target, out bool nearNow, writeDistance: false) &&
+                  nearNow))
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
             }
@@ -3750,10 +3764,11 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c>: rounded to 1/1024,
-    /// where a WDL <c>*</c> cuts toward zero (OV-20261029-actor-step round 6).
+    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c> or the player's
+    /// <c>PLAYER_VX·TIME_CORR</c>: rounded to 1/1024, where a WDL <c>*</c> cuts toward zero
+    /// (OV-20261029-actor-step round 6, OV-20261019-eye-clamp).
     /// </summary>
-    private static double EngineProduct(double left, double right) =>
+    internal static double EngineProduct(double left, double right) =>
         Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
 
     /// <summary>

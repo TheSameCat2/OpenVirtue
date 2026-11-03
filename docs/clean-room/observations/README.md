@@ -127,15 +127,19 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   less than `PLAYER_CLIMB` above the feet (`PLAYER_Z − PLAYER_SIZE`, so a raised eye climbs
   higher), and the eye lies above the new floor and below the new ceiling. `PLAYER_SIZE` and the
   headroom count only through those, and a region with floor = ceiling always holds. Pushing
-  against a border that blocks fires its `IF_NEAR` in every pushing cycle. The runtime keeps the
+  against a border that blocks fires its `IF_NEAR` in every pushing cycle, right after that
+  cycle's move (2026-11-03 addendum). The runtime keeps the
   eye within the floor + 0.35 and the ceiling − 0.35 (implemented with OV-20261019-eye-clamp).
+  `LOCATE` of the player sets `FLOOR_HGT` and `CEIL_HGT` at once (2026-11-03 addendum).
   Fourteen DOSBox-X runs; implemented in `Player`.
 - `OV-20261019-eye-clamp.md` — `PLAYER_VZ` moves the eye freely, and the feet sink below the
   floor. One frame moves it by `PLAYER_VZ × max(TIME_CORR, 4)`. After every frame the runtime
   clamps the eye to [floor + 0.35, ceiling − 0.35] of the player's region, the ceiling winning.
   The clamp also catches a scripted `PLAYER_Z`, leaves `PLAYER_VZ` alone and adds its correction
-  to `IMPACT_VZ`. Solid walls and blocking region borders stop the player about 0.05 beyond
-  `PLAYER_WIDTH`, which is not held at the manual's 1.2 minimum. Ten DOSBox-X runs (six at
+  to `IMPACT_VZ`. Solid walls and blocking region borders stop a step that would end within
+  `PLAYER_WIDTH` and hold the player `PLAYER_WIDTH` + 51/1024 away, alternating by 4/1024 while it
+  pushes; `PLAYER_WIDTH` is not held at the manual's 1.2 minimum. Each frame's step is
+  `PLAYER_VX × TIME_CORR` rounded to 1/1024 (2026-11-03 addendum). Ten DOSBox-X runs (six at
   forced CPU speeds); implemented in `Player`, `LevelCollisionWorld` and `WdlPlayerMotion`.
 
 ## Contact, border kinds and CLIP_DIST detail (2026-10-19/20 — confirmed and implemented)
