@@ -63,6 +63,7 @@ internal static class ProjectionProbeGenerator
     public const string OverlapProbeName = "overlap";
     public const string StartupProbeName = "startup";
     public const string ContactClockProbeName = "contact-clock";
+    public const string CarefulStopProbeName = "careful-stop";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -107,6 +108,7 @@ internal static class ProjectionProbeGenerator
     private const string OverlapProbeId = "OV-20261029-overlap";
     private const string StartupProbeId = "OV-20261103-startup-clock";
     private const string ContactClockProbeId = "OV-20261103-contact-clock";
+    private const string CarefulStopProbeId = "OV-20261103-careful-stop";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -422,6 +424,7 @@ internal static class ProjectionProbeGenerator
         OverlapProbeName => OverlapProbeId,
         StartupProbeName => StartupProbeId,
         ContactClockProbeName => ContactClockProbeId,
+        CarefulStopProbeName => CarefulStopProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -565,6 +568,7 @@ internal static class ProjectionProbeGenerator
             case OverlapProbeName:
             case StartupProbeName:
             case ContactClockProbeName:
+            case CarefulStopProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -618,6 +622,7 @@ internal static class ProjectionProbeGenerator
         OverlapProbeName => OverlapProbeCases.Set,
         StartupProbeName => StartupProbeCases.Set,
         ContactClockProbeName => ContactClockProbeCases.Set,
+        CarefulStopProbeName => CarefulStopProbeCases.Set,
         _ => null,
     };
 

@@ -63,7 +63,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.UiTextProbeName or
             ProjectionProbeGenerator.OverlapProbeName or
             ProjectionProbeGenerator.StartupProbeName or
-            ProjectionProbeGenerator.ContactClockProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.ContactClockProbeName or
+            ProjectionProbeGenerator.CarefulStopProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };
