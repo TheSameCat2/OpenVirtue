@@ -448,7 +448,7 @@ First targets:
 ### Status (2026-11-03)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces and saves; 460 of 673 match in full (2026-11-03, after
+against the original's traces and saves; 545 of 673 match in full (2026-11-03 evening: the save-body carriers' start-ups planned from their saves' `TOTAL_FRAMES` and `TICKS`, the walls' view bits and load-time floors in saves, heap pointers set aside: 85 of 107 from none); 460 of 673 (2026-11-03, after
 OV-20261103-careful-stop: the refused long step's three-way end test, the standing hold at a solid
 wall, walls', things' and actors' `DISTANCE` in the player's view after the player's own move
 without a turn, and the sprite's full-column edge; 12 new carriers over three rounds, 10 of them

@@ -687,3 +687,29 @@ the player's position clears +36, and `WALK` while the player walks (`WALK_PERIO
   Tested by `Runtime_FullSave_KeepsWaitingActionsButNotTheOneSaving`.
 - Writing full saves the original can load needs the remaining record fields and sections; the
   instruction positions are now known (round 8).
+
+## Addendum: the saves replayed (2026-11-03)
+The oracle-diff replay of this probe's 107 carriers, none of which prints `TICKS`, ran 56 frames of
+8/32 to the save where the original's saves hold `TOTAL_FRAMES` 43 to 47 at `TICKS` 13.8 to 14.2:
+the original's first frames were long and its last ones 60 Hz (`TIME_CORR` 0.25 or 0.281 at the
+save). The harness now plans such a carrier's start-up from the earliest save's `TOTAL_FRAMES`,
+`TICKS` and `TIME_CORR` (`tools/README.md`). With the clock right, three more things the saves hold
+were read, all over the 99 original saves:
+- **The walls' +28..+39 are heap pointers.** (−23568, 90) for the first wall record of the probe's
+  room in every save, falling by 224 or 264 a wall, repeated at +32 from the third record on and at
+  +36 for an unplaced wall (25792, 91). Set aside in the diff with section 0's +36/+40.
+- **The walls' view bits.** The first flag word holds 0x602 for a wall on the screen and 0x002 for
+  the one behind the player, never seen (1175 and 98 of the records): `VISIBLE` is 0x400 (which
+  `INVISIBLE` clears, round 12) and `SEEN` 0x200. An `INVISIBLE` wall on the screen holds 0x242:
+  `SEEN` without `VISIBLE`. OpenVirtue wrote 0x602 for every wall; it now tests each wall's view
+  as it saves and sets the bits from `VISIBLE` and `SEEN`, and an `INVISIBLE` wall is `SEEN` once
+  on the screen.
+- **The floor under an object (+122) is the level's as loaded.** After `SET HERE.FLOOR_HGT, -2`
+  (region-floor, region-save) or a pattern (region-fields) the saved floor is still 0.
+- **`ACTOR_CEIL_HGT` stays 0** across a plain actor's `EACH_TICK` (events, my-you); OpenVirtue
+  set the actor heights before every actor's tick, now before a `CAREFULLY` actor's only.
+
+Result: 85 of the 107 carriers match in full (none before). Left: the four slope-flag carriers'
+`WDIST_MINX/MAXX/MINY/MAXY` (−16, 30, −24, 24: not in the manual, not modelled), flag-sensitive's
+save one frame late, three `LOAD` carriers' headers, and single fields in five carriers (+106,
++194, +376, `PLAYER_Z` 0.214/0.213, `RESULT`).
