@@ -4090,20 +4090,24 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
-            // OV-20261103-careful-stop: a skipped long step's end is tried at its full, half and quarter
-            // length. An end that is clear is taken; one before a wall the actor may not cross but within
-            // its half width goes to the hold (the swept move); one past such a border goes on to the
-            // next halving, and past it at the quarter still the actor moves half the way to the hold.
+            // OV-20261103-careful-stop: a skipped long step's end is tried at its full, half, quarter and
+            // eighth length. An end that is clear is taken. Down to the quarter, one before a wall the actor
+            // may not cross but within its half width goes to the hold (the swept move) and one past such a
+            // border goes on to the next halving; at the eighth, an end that is not clear moves the actor
+            // half the way to the hold (from 2 before the border 0.476 of the 0.951; from 2.272 the clear
+            // eighth, 1.2).
             Vector2 endStep = step;
             CarefulEndTest test = TestCarefulEndPoint(actor, step.X, step.Y, out int endRegion);
-            for (int halvings = 1; halvings <= 2 && test == CarefulEndTest.Crosses; halvings++)
+            int level = 0;
+            while (level < 3 && test == CarefulEndTest.Crosses)
             {
-                endStep = step / (1 << halvings);
+                level++;
+                endStep = step / (1 << level);
                 test = TestCarefulEndPoint(actor, endStep.X, endStep.Y, out endRegion);
             }
 
             bool endPointMove = test == CarefulEndTest.Clear;
-            bool halfWayToTheHold = test == CarefulEndTest.Crosses;
+            bool halfWayToTheHold = !endPointMove && level == 3;
             CircleMoveResult result = endPointMove
                 ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
@@ -4386,14 +4390,26 @@ public sealed class WdlRuntime :
 
         double directionX = stepX / length;
         double directionY = stepY / length;
-        // The end point's region: follow the region borders the step crosses, nearest first.
-        int region = actor.Region;
+        // The end point's region: follow the region borders the step crosses, nearest first. An actor
+        // standing in no region (placed in rock) enters the first open region its step crosses into as if
+        // nothing were there, and is tested from it: careful-stop north-4-45's walker 0.5 outside the
+        // room's edge took the quarter step into the room, its whole and half ending inside the pad.
+        int? located = LevelTopology.LocateRegion(_level, actor.X, actor.Y);
+        int region = located ?? -1;
+        int origin = region;
         foreach (Wall wall in CrossedWalls(actor.X, actor.Y, directionX, directionY, length))
         {
+            if (region < 0)
+            {
+                region = !IsSolidRegion(wall.LeftRegion) ? wall.LeftRegion : wall.RightRegion;
+                origin = region;
+                continue;
+            }
+
             region = OtherSide(wall, region);
         }
 
-        if (region < 0 || region >= _level.Regions.Count || (region != actor.Region && !ActorCanClimbInto(actor, region)))
+        if (region < 0 || region >= _level.Regions.Count || (region != origin && !ActorCanClimbInto(actor, region)))
         {
             return CarefulEndTest.Crosses;
         }

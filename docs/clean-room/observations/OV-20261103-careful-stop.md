@@ -1,6 +1,6 @@
 # OV-20261103-careful-stop: a refused long step's stop, and a wall's DISTANCE after a beam
 Date: 2026-11-03
-Status: confirmed (twelve carriers over three rounds, at 60 frames a second) and implemented; a walker placed in rock and a wall end's column rounding left as read
+Status: confirmed (twelve carriers over three rounds, at 60 frames a second) and implemented; a wall end's column rounding and the view value's unit residuals left as read
 Observer: OpenVirtue maintainers (black-box probe, trace values)
 Implementer: OpenVirtue maintainers
 
@@ -111,11 +111,12 @@ border carriers of the earlier probes, facing +Y, read the map's value in every 
 (OV-20261019-border-kinds plain-border 4.359), so a walk by velocity gives the map's value too.
 
 ## Conclusion
-1. **A skipped `CAREFULLY` actor's long step** is tried whole, then at half, then at a quarter of
-   its length. An end that is clear is taken. An end before a wall the actor may not cross, within
-   its half width, sends the actor to the hold, 1074 units before the wall. An end past such a
-   border goes on to the next halving; past it at the quarter still, the actor moves half the way
-   (in whole units, toward zero) to the hold.
+1. **A skipped `CAREFULLY` actor's long step** is tried whole, then at half, quarter and eighth
+   of its length. An end that is clear is taken. Down to the quarter, an end before a wall the
+   actor may not cross, within its half width, sends the actor to the hold, 1074 units before the
+   wall, and an end past such a border goes on to the next halving. At the eighth an end that is
+   not clear moves the actor half the way (in whole units, toward zero) to the hold. Read from
+   the eleven stops of rounds 1 and 2 and north-4-45's eighth (2.272 before the border: 1.199).
 2. **A `CAREFULLY` actor nearer than its half width to a solid wall** (rock beyond it) is put at
    the wall's hold in place of its move, the untouched axis nudged 4/1024; exactly its half width
    away it is left, and a step border without rock beyond it holds nothing. The arrival at a way
@@ -133,8 +134,10 @@ stands fit, but why a beam differs from a walk and a turn is not known; a walk o
 not tried here.
 
 ## Open Questions
-- A walker placed in rock outside the room walks in as if nothing were there (north-4-45 a2);
-  OpenVirtue keeps it out. Not modelled.
+- The view value's residuals: the thing's and actor's readings along dist-beam's walk sit 0 to 3
+  units off the 22.10 formula, as mirror images in x, drifting with the position; no constant trig
+  pair (to 1/16384) nor a per-product rounding (cut, floor or round, summed before or after)
+  fits more than 46 of 154 readings. The arithmetic differs in a way three units cannot pin.
 - Whether things' and actors' `DISTANCE` take the view's value after a beam as walls' do
   (OV-20261021-distance-refresh measured turns and walks facing +X).
 - Whether a walk by velocity off the axes, or a turn with a walk, keeps the map's value.
@@ -147,8 +150,10 @@ not tried here.
 - `WdlRuntimeTests.Tick_WallDistance_IsTheViewsManhattanAfterAMoveAndTheMapsAfterATurn`.
 
 ## Implementation Notes
-- `WdlRuntime.TestCarefulEndPoint` classifies an end as clear, too close or past a border;
-  `AdvanceActorToward`'s careful branch halves twice and moves half the way to the hold.
+- `WdlRuntime.TestCarefulEndPoint` classifies an end as clear, too close or past a border, and
+  follows the borders from the first open region an actor in rock steps into (north-4-45 a2);
+  `AdvanceActorToward`'s careful branch halves up to three times and moves half the way to the
+  hold at the eighth.
 - `WdlRuntime.TryCarefulHoldPosition`/`HoldCarefulActorAt` through
   `LevelCollisionWorld.HoldOffWalls` (strict, solid regions only), before the move; the standing
   arrival in `ArriveIfStandingOnWayPoint`; the requested step's reach in `AdvanceActorToward`.
@@ -210,6 +215,6 @@ occluder's column rounding is sub-pixel and three points do not pin it; left as 
   `IntersectsScreen` a full row at its top and bottom.
 - Tests: `ViewTestTests.IsSpriteVisible_AtTheConesEdge_NeedsAFullColumn`,
   `IsSpriteVisible_AtTheConesEdgeNearer_NeedsAFullColumnToo`; the wall-distance test's walk.
-- Result: 459 of 673 carriers (455 of 668 before): cone-w2, cone-w4, cone-w2-d20 and
-  view-activity cone-edge match in full; dist-beam reads 48 of 112 lines (the 1-to-5-unit
-  residuals), occlude-w2 and the walker in rock stay open.
+- Result: 460 of 673 carriers (455 of 668 before): cone-w2, cone-w4, cone-w2-d20, north-4-45 and
+  view-activity cone-edge match in full; dist-beam reads 48 of 112 lines (the unit residuals) and
+  occlude-w2 stays open.
