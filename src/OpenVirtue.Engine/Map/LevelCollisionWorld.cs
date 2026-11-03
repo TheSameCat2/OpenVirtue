@@ -144,12 +144,33 @@ public sealed class LevelCollisionWorld
         MathF.Sqrt((combinedRadius * combinedRadius) + ContactSlackSquared);
 
     /// <summary>
+    /// What the original's start-up push-out adds to the square of the contact distance, in 22.10
+    /// raw units of a squared length: 98, about 0.096 (OV-20261103-startup-clock).
+    /// </summary>
+    public const int PushSlackSquaredRaw = 98;
+
+    /// <summary>
+    /// The squared length, in 22.10 raw units, from which the push-out no longer finds an object:
+    /// 8 steps. A 16-wide actor (contact 9.2) 8.25 away left the player alone; 3 away it pushed it
+    /// out to 9.2 (OV-20261103-startup-clock).
+    /// </summary>
+    public const long PushReachSquaredRaw = 64 * 1024;
+
+    /// <summary>
     /// Pushes a circle that overlaps a solid thing or actor straight out from its centre to the
     /// contact distance, without a move (a player beamed inside an object,
     /// OV-20261019-actor-contact), and adds the object to <paramref name="touched"/>. Only one
     /// object counts: the first overlapping one in reverse map order, actors before things. On its
     /// exact centre there is no push at all; nor is there one out of the other objects the circle
     /// still overlaps (OV-20261029-overlap).
+    /// <para>
+    /// The arithmetic is the original's 22.10 (OV-20261103-startup-clock): coordinates cut toward zero;
+    /// the squared length L² = (dx² + dy²)/1024 and C² = c²/1024 + <see cref="PushSlackSquaredRaw"/>
+    /// (c the summed radii) cut; the object counts when L² &lt; C² and L² &lt; 8²; the offset is then
+    /// scaled by √(C²/L²), the ratio and its root each cut to 1/1024, and the product rounded. That
+    /// gives the measured 2.272 out of a 2-wide actor 2.1 away, 2.274 from 1.0 away and 2.292 from
+    /// 0.1 away.
+    /// </para>
     /// </summary>
     public Vector2 PushOutOfEntities(
         Vector2 position,
@@ -161,6 +182,8 @@ public sealed class LevelCollisionWorld
     {
         ArgumentNullException.ThrowIfNull(entityRadius);
         ArgumentNullException.ThrowIfNull(canCrossEntity);
+        long px = Raw(position.X);
+        long py = Raw(position.Y);
         foreach (MapEntity entity in _level.Actors.Reverse<MapEntity>().Concat(_level.Things.Reverse<MapEntity>()))
         {
             if (entity.Region != region || canCrossEntity(entity))
@@ -168,32 +191,40 @@ public sealed class LevelCollisionWorld
                 continue;
             }
 
-            float contact = ContactDistance(Math.Max(0.01f, radius) + Math.Max(0, entityRadius(entity)));
-            var center = new Vector2((float)entity.X, (float)entity.Y);
-            Vector2 offset = position - center;
-            if (offset.LengthSquared() >= contact * contact)
+            long contact = Raw(Math.Max(0.01f, radius)) + Raw(Math.Max(0, entityRadius(entity)));
+            long contactSquared = (contact * contact / 1024) + PushSlackSquaredRaw;
+            long ax = Raw(entity.X);
+            long ay = Raw(entity.Y);
+            long dx = px - ax;
+            long dy = py - ay;
+            long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
+            if (lengthSquared >= contactSquared || lengthSquared >= PushReachSquaredRaw)
             {
                 continue;
             }
 
-            if (offset.LengthSquared() <= float.Epsilon)
+            if (lengthSquared == 0)
             {
                 return position;
             }
 
+            long ratio = contactSquared * 1024 / lengthSquared;
+            double scale = Math.Floor(Math.Sqrt(ratio * 1024.0));
+            double ex = ax + Math.Floor((dx * scale / 1024) + 0.5);
+            double ey = ay + Math.Floor((dy * scale / 1024) + 0.5);
+
             // The push is a step with no part along the other axis, and the original then moves
             // the player 4/1024 along that axis, always positive (OV-20261029-actor-step).
-            const float Nudge = 4f / 1024;
-            Vector2 end = center + (Vector2.Normalize(offset) * contact);
-            if (offset.X == 0)
+            if (dx == 0)
             {
-                end.X += Nudge;
+                ex += 4;
             }
-            else if (offset.Y == 0)
+            else if (dy == 0)
             {
-                end.Y += Nudge;
+                ey += 4;
             }
 
+            Vector2 end = new((float)(ex / 1024), (float)(ey / 1024));
             if (touched is not null && !touched.Contains(entity))
             {
                 touched.Add(entity);
@@ -204,6 +235,9 @@ public sealed class LevelCollisionWorld
 
         return position;
     }
+
+    /// <summary>A coordinate in 1/1024 steps, cut toward zero.</summary>
+    private static long Raw(double value) => (long)Math.Truncate(value * 1024);
 
     private bool ResolveWalls(
         Vector2 from,

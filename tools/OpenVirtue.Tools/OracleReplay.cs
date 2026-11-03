@@ -752,6 +752,11 @@ internal static class OracleReplay
         // 8/9 thirty-seconds pattern), or the last five steps' median where no cadence fits them.
         private readonly OracleCadence? _tail = OracleTrace.FitCadence(cycleTicks);
         private readonly double _tailStep = RecentMedian(cycleTicks, 5) ?? Median(cycleTicks) ?? fallbackTicks;
+
+        // Before the first sample the frames run the first samples' cadence backward, cycle 1 the
+        // earliest of it past TICKS 0 (OV-20261103-startup-clock).
+        private readonly IReadOnlyList<double>? _startupFrames = OracleTrace.StartupFrames(cycleTicks, firstStep);
+        private int _startupFrame;
         private int _tailFrames;
         private int _next;
 
@@ -779,9 +784,14 @@ internal static class OracleReplay
         /// <summary>The next frame's duration in seconds, given the replay's current <c>TICKS</c>.</summary>
         public double Next(double ticks)
         {
+            if (!Anchored && _startupFrames is { } planned && _startupFrame < planned.Count)
+            {
+                return planned[_startupFrame++] / Timing.TicksPerSecond;
+            }
+
             if (!Anchored)
             {
-                // Before the first sampled cycle the original's frame times are unknown. Run steady
+                // Where no cadence fits the first samples, the original's start-up frames are unknown. Run steady
                 // cycles at the first sampled rate, but plan them to reach the original's first sample
                 // exactly: arrive at its TICKS less the first cycle's step, then take that step. The
                 // carriers' start-up WAITT resumes in the first cycle after TICKS passes 13, so landing

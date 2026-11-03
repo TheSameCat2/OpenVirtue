@@ -83,5 +83,11 @@ traces match line for line. Their `OVPRB0` does not: OpenVirtue pushes the playe
 standing 8 steps away at the start (`PX` −0.930), where the original leaves it at (0, 0); that is
 the start-up push-out (OV-20261029-overlap).
 
+Addendum (2026-11-03): the push-out reaches no object 8 steps or more away
+(OV-20261103-startup-clock: a 16-wide actor at (8, −2), `OVSUP0.TXT` `41046da6`, left the player at
+(0, 0); the same actor 3 away pushed it out to 9.2). With that limit in
+`LevelCollisionWorld.PushOutOfEntities`, the six round 2 `OVPRB0` traces (actor-ground-4 `d151ef6f`,
+thing-ground-4 `832ebe7e`, …) match, and so do all six round 2 carriers.
+
 ## Open Questions
 - An eye exactly at a storey's ceiling.

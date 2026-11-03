@@ -346,4 +346,17 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - The push goes along the centre line to √(c² + 0.093), the player's measured contact distance
     with objects in general.
   - A zero component gets the 4/1024 nudge.
-  - Off-axis residuals of up to 0.008 are open.
+  - Off-axis residuals of up to 0.008 are open. Settled by the 22.10 push-out of
+    OV-20261103-startup-clock, but for one unit on 4-wide objects.
+
+## The start-up frames and push-out (2026-11-03 — confirmed and implemented)
+
+- `OV-20261103-startup-clock.md` — four identical launches and 13 more carriers sampled every cycle
+  from `IF_START`:
+  - Cycle 1 reads `TICKS` 0. From cycle 2 the run's 60 Hz 8/9 cadence holds, and cycle 1 is its
+    earliest frame past the clock's start, so the step into cycle 2 is 9 to 17 thirty-seconds. The
+    replay plans the start-up from the first samples' cadence run backward.
+  - The start-up push-out comes in cycle 2. It is done in 22.10: squared lengths cut, C² = c²/1024
+    + 98, the offset scaled by the root of the cut ratio. It reaches no object 8 steps or more away.
+  - An addendum covers the replay's choice of timing column when an event token is denser than the
+    sampler (border-climb).

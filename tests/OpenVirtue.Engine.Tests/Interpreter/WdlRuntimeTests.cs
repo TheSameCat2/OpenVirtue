@@ -4290,9 +4290,9 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("near_count"));
         runtime.Tick(1.0 / 16);
 
-        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
-        Assert.Equal(10 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
-        Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
+        // In 22.10 (OV-20261103-startup-clock): L² = 1280, C² = 4952 + 98, ratio 4040, root 2033.
+        Assert.Equal((10240 - 2033) / 1024f, player.Position.X, 5);
+        Assert.Equal(1017 / 1024f, player.Position.Z, 5);
         Assert.Equal(1, runtime.GetSkill("near_count"));
     }
 
@@ -4322,10 +4322,34 @@ public class WdlRuntimeTests
             return;
         }
 
-        float contact = LevelCollisionWorld.ContactDistance(1 + player.Width);
-        Assert.Equal(11 - (contact * 2 / MathF.Sqrt(5)), player.Position.X, 3);
-        Assert.Equal(contact / MathF.Sqrt(5), player.Position.Z, 3);
-        Assert.True(Vector2.Distance(new Vector2(9, 0), new Vector2(player.Position.X, player.Position.Z)) < contact);
+        Assert.Equal((11264 - 2033) / 1024f, player.Position.X, 5);
+        Assert.Equal(1017 / 1024f, player.Position.Z, 5);
+        Assert.True(Vector2.Distance(new Vector2(9, 0), new Vector2(player.Position.X, player.Position.Z)) < 2.2f);
+    }
+
+    [Theory]
+    [InlineData("2.1 0", 16, -122, 4)] // 2.272 out: OV-20261029-overlap round 3 d21
+    [InlineData("1.5 0", 16, -736, 4)] // 2.272
+    [InlineData("1.0 0", 16, -1250, 4)] // 2.274
+    [InlineData("0.1 0", 16, -2190, 4)] // 2.292
+    [InlineData("0.4 -0.1", 4, -4773, 1190)] // 8 wide, 14 degrees off the axis (round 2 w8-14)
+    [InlineData("3 0", 2, -6351, 4)] // 16 wide: pushed out to 9.2
+    [InlineData("8 -2", 2, 0, 0)] // 16 wide 8.25 away: under its contact, but 8 steps or more
+    public void Apply_PlayerStartingInsideAnActor_IsPushedOutIn2210Steps(string at, int scale, int x, int y)
+    {
+        // OV-20261103-startup-clock: the push-out's 22.10 arithmetic, in 1/1024 units.
+        Level level = LoadWithMap(
+            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR guard {at} 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+            $"MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex {{ SCALE_X {scale}; BMAPS postMap; }} " +
+            "ACTOR guard { TEXTURE postTex; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        Assert.Equal(x / 1024f, player.Position.X, 6);
+        Assert.Equal(y / 1024f, player.Position.Z, 6);
     }
 
     [Fact]

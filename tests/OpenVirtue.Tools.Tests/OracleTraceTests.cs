@@ -29,6 +29,49 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void DetectTimingColumn_SparseEventToken_GivesWayToTheSamplerFromCycleOne()
+    {
+        // border-climb climb-1: N prints only while the player pushes (cycles 120 to 136 here), the TK
+        // sampler every 62 cycles from cycle 1; N has more distinct TICKS but fills under a quarter.
+        var trace = new System.Text.StringBuilder("BEGIN\n");
+        for (int n = 1; n <= 311; n += 62)
+        {
+            trace.Append(System.Globalization.CultureInfo.InvariantCulture, $"TK {13.406 + ((n - 1) * 0.262):0.000} {n}.000 -8.000\n");
+            if (n == 125)
+            {
+                for (int m = 120; m <= 136; m++)
+                {
+                    trace.Append(System.Globalization.CultureInfo.InvariantCulture, $"N {44.594 + ((m - 120) * 0.262):0.000} {m}.000 1.000\n");
+                }
+            }
+        }
+
+        Assert.Equal(new OracleTimingColumn("TK", 0), OracleTrace.DetectTimingColumn(OracleTrace.Parse(trace.ToString())));
+    }
+
+    [Fact]
+    public void DetectTimingColumn_SamplerEveryOtherCycle_IsKept()
+    {
+        // eye-clamp vz-rate-c50000: V every other cycle (cycles 8 to 40) beside a TK every 8 cycles.
+        var trace = new System.Text.StringBuilder("BEGIN\n");
+        for (int n = 1; n <= 41; n++)
+        {
+            double ticks = 14.906 + ((n - 1) * 0.5);
+            if (n % 8 == 1)
+            {
+                trace.Append(System.Globalization.CultureInfo.InvariantCulture, $"TK {ticks:0.000} {n}.000 0.000\n");
+            }
+
+            if (n >= 8 && n % 2 == 0)
+            {
+                trace.Append(System.Globalization.CultureInfo.InvariantCulture, $"V {ticks + 0.25:0.000} {n}.000 1.063\n");
+            }
+        }
+
+        Assert.Equal(new OracleTimingColumn("V", 0), OracleTrace.DetectTimingColumn(OracleTrace.Parse(trace.ToString())));
+    }
+
+    [Fact]
     public void DetectTimingColumn_NegativeColumnFirst_SkipsIt()
     {
         IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("W -7.000 24.000\nW -6.000 32.000\nW -5.000 40.000\n");
@@ -162,6 +205,61 @@ public sealed class OracleTraceTests
         Assert.NotNull(cadence);
         Assert.Equal(0.25, cadence.StepInto(1));
         Assert.Equal(0.28125, OracleTrace.FitCadence(ticks, maxSteps: 32)!.StepInto(1)); // too short a fit
+    }
+
+    [Theory]
+    [InlineData(429, 10)] // startup clock-1: TICKS 13.406 in cycle 52, 10/32 into cycle 2
+    [InlineData(436, 17)] // push-d005: 13.625 in cycle 52; the cadence's cycle before cycle 1 falls on 0 exactly
+    public void StartupFrames_SixtyHertzSamples_RunTheirCadenceBackToCycleOne(int firstUnits, int intoCycleTwo)
+    {
+        // OV-20261103-startup-clock: the 48 steps after cycle 52 of each launch.
+        int[] steps =
+        [
+            9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8,
+            8, 9, 8, 9, 8, 8, 9, 8,
+        ];
+        List<double> ticks = [firstUnits / 32.0];
+        foreach (int step in steps)
+        {
+            ticks.Add(ticks[^1] + (step / 32.0));
+        }
+
+        IReadOnlyList<double>? frames = OracleTrace.StartupFrames(ticks);
+
+        Assert.NotNull(frames);
+        Assert.Equal(52, frames.Count); // cycles 1 to 52
+        Assert.Equal(intoCycleTwo / 32.0, frames[1]);
+        Assert.Equal(firstUnits / 32.0, frames.Skip(1).Sum(), 9);
+        Assert.All(frames.Skip(2), static f => Assert.True(f is 0.25 or 0.28125));
+    }
+
+    [Fact]
+    public void StartupFrames_SlowSamplesOrFirstCycleSampled_PlanNothing()
+    {
+        Assert.Null(OracleTrace.StartupFrames([24, 32, 40, 48, 56, 64, 72, 80, 88, 96]));
+        Assert.Null(OracleTrace.StartupFrames([.. Enumerable.Range(0, 20).Select(static i => i * 0.25)]));
+    }
+
+    [Fact]
+    public void ReplayClock_BeforeTheFirstSample_RunsThePlannedStartUp()
+    {
+        List<double> ticks = [13.40625];
+        for (int i = 0; i < 24; i++)
+        {
+            ticks.Add(ticks[^1] + ((i % 3 == 1 ? 9 : 8) / 32.0));
+        }
+
+        IReadOnlyList<double> planned = OracleTrace.StartupFrames(ticks)!;
+        var clock = new OracleReplay.ReplayClock(ticks, fallbackTicks: 0.25);
+        double now = 0;
+        for (int frame = 0; frame < planned.Count; frame++)
+        {
+            double step = clock.Next(now) * 16;
+            Assert.Equal(planned[frame], step, 9);
+            now += frame == 0 ? 0 : step; // cycle 1 reads TICKS 0 whatever it lasted
+        }
+
+        Assert.Equal(13.40625, now, 9);
     }
 
     [Fact]
