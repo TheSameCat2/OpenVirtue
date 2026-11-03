@@ -1244,9 +1244,16 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
-    /// <remarks>Three decimals and no separator: a script writes its own spaces and line feeds (OV-20261029-print-output).</remarks>
+    /// <remarks>
+    /// Three decimals and no separator: a script writes its own spaces and line feeds. An exact half
+    /// rounds away from zero, 13.5625 to 13.563 and −7.8125 to −7.813 (OV-20261029-print-output).
+    /// </remarks>
     public void PrintValue(double value) =>
-        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture));
+        AppendPrintText(FormatPrintValue(value));
+
+    /// <summary>A value as <c>PRINT_VALUE</c> writes it (see <see cref="PrintValue"/>).</summary>
+    internal static string FormatPrintValue(double value) =>
+        (Math.Round(value * 1000, MidpointRounding.AwayFromZero) / 1000).ToString("F3", CultureInfo.InvariantCulture);
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);

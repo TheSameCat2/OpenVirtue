@@ -2168,6 +2168,17 @@ public class WdlRuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData(13.5625, "13.563")] // the original's traces print an exact half up, not to even
+    [InlineData(-7.8125, "-7.813")] // and a negative one away from zero
+    [InlineData(0.0625, "0.063")]
+    [InlineData(12641 / 1024.0, "12.345")]
+    public void FormatPrintValue_ExactHalves_RoundAwayFromZero(double value, string printed)
+    {
+        // OV-20261029-print-output addendum 2026-11-03.
+        Assert.Equal(printed, WdlRuntime.FormatPrintValue(value));
+    }
+
     [Fact]
     public void Runtime_PrintInstructions_AppendToSelectedTextFile()
     {
