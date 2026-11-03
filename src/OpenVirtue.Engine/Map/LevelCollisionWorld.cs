@@ -331,6 +331,36 @@ public sealed class LevelCollisionWorld
     /// <summary>A coordinate in 1/1024 steps, cut toward zero.</summary>
     private static long Raw(double value) => (long)Math.Truncate(value * 1024);
 
+    /// <summary>
+    /// Holds a circle standing within <paramref name="radius"/> of a solid wall of its region at
+    /// <paramref name="radius"/> + <paramref name="clearance"/> from it, as a step ending there is held
+    /// (<see cref="Move"/>). The original holds a player beamed 1.0 from a wall at 1.249 in the next
+    /// cycle, with the step's other part nudged 4/1024 (OV-20261020-view-activity view-pillar,
+    /// 2026-11-03 addendum); a circle outside the radius is left where it is.
+    /// </summary>
+    public Vector2 HoldOffWalls(
+        Vector2 position,
+        int region,
+        float radius,
+        float clearance,
+        Func<Wall, int, int, bool> canCross,
+        ICollection<AcknexObject>? touched = null)
+    {
+        ArgumentNullException.ThrowIfNull(canCross);
+        radius = Math.Max(0.01f, radius);
+        float contact = radius + (0.5f / 1024);
+        Vector2 desired = position;
+        for (int pass = 0; pass < 4; pass++)
+        {
+            if (!ResolveWalls(position, region, contact, radius + Math.Max(0, clearance), canCross, -1, touched, ref desired))
+            {
+                break;
+            }
+        }
+
+        return desired;
+    }
+
     private bool ResolveWalls(
         Vector2 from,
         int region,

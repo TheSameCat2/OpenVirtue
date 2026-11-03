@@ -4242,9 +4242,14 @@ public sealed class WdlRuntime :
 
         double endX = actor.X + stepX;
         double endY = actor.Y + stepY;
+        // A free-standing wall the actor may not cross refuses an end point within its half width, behind
+        // it too (long-wall). A region border does not, IMPASSABLE or not: the border-kinds imp-border
+        // walker's six-cycle step from 10.955 landed 0.511 past the pad's IMPASSABLE north border at
+        // 20.511, as over plain borders (actor-climb-2, 2026-11-03 re-read).
         foreach (Wall wall in _level.Walls)
         {
-            if ((wall["IMPASSABLE"] > 0 || (wall.LeftRegion == wall.RightRegion && wall["PASSABLE"] <= 0)) &&
+            if (wall.LeftRegion == wall.RightRegion &&
+                (wall["IMPASSABLE"] > 0 || wall["PASSABLE"] <= 0) &&
                 TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
                 DistanceToSegment(endX, endY, ax, ay, bx, by) < radius)
             {

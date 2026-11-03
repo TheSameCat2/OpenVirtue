@@ -186,7 +186,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   (ADR-0010). The screen's top and bottom are half a row inside its edges: a sprite must cover a
   row's centre (2026-11-03 addendum, read from actor-events `way`). A standing actor's skip count
   runs on unconsumed, so it moves the moment it gets a speed and skips from there; a walker on the
-  player's own plane (depth under 1/1024) is not in front (2026-11-03 addendum).
+  player's own plane (depth under 1/1024) is not in front (2026-11-03 addendum). A beam within
+  `PLAYER_WIDTH` of a wall is held at the wall's clearance in the next cycle, and only a
+  free-standing wall behind a long step's end refuses it, not an `IMPASSABLE` border (2026-11-03
+  addendum, read from view-pillar and border-kinds imp-border).
 
 ## Distance refresh (2026-10-21 — confirmed and implemented)
 

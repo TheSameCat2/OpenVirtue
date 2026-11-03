@@ -348,6 +348,33 @@ public sealed class WdlViewActivityTests
         Assert.Equal(expectedY, walker.Y, 1);
     }
 
+    [Fact]
+    public void Tick_SkipFrames_LongCarefulStepPastAnImpassableBorderPasses()
+    {
+        // OV-20261019-border-kinds imp-border, re-read 2026-11-03: the walker's six-cycle step from
+        // 10.955 over the pad, whose walls are IMPASSABLE borders, lands 0.511 past the north border
+        // (within its half width) at 20.511, as over the plain borders of actor-climb-2: only a
+        // free-standing wall behind the end point refuses a step.
+        const string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+            "REGION room 0 16;#0\nREGION pad 0 16;#1\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL border 4 5 1 0 0 0;#4\nWALL border 5 6 1 0 0 0;#5\nWALL border 6 7 1 0 0 0;#6\nWALL border 7 4 1 0 0 0;#7\n" +
+            "ACTOR walker -10.5 10.955 90 0;#8\nPLAYER_START 40 0 0 0;#9";
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "WALL border { FLAGS IMPASSABLE; } ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 1.59375; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        // Six steps of 1632 units along the cut sine of 90 degrees (1023/1024): 20.507, not the half step's 15.7.
+        Assert.InRange(walker.Y, 20.49, 20.53);
+    }
+
     // ---- BERKELEY walls ----------------------------------------------------------------------
 
     // A BERKELEY wall from (10, -4) to (10, 4) with DIST 6, and a plain wall from (5, -6) to (5, 6) in front of it.
