@@ -348,7 +348,9 @@ internal static class OracleTrace
         List<OracleTraceLine> tokenLines = lines
             .Where(timing.Matches)
             .ToList();
-        if (tokenLines.Count < 4)
+        // Two lines are enough for the sparse sampler's column below (flic-scheduler-detail
+        // missing-during's TK lines print 0.250 and 1.094; its start-up ran at 60 Hz, not the flic's step).
+        if (tokenLines.Count < 2)
         {
             return null;
         }
@@ -1072,6 +1074,7 @@ internal static class OracleTrace
         }
 
         int columns = tokenLines.Min(static l => l.Fields.Count);
+        var candidates = new List<int>();
         for (int column = 0; column < columns; column++)
         {
             if (column == timingColumn)
@@ -1100,11 +1103,39 @@ internal static class OracleTrace
 
             if (counts)
             {
-                return column;
+                candidates.Add(column);
             }
         }
 
-        return null;
+        if (candidates.Count <= 1)
+        {
+            return candidates.Count == 1 ? candidates[0] : null;
+        }
+
+        // Two counters: a flic carrier's FLIC_FRAME before its cycle counter, both rising while the flic
+        // plays (missing-during's trace ends in the original's fault before FLIC_FRAME falls to 0). The
+        // cycle counter is the one whose first gap, divided among its cycles, is the step a column of
+        // the second line prints as TIME_CORR (1.094 over 30 cycles, not 29).
+        foreach (int column in candidates)
+        {
+            double cycles = tokenLines[1].Value(column)!.Value - tokenLines[0].Value(column)!.Value;
+            if (cycles <= 0)
+            {
+                continue;
+            }
+
+            double step = (tokenLines[1].Value(timingColumn)!.Value - tokenLines[0].Value(timingColumn)!.Value) / cycles;
+            for (int other = 0; other < columns; other++)
+            {
+                if (other != column && other != timingColumn && !candidates.Contains(other) &&
+                    tokenLines[1].Value(other) is { } printed && printed is >= 0.1 and <= 2 && Math.Abs(printed - step) < 0.002)
+                {
+                    return column;
+                }
+            }
+        }
+
+        return candidates[0];
     }
 
     /// <summary>

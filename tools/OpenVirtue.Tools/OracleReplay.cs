@@ -635,6 +635,16 @@ internal static class OracleReplay
                 continue;
             }
 
+            // A run the original did not finish (no END line: DOSBox-X faulted, flic-scheduler-detail
+            // missing-during) leaves a trace the replay goes on past; every original line matching is all
+            // there is to compare.
+            bool originalEnded = result.OriginalFiles.TryGetValue("OVEND0.TXT", out string? endFile) && new FileInfo(endFile).Length > 0;
+            if (!originalEnded && comparison.OriginalLines > 0 && comparison.MatchingLines == comparison.OriginalLines && comparison.ReplayLines > comparison.OriginalLines)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  {name}: match ({comparison.OriginalLines} lines; the original's run ended there, the replay has {comparison.ReplayLines})");
+                continue;
+            }
+
             ok = false;
             string tokens = comparison.TokensMatch ? "tokens match" : comparison.TokenRunsMatch ? "token runs match" : "tokens differ";
             int at = comparison.FirstDivergence!.Value;
