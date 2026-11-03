@@ -639,9 +639,26 @@ internal static class OracleTrace
         }
 
         (int Column, double Scale)? printedStep = TimeCorrectionColumn(tokenLines, timing.Column, counterColumn);
-        long[] counts = [.. samples.Keys];
-        double[] values = [.. samples.Values];
+
+        // A named sampler's other tokens still measure the clock where they print the count and TICKS:
+        // the probe action's line after a long WAITT, say, long after the sampler stopped. Such a line
+        // counts the cycle or the one before (printed after or before the sampler), so it is placed in
+        // whichever of the two the sampler-only fill predicts nearer, and the fill is done again.
+        long[] samplerCounts = [.. samples.Keys];
+        double[] samplerValues = [.. samples.Values];
+        List<double> baseline = Fill(samplerCounts, samplerValues, []);
+        if (timing.Token == OracleTimingColumn.AnyToken || samplerCounts.Length < 2)
+        {
+            return baseline;
+        }
+
+        HashSet<long> others = AddOtherTokenSamples(lines, timing, counterColumn, samples, sampleLines, baseline, samplerCounts[0]);
+        return others.Count == 0 ? baseline : Fill([.. samples.Keys], [.. samples.Values], others);
+
+        List<double> Fill(long[] counts, double[] values, HashSet<long> otherTokens)
+        {
         long? StepUnits(int i) =>
+            !otherTokens.Contains(counts[i]) &&
             printedStep is { } p && sampleLines[counts[i]].Value(p.Column) is { } printed && Math.Abs((printed / p.Scale * 32) - Math.Round(printed / p.Scale * 32)) < 0.05
                 ? (long)Math.Round(printed / p.Scale * 32)
                 : null;
@@ -792,6 +809,7 @@ internal static class OracleTrace
         }
 
         return ticks;
+        }
     }
 
     /// <summary>
@@ -844,6 +862,122 @@ internal static class OracleTrace
     }
 
     /// <summary>Adds a sampler line's (cycle count, <c>TICKS</c>) sample when both go up.</summary>
+    /// <summary>
+    /// Adds the lines of tokens other than the named sampler's as clock samples: a line with a whole
+    /// count and a <c>TICKS</c> goes into the cycle of its count or the next (printed after or before
+    /// the sampler counts), whichever the sampler-only fill (<paramref name="baseline"/>, from
+    /// <paramref name="firstCycle"/> on, continued past its end at its own cadence) predicts nearer,
+    /// when the value lies within two typical steps (at least half a tick) of that prediction, keeps
+    /// the samples' order, and its step from the sampled cycle before is a cycle's (a 60 Hz frame to
+    /// 8 ticks). A line printed after the probe switched the counter off carries a stale count and
+    /// lies cycles past its prediction, so it is left out. Returns the cycles so added.
+    /// </summary>
+    private static HashSet<long> AddOtherTokenSamples(
+        IReadOnlyList<OracleTraceLine> lines,
+        OracleTimingColumn timing,
+        int counterColumn,
+        SortedDictionary<long, double> samples,
+        Dictionary<long, OracleTraceLine> sampleLines,
+        IReadOnlyList<double> baseline,
+        long firstCycle)
+    {
+        var added = new HashSet<long>();
+        if (baseline.Count < 2)
+        {
+            return added;
+        }
+
+        OracleCadence? tail = FitCadence(baseline);
+        double tailStep = Median([.. baseline.Zip(baseline.Skip(1), static (a, b) => b - a).TakeLast(5)]);
+        double bound = Math.Max(0.5, 2 * tailStep);
+        double? Predict(long cycle)
+        {
+            long index = cycle - firstCycle;
+            if (index < 0)
+            {
+                return null;
+            }
+
+            if (index < baseline.Count)
+            {
+                return baseline[(int)index];
+            }
+
+            long k = index - (baseline.Count - 1);
+            return baseline[^1] + (tail is { } cadence ? cadence.Units(k) / 32.0 : k * tailStep);
+        }
+
+        foreach (OracleTraceLine line in lines)
+        {
+            if (timing.Matches(line) ||
+                line.Value(timing.Column) is not { } ticks ||
+                line.Value(counterColumn) is not { } n || n != Math.Floor(n) || n < 0)
+            {
+                continue;
+            }
+
+            double value = SnapTicks(ticks);
+            long count = (long)n;
+            if (samples.TryGetValue(count, out double at) && Math.Abs(at - value) < 1e-6)
+            {
+                continue; // the sampler's own cycle, printed again
+            }
+
+            long? best = null;
+            double bestError = double.PositiveInfinity;
+            double otherError = double.PositiveInfinity;
+            foreach (long candidate in new[] { count, count + 1 })
+            {
+                if (samples.ContainsKey(candidate) || Predict(candidate) is not { } predicted)
+                {
+                    continue;
+                }
+
+                double error = Math.Abs(value - predicted);
+                if (error < bestError)
+                {
+                    otherError = bestError;
+                    bestError = error;
+                    best = candidate;
+                }
+                else
+                {
+                    otherError = Math.Min(otherError, error);
+                }
+            }
+
+            if (best is not { } cycle || bestError >= otherError || bestError > bound)
+            {
+                continue;
+            }
+
+            KeyValuePair<long, double>[] before = [.. samples.Where(s => s.Key < cycle)];
+            KeyValuePair<long, double>[] after = [.. samples.Where(s => s.Key > cycle)];
+            if (before.Length == 0 || value <= before[^1].Value || (after.Length > 0 && value >= after[0].Value))
+            {
+                continue;
+            }
+
+            double step = (value - before[^1].Value) / (cycle - before[^1].Key);
+            if (step < 0.25 - 1e-9 || step > 8 + 1e-9)
+            {
+                continue;
+            }
+
+            samples[cycle] = value;
+            sampleLines[cycle] = line;
+            added.Add(cycle);
+        }
+
+        return added;
+    }
+
+    private static double Median(List<double> values)
+    {
+        values.Sort();
+        return values.Count == 0 ? 0 : values.Count % 2 == 1 ? values[values.Count / 2] : (values[(values.Count / 2) - 1] + values[values.Count / 2]) / 2;
+    }
+
     private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn, string? sampler, Dictionary<long, OracleTraceLine> sampleLines)
     {
         if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0 ||
