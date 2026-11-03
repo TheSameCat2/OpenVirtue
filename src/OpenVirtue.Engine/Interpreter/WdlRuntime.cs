@@ -5430,6 +5430,71 @@ public sealed class WdlRuntime :
     private static HitCandidate Nearer(HitCandidate? current, HitCandidate candidate) =>
         current is null || candidate.Distance < current.Distance ? candidate : current;
 
+    /// <summary>
+    /// Sets <c>WDIST_MINX/MAXX/MINY/MAXY</c> while the player stands in a region with a slope flag: the
+    /// nearest wall crossings of the axis lines through the player, to the west, east, south and north,
+    /// over the region's walls, free-standing ones too. The save-body region-flag carriers (a room
+    /// declared <c>CEIL_ASCEND</c>, <c>FLOOR_DESCEND</c> and so on, the player at the origin) save
+    /// −16, 30, −24, 24: the room's west edge, the free-standing wall at x = 30 before the east edge
+    /// at 48, and the south and north edges (OV-20261029-save-body round 15, 2026-11-03 re-read).
+    /// The skills are not in the manual; a flat region leaves them as they are (the sentinels at
+    /// start). Whether they hold coordinates or distances from the player is not told apart at the
+    /// origin; coordinates are kept.
+    /// </summary>
+    internal void UpdateSlopeExtents(Player player)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (RegionAt(player.Region) is not { } region ||
+            (LevelTopology.SlopeSign(region, ceiling: false) == 0 && LevelTopology.SlopeSign(region, ceiling: true) == 0))
+        {
+            return;
+        }
+
+        double px = player.Position.X;
+        double py = player.Position.Z;
+        double? west = null, east = null, south = null, north = null;
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((wall.LeftRegion != player.Region && wall.RightRegion != player.Region) ||
+                !TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by))
+            {
+                continue;
+            }
+
+            // The line y = py across the wall: its x there.
+            if ((ay <= py && py < by) || (by <= py && py < ay))
+            {
+                double x = ax + ((bx - ax) * (py - ay) / (by - ay));
+                if (x <= px && (west is null || x > west))
+                {
+                    west = x;
+                }
+                else if (x > px && (east is null || x < east))
+                {
+                    east = x;
+                }
+            }
+
+            if ((ax <= px && px < bx) || (bx <= px && px < ax))
+            {
+                double y = ay + ((by - ay) * (px - ax) / (bx - ax));
+                if (y <= py && (south is null || y > south))
+                {
+                    south = y;
+                }
+                else if (y > py && (north is null || y < north))
+                {
+                    north = y;
+                }
+            }
+        }
+
+        if (west is { } w) { SetSkill("WDIST_MINX", w); }
+        if (east is { } e) { SetSkill("WDIST_MAXX", e); }
+        if (south is { } so) { SetSkill("WDIST_MINY", so); }
+        if (north is { } n) { SetSkill("WDIST_MAXY", n); }
+    }
+
     private bool TryGetWallSegment(Wall wall, out double ax, out double ay, out double bx, out double by)
     {
         if (wall.Vertex1 < 0 || wall.Vertex1 >= _level.Vertices.Count ||
