@@ -278,6 +278,7 @@ to the end point, and no wall the actor may not cross lies closer than the half 
 otherwise the half step is tested the same way; otherwise the step is swept.
 
 Result (`WdlRuntime.TryEndPointCarefulMove`, `MoveActor`): long-pad matches 19 of 67 lines (13
-before) and every move but the wall stops, which are 10.949 for 10.951 (OV-20261029-actor-step).
+before), every move but the wall stops (10.949 for 10.951), and 66 of 67 with the wall stop of the
+OV-20261029-actor-events addendum of 2026-11-02; the last line is the run's tail.
 long-wall matches 66 of 67 (19 before) once the room's outline ignores the free-standing wall, a
 separate topology fix; without it the actors there do not move at all.

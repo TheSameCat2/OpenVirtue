@@ -3855,17 +3855,19 @@ public sealed class WdlRuntime :
                     EntityCollisionRadius,
                     static entity => entity["INVISIBLE"] > 0,
                     actor,
-                    wallClearance: Player.WallClearance,
+                    wallClearance: ActorWallClearance,
                     clearanceOnContact: true);
+            double startX = x - requestedX;
+            double startY = y - requestedY;
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             UpdateFootHeight(actor);
             if (result.Collided)
             {
-                // OV-20261029-actor-step: where a wall stops the step, the original's position is
-                // the contact point cut to 1/1024 toward zero.
-                actor.X = Math.Truncate(actor.X * 1024) / 1024;
-                actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
+                // OV-20261029-actor-step: where a wall stops the step, the original holds the actor
+                // 1074/1024 from it (OV-20261029-actor-events, bullet and move-border), on the 1/1024 grid.
+                actor.X = Math.Round(actor.X * 1024) / 1024;
+                actor.Y = Math.Round(actor.Y * 1024) / 1024;
             }
 
             // OV-20261029-actor-step: a CAREFULLY step's part under 4/1024 along one axis becomes
@@ -3880,6 +3882,15 @@ public sealed class WdlRuntime :
             else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
             {
                 actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
+            }
+
+            // A wall-stopped part takes the same minimum from what is left of it: a step held at the
+            // wall (0) moves 4/1024 into it, and the next stop pulls it back by 4, so the actor
+            // alternates 1074 and 1070 from a wall ahead (1078 behind; OV-20261029-actor-events).
+            if (result.Collided)
+            {
+                actor.X = MinimumCarefulPart(actor.X, startX, requestedX, Nudge);
+                actor.Y = MinimumCarefulPart(actor.Y, startY, requestedY, Nudge);
             }
 
             actor.Region = result.Region;
@@ -3923,6 +3934,29 @@ public sealed class WdlRuntime :
         {
             TriggerObjectActionHook(actor, "IF_ARRIVED");
         }
+    }
+
+    /// <summary>
+    /// How much further than its half width a wall stops a <c>CAREFULLY</c> actor: 50/1024, which
+    /// holds an actor of half width 1 1074/1024 from the wall (OV-20261029-actor-events, bullet and
+    /// move-border; OV-20261019-border-kinds). Only half width 1 was measured, so whether the 50 is
+    /// added to the half width or the stop is one unit nearer than the player's clearance is open.
+    /// </summary>
+    private const float ActorWallClearance = 50f / 1024;
+
+    /// <summary>
+    /// A <c>CAREFULLY</c> step's part along one axis after a wall stop: a part that was requested at
+    /// 4/1024 or more but came out under it becomes 4/1024 with its sign, positive for none.
+    /// </summary>
+    private static double MinimumCarefulPart(double position, double start, double requested, double minimum)
+    {
+        double part = position - start;
+        if (Math.Abs(requested) < minimum - 1e-9 || Math.Abs(part) >= minimum - 1e-9)
+        {
+            return position;
+        }
+
+        return start + (part < -1e-9 ? -minimum : minimum);
     }
 
     /// <summary>

@@ -63,7 +63,9 @@ is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where �
 and cos θ and sin θ are themselves cut toward zero to 22.10 (sin 90° is 1023/1024).
 Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events). A
 `CAREFULLY` actor whose step has no X (or no Y) part is then moved 4/1024 along that axis, in the
-positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero.
+positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero
+(revised 2026-11-02: it is held 1074/1024 from the wall, and a wall-stopped part under 4/1024
+becomes ±4 too; OV-20261029-actor-events addendum).
 
 ## Addendum: the long step out of view (2026-10-29)
 Bullets skipping frames out of view take six cycles' steps at once. Three of those long steps
