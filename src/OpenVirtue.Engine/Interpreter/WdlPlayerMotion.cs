@@ -31,10 +31,15 @@ public static class WdlPlayerMotion
 
         double requestedVelocityX = runtime.GetSkill("PLAYER_VX");
         double requestedVelocityY = runtime.GetSkill("PLAYER_VY");
+        // Each axis steps by the engine's own product of the speed and TIME_CORR, rounded to 1/1024:
+        // PLAYER_VY 0.2 (204 raw) stepped 57 and 51 units at TIME_CORR 0.281 and 0.25, and 0.05
+        // stepped 14 and 13 (OV-20261019-eye-clamp stop-border).
+        var start = new Vector2(player.Position.X, player.Position.Z);
+        double stepX = WdlRuntime.EngineProduct(requestedVelocityX, timeCorrection);
+        double stepY = WdlRuntime.EngineProduct(requestedVelocityY, timeCorrection);
+        bool wallStopped = false;
         Vector2 displacement = timeCorrection > 0
-            ? player.MoveHorizontal(
-                (float)(requestedVelocityX * timeCorrection),
-                (float)(requestedVelocityY * timeCorrection))
+            ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
             : Vector2.Zero;
 
         // OV-20261029-actor-step: like a CAREFULLY actor, the player stepping with no X part (or no
@@ -50,6 +55,18 @@ public static class WdlPlayerMotion
             else if (requestedVelocityY == 0 && requestedVelocityX != 0)
             {
                 player.Position += new Vector3(0, 0, Nudge);
+            }
+
+            // As for a CAREFULLY actor (OV-20261029-actor-events), a part a wall stopped takes the
+            // same minimum from what is left of it: a step held at the wall (0) moves 4/1024 into it,
+            // and the next stop pulls it back by 4, so the player alternates 1279 and 1275 from a
+            // wall ahead (OV-20261019-eye-clamp and OV-20261019-border-climb, 2026-11-03 addenda).
+            if (wallStopped)
+            {
+                player.Position = new Vector3(
+                    MinimumPart(player.Position.X, start.X, stepX, Nudge),
+                    player.Position.Y,
+                    MinimumPart(player.Position.Z, start.Y, stepY, Nudge));
             }
         }
 
@@ -116,6 +133,21 @@ public static class WdlPlayerMotion
     /// horizontal velocities scale by <c>TIME_CORR</c> alone.
     /// </summary>
     private static double VerticalScale(double timeCorrection) => Math.Max(timeCorrection, 4);
+
+    /// <summary>
+    /// A wall-stopped step's part along one axis: a part requested at <paramref name="minimum"/> or
+    /// more that came out under it becomes <paramref name="minimum"/> with its sign, positive for none.
+    /// </summary>
+    private static float MinimumPart(float position, float start, double requested, float minimum)
+    {
+        float part = position - start;
+        if (Math.Abs(requested) < minimum - 1e-6 || Math.Abs(part) >= minimum - 1e-6f)
+        {
+            return position;
+        }
+
+        return start + (part < -1e-6f ? -minimum : minimum);
+    }
 
     private static double NormalizeAngle(double angle)
     {

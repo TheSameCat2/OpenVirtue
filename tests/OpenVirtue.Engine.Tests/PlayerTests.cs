@@ -30,6 +30,28 @@ public class PlayerTests
     }
 
     [Fact]
+    public void TakeTouchedEntities_WallThatStoppedTheMove_IsReportedAtOnceAndAPassedWallWaits()
+    {
+        // OV-20261019-border-climb (2026-11-03 addendum): a blocking wall's IF_NEAR runs in the cycle
+        // of the move, a wall passed through still waits for the next cycle.
+        Level level = Load();
+        var player = new Player(level);
+
+        player.MoveHorizontal(-5, 0, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.Equal<AcknexObject>([level.Walls[1]], player.TakeTouchedEntities());
+        Assert.Empty(player.TakeTouchedObjects());
+
+        player.MoveTo(0, 5, -1);
+        player.MoveHorizontal(0, 2, out stopped);
+
+        Assert.False(stopped);
+        Assert.Empty(player.TakeTouchedEntities());
+        Assert.Equal<AcknexObject>([level.Walls[0]], player.TakeTouchedObjects());
+    }
+
+    [Fact]
     public void MoveHorizontal_StepEndingJustShortOfPortalLine_StillCrossesOnTheNextStep()
     {
         // Eight steps of 8/14 from y = -4 put the seventh step within float rounding of the portal

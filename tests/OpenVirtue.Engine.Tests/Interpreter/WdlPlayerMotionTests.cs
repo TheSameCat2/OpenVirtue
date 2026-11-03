@@ -103,6 +103,61 @@ public sealed class WdlPlayerMotionTests
         Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2);
     }
 
+    [Theory]
+    [InlineData(0.2, 0.28125, 57)] // 204 raw x 288/1024 = 57.375
+    [InlineData(0.2, 0.25, 51)]
+    [InlineData(0.05, 0.25, 13)] // 51 x 256/1024 = 12.75
+    [InlineData(0.05, 0.28125, 14)]
+    [InlineData(-0.1, 0.25, -26)] // -25.5, away from zero
+    public void Apply_HorizontalStep_IsTheProductOfVelocityAndTimeCorrectionRoundedTo1024ths(
+        double velocity, double timeCorrection, int expectedRaw)
+    {
+        // OV-20261019-eye-clamp stop-border: the walk at 0.2 stepped 57 and 51 raw at TIME_CORR
+        // 0.281 and 0.25, the one at 0.05 stepped 14 and 13.
+        (WdlRuntime runtime, Player player) = Create();
+        runtime.SetSkill("PLAYER_VX", velocity);
+
+        WdlPlayerMotion.Apply(runtime, player, timeCorrection);
+
+        Assert.Equal(5 + (expectedRaw / 1024.0), player.Position.X, 6);
+    }
+
+    [Fact]
+    public void Apply_PushingIntoASolidWall_HoldsWidthPlus51UnitsAndAlternatesByFour()
+    {
+        // OV-20261019-eye-clamp and OV-20261019-border-climb ceil-0 (2026-11-03 addenda): PLAYER_WIDTH
+        // 1.2 (1228 raw) walking into a wall is held 1279 raw from it; a step held where it stands
+        // moves 4 into the wall and the next stop pulls it back by 4.
+        (WdlRuntime runtime, Player player) = Create();
+        var raw = new List<int>();
+        for (int cycle = 0; cycle < 6; cycle++)
+        {
+            runtime.SetSkill("PLAYER_VX", -0.2); // -204 raw: -1632 per cycle at TIME_CORR 8
+            WdlPlayerMotion.Apply(runtime, player, 8);
+            raw.Add((int)Math.Round(player.Position.X * 1024));
+        }
+
+        Assert.Equal([3488, 1856, 1279, 1283, 1279, 1283], raw);
+        Assert.Equal(-5 + (6 * 4 / 1024.0), player.Position.Z, 6); // the y creep goes on
+    }
+
+    [Theory]
+    [InlineData(1290, 1264, false)] // ends 1264 from the wall: inside the 1279 hold, not stopped
+    [InlineData(1254, 1279, true)] // ends exactly PLAYER_WIDTH (1228) from it: stopped
+    public void Apply_StepTowardASolidWall_IsStoppedOnlyWithinPlayerWidth(int startRaw, int expectedRaw, bool stopped)
+    {
+        // OV-20261019-eye-clamp stop-border: the 0.05 walk came on to 11049 (1239 from the wall) before
+        // a step was stopped, and from 11009 a step of 51 to exactly 1228 was stopped.
+        (WdlRuntime runtime, Player player) = Create();
+        player.Position = player.Position with { X = startRaw / 1024f };
+        runtime.SetSkill("PLAYER_VX", -0.1); // -26 raw at TIME_CORR 0.25
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+
+        Assert.Equal(expectedRaw, (int)Math.Round(player.Position.X * 1024));
+        Assert.Equal(stopped, player.TakeTouchedEntities().OfType<OpenVirtue.Engine.Map.Wall>().Any());
+    }
+
     [Fact]
     public void Apply_PortalCrossing_UpdatesRegionAndPositionSkills()
     {
