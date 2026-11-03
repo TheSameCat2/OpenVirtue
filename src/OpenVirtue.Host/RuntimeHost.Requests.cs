@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Text.Json;
 using OpenVirtue.Engine;
@@ -324,20 +325,20 @@ public sealed partial class RuntimeHost
         UpdateSpatialTextureSounds();
         float moved = Vector2.Distance(position, _lastTextureSoundPosition);
         _lastTextureSoundPosition = position;
-        double wavePeriod = Math.Max(0.001, _runtime.GetSkill("WAVE_PERIOD"));
-        _runtime.SetSkill("WAVE", Math.Sin(Math.Tau * _runtime.GetSkill("TICKS") / wavePeriod));
+        // WAVE follows the runtime's wave phase (WdlRuntime.AdvanceWave). A player who has not walked
+        // reads WALK 1 in every save the original made (OV-20261029-save-body round 20).
         if (!_player.Grounded || moved <= 0.0001f ||
             !TryTexture(region.FloorTexture, out LevelTexture floorTexture) ||
             string.IsNullOrWhiteSpace(floorTexture.SoundName))
         {
-            _runtime.SetSkill("WALK", 0);
+            _runtime.SetSkill("WALK", 1);
             _lastWaveSoundCycle = WaveSoundCycle();
             return;
         }
 
         _walkSoundDistance += moved;
         double walkPeriod = Math.Max(0.001, _runtime.GetSkill("WALK_PERIOD"));
-        _runtime.SetSkill("WALK", Math.Sin(Math.Tau * _walkSoundDistance / walkPeriod));
+        _runtime.SetSkill("WALK", Math.Cos(Math.Tau * _walkSoundDistance / walkPeriod)); // not measured in step
         bool trigger;
         if (floorTexture.IsSoundLoop)
         {
@@ -922,6 +923,12 @@ public sealed partial class RuntimeHost
         byte[] body = AcknexSaveFile.Unpack(File.ReadAllBytes(path));
         IReadOnlyList<SaveSkill> skills = AcknexSaveFile.ReadSkills(body);
         int restored = _runtime.RestoreSavedSkills(skills, name => !_level.LocalSkills.Contains(name));
+        if (AcknexSaveFile.ReadSections(body) is [var first, ..] && first.Size >= 44)
+        {
+            // The first section's +40 is the WAVE phase (OV-20261029-save-body round 20).
+            _runtime.RestoreWavePhase(BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(first.Payload + 40)) / 1024.0);
+        }
+
         int objects = ImportOriginalObjects(body);
         if (objects > 0)
         {

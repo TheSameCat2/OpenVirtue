@@ -122,6 +122,23 @@ public class AcknexSaveFileTests
     }
 
     [Fact]
+    public void WriteFull_FirstSection_HoldsTheLastFrameTicksAndTheWavePhase()
+    {
+        // OV-20261029-save-body round 20: apathy's own save.
+        var save = new FullSave("TITLE.WDL", "TITLE.WMP", "TITLE.WRS", [], [], [], [], [], [])
+        {
+            LastFrameTicks = 17696, // 17.28125
+            WavePhase = 2336, // 2.28125
+        };
+
+        byte[] body = AcknexFullSave.Write(save);
+
+        int first = AcknexSaveFile.ReadSections(body)![0].Payload;
+        Assert.Equal(17696, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(first + 36)));
+        Assert.Equal(2336, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(body.AsSpan(first + 40)));
+    }
+
+    [Fact]
     public void WriteFull_ReadsBackThroughTheReaders()
     {
         var save = new FullSave(

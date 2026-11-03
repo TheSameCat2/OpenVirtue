@@ -1619,11 +1619,10 @@ public sealed class WdlInterpreter(IWdlContext context)
         if (context is not IWdlObjectReferenceContext references ||
             comma != 1 ||
             header[0].Kind != WdlTokenKind.Identifier ||
-            comma + 2 != header.Count ||
-            header[comma + 1].Kind != WdlTokenKind.Identifier ||
+            ReferenceName(header, comma + 1) is not { } name ||
             // A keyword-valued synonym (ACTION, STRING …) takes NULL as a keyword, not an object.
             (context is IWdlKeywordReferenceContext keywords && keywords.IsKeywordReference(header[0].Text)) ||
-            !TryResolveObjectReference(header[comma + 1].Text, out AcknexObject? value))
+            !TryResolveObjectReference(name, out AcknexObject? value))
         {
             return false;
         }
@@ -1631,6 +1630,21 @@ public sealed class WdlInterpreter(IWdlContext context)
         references.SetObjectReference(header[0].Text, value);
         return true;
     }
+
+    /// <summary>
+    /// The object a <c>SET</c> names after its comma: one identifier, or an object's <c>REGION</c>
+    /// (<c>SET curRegion, MY.REGION</c> in the retail scripts) as <c>MY.REGION</c>.
+    /// </summary>
+    private static string? ReferenceName(IReadOnlyList<WdlToken> header, int start) =>
+        (header.Count - start) switch
+        {
+            1 when header[start].Kind == WdlTokenKind.Identifier => header[start].Text,
+            3 when header[start].Kind == WdlTokenKind.Identifier && header[start + 1].Text == "." &&
+                header[start + 2].Kind == WdlTokenKind.Identifier &&
+                header[start + 2].Text.Equals("REGION", StringComparison.OrdinalIgnoreCase) =>
+                header[start].Text + "." + header[start + 2].Text,
+            _ => null,
+        };
 
     private bool TryResolveObjectReference(string name, out AcknexObject? value)
     {

@@ -80,7 +80,8 @@ Confirmed for patched V3.963:
    wall keeps its near/far state, and coming within it while within `DIST` fires `IF_NEAR`.
 4. **A wall's border is the player's region's `CLIP_DIST`**, also for a wall between two regions;
    the wall's own regions do not lower it. (A thing's or actor's is still the smaller of the
-   player's region's and its own region's, OV-20261019-clip-contact.)
+   player's region's and its own region's, OV-20261019-clip-contact.) Revised by the addendum
+   of 2026-11-02 for a wall away from the player's region.
 5. **An `INVISIBLE` wall runs no `EACH_TICK`.**
 
 ## Confidence
@@ -108,3 +109,69 @@ that and the object's own region's for a thing or actor. `DispatchProximityEvent
 The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are implemented from
 OV-20261020-view-activity, which answers the second open question above: a `BERKELEY` wall also
 runs while the player is within its `DIST`.
+
+## Addendum 2026-11-02: a free-standing wall's border is lowered to its region's CLIP_DIST
+
+Carriers (original traces, sha256 first 8): OV-20261019-clip-contact `clip-regions`
+(`OVCCX0.TXT` `19ad9a2a`), and this note's `wall-regions` (`80807bf5`) and
+`wall-regions-visible` (`f2baa539`), re-read. No new runs.
+
+Once the room in `clip-regions` locates correctly (OV-20261019-clip-contact addendum of the same
+date), its free-standing wall `cr_wall` (room `CLIP_DIST` 10 on both sides) shows a case rule 4
+did not cover: with the player in the pad (`CLIP_DIST` 30) at `MY.DISTANCE` 16 the wall never ran
+(TICKS 96–112), although 16 is inside the pad's border. OpenVirtue ran it twice there.
+`wall-regions-visible` still holds: the pad walls (room 30, pad 10) ran at 24 and 16 from the
+room, so a wall between two regions is not lowered to the smaller of its sides.
+
+Rule (revises conclusion 4): **a wall's border is the smaller of the player's region's
+`CLIP_DIST` and the larger of its two side regions'.** For a wall with the player's region on
+one side this is always the player's region's value, as rule 4 found; for a free-standing wall it
+is the smaller of the player's region's and its own region's, as for a thing. Not separated by these carriers: a wall with neither side the player's region
+and the player's value between the two sides' (the larger side or the side facing the player
+would then differ).
+
+Results (oracle diff, all carriers, on top of the free-wall outline fix): matched lines
+24092 → 24099, `clip-regions` 20 → 27 of 43, no file worse.
+
+Test: `WdlRuntimeTests.Tick_ObjectEachTick_FreeStandingWallIsGatedByItsRegionsClipDist`; the
+existing `Tick_ObjectEachTick_WallBetweenRegionsUsesThePlayersRegionClipDistAndInvisibleWallsRunNothing`
+is unchanged. `WdlRuntime.ClipBorder` applies it.
+
+## Addendum: where the wall hooks run in the cycle (2026-11-02)
+Read from the existing berkeley-wall trace (`OVCDX0.TXT`, sha256 `de82696c`). No new run.
+
+The pass runs walls from the last in the map to the first, so `bw_c` (#13, `C`) comes before
+`bw_b` (#12, `B`). In cycle 14 the original prints `C`, `B` and then `N`, the `BERKELEY` wall's
+`DIST`-edge `IF_NEAR` (3 < `DIST` 4). The `DIST` edge therefore fires in the wall's own turn of
+the object pass, after its `EACH_TICK`. In cycle 20 it prints `C` and then `N`. That `N` is the
+pass-through `IF_NEAR` for the crossing in cycle 19's movement (the player is 4.78 from the
+nearer vertex, outside `DIST`), and `bw_b`, now behind the player, runs no `EACH_TICK`. So the
+deferred pass-through `IF_NEAR` also waits for the wall's turn instead of firing before the pass.
+pass-dist0 (OV-20261019-wall-pass-clip) puts it before the wall's own `EACH_TICK`.
+
+Implemented: `DispatchTouched` (before the `EACH_TICK`) and `DispatchDistEdge` (after it) run in
+`RunObjectPass`. `DispatchProximityEvents` now only takes the touched walls. berkeley-wall
+`OVCDX0` goes from 69/77 to 77/77, a full match. Test:
+`Tick_PlayerProximity_PassedWallFiresInItsTurnBeforeItsEachTick`.
+
+## Replay notes (2026-11-02)
+- **A gated object's first animation loop is fixed at level start.** anim-gate (`CYCLES 4`,
+  `DELAY 3` each, `CLIP_DIST 10`, 8 ticks a cycle; trace `OVCDX0.TXT`, sha256 `cdee4353`): the
+  player beams next to the thing in cycle 7 and its border opens with the refresh of cycle 8; the
+  thing's `CYCLE` reads 1 at V(8) to V(11) and 2 from V(12), so it advanced in cycle 11, and it
+  stays 2 once the player is away again. The actor, beamed to in cycle 19, advances in cycle 23
+  (V(24)). OpenVirtue started the loop in the first cycle within the border with that cycle's
+  `TIME_CORR` 8, one cycle a phase, and showed 2, 3, 4 from V(10) and V(22). Rule: a loop is fixed
+  when the level starts, with `TIME_CORR` 1, for every object, also one outside its border; the
+  object's first processed cycle begins the phase and its frames count from the next cycle, so
+  floor(3/1) = 3 frames give 9, 10, 11 and 21, 22, 23. Later loops are fixed with the `TIME_CORR`
+  of the cycle that starts them, as before (OV-20261029-anim-timing). OV-20261019-clip-contact
+  clip-near (`DELAY 4, 4`, `CYCLES 2`; trace `OVCCX0.TXT`, sha256 `c234835f`) agrees: its `TK`
+  lines' `EACH_CYCLE` count (0 at TK(19), 2 at TK(25), 3 at TK(28)) now matches, from a first loop
+  of 4 frames a phase. Result: anim-gate matches all 56 lines (was 35) and the carrier matches;
+  clip-near matches 152 of 208 `OVCCX0` lines (was 119; the rest is the `LIBER` distance and
+  rounding of other groups). No other carrier changes, apart from round2 anim-random, whose
+  `RANDOM` draws differ from run to run. A texture first animated later than level start, and a
+  full `LOAD`, still start the loop in their first processed cycle (unmeasured).
+  `WdlRuntime.InitializeAnimationCycles` and `AdvanceAnimationCycle`; test
+  `WdlRuntimeTests.Tick_TextureAnimation_ThingFirstWithinClipDistLaterCountsItsFirstLoopWithTimeCorrOne`.

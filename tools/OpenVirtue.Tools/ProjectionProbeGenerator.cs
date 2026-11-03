@@ -123,7 +123,27 @@ internal static class ProjectionProbeGenerator
     private const int TargetBitmapWidth = TargetWidthSteps * TargetScale;
     private const int TargetBitmapHeight = TargetHeightSteps * TargetScale;
 
-    /// <summary>The three SHOOT targets (WDL keyword, marker letter, map y, IF_HIT action).</summary>
+    /// <summary>
+    /// The targets' depth and side offset for each variant: the default 44 and 12, or each
+    /// <c>--depths</c> value paired with the <c>--target-offsets</c> value at the same place (the
+    /// last offset repeats).
+    /// </summary>
+    private static IEnumerable<(int Depth, int Offset)> TargetPlacements(double[]? depths, double[]? offsets)
+    {
+        if (depths is null)
+        {
+            yield return (TargetDepth, offsets is [var only, ..] ? (int)only : TargetOffsetY);
+            yield break;
+        }
+
+        for (int i = 0; i < depths.Length; i++)
+        {
+            double offset = offsets is { Length: > 0 } o ? o[Math.Min(i, o.Length - 1)] : TargetOffsetY;
+            yield return ((int)depths[i], (int)offset);
+        }
+    }
+
+    /// <summary>The three SHOOT targets (WDL keyword, marker letter, map y at the default offset, IF_HIT action).</summary>
     private static readonly (string Keyword, string Letter, int Y, string Action)[] ShootTargets =
     [
         ("tgt_left", "L", TargetOffsetY, "hit_left"),
@@ -244,7 +264,9 @@ internal static class ProjectionProbeGenerator
         double ShootX = 0,
         double ShootY = 0,
         bool Targets = false,
-        TraceProbeCase? Trace = null);
+        TraceProbeCase? Trace = null,
+        int TargetDepth = TargetDepth,
+        int TargetOffset = TargetOffsetY);
 
     private sealed record Plan(string ProbeId, string ProbeName, IReadOnlyList<Variant> Variants, TraceProbeSet? Trace = null);
 
@@ -259,6 +281,8 @@ internal static class ProjectionProbeGenerator
         double[]? tilts = null;
         double[]? shootX = null;
         double[]? shootY = null;
+        double[]? depths = null;
+        double[]? offsets = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -289,6 +313,12 @@ internal static class ProjectionProbeGenerator
                 case "--shoot-y":
                     shootY = ParseNumbers(RequireValue(args, ref i, arg));
                     break;
+                case "--depths":
+                    depths = ParseNumbers(RequireValue(args, ref i, arg));
+                    break;
+                case "--target-offsets":
+                    offsets = ParseNumbers(RequireValue(args, ref i, arg));
+                    break;
                 case "-h" or "--help":
                     return Usage();
                 default:
@@ -307,7 +337,7 @@ internal static class ProjectionProbeGenerator
             VideoSize(video);
         }
 
-        Plan plan = BuildPlan(probeName, videos, arcs, aspects, tilts, shootX, shootY);
+        Plan plan = BuildPlan(probeName, videos, arcs, aspects, tilts, shootX, shootY, depths, offsets);
         string fullOutputDir = Path.GetFullPath(outputDir);
         Directory.CreateDirectory(fullOutputDir);
 
@@ -396,7 +426,9 @@ internal static class ProjectionProbeGenerator
         double[]? aspects,
         double[]? tilts,
         double[]? shootX,
-        double[]? shootY)
+        double[]? shootY,
+        double[]? depths = null,
+        double[]? offsets = null)
     {
         var variants = new List<Variant>();
         switch (probeName)
@@ -465,21 +497,25 @@ internal static class ProjectionProbeGenerator
                     {
                         foreach (double? aspect in aspects?.Select(static a => (double?)a) ?? [null])
                         {
-                            string suffix = (arc != 1.0 ? $"-arc-{Num(arc)}" : "") + (aspect is { } a && a != 1.0 ? $"-aspect-{Num(a)}" : "");
-                            variants.Add(new Variant($"{video}-center{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", Targets: true));
-                            foreach (double x in shootX ?? [0.5, -0.5, 0.55])
+                            foreach ((int depth, int offset) in TargetPlacements(depths, offsets))
                             {
-                                variants.Add(new Variant($"{video}-shootx-{Label(x)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootX: x, Targets: true));
-                            }
+                                string suffix = (arc != 1.0 ? $"-arc-{Num(arc)}" : "") + (aspect is { } a && a != 1.0 ? $"-aspect-{Num(a)}" : "") +
+                                    (depth != TargetDepth || offset != TargetOffsetY ? $"-d{depth}-o{offset}" : "");
+                                variants.Add(new Variant($"{video}-center{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", Targets: true, TargetDepth: depth, TargetOffset: offset));
+                                foreach (double x in shootX ?? [0.5, -0.5, 0.55])
+                                {
+                                    variants.Add(new Variant($"{video}-shootx-{Label(x)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootX: x, Targets: true, TargetDepth: depth, TargetOffset: offset));
+                                }
 
-                            foreach (double y in shootY ?? [0.25, -0.25])
-                            {
-                                variants.Add(new Variant($"{video}-shooty-{Label(y)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootY: y, Targets: true));
-                            }
+                                foreach (double y in shootY ?? [0.25, -0.25])
+                                {
+                                    variants.Add(new Variant($"{video}-shooty-{Label(y)}{suffix}", video, arc, aspect, 0, Room.Face, "ovsht", ShootY: y, Targets: true, TargetDepth: depth, TargetOffset: offset));
+                                }
 
-                            foreach (double tilt in tilts ?? [0.1, -0.1])
-                            {
-                                variants.Add(new Variant($"{video}-tilt-{Label(tilt)}{suffix}", video, arc, aspect, tilt, Room.Face, "ovsht", Targets: true));
+                                foreach (double tilt in tilts ?? [0.1, -0.1])
+                                {
+                                    variants.Add(new Variant($"{video}-tilt-{Label(tilt)}{suffix}", video, arc, aspect, tilt, Room.Face, "ovsht", Targets: true, TargetDepth: depth, TargetOffset: offset));
+                                }
                             }
                         }
                     }
@@ -584,7 +620,7 @@ internal static class ProjectionProbeGenerator
             : variant.Label.StartsWith("auto", StringComparison.Ordinal) ? AutorangeProbeCases.AutoPalette()
             : AutorangeProbeCases.SortedPalette();
         string wdl = Wdl(plan, variant);
-        string wmp = Wmp(variant.Room, variant.Targets, variant.Trace?.Map);
+        string wmp = Wmp(variant.Room, variant.Targets, variant.Trace?.Map, variant.TargetDepth, variant.TargetOffset);
         WdlParser.Parse(wdl);
         WmpMap.Read(wmp);
 
@@ -1000,7 +1036,7 @@ internal static class ProjectionProbeGenerator
     /// the far-wall segments separate <c>room</c> (left) from <c>alcove</c> (right) and the
     /// alcove is closed by its own three walls.
     /// </summary>
-    private static string Wmp(Room room, bool targets = false, TraceProbeMap? map = null)
+    private static string Wmp(Room room, bool targets = false, TraceProbeMap? map = null, int targetDepth = TargetDepth, int targetOffset = TargetOffsetY)
     {
         if (map?.PadBody is not null && room.HasAlcove)
         {
@@ -1112,7 +1148,7 @@ internal static class ProjectionProbeGenerator
         {
             foreach ((string keyword, _, int y, _) in ShootTargets)
             {
-                sb.Append(CultureInfo.InvariantCulture, $"THING {keyword} {TargetDepth} {y} 0 0;#{placement++}\r\n");
+                sb.Append(CultureInfo.InvariantCulture, $"THING {keyword} {targetDepth} {Math.Sign(y) * targetOffset} 0 0;#{placement++}\r\n");
             }
         }
 
@@ -1197,7 +1233,8 @@ internal static class ProjectionProbeGenerator
         ProjectionModel model = ProjectionModel.Create(variant.Arc, variant.Aspect ?? 1.0, variant.Tilt, width, height);
         (double lateralTangent, double verticalSlope) = model.ShootRay(variant.ShootX, variant.ShootY);
         double eye = variant.Room.EyeHeight;
-        double depth = TargetDepth;
+        double depth = variant.TargetDepth;
+        int offset = variant.TargetOffset;
         double hitY = -lateralTangent * depth;                 // screen right = map −y
         double hitZ = eye + (verticalSlope * depth);
         double linearLateral = Math.Tan(variant.ShootX * variant.Arc * 0.5) * depth;
@@ -1211,10 +1248,10 @@ internal static class ProjectionProbeGenerator
             keyword = t.Keyword,
             letter = t.Letter,
             action = t.Action,
-            x = TargetDepth,
-            y = t.Y,
-            y_min = t.Y - (TargetWidthSteps / 2.0),
-            y_max = t.Y + (TargetWidthSteps / 2.0),
+            x = variant.TargetDepth,
+            y = Math.Sign(t.Y) * offset,
+            y_min = (Math.Sign(t.Y) * offset) - (TargetWidthSteps / 2.0),
+            y_max = (Math.Sign(t.Y) * offset) + (TargetWidthSteps / 2.0),
             z_min = 0,
             z_max = TargetHeightSteps,
             bitmap = new { file = "PRBTGT.PCX", width = TargetBitmapWidth, height = TargetBitmapHeight, scale = TargetScale, left_half = "target_left", right_half = "target_right" },
@@ -1236,18 +1273,18 @@ internal static class ProjectionProbeGenerator
                 lateral_tangent = lateralTangent,
                 vertical_slope = verticalSlope,
                 hit = new { x = depth, y = hitY, z = hitZ },
-                target = TargetAt(hitY, hitZ),
-                texel = Texel(hitY, hitZ, mirrored: false),
+                target = TargetAt(hitY, hitZ, offset),
+                texel = Texel(hitY, hitZ, offset, mirrored: false),
                 hit_dist_forward = depth,
                 hit_dist_ray = Math.Sqrt((depth * depth) + (hitY * hitY) + ((hitZ - eye) * (hitZ - eye))),
                 alternatives = new
                 {
-                    linear_angle = new { lateral = linearLateral, target = TargetAt(-linearLateral, hitZ), texel = Texel(-linearLateral, hitZ, mirrored: false) },
-                    linear_angle_vertical = new { z = linearVerticalZ, texel = Texel(hitY, linearVerticalZ, mirrored: false) },
-                    shoot_x_sign_inverted = new { target = TargetAt(-hitY, hitZ), texel = Texel(-hitY, hitZ, mirrored: false) },
-                    shoot_y_sign_inverted = new { z = eye - (verticalSlope * depth), texel = Texel(hitY, eye - (verticalSlope * depth), mirrored: false) },
-                    no_shear = new { z = noShearZ, texel = Texel(hitY, noShearZ, mirrored: false) },
-                    texture_mirrored = new { texel = Texel(hitY, hitZ, mirrored: true) },
+                    linear_angle = new { lateral = linearLateral, target = TargetAt(-linearLateral, hitZ, offset), texel = Texel(-linearLateral, hitZ, offset, mirrored: false) },
+                    linear_angle_vertical = new { z = linearVerticalZ, texel = Texel(hitY, linearVerticalZ, offset, mirrored: false) },
+                    shoot_x_sign_inverted = new { target = TargetAt(-hitY, hitZ, offset), texel = Texel(-hitY, hitZ, offset, mirrored: false) },
+                    shoot_y_sign_inverted = new { z = eye - (verticalSlope * depth), texel = Texel(hitY, eye - (verticalSlope * depth), offset, mirrored: false) },
+                    no_shear = new { z = noShearZ, texel = Texel(hitY, noShearZ, offset, mirrored: false) },
+                    texture_mirrored = new { texel = Texel(hitY, hitZ, offset, mirrored: true) },
                 },
             },
         };
@@ -1266,11 +1303,11 @@ internal static class ProjectionProbeGenerator
             },
             JsonOptions);
 
-    private static string? TargetAt(double y, double z)
+    private static string? TargetAt(double y, double z, int offset)
     {
         foreach ((string keyword, _, int targetY, _) in ShootTargets)
         {
-            if (Math.Abs(y - targetY) <= TargetWidthSteps / 2.0 && z >= 0 && z <= TargetHeightSteps)
+            if (Math.Abs(y - (Math.Sign(targetY) * offset)) <= TargetWidthSteps / 2.0 && z >= 0 && z <= TargetHeightSteps)
             {
                 return keyword;
             }
@@ -1284,15 +1321,15 @@ internal static class ProjectionProbeGenerator
     /// (y, z) on the target containing it. Unmirrored: the bitmap's left edge is on the
     /// original's screen left, i.e. the target's +y edge.
     /// </summary>
-    private static object? Texel(double y, double z, bool mirrored)
+    private static object? Texel(double y, double z, int offset, bool mirrored)
     {
-        string? keyword = TargetAt(y, z);
+        string? keyword = TargetAt(y, z, offset);
         if (keyword is null)
         {
             return null;
         }
 
-        int targetY = ShootTargets.Single(t => t.Keyword == keyword).Y;
+        int targetY = Math.Sign(ShootTargets.Single(t => t.Keyword == keyword).Y) * offset;
         double fromLeft = (targetY + (TargetWidthSteps / 2.0)) - y;
         double texelX = (mirrored ? TargetWidthSteps - fromLeft : fromLeft) * TargetScale;
         double texelY = (TargetHeightSteps - z) * TargetScale;
@@ -1450,7 +1487,7 @@ internal static class ProjectionProbeGenerator
           ovtool oracle prepare projection-fov [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs 0.5,1,1.5,2] [--videos S640x480]
           ovtool oracle prepare pixel-aspect   [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--aspects 1,0.5,2] [--videos S640x480,320x200,X320x240,X320x400]
           ovtool oracle prepare tilt-model     [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--tilts 0,0.5,1,-0.5,-1] [--arcs 1] [--aspects 1] [--videos S640x480]
-          ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480]
+          ovtool oracle prepare shoot-mapping  [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x 0.5,-0.5,0.55] [--shoot-y 0.25,-0.25] [--tilts 0.1,-0.1] [--videos S640x480] [--depths 44] [--target-offsets 12]
           ovtool oracle prepare branch-semantics [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
           ovtool oracle prepare each-sec-cadence [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
           ovtool oracle prepare flic-play|flic-detail [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]

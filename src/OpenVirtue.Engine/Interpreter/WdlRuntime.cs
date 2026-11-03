@@ -154,7 +154,7 @@ public sealed class WdlRuntime :
     private readonly List<WdlPersistenceRequest> _persistenceRequests = [];
     private readonly List<WdlInputRequest> _inputRequests = [];
     private readonly Dictionary<int, ActiveInputAction> _inputActions = [];
-    private Random _random = new();
+    private Random _random;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -172,6 +172,9 @@ public sealed class WdlRuntime :
     private readonly string? _startupAction;
     private readonly string? _printDirectory;
     private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
+
+    /// <summary>What the player's movement in the previous cycle passed through or pushed against (<see cref="DispatchProximityEvents"/>).</summary>
+    private readonly HashSet<AcknexObject> _touchedThisCycle = [];
     private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
 
@@ -199,6 +202,13 @@ public sealed class WdlRuntime :
 
     /// <summary>Whether an actor in front of the player moved since the last refresh of <see cref="_entityDistances"/>.</summary>
     private bool _frontActorMoved;
+
+    /// <summary>
+    /// The player's region before a <c>LOCATE</c> moved it to another, and the position the player
+    /// object still held then. Until the host applies the beam the object pass gates by this region
+    /// (<see cref="IsWithinClipDistance"/>); the next object pass drops it.
+    /// </summary>
+    private (int Region, Vector3 Position)? _clipRegionBeforeLocate;
 
     /// <summary>The view of the last drawn frame (<see cref="RefreshView"/>), counted by <see cref="_viewFrame"/>.</summary>
     private Viewer? _lastViewer;
@@ -231,6 +241,9 @@ public sealed class WdlRuntime :
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
     private readonly List<AcknexObject> _objectPassBuffer = [];
     private bool _firstCycleRun;
+    private int _wavePhaseRaw;
+    private int _lastTimeCorrectionRaw;
+    private (int X, int Y)? _lastStepPosition;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -242,10 +255,13 @@ public sealed class WdlRuntime :
     public WdlRuntime(
         Level level,
         string? printDirectory = null,
-        IReadOnlyDictionary<string, TextureImage>? hitTextures = null)
+        IReadOnlyDictionary<string, TextureImage>? hitTextures = null,
+        Random? random = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        _random = random ?? new Random();
+        RandomSeeded = random is not null;
         _collisionWorld = new LevelCollisionWorld(level);
         _hitTextures = hitTextures ?? new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
@@ -448,6 +464,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         RestoreSkills(snapshot.Skills);
+        _lastStepPosition = null; // a LOAD is not a step
         for (int channel = 0; channel < 8; channel++)
         {
             SetSkill($"CHANNEL_{channel}", 0);
@@ -467,6 +484,7 @@ public sealed class WdlRuntime :
         _distanceView = null;
         RefreshView();
         _proximityStates.Clear();
+        _touchedThisCycle.Clear();
         _arrivedTargets.Clear();
         _actorTargetStates.Clear();
         _textureAnimationStates.Clear();
@@ -964,6 +982,8 @@ public sealed class WdlRuntime :
             Unplaced = prefix,
             PlayerRegion = (int)GetSkill("PLAYER_REGION"),
             Palette = _savedPalette ?? _level.Palettes.Count,
+            LastFrameTicks = (int)Math.Round(Math.Max(0, GetSkill(Timing.TicksSkill) - GetSkill(Timing.TimeCorrectionSkill)) * 1024),
+            WavePhase = _wavePhaseRaw,
         };
     }
 
@@ -1217,12 +1237,23 @@ public sealed class WdlRuntime :
     {
         _printBaseName = NormalizePrintBaseName(baseName);
         _printNumber = Math.Clamp(number, 0, 999);
+
+        // OV-20261015-flic-scheduler-detail: PRINTFILE creates its file even when nothing is printed to
+        // it; an existing file is kept and appended to.
+        AppendPrintText(string.Empty);
     }
 
     /// <inheritdoc/>
-    /// <remarks>Three decimals and no separator: a script writes its own spaces and line feeds (OV-20261029-print-output).</remarks>
+    /// <remarks>
+    /// Three decimals and no separator: a script writes its own spaces and line feeds. An exact half
+    /// rounds away from zero, 13.5625 to 13.563 and −7.8125 to −7.813 (OV-20261029-print-output).
+    /// </remarks>
     public void PrintValue(double value) =>
-        AppendPrintText(value.ToString("F3", CultureInfo.InvariantCulture));
+        AppendPrintText(FormatPrintValue(value));
+
+    /// <summary>A value as <c>PRINT_VALUE</c> writes it (see <see cref="PrintValue"/>).</summary>
+    internal static string FormatPrintValue(double value) =>
+        (Math.Round(value * 1000, MidpointRounding.AwayFromZero) / 1000).ToString("F3", CultureInfo.InvariantCulture);
 
     /// <inheritdoc/>
     public void PrintString(string value) => AppendPrintText(value);
@@ -1515,6 +1546,17 @@ public sealed class WdlRuntime :
             // In a BELOW stack, the storey that holds the eye (OV-20261030-below-beam).
             region = LevelTopology.StoreyHoldingEye(_level, region, GetSkill("PLAYER_Z"));
         }
+        else if (target is MapEntity entity)
+        {
+            // A GROUND object goes to the storey that holds its feet, any other to the top, as at the
+            // level start (manual p.61; below-beam round 2). Past every ceiling the rule gives the top.
+            region = LevelTopology.StoreyHoldingEye(_level, region, entity["GROUND"] > 0 ? entity.Z : double.PositiveInfinity);
+        }
+
+        if (target is Player located && located.Region != region)
+        {
+            _clipRegionBeforeLocate ??= (located.Region, located.Position);
+        }
 
         target["region"] = region;
         if (ReferenceEquals(target, GetObject("player")))
@@ -1522,6 +1564,11 @@ public sealed class WdlRuntime :
             // The host copies PLAYER_REGION onto the player when the position changes; keep it current
             // so a beam followed by LOCATE lands in the located region (OV-20261029-slope).
             SetSkill("PLAYER_REGION", region);
+            // The heights follow at once: patched V3.963 read the new region's FLOOR_HGT −4 in the
+            // action right after LOCATE and in that cycle's IF_ENTER (OV-20261019-border-climb
+            // step-down, 2026-11-03 addendum).
+            SetSkill("FLOOR_HGT", LevelTopology.FloorHeightAt(_level, region, x, y));
+            SetSkill("CEIL_HGT", LevelTopology.CeilingHeightAt(_level, region, x, y));
             if (RegionAt(region) is { } here)
             {
                 SetObjectReference("here", here);
@@ -1535,7 +1582,19 @@ public sealed class WdlRuntime :
     public double Random(double maximum) => _random.NextDouble() * maximum;
 
     /// <inheritdoc/>
-    public void Randomize() => _random = new Random();
+    public void Randomize() => _random = RandomSeeded ? new Random(_random.Next()) : new Random();
+
+    /// <summary>
+    /// The generator <c>RANDOM</c> and a texture's <c>RANDOM</c> delay draw from: the constructor's
+    /// seeded one when a host needs a reproducible run (the oracle-diff replay), else an unseeded one.
+    /// </summary>
+    public Random RandomGenerator => _random;
+
+    /// <summary>
+    /// Whether the host passed a seeded generator; <c>RANDOMIZE</c> then reseeds from it, so the run
+    /// stays reproducible.
+    /// </summary>
+    public bool RandomSeeded { get; private set; }
 
     /// <inheritdoc/>
     public bool IsSkillAtMinimum(string name) =>
@@ -1907,6 +1966,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(skills);
         ArgumentNullException.ThrowIfNull(accept);
+        _lastStepPosition = null; // a LOAD is not a step
         int restored = 0;
         foreach (SaveSkill skill in skills)
         {
@@ -2029,7 +2089,21 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) =>
         _objects.GetValueOrDefault(name) ??
-        (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null);
+        (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null) ??
+        RegionOf(name);
+
+    /// <summary>
+    /// An object's <c>REGION</c> read as a reference, as the retail scripts' <c>SET curRegion, MY.REGION</c>
+    /// does (OV-20261030-below-beam round 2). <c>null</c> for any other name.
+    /// </summary>
+    private Region? RegionOf(string name)
+    {
+        int dot = name.LastIndexOf('.');
+        return dot > 0 && name.AsSpan(dot + 1).Equals("REGION", StringComparison.OrdinalIgnoreCase) &&
+            GetObject(name[..dot]) is { } owner
+            ? RegionAt((int)owner["region"])
+            : null;
+    }
 
     /// <inheritdoc/>
     public IEnumerable<AcknexObject> GetObjectsByName(string name) =>
@@ -2266,9 +2340,10 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
-    /// The player's region events and the proximity events come after the global slots and before
-    /// the object pass (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count
-    /// the global slot has just raised).
+    /// The player's region events come after the global slots and before the object pass
+    /// (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count the global slot
+    /// has just raised); the proximity events fire in each object's turn of the pass
+    /// (<see cref="RunObjectPass"/>).
     /// Walls' <c>DISTANCE</c> is refreshed before the resumed actions (see <see cref="RefreshWallDistances"/>);
     /// things' and actors' only when the view changed or an actor in front of the player moved (see
     /// <see cref="RefreshEntityDistances"/>).
@@ -2277,6 +2352,7 @@ public sealed class WdlRuntime :
     public double Tick(double deltaSeconds)
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
+        CountPlayerSteps();
         ReleaseFinishedChannels();
         RefreshView();
         RefreshWallDistances();
@@ -2340,6 +2416,7 @@ public sealed class WdlRuntime :
         {
             _skills[Timing.TimeCorrectionSkill] = 1;
             _skills[Timing.TimeFactorSkill] = 1;
+            AdvanceWave();
             elapsedSeconds = 0;
             return 1;
         }
@@ -2358,7 +2435,75 @@ public sealed class WdlRuntime :
         {
             _skills["RENDER_MODE"] = 0.5;
         }
+
+        AdvanceWave();
         return timeCorrection;
+    }
+
+    /// <summary>
+    /// Adds the distance the player moved since the last cycle to <c>STEPS</c> (manual p.118), cut to
+    /// 1/1024: the original's saves hold trunc(1024·√34) after a script set the player from (0, 0) to
+    /// (5, 3), so a beam counts too (OV-20261029-save-format, round 2).
+    /// </summary>
+    private void CountPlayerSteps()
+    {
+        (int x, int y) = (WdlFixed.ToRaw(GetSkill("PLAYER_X")), WdlFixed.ToRaw(GetSkill("PLAYER_Y")));
+        if (_lastStepPosition is { } last && (last.X != x || last.Y != y))
+        {
+            double dx = x - (double)last.X;
+            double dy = y - (double)last.Y;
+            double moved = Math.Truncate(Math.Sqrt((dx * dx) + (dy * dy))) / 1024;
+            _skills["STEPS"] = WdlFixed.Add(GetSkill("STEPS"), moved);
+        }
+
+        _lastStepPosition = (x, y);
+    }
+
+    /// <summary>
+    /// The <c>WAVE</c> motion's phase in ticks: the <c>TIME_CORR</c> of every earlier cycle, the first
+    /// cycle's 1 included, wrapped at <c>WAVE_PERIOD</c>. A full save holds it in its first section at
+    /// +40 (OV-20261029-save-body round 20).
+    /// </summary>
+    public double WavePhase => _wavePhaseRaw / 1024.0;
+
+    /// <summary>Sets <see cref="WavePhase"/>, as a full <c>LOAD</c> of the original's save does, and <c>WAVE</c> with it.</summary>
+    public void RestoreWavePhase(double ticks)
+    {
+        _wavePhaseRaw = WdlFixed.ToRaw(ticks);
+        _skills["WAVE"] = Wave(_wavePhaseRaw, WdlFixed.ToRaw(GetSkill("WAVE_PERIOD")));
+    }
+
+    /// <summary>
+    /// Adds the last cycle's <c>TIME_CORR</c> to the wave phase and sets <c>WAVE</c> from it, so the
+    /// actions of a cycle see the phase of the cycles before it (save-body round 20).
+    /// </summary>
+    private void AdvanceWave()
+    {
+        int period = WdlFixed.ToRaw(GetSkill("WAVE_PERIOD"));
+        if (period > 0)
+        {
+            _wavePhaseRaw = (int)((((long)_wavePhaseRaw + _lastTimeCorrectionRaw) % period + period) % period);
+        }
+
+        _lastTimeCorrectionRaw = WdlFixed.ToRaw(GetSkill(Timing.TimeCorrectionSkill));
+        _skills["WAVE"] = Wave(_wavePhaseRaw, period);
+    }
+
+    /// <summary>
+    /// <c>WAVE</c> at a phase, both raw 22.10: the sine of the phase times 2π/<c>WAVE_PERIOD</c>, that
+    /// factor cut to 1/1024, the angle rounded and the sine cut toward zero. This reproduces all 19
+    /// distinct phases of the original's saves (save-body round 20).
+    /// </summary>
+    internal static double Wave(int phaseRaw, int periodRaw)
+    {
+        if (periodRaw <= 0)
+        {
+            return 0;
+        }
+
+        long factor = (long)Math.Truncate(Math.Tau * 1024 * 1024 / periodRaw);
+        double angle = Math.Floor((phaseRaw * (double)factor / 1024) + 0.5) / 1024;
+        return Math.Truncate(Math.Sin(angle) * 1024) / 1024;
     }
 
     /// <summary>
@@ -3075,71 +3220,110 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Fires <c>IF_NEAR</c> once when the player comes within an object's <c>DIST</c> and
-    /// <c>IF_FAR</c> once when they leave it. Checked every cycle from the current positions, so
-    /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
-    /// the hook (OV-20261019-proximity-events). A wall's <c>IF_NEAR</c> also fires in every cycle
-    /// after the player's movement passed through the wall or pushed against it, unless the player
-    /// is within its <c>DIST</c>. This leaves the <c>DIST</c> state alone, so no <c>IF_FAR</c>
-    /// follows, and with <c>DIST 0</c> it is the only way the wall fires (OV-20261019-wall-pass-clip).
-    /// The same holds for a wall between two regions, and for a thing or actor the player pushed
-    /// against. A thing or actor outside its <c>CLIP_DIST</c> border (see
-    /// <see cref="IsWithinClipDistance"/>) is not tested at all and keeps its state, so it fires
-    /// <c>IF_NEAR</c> when it comes within the border while the player is within <c>DIST</c>, and
-    /// no <c>IF_FAR</c> when it leaves the border (OV-20261019-clip-contact).
+    /// Takes what the player's movement in the previous cycle passed through or pushed against, for
+    /// the object pass (<see cref="DispatchTouched"/>). Without a player no object is near.
     /// </summary>
     private void DispatchProximityEvents()
     {
+        _touchedThisCycle.Clear();
         if (GetObject("player") is not Player player)
         {
             _proximityStates.Clear();
             return;
         }
 
-        AcknexObject[] touched = player.TakeTouchedObjects();
-        foreach (AcknexObject target in CurrentProximityTargets())
+        _touchedThisCycle.UnionWith(player.TakeTouchedObjects());
+    }
+
+    /// <summary>
+    /// Fires a wall's <c>IF_NEAR</c> in every cycle after the player's movement passed through the
+    /// wall (or pushed against it, unless <see cref="DispatchContactEvents"/> took that contact right
+    /// after the move), unless the player is within its <c>DIST</c>, in the wall's turn of
+    /// the object pass before its <c>EACH_TICK</c> (OV-20261019-wall-pass-clip, pass-dist0: the
+    /// <c>IF_NEAR</c> comes before the wall's own <c>EACH_TICK</c> output; OV-20261019-clip-detail,
+    /// berkeley-wall: after the <c>EACH_TICK</c> of a wall the pass reaches first). This leaves the
+    /// <c>DIST</c> state alone, so no <c>IF_FAR</c> follows, and with <c>DIST 0</c> it is the only
+    /// way the wall fires. The same holds for a wall between two regions, and for a thing or actor
+    /// the player pushed against, unless it is outside its <c>CLIP_DIST</c> border. The <c>DIST</c>
+    /// edges themselves fire after the <c>EACH_TICK</c> (<see cref="DispatchDistEdge"/>).
+    /// </summary>
+    private void DispatchTouched(AcknexObject target)
+    {
+        if (_touchedThisCycle.Count == 0 ||
+            !_touchedThisCycle.Remove(target) ||
+            GetObject("player") is not Player player ||
+            !ShouldTrackProximity(target))
         {
-            if (!ShouldTrackProximity(target))
-            {
-                _proximityStates.Remove(target);
-                continue;
-            }
+            return;
+        }
 
-            bool withinBorder = IsWithinClipDistance(target);
-            if (target is MapEntity && !withinBorder)
-            {
-                continue;
-            }
+        bool withinBorder = IsWithinClipDistance(target);
+        if (target is MapEntity && !withinBorder)
+        {
+            return;
+        }
 
-            // OV-20261019-clip-detail: a wall outside its CLIP_DIST border is not DIST-tested either
-            // and keeps its state; passing or touching it still counts.
-            bool wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
-            bool isNear = wasNear;
-            if (withinBorder)
-            {
-                if (TryCurrentProximity(player, target, out isNear))
-                {
-                    _proximityStates[target] = isNear;
-                }
-                else
-                {
-                    _proximityStates.Remove(target);
-                    wasNear = false;
-                }
-            }
+        // A target the player is within DIST of, by its kept state or by the test that follows its
+        // EACH_TICK, fires from the DIST edge instead.
+        bool isNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+        if (!isNear && withinBorder &&
+            TryCurrentProximity(player, target, out bool nearNow, writeDistance: false))
+        {
+            isNear = nearNow;
+        }
 
-            if (isNear && !wasNear)
-            {
-                TriggerObjectActionHook(target, "IF_NEAR");
-            }
-            else if (!isNear && wasNear)
-            {
-                TriggerObjectActionHook(target, "IF_FAR");
-            }
-            else if (!isNear && Array.IndexOf(touched, target) >= 0)
-            {
-                TriggerObjectActionHook(target, "IF_NEAR");
-            }
+        if (!isNear)
+        {
+            TriggerObjectActionHook(target, "IF_NEAR");
+        }
+    }
+
+    /// <summary>
+    /// Fires <c>IF_NEAR</c> once when the player comes within a thing's, actor's or wall's
+    /// <c>DIST</c> and <c>IF_FAR</c> once when they leave it, in the object's own turn of the object
+    /// pass right after its <c>EACH_TICK</c> (OV-20261019-clip-detail, berkeley-wall: a wall's
+    /// <c>EACH_TICK</c> output comes before its <c>IF_NEAR</c>'s; OV-20261019-clip-contact, clip-near:
+    /// an actor's comes before the things'). Checked every cycle from the current positions, so
+    /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
+    /// the hook (OV-20261019-proximity-events). A thing or actor outside its <c>CLIP_DIST</c> border
+    /// (see <see cref="IsWithinClipDistance"/>) is not tested at all and keeps its state, so it fires
+    /// <c>IF_NEAR</c> when it comes within the border while the player is within <c>DIST</c>, and
+    /// no <c>IF_FAR</c> when it leaves the border (OV-20261019-clip-contact). A wall outside its
+    /// border is not tested either and keeps its state (OV-20261019-clip-detail).
+    /// </summary>
+    private void DispatchDistEdge(AcknexObject target)
+    {
+        if (target is not (MapEntity or Wall) || GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        if (!ShouldTrackProximity(target))
+        {
+            _proximityStates.Remove(target);
+            return;
+        }
+
+        if (!IsWithinClipDistance(target))
+        {
+            return;
+        }
+
+        bool wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+        if (!TryCurrentProximity(player, target, out bool isNear))
+        {
+            _proximityStates.Remove(target);
+            return;
+        }
+
+        _proximityStates[target] = isNear;
+        if (isNear && !wasNear)
+        {
+            TriggerObjectActionHook(target, "IF_NEAR");
+        }
+        else if (!isNear && wasNear)
+        {
+            TriggerObjectActionHook(target, "IF_FAR");
         }
     }
 
@@ -3149,7 +3333,11 @@ public sealed class WdlRuntime :
     /// that cycle's movement and its <c>IF_NEAR</c> runs in the same cycle, reading the thing's
     /// <c>DISTANCE</c> from before the beam (34 for a thing 24, −10 from the origin;
     /// OV-20261019-actor-contact round 8). A target already within its <c>DIST</c> does not fire again.
-    /// The host calls it right after the player's movement.
+    /// A wall that stopped the player fires here too, after the move and with the <c>DISTANCE</c> of
+    /// the cycle's start, unless the player is now within its <c>DIST</c> (whose edge fires instead,
+    /// as for a wall passed through): patched V3.963 printed a blocking wall's <c>IF_NEAR</c> with the
+    /// stopped position and the cycle's own counter (OV-20261019-border-climb ceil-0, 2026-11-03
+    /// addendum). The host calls it right after the player's movement.
     /// </summary>
     public void DispatchContactEvents()
     {
@@ -3162,23 +3350,14 @@ public sealed class WdlRuntime :
         {
             if (ShouldTrackProximity(target) &&
                 (target is not MapEntity || IsWithinClipDistance(target)) &&
-                !(_proximityStates.TryGetValue(target, out bool near) && near))
+                !(_proximityStates.TryGetValue(target, out bool near) && near) &&
+                !(target is Wall &&
+                  IsWithinClipDistance(target) &&
+                  TryCurrentProximity(player, target, out bool nearNow, writeDistance: false) &&
+                  nearNow))
             {
                 TriggerObjectActionHook(target, "IF_NEAR");
             }
-        }
-    }
-
-    private IEnumerable<AcknexObject> CurrentProximityTargets()
-    {
-        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
-        {
-            yield return entity;
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            yield return wall;
         }
     }
 
@@ -3187,7 +3366,7 @@ public sealed class WdlRuntime :
         (TryGetObjectActionHook(target, "IF_NEAR", out _) ||
          TryGetObjectActionHook(target, "IF_FAR", out _));
 
-    private bool TryCurrentProximity(Player player, AcknexObject target, out bool isNear)
+    private bool TryCurrentProximity(Player player, AcknexObject target, out bool isNear, bool writeDistance = true)
     {
         double threshold = target["DIST"];
         if (threshold <= 0)
@@ -3203,7 +3382,14 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        target[DistanceSkill] = distance;
+        // OV-20261019-actor-contact (2026-11-02): a LIBER thing or actor is DIST-tested at any range,
+        // but its DISTANCE keeps the 65535.999 sentinel until the player first comes within the start
+        // radius (RefreshEntityDistances); the test compares with the distance all the same.
+        if (writeDistance && (target is not MapEntity started || _distanceStarted.Contains(started)))
+        {
+            target[DistanceSkill] = distance;
+        }
+
         // OV-20261019-actor-contact: the border itself is outside (strictly less than DIST), and a
         // thing or actor is near only while the eye is also less than DIST above or below its centre.
         isNear = distance < threshold &&
@@ -3280,7 +3466,9 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// Whether an object's actions run this cycle. The original runs a wall's <c>EACH_TICK</c> only
-    /// while its distance from the player (<see cref="TryProximityDistance"/>) is below
+    /// while its distance from the player (<see cref="TryDistTestDistance"/>: a thing's or actor's as
+    /// last refreshed, so an actor that walked out of the border keeps running and moving until the
+    /// next refresh; OV-20261019-clip-contact, clip-move) is below
     /// <c>CLIP_DIST</c>, a thing's below <c>CLIP_DIST × THING_DIST</c> and an actor's below
     /// <c>CLIP_DIST × ACTOR_DIST</c> (OV-20261019-wall-pass-clip). <c>CLIP_DIST</c> is the smaller
     /// of the player's region's and the object's own region's (a wall's: its side regions'). Outside
@@ -3293,8 +3481,8 @@ public sealed class WdlRuntime :
     {
         if (target is not (Wall or MapEntity) ||
             GetObject("player") is not Player player ||
-            RegionAt(player.Region) is not { } region ||
-            !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
+            RegionAt(ClipGateRegion(player)) is not { } region ||
+            !TryDistTestDistance(player, target, out double distance))
         {
             return true;
         }
@@ -3308,10 +3496,23 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
+    /// The player's region as the <c>CLIP_DIST</c> gate reads it. A script that beams the player
+    /// (<c>SET PLAYER_X</c>/<c>PLAYER_Y</c>, <c>LOCATE</c>) moves <c>HERE</c> at once, but the objects
+    /// of that cycle are still gated by the region and position the player had before: in the cycle of a <c>LOCATE</c> from the room (<c>CLIP_DIST</c> 10) into a pad
+    /// (30) the room's thing and wall at 8 run once more and the pad's thing at 20 does not; from
+    /// the next cycle the pad gates them (OV-20261019-clip-contact addendum 2026-11-02).
+    /// </summary>
+    private int ClipGateRegion(Player player) =>
+        _clipRegionBeforeLocate is { } before && before.Position == player.Position ? before.Region : player.Region;
+
+    /// <summary>
     /// The <c>CLIP_DIST</c> border of a wall, thing or actor, ignoring <c>LIBER</c>. A thing's or
     /// actor's is the smaller of the player's region's and its own region's <c>CLIP_DIST</c>
     /// (OV-20261019-clip-contact), times <c>THING_DIST</c> or <c>ACTOR_DIST</c>. A wall's is the
-    /// player's region's alone, even for a wall between two regions (OV-20261019-clip-detail).
+    /// player's region's, lowered to the larger of its two sides' <c>CLIP_DIST</c>: a wall between the
+    /// room (30) and a pad (10) runs at 24 from the room (OV-20261019-clip-detail), and a free-standing
+    /// wall with the room (10) on both sides does not run at 16 from the pad (30)
+    /// (OV-20261019-clip-detail addendum 2026-11-02).
     /// </summary>
     private double ClipBorder(AcknexObject target, AcknexObject playerRegion)
     {
@@ -3319,6 +3520,10 @@ public sealed class WdlRuntime :
         if (target is MapEntity entity && RegionAt(entity.Region) is { } ownRegion)
         {
             clipDistance = Math.Min(clipDistance, ownRegion["CLIP_DIST"]);
+        }
+        else if (target is Wall wall && RegionAt(wall.LeftRegion) is { } left && RegionAt(wall.RightRegion) is { } right)
+        {
+            clipDistance = Math.Min(clipDistance, Math.Max(left["CLIP_DIST"], right["CLIP_DIST"]));
         }
 
         return clipDistance * target switch
@@ -3581,18 +3786,20 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point. Patched
-    /// V3.963 arrived at 0.098 and not at 0.134 at steps of 0.125 to 0.14 (OV-20261029-actor-events);
-    /// whether the limit is this constant or the cycle's step is unmeasured.
+    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c> or the player's
+    /// <c>PLAYER_VX·TIME_CORR</c>: rounded to 1/1024, where a WDL <c>*</c> cuts toward zero
+    /// (OV-20261029-actor-step round 6, OV-20261019-eye-clamp).
     /// </summary>
-    private const double ArrivalDistance = 0.125;
+    internal static double EngineProduct(double left, double right) =>
+        Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
 
     /// <summary>
-    /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c>: rounded to 1/1024,
-    /// where a WDL <c>*</c> cuts toward zero (OV-20261029-actor-step round 6).
+    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point: 0.1 as a
+    /// 22.10 value, 102/1024. Patched V3.963 arrived with 100 raw left and not with 102, nor with
+    /// 0.114 at a step of 0.123 or 0.36 at 0.5, so the limit is neither 1/8 nor the step
+    /// (OV-20261029-actor-events, OV-20261020-view-activity 2026-11-02 addendum).
     /// </summary>
-    private static double EngineProduct(double left, double right) =>
-        Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
+    private const double ArrivalDistance = 102.0 / 1024;
 
     private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
     {
@@ -3601,7 +3808,7 @@ public sealed class WdlRuntime :
         // OV-20261029-actor-events: the step and the distance left are both |dx| + |dy|, so an actor
         // covers SPEED·TIME_CORR of it per cycle (diagonally, 1/√2 of that as the crow flies). It
         // arrives on the point when the step would reach it, or where it is once less than
-        // ArrivalDistance is left (measured between 0.098, arrived, and 0.134, not).
+        // ArrivalDistance is left.
         double dx = targetX - actor.X;
         double dy = targetY - actor.Y;
         double remaining = Math.Abs(dx) + Math.Abs(dy);
@@ -3640,13 +3847,14 @@ public sealed class WdlRuntime :
         // part, its nudge, and a Y part one short. Round 6: the part is the 22.10 product of the step
         // and the distance left along the axis, rounded to 1/1024, then divided by |dx| + |dy| and cut
         // toward zero, which explains the one-unit short steps (143 for 144 once 39760 units are
-        // left): every step of the plain +Y and 40:15 ways fits.
+        // left): every step of the plain +Y and 40:15 ways fits. The product rounds half up, not away
+        // from zero: -25.5 makes -25 (2026-11-02 addendum, a FOLLOW actor and a return leg).
         double rawX = Math.Round(dx * 1024);
         double rawY = Math.Round(dy * 1024);
         double rawRemaining = Math.Abs(rawX) + Math.Abs(rawY);
         double rawStep = Math.Round(distance * 1024);
         static double Part(double step, double along, double remaining) =>
-            Math.Truncate(Math.Round(step * along / 1024, MidpointRounding.AwayFromZero) * 1024 / remaining) / 1024;
+            Math.Truncate(Math.Floor((step * along / 1024) + 0.5) * 1024 / remaining) / 1024;
         double stepX = rawRemaining > 0 ? Part(rawStep, rawX, rawRemaining) : 0;
         double stepY = rawRemaining > 0 ? Part(rawStep, rawY, rawRemaining) : 0;
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);
@@ -3737,8 +3945,18 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
-            CircleMoveResult result = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion)
-                ? new CircleMoveResult(start + step, endRegion, step, Collided: false, RegionChanged: endRegion != actor.Region)
+            // OV-20261020-view-activity: a skipped long step that fails its end test is tried once
+            // more at half its length before it is swept.
+            Vector2 endStep = step;
+            bool endPointMove = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion);
+            if (!endPointMove && _longSkippedStep)
+            {
+                endStep = step / 2;
+                endPointMove = TryEndPointCarefulMove(actor, endStep.X, endStep.Y, out endRegion);
+            }
+
+            CircleMoveResult result = endPointMove
+                ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
                     start,
                     actor.Region,
@@ -3748,31 +3966,46 @@ public sealed class WdlRuntime :
                     EntityCollisionRadius,
                     static entity => entity["INVISIBLE"] > 0,
                     actor,
-                    wallClearance: Player.WallClearance,
+                    wallClearance: ActorWallClearance,
                     clearanceOnContact: true);
+            double startX = x - requestedX;
+            double startY = y - requestedY;
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             UpdateFootHeight(actor);
             if (result.Collided)
             {
-                // OV-20261029-actor-step: where a wall stops the step, the original's position is
-                // the contact point cut to 1/1024 toward zero.
-                actor.X = Math.Truncate(actor.X * 1024) / 1024;
-                actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
+                // OV-20261029-actor-step: where a wall stops the step, the original holds the actor
+                // 1074/1024 from it (OV-20261029-actor-events, bullet and move-border), on the 1/1024 grid.
+                actor.X = Math.Round(actor.X * 1024) / 1024;
+                actor.Y = Math.Round(actor.Y * 1024) / 1024;
             }
 
             // OV-20261029-actor-step: a CAREFULLY step's part under 4/1024 along one axis becomes
             // 4/1024, keeping its sign and positive for none, even when a wall stopped the step:
             // axis-aligned walkers creep 4 units a step, and one drifting back toward its way's line
             // (a part of −1) steps −4 (round 5).
+            // The parts are those of the step taken, after the player shortened it: a step the player
+            // refuses entirely has none and gets no nudge (OV-20261029-actor-step round 3, c-pi).
             const double Nudge = 4.0 / 1024;
-            if (Math.Abs(requestedX) < Nudge - 1e-9 && Math.Abs(requestedY) >= Nudge - 1e-9)
+            double partX = requestedX * scale;
+            double partY = requestedY * scale;
+            if (Math.Abs(partX) < Nudge - 1e-9 && Math.Abs(partY) >= Nudge - 1e-9)
             {
-                actor.X += (requestedX < 0 ? -Nudge : Nudge) - requestedX;
+                actor.X += (partX < 0 ? -Nudge : Nudge) - partX;
             }
-            else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
+            else if (Math.Abs(partY) < Nudge - 1e-9 && Math.Abs(partX) >= Nudge - 1e-9)
             {
-                actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
+                actor.Y += (partY < 0 ? -Nudge : Nudge) - partY;
+            }
+
+            // A wall-stopped part takes the same minimum from what is left of it: a step held at the
+            // wall (0) moves 4/1024 into it, and the next stop pulls it back by 4, so the actor
+            // alternates 1074 and 1070 from a wall ahead (1078 behind; OV-20261029-actor-events).
+            if (result.Collided)
+            {
+                actor.X = MinimumCarefulPart(actor.X, startX, partX, Nudge);
+                actor.Y = MinimumCarefulPart(actor.Y, startY, partY, Nudge);
             }
 
             actor.Region = result.Region;
@@ -3819,10 +4052,34 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
+    /// How much further than its half width a wall stops a <c>CAREFULLY</c> actor: 50/1024, which
+    /// holds an actor of half width 1 1074/1024 from the wall (OV-20261029-actor-events, bullet and
+    /// move-border; OV-20261019-border-kinds). Only half width 1 was measured, so whether the 50 is
+    /// added to the half width or the stop is one unit nearer than the player's clearance is open.
+    /// </summary>
+    private const float ActorWallClearance = 50f / 1024;
+
+    /// <summary>
+    /// A <c>CAREFULLY</c> step's part along one axis after a wall stop: a part that was requested at
+    /// 4/1024 or more but came out under it becomes 4/1024 with its sign, positive for none.
+    /// </summary>
+    private static double MinimumCarefulPart(double position, double start, double requested, double minimum)
+    {
+        double part = position - start;
+        if (Math.Abs(requested) < minimum - 1e-9 || Math.Abs(part) >= minimum - 1e-9)
+        {
+            return position;
+        }
+
+        return start + (part < -1e-9 ? -minimum : minimum);
+    }
+
+    /// <summary>
     /// The share of its step a <c>CAREFULLY</c> actor takes toward the player
-    /// (OV-20261019-actor-contact): the position two steps ahead must lie at least the contact
-    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player; otherwise the
-    /// step is halved, up to four times, and with no free step the actor stays.
+    /// (OV-20261019-actor-contact): the position two steps ahead must lie further than the contact
+    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player along x or y, a
+    /// square around the player rather than a circle (OV-20261029-actor-step round 3, c-pi);
+    /// otherwise the step is halved, up to four times, and with no free step the actor stays.
     /// </summary>
     private double CarefulStepScale(Actor actor, Player player, double stepX, double stepY)
     {
@@ -3832,7 +4089,7 @@ public sealed class WdlRuntime :
         {
             double dx = actor.X + (2 * scale * stepX) - player.Position.X;
             double dy = actor.Y + (2 * scale * stepY) - player.Position.Z;
-            if ((dx * dx) + (dy * dy) >= contact * contact)
+            if (Math.Max(Math.Abs(dx), Math.Abs(dy)) > contact)
             {
                 return scale;
             }
@@ -3888,10 +4145,11 @@ public sealed class WdlRuntime :
     /// <summary>
     /// A skipped actor's <c>CAREFULLY</c> step (<c>SKIP_FRAMES</c>) longer than its half width is
     /// tested at its end only (OV-20261020-view-activity, long-wall and long-pad): it goes through when the region at its
-    /// end point may be entered (<see cref="ActorCanClimbInto"/>) and no wall the actor may not cross
-    /// lies within its half width and the wall clearance ahead of that point. Walls in between are
-    /// not tested, so the step can jump a wall or a whole raised region. Otherwise the step is swept
-    /// as usual and stops at the first wall. A shorter step is swept: the end test of the step before
+    /// end point may be entered (<see cref="ActorCanClimbInto"/>), no <c>IMPASSABLE</c> or free-standing
+    /// wall comes closer than its half width to that point in any direction, and no wall the actor may
+    /// not cross lies closer than its half width ahead of it (touching passes). Walls in between are
+    /// not tested, so the step can jump a wall or a whole raised region. Otherwise <see cref="MoveActor"/>
+    /// tries the half step, and then sweeps the step as usual, stopping at the first wall. A shorter step is swept: the end test of the step before
     /// covered the walls it can reach. Other things, actors and the player are not tested at the end
     /// either. Steps of actors that are not skipping were not measured and are always swept.
     /// </summary>
@@ -3921,8 +4179,19 @@ public sealed class WdlRuntime :
 
         double endX = actor.X + stepX;
         double endY = actor.Y + stepY;
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((wall["IMPASSABLE"] > 0 || (wall.LeftRegion == wall.RightRegion && wall["PASSABLE"] <= 0)) &&
+                TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
+                DistanceToSegment(endX, endY, ax, ay, bx, by) < radius)
+            {
+                return false;
+            }
+        }
+
         int current = region;
-        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius + Player.WallClearance))
+        // Touching a wall ahead passes: a way actor's step to a point its half width from a wall goes through.
+        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius - 1e-6))
         {
             int other = OtherSide(wall, current);
             if (!ActorCanCross(actor, wall, current, other))
@@ -3988,7 +4257,9 @@ public sealed class WdlRuntime :
         double maximumTurn = Math.Max(0, actor["ASPEED"]) * timeCorrection;
         if (maximumTurn <= 0)
         {
-            actor.Angle = targetAngle;
+            // An instant turn keeps the facing in 0..2π: a way heading -Y prints ANGLE 4.712, not
+            // -1.571 (OV-20261029-actor-step, 2026-11-02 addendum).
+            actor.Angle = NormalizeUnsignedAngle(desiredFacing - placementAngle);
             return;
         }
 
@@ -4025,6 +4296,12 @@ public sealed class WdlRuntime :
         }
     }
 
+    private static double NormalizeUnsignedAngle(double angle)
+    {
+        angle %= Math.Tau;
+        return angle < 0 ? angle + Math.Tau : angle;
+    }
+
     private static double NormalizeSignedAngle(double angle)
     {
         angle %= Math.Tau;
@@ -4050,9 +4327,12 @@ public sealed class WdlRuntime :
     /// The objects' part of a cycle, after the global slots, in the original's order
     /// (OV-20261029-scheduler-order): the regions, then the actors, the things and the walls, each
     /// kind from the last the map places to the first (the region order is assumed, one region was
-    /// measured). Each object runs its <c>EACH_TICK</c>, read when its turn comes so a <c>SET</c>
-    /// earlier in the cycle counts, and then steps its texture animation, which runs its
-    /// <c>EACH_CYCLE</c> when a cycle ends.
+    /// measured). Each object fires the <c>IF_NEAR</c> of a wall passed in the previous cycle
+    /// (<see cref="DispatchTouched"/>), runs its <c>EACH_TICK</c>, read when its turn comes so a
+    /// <c>SET</c> earlier in the cycle counts, fires its <c>DIST</c> edge (<see cref="DispatchDistEdge"/>),
+    /// and then steps its texture animation, which runs its <c>EACH_CYCLE</c> when a cycle ends. An
+    /// actor moves first; a move in front of the player refreshes the distances only at the start of
+    /// the next cycle (<see cref="NoteFrontMove"/>).
     /// </summary>
     private void RunObjectPass(double timeCorrection)
     {
@@ -4084,41 +4364,24 @@ public sealed class WdlRuntime :
             order.Add(_level.Walls[i]);
         }
 
-        bool actorsDone = false;
         foreach (AcknexObject target in order)
         {
             if (target is Actor actor)
             {
                 AdvanceActorTarget(actor, timeCorrection);
             }
-            else if (!actorsDone && target is not Region)
-            {
-                actorsDone = true;
-                FinishActorMoves();
-            }
 
+            DispatchTouched(target);
             RunObjectEachTick(target);
+            DispatchDistEdge(target);
             if (timeCorrection > 0)
             {
                 AdvanceAnimationCycle(target, timeCorrection);
             }
         }
 
-        if (!actorsDone)
-        {
-            FinishActorMoves();
-        }
-
         order.Clear();
-    }
-
-    private void FinishActorMoves()
-    {
-        if (_frontActorMoved)
-        {
-            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
-            RefreshEntityDistances(force: true);
-        }
+        _clipRegionBeforeLocate = null;
     }
 
     private void RunObjectEachTick(AcknexObject target)
@@ -4155,6 +4418,12 @@ public sealed class WdlRuntime :
             state = new TextureAnimationState();
             StartAnimationLoop(entry.Texture, state, timeCorrection);
             _textureAnimationStates[target] = state;
+            return; // the first phase counts from the next cycle
+        }
+
+        if (state.AwaitingFirstCycle)
+        {
+            state.AwaitingFirstCycle = false;
             return; // the first phase counts from the next cycle
         }
 
@@ -4214,14 +4483,18 @@ public sealed class WdlRuntime :
             return;
         }
 
-        TriggerEachCycle(target);
-        StartAnimationLoop(texture, state, timeCorrection);
         if (texture.IsOneShot)
         {
+            // OV-20261029-motion-timing: a ONESHOT clears PLAY before its EACH_CYCLE runs.
             target["PLAY"] = 0;
             state.WasPlaying = false;
+            TriggerEachCycle(target);
+            StartAnimationLoop(texture, state, timeCorrection);
             return;
         }
+
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
 
         SetAnimationCycle(target, 1);
         QueueAnimationTextureSound(target, texture, 1);
@@ -4260,9 +4533,31 @@ public sealed class WdlRuntime :
     {
         foreach (AcknexObject target in CurrentCycleTargets())
         {
-            if (AnimationTexture(target) is not null && target["CYCLE"] <= 0)
+            if (AnimationTexture(target) is not { } entry)
+            {
+                continue;
+            }
+
+            if (target["CYCLE"] <= 0)
             {
                 target["CYCLE"] = 1;
+            }
+
+            // OV-20261019-clip-detail anim-gate: the first loop is fixed at level start with TIME_CORR 1,
+            // also for a thing or actor whose first processed cycle comes later, when it first lies
+            // within its CLIP_DIST border; its first phase still counts from the cycle after that one.
+            if (entry.Texture.Cycles > 1 || entry.Texture.IsOneShot)
+            {
+                var state = new TextureAnimationState { AwaitingFirstCycle = true };
+                StartAnimationLoop(entry.Texture, state, timeCorrection: 1);
+                _textureAnimationStates[target] = state;
+            }
+
+            // OV-20261029-motion-timing: a looping animated texture plays from the start, so a script
+            // reads MY.PLAY 1 on it; a ONESHOT waits with PLAY 0 until a script sets it.
+            if (entry.Texture.Cycles > 1 && !entry.Texture.IsOneShot)
+            {
+                target["PLAY"] = 1;
             }
         }
     }
@@ -4481,7 +4776,7 @@ public sealed class WdlRuntime :
             range / distanceScale,
             distanceScale,
             player.Region,
-            new ShotPixel(column, halfWidth * Math.Truncate(1024 / projection.HorizontalHalfTangent) / 1024));
+            new ShotPixel(column, ((long)halfWidth << 20) / Math.Max(1, (long)Math.Truncate(projection.HorizontalHalfTangent * 1024))));
         if (hit is null)
         {
             ClearHitResult();
@@ -5060,13 +5355,6 @@ public sealed class WdlRuntime :
                     break;
             }
         }
-        else if (_frontActorMoved && target is MapEntity && memberName.Equals("DISTANCE", StringComparison.OrdinalIgnoreCase))
-        {
-            // Actors now move in their turn of the object pass (OV-20261029-actor-events); a script
-            // that reads DISTANCE after an actor in front moved sees it refreshed, as the moves and
-            // the refreshed distances show together (OV-20261020-view-activity round 9).
-            RefreshEntityDistances(force: true);
-        }
 
         return target[memberName];
     }
@@ -5076,14 +5364,16 @@ public sealed class WdlRuntime :
     /// <c>DIST</c> test (<c>IF_NEAR</c>/<c>IF_FAR</c>, <see cref="IsWithinDist"/>) and the
     /// <c>SKIP_FRAMES</c> near range read. The original refreshes them all at once, and only when
     /// the view changed since the last refresh (the player walked or was beamed, turned or tilted)
-    /// or an actor in front of the player walked; between refreshes they keep their value, however
+    /// or an actor walked in front of the player within its border (<see cref="NoteFrontMove"/>),
+    /// at the start of the next cycle; between refreshes they keep their value, however
     /// far the objects move (OV-20261020-view-activity rule 5, OV-20261021-distance-refresh). A
     /// script's <c>SET</c> of a thing's or actor's position refreshes nothing, and reading
     /// <c>DISTANCE</c> refreshes nothing. A thing's or actor's <c>DISTANCE</c> reads 65535.999
     /// until the player first comes within 1.5 times its <c>CLIP_DIST</c> border, <c>LIBER</c> or
-    /// not (OV-20261019-actor-contact). <paramref name="force"/> refreshes after a move in front.
+    /// not (OV-20261019-actor-contact), also for a <c>LIBER</c> one the <c>DIST</c> test compares
+    /// with before then (<see cref="TryCurrentProximity"/>).
     /// </summary>
-    private void RefreshEntityDistances(bool force = false)
+    private void RefreshEntityDistances()
     {
         if (GetObject("player") is not Player player)
         {
@@ -5097,7 +5387,7 @@ public sealed class WdlRuntime :
             GetSkill("PLAYER_ANGLE"),
             GetSkill("PLAYER_TILT"),
             GetSkill("PLAYER_ARC"));
-        if (!force && !_frontActorMoved && _distanceView == view && _entityDistances.Count == _levelObjects.OfType<MapEntity>().Count())
+        if (!_frontActorMoved && _distanceView == view && _entityDistances.Count == _levelObjects.OfType<MapEntity>().Count())
         {
             return;
         }
@@ -5128,7 +5418,13 @@ public sealed class WdlRuntime :
     /// <summary>What a change of refreshes the things' and actors' distances (<see cref="RefreshEntityDistances"/>).</summary>
     private readonly record struct DistanceView(double X, double Y, double EyeHeight, double Angle, double Tilt, double Arc);
 
-    /// <summary>Notes an actor's move this cycle when it ends in front of the player (see <see cref="RefreshEntityDistances"/>).</summary>
+    /// <summary>
+    /// Notes an actor's move this cycle when it ends in front of the player and within its
+    /// <c>CLIP_DIST × ACTOR_DIST</c> border (|dx| + |dy|, <c>LIBER</c> or not), so that the next
+    /// cycle's <see cref="RefreshEntityDistances"/> runs. The move shows in <c>DISTANCE</c> only from
+    /// then: in clip-move a FOLLOW actor read 9 in the cycle that took it to 7.406, and a WAY actor's
+    /// move that ended 11.563 away, outside the border 10, refreshed nothing (OV-20261019-clip-contact).
+    /// </summary>
     private void NoteFrontMove(Actor actor, double startX, double startY)
     {
         if ((actor.X == startX && actor.Y == startY) || GetObject("player") is not Player player)
@@ -5137,8 +5433,12 @@ public sealed class WdlRuntime :
         }
 
         double angle = GetSkill("PLAYER_ANGLE");
-        double depth = ((actor.X - player.Position.X) * Math.Cos(angle)) + ((actor.Y - player.Position.Z) * Math.Sin(angle));
-        _frontActorMoved |= depth > 0;
+        double dx = actor.X - player.Position.X;
+        double dy = actor.Y - player.Position.Z;
+        double depth = (dx * Math.Cos(angle)) + (dy * Math.Sin(angle));
+        _frontActorMoved |= depth > 0 &&
+                            (RegionAt(player.Region) is not { } playerRegion ||
+                             Math.Abs(dx) + Math.Abs(dy) < ClipBorder(actor, playerRegion));
     }
 
     private Viewer? CurrentViewer()
@@ -5172,7 +5472,8 @@ public sealed class WdlRuntime :
     /// <see cref="RefreshEntityDistances"/>) moves only every
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
-    /// (OV-20261019-border-kinds, OV-20261020-view-activity).
+    /// (OV-20261019-border-kinds, OV-20261020-view-activity). The first move after it is lifted
+    /// covers the cycles skipped since the last move too (OV-20261021-distance-refresh).
     /// </summary>
     private int SkipFramesMultiplier(Actor actor)
     {
@@ -5180,12 +5481,14 @@ public sealed class WdlRuntime :
         if (skip <= 0 ||
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
-            _inView.Contains(actor) ||
+            (_inView.Contains(actor) && !IsBeyondClipBorder(player, actor)) ||
             _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
+            // The first move after skipping covers the cycles skipped since the last one too.
+            int pending = _skippedCycles.GetValueOrDefault(actor);
             _skippedCycles.Remove(actor);
-            return 1;
+            return pending + 1;
         }
 
         int skipped = _skippedCycles.GetValueOrDefault(actor) + 1;
@@ -5198,6 +5501,16 @@ public sealed class WdlRuntime :
         _skippedCycles.Remove(actor);
         return skip + 1;
     }
+
+    /// <summary>
+    /// Whether a thing or actor lies at or beyond its <c>CLIP_DIST</c> border (<see cref="ClipBorder"/>,
+    /// <c>LIBER</c> ignored), where the original does not draw it: under <c>SKIP_FRAMES</c> it counts
+    /// as not visible even inside the view cone (OV-20261019-clip-contact clip-move-liber).
+    /// </summary>
+    private bool IsBeyondClipBorder(Player player, MapEntity entity) =>
+        RegionAt(player.Region) is { } region &&
+        TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance) &&
+        distance >= ClipBorder(entity, region);
 
     /// <summary>
     /// Whether a <c>BERKELEY</c> wall sleeps this cycle: it runs its <c>EACH_TICK</c> only while it
@@ -6010,24 +6323,32 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// A shot's screen column, as an offset from the centre, and the focal length the original
-    /// projects sprites with: half the width times 1/tan(<c>PLAYER_ARC</c>/2) cut to 22.10.
+    /// projects sprites with, in 2^-10 pixels: half the width over tan(<c>PLAYER_ARC</c>/2) cut to
+    /// 22.10 (600258 for 640 wide at arc 1; OV-20261009-shoot-mapping round 3).
     /// </summary>
-    private readonly record struct ShotPixel(double Column, double FocalLength);
+    internal readonly record struct ShotPixel(double Column, long FocalRaw);
 
     /// <summary>
-    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping, sweep): the texel column the renderer
-    /// steps to at the shot's screen column. It counts from the sprite's projected left edge,
-    /// 0.714 pixels further on. The pixels per step at the sprite's depth and the texels per pixel
-    /// are both cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead). Fitted to
-    /// three sprites and 19 columns in one 640-wide view, within 0.0013.
+    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping round 3): the renderer's texel at the shot's
+    /// column, worked out in 22.10 tangents. The sprite's centre, half width and width over its depth
+    /// are each a 22.10 quotient cut toward zero; the width in pixels is that tangent times the focal
+    /// length, and the texels per pixel are the bitmap's width less 1/1024 over it. The texel is counted
+    /// from the left edge to one pixel past the shot's column, plus 768/2^20, and floored. This gives
+    /// all 45 shots at depths 20, 30, 37 and 44 and agrees with the drawn spans in the screenshots.
     /// </summary>
-    private static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
+    internal static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
     {
-        double pixelsPerStep = Math.Truncate(1024 * shot.FocalLength / depth) / 1024;
-        double left = (centerRight - halfWidth) * pixelsPerStep;
-        double texelsPerPixel = Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep)) / 1024;
-        double texel = texelsPerPixel * (shot.Column + 0.714 - left);
-        return WdlFixed.Quantize(Math.Clamp(texel, 0, textureWidth - (1.0 / 1024)));
+        const long SampleOffset = (1L << 20) + 768;
+        long depthRaw = Math.Max(1, (long)Math.Round(depth * 1024));
+        long halfRaw = (long)Math.Round(halfWidth * 1024);
+        long centre = Math.DivRem((long)Math.Round(centerRight * 1024) << 10, depthRaw).Quotient; // toward zero
+        long half = (halfRaw << 10) / depthRaw;
+        long width = ((2 * halfRaw) << 10) / depthRaw;
+        long widthPixels = Math.Max(1, (width * shot.FocalRaw) >> 10);
+        long texelsPerPixel = (((long)textureWidth * 1024) - 1) * 1024 / widthPixels;
+        long position = ((long)Math.Round(shot.Column) << 20) + SampleOffset - ((centre - half) * shot.FocalRaw);
+        long texel = (long)Math.Floor(position * (double)texelsPerPixel / (1 << 20));
+        return Math.Clamp(texel, 0, (textureWidth * 1024L) - 1) / 1024.0;
     }
 
     private sealed record HitCandidate(
@@ -6049,5 +6370,8 @@ public sealed class WdlRuntime :
         public double LoopFactor { get; set; } = 1;
 
         public bool WasPlaying { get; set; }
+
+        /// <summary>A loop fixed at level start whose object has not had its first processed cycle yet.</summary>
+        public bool AwaitingFirstCycle { get; set; }
     }
 }

@@ -229,3 +229,41 @@ archive lookup, keeps `PLAY_FLICFILE` of a missing file from setting `FLIC_FRAME
 keeps a playing flic when a requested file is missing or invalid and does not reproduce the
 fault. The object/world pause during a flic, mouse hooks during a flic and flic replacement
 already matched the original.
+
+## Replay notes (2026-11-02)
+- **`PRINTFILE` creates its file.** Round 2 missing and missing-during switch
+  `PRINTFILE "ovfsh", 0; PRINTFILE "ovfld", 0;` to flush and never print to `ovfsh`; the original
+  leaves an empty `OVFSH0.TXT` in both (sha256 `e3b0c442`, the empty file). OpenVirtue created a
+  print file only on its first write, so the replays had no `OVFSH0.TXT`. Rule: selecting a print
+  file creates it if it is missing; an existing file is kept, and later prints append to it as
+  before. With it `OVFSH0.TXT` matches in both carriers (2 files, was 0); neither carrier flips,
+  since missing still differs in the flush-stretched frames and missing-during in the fault, and no
+  other carrier changes. `WdlRuntime.SetPrintFile`; test
+  `WdlRuntimeTests.Runtime_PrintFile_CreatesItsFileWithoutPrinting`.
+- **`EXIT` does not end the cycle at once (not implemented).** With `--timing TK:1` the world and
+  world-control replays print a `NEAR` line into `OVEND0.TXT` after `END`, which the original's
+  (sha256 `8d109c0c`, `END` alone) lacks. Stopping every action after `EXIT` removes it but breaks
+  three carriers whose original also prints after `END` in that cycle: OV-20261019-clip-contact
+  berkeley (`OVEND0.TXT` sha256 `e585d1f5`, a thing's `EACH_TICK` `C` line) and clip-near, and
+  OV-20261019-clip-detail berkeley-wall (`7c0a2600`, `C` and `B`). So the object pass still runs
+  after `EXIT`. Skipping only the player's move and the contact events after the tick leaves one of
+  the two `NEAR` lines, and the default replays (which stop before `END`) do not change, so neither
+  rule is supported yet. The three `OVEND0.TXT` files the stop rule made match (clip-contact
+  rerun/liber, wall-distance wall-behind, wall-pass-clip pass-dist0) lost a line that a two-tick
+  print throttle happened to let through, not one the original suppresses.
+
+## Replay notes (2026-11-03, harness)
+- **The gap after the flic, resolved.** The 2026-10-30 note's next difference was the replay's: its
+  counted fill spread the 92 cycles from `TK` 421 (472.813, `TIME_CORR` 1.094) to `TK` 513
+  (504.956) evenly, while the original spent the first ten on the flic's last frames. The fill
+  now keeps the flic step for as many cycles as leave the world cycles after it at least 8/32 each
+  (10 in waits, 44 in round3 speed, 14 in replace's second flic: each the flic's real remaining
+  frames), then steps back from the next sample in whole 1/32 ticks ending on its printed
+  `TIME_CORR`. Traces: waits `OVFLD0.TXT` sha256 `ee4bfcdc`, round3 speed `af12dfd1`, replace
+  `26c30abd`; all three match in full (were 40/54, 11/21, 17/34).
+- **Sparse samples between flics.** Outside a flic, one 60 Hz cadence, `floor(phase + k·rate)`
+  thirty-seconds of a tick, passes through all 27 waits-control `TK` samples and the `TIME_CORR`
+  each prints (`OVFLD0.TXT` sha256 `5e1b5141`; rate 8.38810 to 8.38815 units a cycle), and filling
+  the gaps along it puts `WB16` at 17.594, `S2` at 146.813, `S4` at 166.219 and `S6` at 183.25 as
+  in the original. waits-control matches in full (was 23/45); round2 near-control 28/29 (was 14),
+  walk-control 7/28, missing 20/25. `tools/README.md` describes the rules.

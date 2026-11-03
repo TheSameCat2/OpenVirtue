@@ -171,3 +171,49 @@ floor and ceiling are the other region's, sampled at the player's position. `Min
 gone. A blocked border is a solid wall to `LevelCollisionWorld`, which already reports it as
 touched on every pushing move, so `WdlRuntime` fires its `IF_NEAR` every cycle. Rule 6 and the
 stop distance are implemented with OV-20261019-eye-clamp.
+
+## Addendum: the stop at the pad, its IF_NEAR and LOCATE's heights (2026-11-03)
+The oracle-diff replays of the 8-ticks-per-cycle carriers (`TIME_CORR` 8, a step of 0.2 · 8 =
+1632 raw) show three things OpenVirtue did differently. In raw 1/1024 units, the pad's south
+border is y = 12 (12288) and `PLAYER_WIDTH` 1.2 is 1228.
+- **The stop alternates.** `ceil-0` (`OVBCX0.TXT` `29f2bba7`), walk A: the player steps 9408,
+  11040 (1248 from the border, not stopped), then is stopped at 12288 − 1279 = 11009 (10.751),
+  then 11013 (10.755), 11009, 11013, and stands at 10.755. The walk back reaches 11013 − 2 · 1632 =
+  7749 (7.567); OpenVirtue stood at 10.751 and reached 7.563. This is the stop rule of the
+  OV-20261019-eye-clamp addendum of this date: stopped at `PLAYER_WIDTH` + 51, and a stopped part
+  under 4/1024 becomes ±4.
+- **A blocking border's `IF_NEAR` runs in the cycle of the move.** The `N` line prints the cycle
+  counter and the position after that cycle's move: `TK` of cycle 7 prints the position after cycle
+  6 (10.755), `N` of cycle 7 the one after cycle 7 (10.751). Its `MY.DISTANCE` is the one
+  refreshed at the cycle's start: 5.207 in cycle 5 is |dx| + |dy| from the position after cycle 4
+  (−8180, 11040) to the vertex (−4, 12), 4084 + 1248 = 5332. Only stopped cycles fire, so the
+  overshoot to 11040 fires none and a walk has four `N`s (OpenVirtue: five, one cycle late, from the
+  next cycle's object pass). A wall passed through still fires in the next cycle
+  (OV-20261019-clip-contact `border-plain`, `OVCCX0.TXT` `80f7e1c9`, which still matches all 61
+  lines).
+- **`LOCATE` sets the heights.** `step-down` (`641e3340`), walk C: `SET PLAYER_X`/`PLAYER_Y` and
+  `LOCATE` into the pad (floor −4); the `CD` line of the same action and that cycle's `IF_ENTER`
+  read `FLOOR_HGT` −4. OpenVirtue read 0 until the next movement.
+
+Rule: a wall or border that stops the player fires its `IF_NEAR` right after the movement, with
+the `DISTANCE` of the cycle's start, unless the player is now within its `DIST` (then the `DIST`
+edge fires, as for a passed wall); `LOCATE` of the player sets `FLOOR_HGT` and `CEIL_HGT` of the
+located region at once.
+
+Implementation: `LevelCollisionWorld.Move` (`blocked`), `Player.TakeTouchedEntities` (the walls
+that stopped a move), `WdlRuntime.DispatchContactEvents`, `WdlRuntime.Locate`. Tests:
+`PlayerTests.TakeTouchedEntities_WallThatStoppedTheMove_IsReportedAtOnceAndAPassedWallWaits`,
+`WdlRuntimeTests.DispatchContactEvents_WallThatStoppedThePlayer_FiresNearInTheCycleOfTheMove` and
+`Runtime_LocatePlayer_RefreshesFloorAndCeilingHeightsAtOnce`. The `DIST` exception is kept from
+the deferred path without a measurement of its own.
+
+Result, with the eye-clamp addendum: `ceil-0` (54 lines, 7 before), `pad-solid` (`7ffafc4e`, 71,
+7), round 2 `ceil-4b` (`1df75b56`, 54, 24), round 2 `eye-10` (`6ea07d95`, 105, 41) and
+`step-down` (95, 73) now match in full, and so do border-kinds `eye-edge` (`4feeaf1b`), round 2
+`climb-player-05` (`5e1c2322`), round 2 `climb-skip0` (`998248b0`) and round 3 `climb-tall`
+(`62f2a404`). `LOCATE`'s heights alone gave step-down's last 2 lines and changed no other carrier.
+`climb-14`, `ceil-4` and round 3 `edge-1` gain 5, 1 and 32 lines but still differ by the clock,
+and `climb-1`, `climb-2` and `climb-4` differ by it before their first stop. border-kinds
+`actor-climb-2`, `actor-climb-2d` and `imp-border` gain 27, 27 and 18 lines and now differ first at
+the actor's position. wall-pass-clip `solid-dist0` (`68337dd4`)
+now alternates 22.751 and 22.755 as the original, after a start-up that still differs.

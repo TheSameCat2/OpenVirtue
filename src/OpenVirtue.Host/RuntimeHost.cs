@@ -43,6 +43,7 @@ public sealed partial class RuntimeHost : IDisposable
     private Level _level = null!;
     private Player _player = null!;
     private WdlRuntime _runtime = null!;
+    private int? _randomSeed;
     private IReadOnlyDictionary<string, TextureImage> _textureImages =
         new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyDictionary<string, TextureImage> _uiImages =
@@ -123,6 +124,13 @@ public sealed partial class RuntimeHost : IDisposable
     public Func<double>? FrameClock { get; set; }
 
     /// <summary>
+    /// The seed <c>RANDOM</c>'s generator started from (<see cref="OpenArchive"/>'s <c>randomSeed</c>),
+    /// kept across level changes so a run is reproducible (the oracle replay); <c>null</c> when every
+    /// run draws differently.
+    /// </summary>
+    public int? RandomSeed => _randomSeed;
+
+    /// <summary>
     /// Whether a full <c>SAVE</c> also writes the original's own save file, which the DOS runtime loads
     /// (OV-20261029-save-body round 9). Off by default until it has been checked against more levels;
     /// OpenVirtue's own saves are written either way.
@@ -157,14 +165,18 @@ public sealed partial class RuntimeHost : IDisposable
     /// <summary>True after the runtime or the window has asked to stop.</summary>
     public bool ExitRequested => _exitRequested || !_window.IsOpen;
 
-    /// <summary>Opens a WRS archive the way the interactive app does.</summary>
+    /// <summary>
+    /// Opens a WRS archive the way the interactive app does. A <paramref name="randomSeed"/> makes
+    /// <c>RANDOM</c> draw the same values on every run.
+    /// </summary>
     public static RuntimeHost OpenArchive(
         string archivePath,
         string mainWdlName,
         IPlatformWindow window,
         IInputSource input,
         IAudioSink audio,
-        IRenderBackend graphics)
+        IRenderBackend graphics,
+        int? randomSeed = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(archivePath);
         ArgumentException.ThrowIfNullOrEmpty(mainWdlName);
@@ -175,6 +187,7 @@ public sealed partial class RuntimeHost : IDisposable
             _archivePath = fullPath,
             _archive = WrsArchive.ReadFile(fullPath),
             _mainWdlName = Path.GetFileName(mainWdlName),
+            _randomSeed = randomSeed,
         };
         host.LoadWorld(host._archive, host._mainWdlName, mapOverrideName: null);
         return host;
@@ -371,7 +384,9 @@ public sealed partial class RuntimeHost : IDisposable
         _textureImages = textures;
         _uiImages = uiImages;
         _fontImages = fontImages;
-        _runtime = new WdlRuntime(level, RuntimePrintDirectory(), textures)
+        // A seeded generator carries on across level changes, as one generator would.
+        Random? seededRandom = _randomSeed is { } seed ? (_runtime is { RandomSeeded: true } previous ? previous.RandomGenerator : new Random(seed)) : null;
+        _runtime = new WdlRuntime(level, RuntimePrintDirectory(), textures, seededRandom)
         {
             FlicFileExists = HasArchiveEntry,
             SaveDirectory = _contentRoot,

@@ -250,8 +250,65 @@ Observations:
 
 Implementation:
 - `WdlRuntime.ShootFromPlayer` snaps the shot to its pixel.
-- `WdlRuntime.SpriteHitColumn` reports a sprite's `HIT_X` by this rule. Mirrored sprites keep
+- `WdlRuntime.SpriteHitColumn` reports a sprite's `HIT_X` by this rule (in fixed point since the
+  addendum below; `WdlRuntimeTests.SpriteHitColumn_ProjectsTheEdgeWithAReciprocalOfTheDepth`). Mirrored sprites keep
   the sampled column (unmeasured), as do walls.
 - The harness treats `HIN_T`/`HOUT_T` like the start-up stamp.
 - Results: 24 of the 27 shoot carriers replay line for line. One is 0.002 off on `HIT_X`; the
   other two come from an original run whose start-up took a cycle longer (`TICKS` 14.781 at the shot).
+
+## Round 3: other depths (2026-11-02)
+- Carriers: `ovtool oracle prepare shoot-mapping … --depths D --target-offsets O`, 32 runs under
+  `depth-sweep/d20`, `d30`, `d37` and `d44` (targets at depth 20, 30, 37 and 44, side offsets 6, 9,
+  12 and 18), each with five `SHOOT_X` columns, `SHOOT_Y` 0.01 and `PLAYER_TILT` 0.01. Local-only
+  hashes (`OVHIT0.TXT`): d20 centre `c7cdf43d`, d30 centre `2855dc6f`, d37 centre `ea7a1510`, d44
+  centre `450c1607`, d20 `SHOOT_X` 0.58 `cde6dbdf`.
+- **Per column, `HIT_X` steps by a whole number of raw units at every depth:** 561 at 20, 841 at 30,
+  1040 at 37 and 1230 at 44. The texels per pixel cut from `64 / (4·f/d)` give 559, 839, 1035 and
+  1230, so only depth 44 agrees: the measured steps imply focal lengths of about 584.1, 584.4, 582.9
+  and 586.1, not one.
+- The centre column reads 32.537, 32.791, 32.992 and 32.832: the texel offset past the centre is not
+  one constant either.
+- So the depth-44 rule below (the reciprocal edge and 733/1024) reproduced depth 44 only; the replay
+  matched 4 of the 32 new carriers.
+
+**The rule (2026-11-03, analysis only).** Three independent fits of all 45 shots (both sweeps)
+arrived at the same structure, and an independent check rebuilt it from its description and
+reproduced 45 of 45. The renderer works in 22.10 tangents:
+- The sprite's centre, half width and full width over its depth are each a 22.10 quotient, the
+  centre's cut toward zero: 0, 102 and 204/1024 at depth 20; 279, 46 and 93 for the right target at
+  44 (93, not twice 46, is why depth 44 looked different).
+- The focal length is half the screen width over tan(`PLAYER_ARC`/2) cut to 22.10 (559/1024):
+  600258/1024 pixels, not 320 × 1874/1024. Only that integer fits all rows.
+- The width in pixels is the width tangent times the focal length, cut to 1/1024; the texels per
+  pixel are the bitmap's width less 1/1024 (65535/1024, as the save's sprite sizes show) over it:
+  561, 841, 1040 and 1230.
+- The texel is counted from the left edge (centre less half, times the focal length, unrounded)
+  to one pixel past the shot's column plus 768/2^20 pixels (any of 732 to 828 fits), and floored.
+- `PRINT_VALUE` rounds half up: 34.0625 prints as 34.063.
+
+The fits also predict the screenshots: for all 15 depth-sweep targets the first and last drawn
+columns and the column where the bitmap's colour changes at texel 32 fall where the rule puts them,
+so `HIT_X` is the renderer's own texel. Open: where the 768/2^20 comes from, and whether the widths
+are 2048 and 4096 or 2047 and 4095 raw over the depth (depth 32 or 64 would separate them).
+
+`WdlRuntime.SpriteHitColumn` implements it; `WdlRuntimeTests.SpriteHitColumn_ProjectsTheSpriteInFixedPointTangents`.
+All 59 shoot-mapping carriers now match in full (27 before round 3, 32 in it).
+
+## Addendum: the sprite's edge in fixed point (2026-11-02, analysis only)
+No new carriers. Every centre-target shot matched exactly, but every shot at the right target
+(12 steps across) read 2/1024 higher than OpenVirtue's (33.176 against 33.174 at `SHOOT_X` 0.5,
+`OVHIT0.TXT` `ee05c5cf`; 21.164 against 21.162 at 0.47, `a95ecadb`) and the left target 1/1024
+lower (32.488 against 32.489 at −0.5, `c5d60f35`).
+- In raw units the original's `HIT_X` is a base per target plus 1230 per column. Solving for the
+  sprite's left edge with whole raw pixels leaves one solution: 12 steps across project to 163547
+  raw pixels, not the 163548 of 12 times the cut pixels per step (13629) nor the exact 163548.8.
+- **A 2^-20 reciprocal of the depth.** 2^30 / (44·1024) cut is 23831, and the focal length times it
+  over 2^20 gives 13628.935 raw pixels per step: 163547 for 12 steps and 27257 for the half-width,
+  each cut toward zero. The edge is their difference, the texel `floor((column·1024 + 733 − edge) ·
+  1230 / 1024)`. The texels per pixel still come from the 22.10 pixels per step (13629, so 1230).
+- **Result.** This reproduces all 27 printed `HIT_X` values; the earlier rule gave 20 and passed
+  five more within the 0.002 tolerance. 733/1024 replaces the fitted 0.714 pixels; its source is
+  still unknown. Only one depth and one focal length were measured, so the reciprocal is the most
+  natural integer form that fits, not a proven one: sprites at other depths (20, 30, 37 separate it
+  from the exact and the cut products) would pin it.

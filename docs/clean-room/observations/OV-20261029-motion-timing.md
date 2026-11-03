@@ -86,3 +86,31 @@ it can be compared in an `IF`).
 `Runtime_PredefinedDefaults_…`; `ovtool oracle diff` matches the round-1 `ACCEL` carriers and
 round3 friction-quarter (the others differ from the anchor cycle on, whose `TIME_CORR` the
 harness cannot recover).
+
+## Replay notes (2026-11-02)
+- **`ONESHOT`: `PLAY` is clear when `EACH_CYCLE` runs.** In round2 anim-oneshot (trace `OVMOT0.TXT`,
+  sha256 `efd2e5b5`) the `E` line, printed by the thing's `EACH_CYCLE` in the cycle the last phase
+  ends, reads `MY.PLAY` 0; the `A` line of `EACH_TICK` just before it in the same cycle still reads 1.
+  OpenVirtue ran `EACH_CYCLE` first and cleared `PLAY` after it, so its `E` line read 1. Rule: at the
+  end of a `ONESHOT` run the engine clears `PLAY`, then runs `EACH_CYCLE`. With it the carrier matches
+  all 105 lines (was 104), and no other carrier changes. `WdlRuntime.AdvanceAnimationTarget`; test
+  `WdlRuntimeTests.Tick_OneShotTexture_ClearsPlayBeforeEachCycleRuns`.
+- **A looping animated texture has `PLAY` set.** In round2 anim-delay, anim-delay8 and anim-random
+  (traces `OVMOT0.TXT`, sha256 `621ee562`, `42efe866`, `ac0b253c`) every `A` and `E` line prints
+  `mt_p` 1 (`IF (MY.PLAY == 1)`), from the first line on; no script sets `PLAY` there. OpenVirtue
+  left it 0. Rule: at level start an object whose texture loops (`CYCLES` above 1, no `ONESHOT`)
+  gets `PLAY` 1; a `ONESHOT` keeps 0 until a script sets it. Whether a single-phase texture or one
+  assigned later sets `PLAY` is not measured. With it anim-delay matches 56 of 158 lines (was 2),
+  anim-delay8 178 of 217 (was 3) and anim-random 136 of 636 (was 2); the rest is the phase and
+  `RANDOM` difference. No other carrier changes. `WdlRuntime.InitializeAnimationCycles`; test
+  `WdlRuntimeTests.Runtime_LoopingAnimatedTexture_StartsWithPlaySet`.
+
+## Replay notes (2026-11-03, harness)
+- **anim-random replays the same way every time.** Its `RANDOM 1` delay factor is drawn from the
+  runtime's generator, which was seeded from the clock, so the same build matched 12, 23 or 263 of
+  636 lines of round2 anim-random (`OVMOT0.TXT`, sha256 `ac0b253c`) from run to run; the 136 above
+  was one such draw. The replay now passes a fixed seed (`RuntimeHost.OpenArchive`'s `randomSeed`,
+  1), and the carrier matches 72 lines on every run. The original's generator is not modelled, so
+  the line count says nothing about `RANDOM`'s distribution. Outside the replay the runtime still
+  draws unseeded. Tests: `WdlRuntimeRandomTests`,
+  `RuntimeHostFrameClockTests.OpenArchive_RandomSeed_DrawsTheSameRandomOnEveryRun`.

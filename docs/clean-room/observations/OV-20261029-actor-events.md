@@ -58,7 +58,8 @@ scripts set those with `SET x.TARGET, …` (23 `MOVE`, 10 `BULLET`, 7 `VERTEX`),
   Correction (OV-20261029-actor-step): a step along the actor's `ANGLE` (`MOVE`, `BULLET`) is split
   with cos and sin and each part rounded to 1/1024; only steps toward a point use \|dx\| + \|dy\|.
 - If the step reaches the point it lands on it and arrives; otherwise it arrives once less than
-  about 1/8 (\|dx\| + \|dy\|) is left, where it stands.
+  about 1/8 (\|dx\| + \|dy\|) is left, where it stands. Correction (2026-11-02): less than 0.1,
+  102 raw (OV-20261020-view-activity addendum).
 - On a `WAY` arrival `WAYPOINT` advances (wrapping to 1) before `IF_ARRIVED` runs; `TARGET_X/Y` show
   the next point only from the next step.
 - A `VERTEX` or object target triggers `IF_ARRIVED` in every cycle the actor is there. A `FOLLOW`
@@ -102,8 +103,9 @@ the cycle, `TIME_CORR` and the actor's X every cycle from the first.
   cycles. OpenVirtue takes the exact product; the cause is not found.
 
 ## Open Questions
-- Whether the arrival limit is a constant (OpenVirtue uses 1/8) or the cycle's step; the measured
-  arrivals (≤ 0.098) and non-arrivals (≥ 0.134) do not separate them.
+- Answered (2026-11-02, OV-20261020-view-activity addendum): the arrival limit is the constant 0.1
+  (102 raw), neither 1/8 nor the step. This trace's way arrives 100 raw short and does not arrive
+  with 0.114 left at a step of 0.123.
 - The fixed-point heading drift (y +0.004 a cycle at angle 0).
 - `FOLLOW`'s `IF_ARRIVED` at the pad border happened during the settling `WAITT 16`, outside the
   trace window; it was not observed.
@@ -114,3 +116,33 @@ the cycle, `TIME_CORR` and the actor's X every cycle from the first.
 turn), with `DISTANCE` refreshed on read after a front actor moved. Tests: `WdlActorMotionTests`
 (`Tick_AssignedWay_…`, `Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalInEveryCycleThere`,
 `Tick_NamedObjectTarget_…`).
+
+## Addendum: no in-cycle distance refresh (2026-11-02)
+The refresh on read after an actor in front moved (see Implementation) is gone. In clip-move
+(OV-20261019-clip-contact, trace sha256 `a8c8688c`), an actor's own `EACH_TICK` reads the
+distance from before its move. Its move shows from the next cycle's start, and only when it ends
+within the actor's `CLIP_DIST` border. No carrier of this note changed in the oracle diff.
+
+## Addendum: the push-back distance (2026-11-02)
+The oracle-diff replays of round 2 `bullet` (`OVAEV0.TXT` `75c17977`) and `move-border`
+(`1fc2ce93`) settle the push-back left open above. In raw units (1/1024):
+- bullet, wall at x = 48 (49152): the first `HIT` puts the actor at 48078 (46.951), 1074 from the
+  wall, coming from 48096. From then on it alternates 48082 and 48078 every cycle, whatever
+  `TIME_CORR`: 1070 and 1074 from the wall.
+- move-border, wall at y = −24: the actor stands at −23502 (−22.951), 1074 from the wall, and then
+  alternates −23498 and −23502: 1078 and 1074.
+
+OpenVirtue held 1.05 cut toward zero, 1076 from the wall (46.949, −22.949), and never alternated.
+
+Rule: a wall stops a `CAREFULLY` actor 1074/1024 from it (its half width of 1 plus 50/1024). The
+4/1024 minimum of OV-20261029-actor-step then applies to what is left of a wall-stopped part as
+well: a step held where it stands (a part of 0) moves +4, so into a wall ahead and away from one
+behind, and the next stop pulls it back by 4, which stays (\|−4\| is not under 4). Only half
+width 1 was measured, so whether the 50 is added to the half width, or the stop is one unit nearer
+than the player's rounded clearance, is open.
+
+Implementation: `WdlRuntime.MoveActor` (`ActorWallClearance`, `MinimumCarefulPart`); test
+`WdlActorMotionTests.Tick_CarefulMove_PushingAWallAlternatesBetween1074And1070FromIt`. Result:
+bullet matches all 569 lines (285 before) and move-border all 428 (368). With
+OV-20261019-border-kinds (addendum there) the change flips five carriers to full matches and makes
+no line worse in any carrier.

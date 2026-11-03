@@ -125,7 +125,7 @@ public static class LevelLoader
             way => way.Name,
             way => new LevelWay(
                 way.Name,
-                way.Points.Select(point => new LevelWayPoint(point.X, point.Y)).ToList()),
+                way.Points.Select(point => new LevelWayPoint(WdlFixed.Literal(point.X), WdlFixed.Literal(point.Y))).ToList()),
             StringComparer.OrdinalIgnoreCase);
         PlayerStart? start = map.PlayerStart is { } ps
             ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
@@ -436,8 +436,10 @@ public static class LevelLoader
     private static T BuildEntity<T>(T entity, WmpPlacement placement, WdlDeclarations declarations)
         where T : MapEntity
     {
-        entity.X = placement.X;
-        entity.Y = placement.Y;
+        // A placement's and a way point's coordinates are cut toward zero to 22.10, as a literal is:
+        // WMP 0.4 prints 0.399 and -20.2 prints -20.199 (OV-20261020-view-activity, 2026-11-02 addendum).
+        entity.X = WdlFixed.Literal(placement.X);
+        entity.Y = WdlFixed.Literal(placement.Y);
         entity.PlacementAngleDegrees = placement.Angle;
         entity.Region = placement.Region;
         entity["THING"] = 1;

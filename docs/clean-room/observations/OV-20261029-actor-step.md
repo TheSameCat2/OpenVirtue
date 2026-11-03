@@ -63,7 +63,9 @@ is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where �
 and cos θ and sin θ are themselves cut toward zero to 22.10 (sin 90° is 1023/1024).
 Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events). A
 `CAREFULLY` actor whose step has no X (or no Y) part is then moved 4/1024 along that axis, in the
-positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero.
+positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero
+(revised 2026-11-02: it is held 1074/1024 from the wall, and a wall-stopped part under 4/1024
+becomes ±4 too; OV-20261029-actor-events addendum).
 
 ## Addendum: the long step out of view (2026-10-29)
 Bullets skipping frames out of view take six cycles' steps at once. Three of those long steps
@@ -135,9 +137,38 @@ were read again.
   actor-events' vertex and way-start traces and view-activity's view-cone. Over all carriers,
   725 more lines match.
 
+## Addendum: negative halves and the facing's range (2026-11-02)
+No new runs. Traces read again: round 5 v-c-y `ee5ded84` and v-c-y2 `a271c5ce`; round 4 w-p-diag
+`b98f90aa` and w-c-diag `b871a7f0`; OV-20261019-actor-contact actor-push-careful `3d9188f5`.
+- **The split product rounds half up.** Round 6's product of the step and the distance left along
+  an axis rounds half up (floor(x + 0.5)), not away from zero, so a negative half goes toward zero.
+  - v-c-y, line 77: 128·(−244)/1024 = −30.5 makes −30, then −0.976 cuts to 0 and the `CAREFULLY`
+    nudge makes it +4 (x 10488, as the original). Away from zero gave −31, −1, then −4 (10480).
+  - w-p-diag's return leg, line 28: −1989.5 makes −1989, a Y step of −132 (y 3847). Every step of
+    that leg fits up to the arrival.
+  - actor-push-careful's `FOLLOW` actor, line 6: −25.5 makes −25, which cuts to 0 and nudges y +4
+    (0.020, as the original).
+
+  Round 6's positive half (5629.5 → 5630) is the same under either rule.
+- **An instant turn keeps the facing in 0..2π.** With `ASPEED` 0 the actor's `ANGLE` is the leg's
+  facing (round 5's 22.10 angle in 0..2π, cut toward zero) less its placement angle, kept in 0..2π.
+  It is not made signed. Heading −Y prints 4825 raw, not −1609. Toward (−20, −7) it prints 3561, not
+  −2873. A turn at `ASPEED` > 0 keeps the signed range: no carrier prints one, and making it
+  unsigned changed no line.
+- **Result.** 129 more matching lines. v-c-y and v-c-y2 now match in full. w-p-diag and w-c-diag
+  match 90 of 91: only line 3 is left, the first cycle's step (30544 for 30540). actor-push-careful
+  now first differs at line 30 (1 raw off from line 25), where the actor slows in front of the
+  player (a contact matter).
+- Implementation: `WdlRuntime.AdvanceActorToward` (`Part`) and `TurnActorToward`. Tests:
+  `WdlActorMotionTests.Tick_WayActorAlongAnAxis_StepsByTheRoundedProductOfStepAndDistance` (a −Y
+  case) and `Tick_WayActorHeadingMinusY_KeepsItsFacingBetweenZeroAndTwoPi`.
+
 ## Open Questions
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
-- The `CAREFULLY` actors' residuals (v-c-y matches to line 77, v-c-y2 to 81, v-c-d to 35).
+- The `CAREFULLY` actors' residuals: v-c-d to line 35 (v-c-y and v-c-y2 are settled by the
+  2026-11-02 addendum).
+- Whether the same half-up rounding applies to the step product itself and to the cos/sin parts
+  of a `MOVE` step; no carrier has a negative half there.
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by
@@ -148,3 +179,32 @@ were read again.
 - The harness gained two things for this:
   - it puts printed `TICKS` back on the 1/1024 grid, preferring whole 1/32 ticks;
   - it takes the first sampled cycle's step from a printed `TIME_CORR` column.
+
+## Addendum: the step limit against the player (2026-11-02)
+Round 3 `c-pi` (`OVAST0.TXT` `130f9fb0`) walks a `CAREFULLY` actor −X toward the player at the
+origin, its Y 236–252 raw from the +4 nudges; the contact distance is 1 + `PLAYER_WIDTH` 1.2,
+2252 raw as OpenVirtue holds it. The original's steps from X 2464 are 72, 64, 36, 16 and 8, then
+none (2392, 2328, 2292, 2276, 2268, and 2268 to the end), each a halving of 144 or 128. The rule of
+OV-20261019-actor-contact (the point two steps ahead must clear the contact distance) gives every
+one of them when the distance is the X distance alone: in cycle 63 the 16 is refused (2276 − 32 =
+2244) and the 8 taken (2260); in cycle 64 even the smallest step is refused (2252, and 2250 for a
+step of 144), so a point exactly at the contact distance is refused too. OpenVirtue's circle let the
+16 through (√(2244² + 248²) = 2258) and then crept to 2251 and 2243. A circle of another radius
+does not fit all six steps with a natural constant.
+- The test is not a projection on the step: a follow actor in `OV-20261029-actor-events`
+  `follow-border` (`OVAEV0.TXT` `f667628f`) closes on the player along a 1:2 diagonal and rests at
+  (−1.131, 2.263), more than 2252 raw along Y but 2.53 away in a circle and along its way. The
+  test is the larger of \|dx\| and \|dy\|: a square round the player.
+- After the refusal the original's Y stays at 252. OpenVirtue kept adding 4 a cycle, because it
+  took the nudge from the requested step rather than the step taken.
+
+Rule: a `CAREFULLY` actor's step toward the player passes when max(\|dx\|, \|dy\|) of the point two
+steps ahead exceeds half its width plus `PLAYER_WIDTH`; otherwise it is halved, up to four times.
+The 4/1024 minimum applies to the parts of the step taken, so a refused step gets none.
+
+Implementation: `WdlRuntime.CarefulStepScale`, `MoveActor`; test
+`WdlRuntimeTests.Tick_ActorTargets_CarefulActorTestsThePlayerAlongXOrYAndIsNotNudgedWhenRefused`.
+Result: c-pi matches all 91 lines (65 before), follow-border 111 of 244 (10; its first difference
+is the start-up), and no other carrier changed. A diagonal approach straight at the player, where
+a square and a circle part most, has not been probed.
+

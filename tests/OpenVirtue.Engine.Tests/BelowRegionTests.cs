@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The OpenVirtue Authors
 
+using OpenVirtue.Engine.Interpreter;
 using OpenVirtue.Engine.Map;
 using OpenVirtue.Engine.Rendering;
 
@@ -81,6 +82,27 @@ public class BelowRegionTests
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
         Assert.Equal(region, Assert.Single(level.Things).Region);
+    }
+
+    [Theory]
+    [InlineData("FLAGS GROUND;", 4, 2)]  // a GROUND thing at HEIGHT 4: the underpass
+    [InlineData("FLAGS GROUND;", 12, 1)] // at HEIGHT 12: the deck
+    [InlineData("", 0, 1)]               // relative HEIGHT: the top
+    public void Locate_ThingBeamedUnderABridge_TakesTheStoreyOfItsStart(string flags, double height, int region)
+    {
+        // OV-20261030-below-beam round 2: the original LOCATEs a beamed thing as it places one at the start,
+        // and the retail scripts read its region back with SET curRegion, MY.REGION.
+        string map = Map.Replace("PLAYER_START", "THING crate 5 5 0 0;#7\nPLAYER_START", StringComparison.Ordinal);
+        string main = Main + FormattableString.Invariant(
+            $" THING crate {{ {flags} }} SYNONYM where {{ TYPE REGION; }} SKILL seen {{ VAL 0; }} ACTION beam {{ SET crate.X, 15; SET crate.Y, 5; SET crate.HEIGHT, {height}; LOCATE crate; SET where, crate.REGION; RULE seen = where.FLOOR_HGT; }}");
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("beam"));
+
+        Assert.Equal(region, Assert.Single(level.Things).Region);
+        Assert.Equal(level.Regions[region].FloorHeight, runtime.GetSkill("seen"));
     }
 
     [Theory]

@@ -201,3 +201,109 @@ start "on the line", and that step was never counted as a crossing. The player t
 the other region without changing region. `CrossesPortal` now counts a step that starts on the
 line and ends clearly off it, and the caller still changes region only when the end lies on the
 other region's side.
+
+## Addendum 2026-11-02: a free-standing wall keeps its region's outline; the LOCATE cycle gates by the region before
+
+Carriers (original traces, sha256 first 8): `clip-regions` (`OVCCX0.TXT` `19ad9a2a`),
+`rerun/clip-regions-walk` (`OVCCX0.TXT` `f907812c`), and from other notes
+OV-20261019-clip-detail `wall-regions` (`OVCDX0.TXT` `80807bf5`), OV-20261019-eye-clamp
+`stop-solid` (`OVECX0.TXT` `648dc091`), OV-20261020-view-activity `round2/long-wall`
+(`OVVAX0.TXT` `0e1dbfca`) and `view-occlude` (`OVVAX0.TXT` `c83636bc`). No new runs; these
+are re-read traces.
+
+Each of these maps has a free-standing wall with the same region on both sides
+(`WALL cr_wall 16 17 0 0` in `clip-regions`). OpenVirtue traced a region's outline only when
+every vertex of its walls had exactly two neighbours, so the wall's two dangling ends left the
+room without an outline. `LOCATE` then fell through to the outer `solid` region, which shares
+the room's perimeter (`CLIP_DIST` 0, `SKILL1` 0): the original's `TK` after `R1L` reads
+`HERE.SKILL1` 1, OpenVirtue's read 0, and no room object ran again. In `stop-solid` the player
+then stood at the solid region's floor 16 (`AS` `PLAYER_Z` 15.650 against the original's 8) and
+walked through the wall; in `long-wall` and `view-occlude` the actors froze at the 0 border.
+
+The `clip-regions` trace also shows the cycle of a `LOCATE` into another region. At TICKS 88,
+after `P1L` (room, `CLIP_DIST` 10, to the pad, 30), the room's thing and wall at 8 run once
+more and the pad's thing does not; `TK` already reads `HERE.SKILL1` 2 in that cycle, and from 96
+only the pad's thing runs. `wall-regions` agrees: the room wall at 26 runs at 120 right after
+`P1L` into its pad (10) and then never again, and after `R3L` back to the room (152) it waits
+for the next cycle (160). At `R2L` (120, pad to room) `clip-regions` prints the pad's thing once
+more.
+
+Rules:
+
+1. **A wall with the same region on both sides is not part of that region's boundary.** It
+   stands inside the region; the outline is traced from the other walls.
+2. **In the cycle of a script `LOCATE` that moves the player to another region, the object pass
+   still gates by the region the player had before**, at the position the player object still
+   holds (the host moves it after the cycle). `HERE` and the region events change at once.
+
+Results (oracle diff, all carriers): matched lines 23968 → 24099 over 623 carriers, no file
+worse, no new full match. `clip-regions` 6 → 27 of 43 lines, `clip-regions-walk` 3 → 35 of
+141, `wall-regions` 10 → 28 of 39, `long-wall` 19 → 43 of 67, `view-occlude` 25 → 61 of 220.
+`stop-solid` now prints the original's `AS` 8/0/0 and stops at the wall, but its lines still
+differ by the clock. The remaining `clip-regions` and `wall-regions` differences start where
+the replay clock loses a cycle in a stretch without object prints (pe_n 15 against 16 at TICKS
+144), a harness timing matter; the wall gate change of OV-20261019-clip-detail's addendum of the
+same date accounts for 7 of the `clip-regions` lines (the counts above include it).
+
+Tests: `LevelTopologyTests.LocateRegion_RoomWithAFreeStandingWall_FindsTheRoomNotTheRegionAroundIt`,
+`LevelTopologyTests.TraceRegionLoop_RegionWithAFreeStandingWall_TracesItsBoundary`,
+`WdlRuntimeTests.Tick_ObjectEachTick_CycleOfAPlayerLocateIsGatedByTheRegionBefore`.
+`LevelTopology` skips such walls in `TraceRegionLoop` and `LargestLoop` (`BoundsRegion`), so
+`LOCATE`, actor relocation and the floor mesh all get the outline. `WdlRuntime.Locate` records
+the player's previous region and position; `IsWithinClipDistance` reads it through
+`ClipGateRegion` until the end of the object pass.
+
+## Addendum: hook order, the LIBER sentinel and the actor's refresh (2026-11-02)
+Read from the existing traces of clip-near (`OVCCX0.TXT`, sha256 `c234835f`) and clip-move
+(`OVCCX0.TXT`, `a8c8688c`). No new run.
+
+- clip-near: in the cycle the player comes within the actor's `DIST`, the actor's `EACH_TICK`
+  line (`A`) comes before its `IF_NEAR` line (`NA`), and both before the things' lines (`L`). A
+  thing's `IF_NEAR` also follows its own `EACH_TICK`. So the `DIST` edge fires in the object's
+  own turn of the object pass, right after its `EACH_TICK`, not in a pass before the objects.
+- clip-near: the `LIBER` thing `cn_l` (`DIST` 15, `CLIP_DIST` 10) reads 65535.999 until the
+  player first comes within 15 = 1.5 × its border (cycle 49, 14.461), although it is
+  `DIST`-tested at any range. The `DIST` test does not write the distance it compares with into
+  `DISTANCE` before the distance has started.
+- clip-move: an actor's `DISTANCE` shows its move only from the next cycle. The FOLLOW actor read
+  9.000 in the cycle that took it to 7.406, and 7.406 in the next. Only a move that ends in front
+  of the player and within the `CLIP_DIST × ACTOR_DIST` border (|dx| + |dy| < 10) triggers that
+  refresh. The WAY actor's move to 39.563 ended 11.563 away and refreshed nothing (W stays 9.969).
+- clip-move: the border gate reads the refreshed distance too. The WAY actor, 11.563 away after its
+  move but at a `DISTANCE` of 9.969, still ran its `EACH_TICK` and moved in the next cycle (orig
+  TK(46) at x = 42.750).
+
+Implemented: `DispatchDistEdge` runs in `RunObjectPass` after each object's `EACH_TICK`.
+`TryCurrentProximity` writes `DISTANCE` only for a wall or a started thing or actor.
+`NoteFrontMove` also requires the end of the move to lie within `ClipBorder`, the forced in-cycle
+refresh after the actors' moves and on a `DISTANCE` read is gone, and `IsWithinClipDistance`
+compares with `TryDistTestDistance`. Oracle diff: clip-move 27/56 → 56/56 (full match), clip-near
+119/208 → 175/208 and `OVSTA0` 1/3 → 3/3. The rest of clip-near is a thing's `EACH_CYCLE` count
+and a 9.562/9.563 print rounding, both outside this rule. Over the whole diff, 291 → 294 full
+carriers and no file got worse. Tests: `Tick_PlayerProximity_DistEdgeFiresInTheObjectsTurnAfterItsEachTick`,
+`Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts`,
+`Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance`, and
+`Tick_EachTickActions_ReadDistanceRefreshedAtCycleStart` (which replaces
+`..._ReadDistanceFromCurrentPlayerAndMovedActorPositions`).
+
+## Replay notes (2026-11-02)
+- **Under `SKIP_FRAMES` an actor beyond its border counts as not drawn.** clip-move-liber (trace
+  `OVCCX0.TXT`, sha256 `b603126a`): the `LIBER` `FOLLOW` and way actors start 52 and 42 from the
+  player (`CLIP_DIST` 10), both inside the view cone, and both move in bursts of six cycles'
+  distance (|dx| + |dy| 9.561 = 6 × 1.594 between `TK(1)` and `TK(4)`, nothing between `TK(4)` and
+  `TK(7)`, and so on). OpenVirtue counted them as visible and moved them every cycle. Rule: a thing
+  or actor at or beyond its `CLIP_DIST` border (`LIBER` ignored) is not drawn, so `SKIP_FRAMES`
+  treats it as unseen even inside the view cone. `VISIBLE` beyond the border is not measured and
+  is left as it was. Result: `OVCCX0.TXT` matches 64 of 159 lines (was 56); the bursts now match up
+  to the beam to (31, −12) in probe cycle 21, after which the `FOLLOW` actor's burst in OpenVirtue
+  still heads for the old player position (not resolved here). No other carrier changes.
+  `WdlRuntime.SkipFramesMultiplier` and `IsBeyondClipBorder`; test
+  `WdlViewActivityTests.Tick_SkipFrames_ActorInViewBeyondClipDistCountsAsUnseen`.
+
+## Replay notes (2026-11-03, harness)
+- **The lost cycle was the replay's clock.** clip-regions (`OVCCX0.TXT`, sha256 `19ad9a2a`) ran at
+  8 ticks a frame throughout: every `TICKS` it prints is a multiple of 8. The replay now runs such
+  a launch at fixed 8-tick frames instead of filling frames between sparse samples, and
+  clip-regions matches in full (43/43, was 27), with OV-20261019-clip-detail wall-regions. The
+  rerun clip-regions-order (`74b97e4c`) lost its first `TK` line (13.500) to a different start-up
+  step; that line comes 31 ticks before the first `T` sample, where no sample records the frames.

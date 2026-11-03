@@ -36,6 +36,7 @@ public sealed class Player : AcknexObject
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
     private readonly List<AcknexObject> _touchedObjects = [];
+    private readonly List<AcknexObject> _blockingWalls = [];
 
     public Vector3 Position
     {
@@ -63,18 +64,20 @@ public sealed class Player : AcknexObject
     public float EyeHeight { get; set; } = 3f;
 
     /// <summary>
-    /// <c>PLAYER_WIDTH</c>: the minimum distance kept from solid walls and objects. A solid wall
-    /// (or a region border the player cannot enter) holds the player <see cref="WallClearance"/>
-    /// further away.
+    /// <c>PLAYER_WIDTH</c>: the minimum distance kept from solid walls and objects. A move that would
+    /// end this close to a solid wall (or a region border the player cannot enter), or closer, is
+    /// stopped <see cref="WallClearance"/> further away.
     /// </summary>
     public float Width { get; set; } = 1.2f;
 
     /// <summary>
     /// How much further than <see cref="Width"/> a solid wall or a blocking region border stops
-    /// the player: patched V3.963 stopped walks 0.01–0.05 (mostly 0.045–0.05) beyond
-    /// <c>PLAYER_WIDTH</c> 0.5, 1.2, 2 and 3, at any speed (OV-20261019-eye-clamp).
+    /// the player: 51/1024 (0.05 in 22.10), so <c>PLAYER_WIDTH</c> 1.2 (1228/1024) holds the
+    /// player 1279/1024 from the wall, and 0.5, 2 and 3 hold it 563, 2099 and 3123
+    /// (OV-20261019-eye-clamp, 2026-11-03 addendum). A move that ends further than
+    /// <see cref="Width"/> from the wall is not stopped, so a slow walk comes nearer than this.
     /// </summary>
-    public const float WallClearance = 0.05f;
+    public const float WallClearance = 51f / 1024;
 
     /// <summary>Global collision-width multiplier for actors.</summary>
     public float ActorWidthFactor { get; set; } = 1f;
@@ -184,29 +187,54 @@ public sealed class Player : AcknexObject
     /// </summary>
     public AcknexObject[] TakeTouchedObjects()
     {
-        AcknexObject[] touched = [.. _touchedObjects];
+        AcknexObject[] touched = [.. _touchedObjects, .. _blockingWalls.Where(w => !_touchedObjects.Contains(w))];
         _touchedObjects.Clear();
+        _blockingWalls.Clear();
         return touched;
     }
 
     /// <summary>
     /// Returns the things and actors among the touched objects (see <see cref="TakeTouchedObjects"/>)
-    /// and leaves the walls for the next call of that: an object's <c>IF_NEAR</c> runs at once, a
-    /// wall's waits for the next cycle (OV-20261019-actor-contact round 8).
+    /// and the walls that stopped a move, and leaves the walls passed through for the next call of
+    /// that: an object's <c>IF_NEAR</c> runs at once (OV-20261019-actor-contact round 8), and so
+    /// does that of a wall that stopped the player, while a passed wall's waits for the next cycle
+    /// (OV-20261019-border-climb, 2026-11-03 addendum).
     /// </summary>
     public AcknexObject[] TakeTouchedEntities()
     {
-        AcknexObject[] entities = [.. _touchedObjects.Where(static o => o is MapEntity)];
+        AcknexObject[] contacts =
+        [
+            .. _touchedObjects.Where(static o => o is MapEntity),
+            .. _blockingWalls.Where(w => !_touchedObjects.Contains(w)),
+        ];
         _touchedObjects.RemoveAll(static o => o is MapEntity);
-        return entities;
+        _blockingWalls.Clear();
+        return contacts;
     }
 
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
-    public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null);
+    public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null, out _);
 
-    private Vector2 MoveHorizontal(float dx, float dz, MapEntity? ignored)
+    /// <summary>
+    /// Moves horizontally as <see cref="MoveHorizontal(float, float)"/> and tells whether a solid
+    /// wall (or a region border the player cannot enter) stopped the move.
+    /// </summary>
+    public Vector2 MoveHorizontal(float dx, float dz, out bool wallStopped) =>
+        MoveHorizontal(dx, dz, ignored: null, out wallStopped);
+
+    /// <summary>
+    /// A wall stops the move only when it would end within <see cref="Width"/> of the wall, at
+    /// <see cref="Width"/> included, and then holds the player <see cref="Width"/> +
+    /// <see cref="WallClearance"/> from it on the 1/1024 grid. A move that ends nearer than the
+    /// clearance but further than the width is not stopped and touches nothing: patched V3.963's
+    /// 1.2-wide player walking +Y into y = 12 stepped to 11040/1024 (1248 from the wall), was then
+    /// stopped at 11009 (1279), and at 0.05 steps came on to 11049 before the next step was stopped
+    /// at 11009 again (OV-20261019-eye-clamp, 2026-11-03 addendum).
+    /// </summary>
+    private Vector2 MoveHorizontal(float dx, float dz, MapEntity? ignored, out bool wallStopped)
     {
         var start = new Vector2(_position.X, _position.Z);
+        var blocking = new List<AcknexObject>();
         CircleMoveResult result = _collisionWorld.Move(
             start,
             _region,
@@ -218,10 +246,27 @@ public sealed class Player : AcknexObject
             ignored,
             _touchedObjects,
             WallClearance,
-            LevelCollisionWorld.ContactSlackSquared);
+            LevelCollisionWorld.ContactSlackSquared,
+            clearanceOnContact: true,
+            stopAtContact: true,
+            blocked: blocking);
         _region = result.Region == _region ? _region : StoreyFor(result.Region);
-        _position = new Vector3(result.Position.X, _position.Y, result.Position.Y);
-        return result.Displacement;
+        Vector2 end = result.Position;
+        wallStopped = blocking.Count > 0;
+        if (wallStopped)
+        {
+            end = new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
+            foreach (AcknexObject wall in blocking)
+            {
+                if (!_blockingWalls.Contains(wall))
+                {
+                    _blockingWalls.Add(wall);
+                }
+            }
+        }
+
+        _position = new Vector3(end.X, _position.Y, end.Y);
+        return end - start;
     }
 
     /// <summary>
@@ -273,7 +318,7 @@ public sealed class Player : AcknexObject
 
         Vector2 normal = distance > 1e-6f ? offset / distance : Vector2.UnitX;
         Vector2 push = center + (normal * contactDistance) - position;
-        MoveHorizontal(push.X, push.Y, pusher);
+        MoveHorizontal(push.X, push.Y, pusher, out _);
         return true;
     }
 

@@ -105,7 +105,8 @@ Confirmed for patched V3.963:
    is outside its `DIST`. Walls stop the push.
 3. **A `CAREFULLY` actor does not push**: it stops short of the player. It halves its step until
    the point two steps ahead is at least the contact distance away (at most four halvings, then
-   no step), and fires `IF_NEAR` in every cycle its full step is refused.
+   no step), and fires `IF_NEAR` in every cycle its full step is refused. Revised 2026-11-02
+   (OV-20261029-actor-step addendum): "away" is along x or along y, a square, not a circle.
 4. **A beam inside a solid object is resolved at the next movement**: the player is pushed
    straight out from the centre to the contact distance, and the contact fires `IF_NEAR`.
    `PASSABLE` objects are not pushed out of.
@@ -183,3 +184,15 @@ player is within `DIST`. `WdlPlayerMotion.Apply` calls `Player.PushOutOfObjects`
 its `IF_NEAR` in the next cycle, like a walking contact. `RefreshDistances` keeps
 `UnrefreshedDistance` until `DistanceStartFactor` × `ClipBorder`. The `BERKELEY` special case that
 suppressed proximity hooks is gone (rule 6).
+
+## Addendum: the sentinel of a LIBER thing (2026-11-02)
+Read from the existing distance-refresh trace (`OVACX0.TXT`, sha256 `a61b7372`). No new run.
+
+The `LIBER` thing `dr_d` (`DIST` 15, at (24, −16)) reads 65535.999 in every line. OpenVirtue had
+printed 40.000, 19.332 and 40.102 in the cycles where the player stood still. Because of `LIBER`
+the `DIST` test runs at any range, and it wrote the distance it compared with into `DISTANCE`.
+The original keeps the sentinel until the distance starts (rule 7). The test still compares with
+that distance. `TryCurrentProximity` now writes `DISTANCE` only for a wall or for a thing or actor
+whose distance has started. distance-refresh `OVACX0` goes from 44/50 to 50/50, a full match.
+refresh-20 and refresh-default still match. Test:
+`Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts`.

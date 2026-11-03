@@ -49,6 +49,21 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void CycleTicks_ProbeLinesCountACycleBehindTheSampler()
+    {
+        // OV-20261029-audio: the probe action prints GO and P before the EACH_TICK sampler raises the
+        // count, so its lines read a cycle behind C's at the same TICKS.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "BEGIN\nGO 13.438 0\nP 13.438 0\nC 13.438 1\nC 14.219 4\nRET 14.719 5\n");
+
+        OracleTimingColumn? timing = OracleTrace.DetectTimingColumn(lines);
+
+        Assert.Equal("C", OracleTrace.LeadingSampler(lines, 0, 1));
+        Assert.Equal(new OracleTimingColumn(OracleTimingColumn.AnyToken, 0), timing);
+        Assert.Equal([13.4375, 13.6875, 13.96875, 14.21875, 14.46875, 14.71875], OracleTrace.CycleTicks(lines, timing!.Value));
+    }
+
+    [Fact]
     public void DetectTimingColumn_OneCountWithTwoTicks_IsNotATimingColumn()
     {
         // A line printed before the counting action and one after it carry counters a cycle apart.
@@ -70,13 +85,180 @@ public sealed class OracleTraceTests
     [Fact]
     public void CycleTicks_GapOfWholeThirtySeconds_FillsWithWholeThirtySecondSteps()
     {
-        // 26/32 over three cycles: 8, 9 and 9 thirty-seconds, so no cycle lands off the original's grid.
+        // 26/32 over three cycles: 9, 8 and 9 thirty-seconds (the centre of the cadences that fit), so
+        // no cycle lands off the original's grid.
         IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse("TK 24.000 1.000\nTK 24.813 4.000\n");
 
         IReadOnlyList<double> ticks = OracleTrace.CycleTicks(lines, new OracleTimingColumn("TK", 0));
 
-        Assert.Equal([24.0, 24.25, 24.53125, 24.8125], ticks);
+        Assert.Equal([24.0, 24.28125, 24.53125, 24.8125], ticks);
     }
+
+    [Fact]
+    public void CycleTicks_SparseCountedSampler_FillsAlongTheCadenceOfEverySampleAndItsTimeCorr()
+    {
+        // flic-scheduler-detail waits-control: TK every 123 cycles with TIME_CORR. One cadence through
+        // all of them puts the other tokens' lines where the original printed them: WB16 in cycle 17 at
+        // 17.594, S2 in 510 at 146.813, S4 in 584 at 166.219, S6 in 649 at 183.25.
+        IReadOnlyList<double> ticks = OracleTrace.CycleTicks(OracleTrace.Parse(WaitsControlSamples), new OracleTimingColumn("TK", 1));
+
+        Assert.Equal(3322, ticks.Count);
+        Assert.Equal(17.59375, ticks[16]);
+        Assert.Equal(146.8125, ticks[509]);
+        Assert.Equal(166.21875, ticks[583]);
+        Assert.Equal(183.25, ticks[648]);
+        Assert.Equal(0.25, ticks[123] - ticks[122]); // the step TK 124 prints
+        Assert.All(ticks.Skip(1).Zip(ticks), p => Assert.True(OracleTrace.IsFrameStep(p.First - p.Second)));
+    }
+
+    [Fact]
+    public void CycleTicks_GapAcrossAFlicEnd_KeepsTheFlicStepForItsRemainingFrames()
+    {
+        // flic-scheduler-detail round3 speed: TK 157 prints the flic's 0.625; the flic had 44 frames
+        // left (200 − 156), the most that leave the 18 world cycles after it a 60 Hz frame each.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "TK 1.000 13.375 1.000 0.250\nTK 52.000 45.875 53.000 0.625\nTK 104.000 78.375 105.000 0.625\n" +
+            "TK 156.000 110.875 157.000 0.625\nTK 0.000 142.894 219.000 0.281\n" +
+            "TK 0.000 175.112 342.000 0.250\nTK 0.000 207.362 465.000 0.250\n");
+
+        IReadOnlyList<double> ticks = OracleTrace.CycleTicks(lines, new OracleTimingColumn("TK", 1));
+
+        // ticks[i] is cycle i + 1.
+        Assert.Equal(110.875 + (44 * 0.625), ticks[200], 9);
+        Assert.True(OracleTrace.IsFrameStep(ticks[203] - ticks[202]));
+        Assert.Equal(0.28125, ticks[218] - ticks[217], 9); // the step TK 219 prints
+    }
+
+    [Fact]
+    public void FirstCycleStep_CountedSamplerOfOneTimeCorr_ReadsItWhereTwoSamplesAreACycleApart()
+    {
+        // scheduler-order round5 waitt-small: every line prints TICKS, the count and TIME_CORR 0.250.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "BEGIN\nA0 13.938 2.000 0.250\nR0 13.938 2.000 0.250\nA1 13.938 2.000 0.250\nR1 14.188 3.000 0.250\n" +
+            "A13 14.188 3.000 0.250\nR13 14.719 5.000 0.250\n");
+
+        Assert.Equal(0.25, OracleTrace.FirstCycleStep(lines, new OracleTimingColumn(OracleTimingColumn.AnyToken, 0)));
+    }
+
+    [Fact]
+    public void FitCadence_EightsAndNines_ContinuesTheirPattern()
+    {
+        // view-activity round8 beam-back's 119 C steps; the original's next frame was 8/32 (QS 44.875
+        // after C 44.625), where the run's median step is 8 but a fit to the last 32 steps says 9.
+        int[] steps =
+        [
+            8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8,
+            9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8,
+            8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8,
+        ];
+        List<double> ticks = [13.4375];
+        foreach (int step in steps)
+        {
+            ticks.Add(ticks[^1] + (step / 32.0));
+        }
+
+        OracleCadence? cadence = OracleTrace.FitCadence(ticks);
+
+        Assert.NotNull(cadence);
+        Assert.Equal(0.25, cadence.StepInto(1));
+        Assert.Equal(0.28125, OracleTrace.FitCadence(ticks, maxSteps: 32)!.StepInto(1)); // too short a fit
+    }
+
+    [Fact]
+    public void FitCadence_StepsOfThreeSizes_HasNoCadence()
+    {
+        List<double> ticks = [.. Enumerable.Range(0, 20).Select(static i => 10 + (i * 0.5) + (i % 2 * 0.0625))];
+
+        Assert.Null(OracleTrace.FitCadence(ticks));
+        Assert.Null(OracleTrace.FitCadence([1, 1.25, 1.5])); // too few steps
+    }
+
+    [Theory]
+    [InlineData("ARM 24.000 1.000\nS 32.000 2.000\nS 48.000 3.000\nRET\n", null, true)] // each-sec cadence
+    [InlineData("ARM 24.000 1.000\nS 32.000 2.000\n", null, true)] // slot-16
+    [InlineData("ARM 24.000 1.000\nS 32.000 2.000\nS 36.188 3.000\n", null, false)] // sped up
+    [InlineData("ARM 24.000 1.000\nS 24.000 2.000\n", null, false)] // one value only
+    [InlineData("ARM 24.000 1.000\n", 13.438, false)] // the 60 Hz start-up stamp
+    public void RanAtSlowFrames_EveryTicksAMultipleOfEight(string trace, double? stamp, bool slow)
+    {
+        Assert.Equal(slow, OracleTrace.RanAtSlowFrames(OracleTrace.Parse(trace), stamp));
+    }
+
+    [Fact]
+    public void LastTicks_RisingFirstColumns_TakesTheLargest()
+    {
+        string file = Path.GetTempFileName();
+        try
+        {
+            // wall-pass-clip clip-wall: the W sampler stops at 292.875, Y11S prints at 356.531; the X
+            // column of P goes down, so it is not TICKS.
+            File.WriteAllText(file, "BEGIN\nW 290.000 1\nW 292.875 2\nY11S 356.531 0\nP 900 1\nP 3 2\n");
+
+            Assert.Equal(356.531, OracleReplay.LastTicks([file]));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void ReplayClock_AfterTheLastSample_ContinuesTheCadence()
+    {
+        // view-activity round6 sprite-occlude's 35 C steps end 9 8 8 (… 22.0625, 22.3125, 22.5625): its
+        // next frame, H3S at 22.844, is 9/32 later, where the run's median step gave 8/32.
+        int[] steps = [8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8];
+        List<double> ticks = [13.40625];
+        foreach (int step in steps)
+        {
+            ticks.Add(ticks[^1] + (step / 32.0));
+        }
+
+        var clock = new OracleReplay.ReplayClock(ticks, fallbackTicks: 0.25);
+        clock.Anchor(ticks[0]);
+        double now = ticks[0];
+        for (int i = 1; i < ticks.Count; i++)
+        {
+            now += clock.Next(now) * 16;
+        }
+
+        Assert.Equal(ticks[^1], now, 9);
+        Assert.Equal(0.28125 / 16, clock.Next(now), 9);
+    }
+
+    [Fact]
+    public void ReplayClock_AfterTheLastSample_WithoutACadence_TakesTheRecentMedian()
+    {
+        // Steps of 2, then 1.5 and 1.625 and 1.875: no cadence of two neighbouring sizes, and the run's
+        // median (2) is not what the last steps ran.
+        var clock = new OracleReplay.ReplayClock([10, 12, 14, 16, 18, 20, 22, 24, 25.5, 27.125, 29, 30.5, 32.125], fallbackTicks: 0.25);
+        clock.Anchor(10);
+
+        Assert.Equal(1.625 / 16, clock.Next(32.125), 9);
+    }
+
+    [Fact]
+    public void PeriodicFirstStep_SlowStartUp_IsNotRead()
+    {
+        // view-activity near-low: 24, 32 at 8-tick frames, then 60 Hz frames repeating every 18 cycles.
+        int[] pattern = [8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8];
+        List<double> ticks = [24, 32];
+        for (int i = 0; i < 40; i++)
+        {
+            ticks.Add(ticks[^1] + (pattern[i % 18] / 32.0));
+        }
+
+        Assert.Null(OracleTrace.PeriodicFirstStep(ticks));
+    }
+
+    private const string WaitsControlSamples =
+        "TK 0.000 13.375 1.000 0.250\nTK 0.000 45.625 124.000 0.250\nTK 0.000 77.875 247.000 0.281\nTK 0.000 110.125 370.000 0.281\n" +
+        "TK 0.000 142.344 493.000 0.250\nTK 0.000 174.594 616.000 0.250\nTK 0.000 206.844 739.000 0.281\nTK 0.000 239.063 862.000 0.250\n" +
+        "TK 0.000 271.313 985.000 0.250\nTK 0.000 303.563 1108.000 0.250\nTK 0.000 335.813 1231.000 0.281\nTK 0.000 368.031 1354.000 0.250\n" +
+        "TK 0.000 400.281 1477.000 0.250\nTK 0.000 432.531 1600.000 0.250\nTK 0.000 464.781 1723.000 0.281\nTK 0.000 497.000 1846.000 0.250\n" +
+        "TK 0.000 529.250 1969.000 0.250\nTK 0.000 561.500 2092.000 0.281\nTK 0.000 593.750 2215.000 0.281\nTK 0.000 625.969 2338.000 0.250\n" +
+        "TK 0.000 658.219 2461.000 0.250\nTK 0.000 690.469 2584.000 0.281\nTK 0.000 722.719 2707.000 0.281\nTK 0.000 754.938 2830.000 0.250\n" +
+        "TK 0.000 787.188 2953.000 0.250\nTK 0.000 819.438 3076.000 0.281\nTK 0.000 851.688 3199.000 0.281\nTK 0.000 883.906 3322.000 0.250\n";
 
     [Fact]
     public void CycleTicks_NoCounter_KeepsTheDistinctSamples()
@@ -166,6 +348,16 @@ public sealed class OracleTraceTests
         Assert.Equal(2.125, clock.Offset, 9);
         Assert.Equal(0.25 / 16, clock.Next(15.5), 9);
         Assert.Equal(0.281 / 16, clock.Next(15.75), 9);
+    }
+
+    [Theory]
+    [InlineData(13.438, 0.25)] // below-beam: the beam frame 8/32 before the first cycle at 13.688
+    [InlineData(13.406, 0.28125)]
+    [InlineData(13.188, null)] // two frames before: the first cycles' rate decides
+    [InlineData(null, null)]
+    public void StampStep_OnlyWhenTheStampIsOneFrameBeforeTheFirstSample(double? stamp, double? step)
+    {
+        Assert.Equal(step, OracleReplay.StampStep(stamp, [13.688, 13.969, 14.219]));
     }
 
     [Theory]

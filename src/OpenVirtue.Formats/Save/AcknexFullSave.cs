@@ -164,6 +164,19 @@ public sealed record FullSave(
     /// (round 13).
     /// </summary>
     public int Palette { get; init; }
+
+    /// <summary>
+    /// <c>TICKS</c> less <c>TIME_CORR</c> as the save is made (raw), which the first section holds at
+    /// +36, as every save the original made in play shows, except one made after a script set the
+    /// player's position, where it wrote 0 (round 20).
+    /// </summary>
+    public int LastFrameTicks { get; init; }
+
+    /// <summary>
+    /// The <c>WAVE</c> motion's phase (raw ticks, wrapped at <c>WAVE_PERIOD</c>), which the first section
+    /// holds at +40 (round 20).
+    /// </summary>
+    public int WavePhase { get; init; }
 }
 
 /// <summary>
@@ -249,10 +262,11 @@ public static class AcknexFullSave
         long lengthWord = body.Position;
         AcknexSaveFile.WriteUInt32(body, 0); // the body's length + 10000, filled in below
 
-        // The first section as the original's saves hold it; the words at +36 and +40, which change
-        // from save to save, are left 0, which loads (round 13).
+        // The first section as the original's saves hold it (rounds 13 and 20).
         byte[] first = new byte[80];
         Int32(first, 32, 1);
+        Int32(first, 36, save.LastFrameTicks);
+        Int32(first, 40, save.WavePhase);
         Int32(first, 48, save.Palette);
         Int32(first, 52, 1024);
         Int32(first, 56, save.Palette);

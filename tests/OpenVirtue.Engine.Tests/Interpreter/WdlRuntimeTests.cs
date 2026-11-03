@@ -828,6 +828,89 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_LastFrameTicksIsTicksLessTimeCorr()
+    {
+        // OV-20261029-save-body round 20: the first section's +36.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        Assert.Equal(0, runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS").LastFrameTicks); // TICKS 0, TIME_CORR 1
+        runtime.Tick(0.25 / 16); // the first cycle leaves TICKS at 0
+        runtime.Tick(0.25 / 16);
+        runtime.Tick(0.28125 / 16);
+
+        FullSave save = runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS");
+
+        Assert.Equal(0.53125, runtime.GetSkill("TICKS"));
+        Assert.Equal(256, save.LastFrameTicks);
+    }
+
+    [Theory]
+    [InlineData(14.625, 20, -0.9912)] // the save-body probe's saves
+    [InlineData(14.5938, 20, -0.9902)]
+    [InlineData(14.8125, 20, -0.9971)]
+    [InlineData(13.0, 20, -0.8037)] // save-format full-2
+    [InlineData(2.28125, 16, 0.7803)] // apathy's own save
+    [InlineData(14.21875, 16, -0.6445)]
+    [InlineData(5.28125, 16, 0.8760)] // legalism's own save
+    public void Wave_IsTheOriginalsFixedPointSineOfThePhase(double phase, double period, double wave)
+    {
+        // OV-20261029-save-body round 20.
+        // The saves print WAVE to four places; compare it raw.
+        Assert.Equal(Math.Round(wave * 1024), WdlRuntime.Wave((int)Math.Round(phase * 1024), (int)(period * 1024)) * 1024);
+    }
+
+    [Fact]
+    public void Runtime_WavePhase_SumsEarlierCyclesTimeCorrWrappedAtTheWavePeriod()
+    {
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>; SKILL WAVE_PERIOD { VAL 2; }"));
+        runtime.Tick(0.25 / 16); // the first cycle's TIME_CORR is 1
+        Assert.Equal(0, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(1, runtime.WavePhase);
+        runtime.Tick(0.5 / 16);
+        Assert.Equal(1.25, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(1.75, runtime.WavePhase);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(0, runtime.WavePhase); // 2.0 wraps at WAVE_PERIOD
+
+        Assert.Equal(runtime.WavePhase * 1024, runtime.CaptureOriginalSave("TITLE.WDL", "m.wmp", "TITLE.WRS").WavePhase);
+        Assert.Equal(0, runtime.GetSkill("WAVE"));
+    }
+
+    [Theory]
+    [InlineData(44, 0, 0, 32.832)] // OV-20261009-shoot-mapping: the centre sprite, 44 ahead, at the centre column
+    [InlineData(44, 160, 12, 33.176)] // the right sprite at SHOOT_X 0.5
+    [InlineData(44, -160, -12, 32.488)] // the left sprite at SHOOT_X -0.5
+    [InlineData(20, 0, 0, 32.537)] // round 3: depth 20 steps 561/1024 a column
+    [InlineData(20, 185, 6, 37.608)]
+    [InlineData(37, 9, 0, 42.133)] // depth 37 steps 1040/1024
+    [InlineData(37, -189, -12, 34.063)] // 34.0625 exactly: PRINT_VALUE rounds the tie up
+    [InlineData(44, 249, 18, 44.502)]
+    public void SpriteHitColumn_ProjectsTheSpriteInFixedPointTangents(double depth, double column, double centerRight, double hitX)
+    {
+        // 640 wide at PLAYER_ARC 1: a focal length of (320 << 20) / 559; a 64-texel sprite 4 steps wide.
+        var shot = new WdlRuntime.ShotPixel(column, (320L << 20) / 559);
+
+        double raw = WdlRuntime.SpriteHitColumn(shot, centerRight, depth, 2, 64) * 1024;
+
+        Assert.Equal(hitX, Math.Floor((raw * 1000 / 1024) + 0.5) / 1000, 3);
+    }
+
+    [Fact]
+    public void Runtime_Steps_AddsEachCyclesMoveCutTo1024ths()
+    {
+        // OV-20261029-save-format round 2: a beam from (0, 0) to (5, 3) saved STEPS 5970/1024.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        runtime.Tick(0.25 / 16);
+        runtime.SetSkill("PLAYER_X", 5);
+        runtime.SetSkill("PLAYER_Y", 3);
+        runtime.Tick(0.25 / 16);
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(5970 / 1024.0, runtime.GetSkill("STEPS"));
+    }
+
+    [Fact]
     public void Runtime_UnplacedThing_CanBeBroughtInByAScript()
     {
         // Saints of Virtue drops pickups this way: IF (HealthUp1.INVISIBLE == 1) { SET HealthUp1.X, MY.X; … }
@@ -2085,6 +2168,17 @@ public class WdlRuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData(13.5625, "13.563")] // the original's traces print an exact half up, not to even
+    [InlineData(-7.8125, "-7.813")] // and a negative one away from zero
+    [InlineData(0.0625, "0.063")]
+    [InlineData(12641 / 1024.0, "12.345")]
+    public void FormatPrintValue_ExactHalves_RoundAwayFromZero(double value, string printed)
+    {
+        // OV-20261029-print-output addendum 2026-11-03.
+        Assert.Equal(printed, WdlRuntime.FormatPrintValue(value));
+    }
+
     [Fact]
     public void Runtime_PrintInstructions_AppendToSelectedTextFile()
     {
@@ -2105,6 +2199,34 @@ public class WdlRuntimeTests
             // 12.3456 is held as 12641/1024 = 12.3447 (OV-20261029-numeric-edge).
             const string expectedRun = "12.345hello\nworlddone\n";
             Assert.Equal(expectedRun + expectedRun, text);
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Runtime_PrintFile_CreatesItsFileWithoutPrinting()
+    {
+        // OV-20261015-flic-scheduler-detail round 2: a PRINTFILE switched away from at once left an
+        // empty OVFSH0.TXT, and switching back kept the other file's lines.
+        string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; " +
+                "ACTION log { PRINTFILE \"ovfld\", 0; PRINT_STRING \"A\\n\"; PRINTFILE \"ovfsh\", 0; " +
+                "PRINTFILE \"ovfld\", 0; PRINT_STRING \"B\\n\"; }");
+            var runtime = new WdlRuntime(level, outputDir);
+
+            Assert.True(runtime.RunAction("log"));
+
+            Assert.Equal(string.Empty, File.ReadAllText(Path.Combine(outputDir, "OVFSH0.TXT")));
+            Assert.Equal("A\nB\n", File.ReadAllText(Path.Combine(outputDir, "OVFLD0.TXT")));
         }
         finally
         {
@@ -2196,6 +2318,36 @@ public class WdlRuntimeTests
 
         Assert.Equal(1, player.Region);
         Assert.Same(level.Regions[1], runtime.GetObject("here"));
+    }
+
+    [Fact]
+    public void Runtime_LocatePlayer_RefreshesFloorAndCeilingHeightsAtOnce()
+    {
+        // OV-20261019-border-climb step-down (2026-11-03 addendum): after a beam and LOCATE into the pad
+        // (floor -4) the same action and that cycle's IF_ENTER read FLOOR_HGT -4.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "VERTEX 20 0 0;#4\nVERTEX 20 10 0;#5\n" +
+            "REGION room 0 10;#0\nREGION pad -4 12;#1\n" +
+            "WALL a 0 1 0 -1 0 0;#0\nWALL portal 1 2 0 1 0 0;#1\n" +
+            "WALL b 2 3 0 -1 0 0;#2\nWALL c 3 0 0 -1 0 0;#3\n" +
+            "WALL d 1 4 1 -1 0 0;#4\nWALL e 4 5 1 -1 0 0;#5\nWALL f 5 2 1 -1 0 0;#6\n" +
+            "PLAYER_START 5 5 0 0;#7";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL floor_read { VAL 99; } SKILL ceil_read { VAL 99; } " +
+            "ACTION beam { SET PLAYER_X, 15; SET PLAYER_Y, 5; LOCATE; RULE floor_read = FLOOR_HGT; RULE ceil_read = CEIL_HGT; }");
+        var runtime = new WdlRuntime(level);
+        var player = new Player(level);
+        runtime.RegisterObject("player", player);
+        WdlPlayerMotion.Synchronize(runtime, player);
+        Assert.Equal(0, runtime.GetSkill("FLOOR_HGT"));
+
+        Assert.True(runtime.RunAction("beam"));
+
+        Assert.Equal(-4, runtime.GetSkill("floor_read"));
+        Assert.Equal(12, runtime.GetSkill("ceil_read"));
+        Assert.Equal(1, runtime.GetSkill("PLAYER_REGION"));
     }
 
     [Fact]
@@ -2307,10 +2459,10 @@ public class WdlRuntimeTests
 
         Assert.Same(level.Things.Single(thing => thing.Name == "far"), runtime.GetObject("hit"));
         Assert.Equal(7, runtime.GetSkill("HIT_DIST"), 6);
-        // The texel column the renderer steps to at the centre column: 0.714 pixels past the half-way
-        // point at a texels-per-pixel step cut to 22.10 (24/1024 here), a little short of 1
-        // (OV-20261009-shoot-mapping, sweep).
-        Assert.Equal(1012 / 1024.0, runtime.GetSkill("HIT_X"), 6);
+        // The texel column the renderer steps to one pixel past the centre column, in 22.10 tangents
+        // with a texels-per-pixel step of about 24/1024 here: a little short of 1
+        // (OV-20261009-shoot-mapping round 3).
+        Assert.Equal(1014 / 1024.0, runtime.GetSkill("HIT_X"), 6);
         Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 
@@ -3167,6 +3319,67 @@ public class WdlRuntimeTests
         Assert.Equal(1, runtime.GetSkill("cycles"));
     }
 
+    [Fact]
+    public void Tick_OneShotTexture_ClearsPlayBeforeEachCycleRuns()
+    {
+        // OV-20261029-motion-timing anim-oneshot: the EACH_CYCLE at the end of the run reads PLAY 0.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL seen { VAL -1; } " +
+            "BMAP phase1,<p1.pcx>,0,0,16,16; BMAP phase2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; FLAGS ONESHOT; } " +
+            "THING runner { TEXTURE runnerTex; EACH_CYCLE done; } " +
+            "ACTION done { RULE seen = MY.PLAY; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 16);
+        runner["PLAY"] = 1;
+        for (int i = 0; i < 4 && runtime.GetSkill("seen") < 0; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(0, runtime.GetSkill("seen"));
+        Assert.Equal(0, runner["PLAY"]);
+    }
+
+    [Fact]
+    public void Runtime_LoopingAnimatedTexture_StartsWithPlaySet()
+    {
+        // OV-20261029-motion-timing round 2: MY.PLAY == 1 holds on a looping texture throughout, and a
+        // ONESHOT or a single-phase texture keeps PLAY 0.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING looper 5 0 0 0;#1\nTHING once 6 0 0 0;#1\nTHING still 7 0 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL seen { VAL -1; } " +
+            "BMAP phase1,<p1.pcx>,0,0,16,16; BMAP phase2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE loopTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; } " +
+            "TEXTURE onceTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; FLAGS ONESHOT; } " +
+            "TEXTURE stillTex { BMAPS phase1; } " +
+            "THING looper { TEXTURE loopTex; EACH_CYCLE done; } " +
+            "THING once { TEXTURE onceTex; } THING still { TEXTURE stillTex; } " +
+            "ACTION done { RULE seen = MY.PLAY; }");
+        var runtime = new WdlRuntime(level);
+        Thing looper = level.Things.Single(t => t.Name == "looper");
+
+        Assert.Equal(1, looper["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "once")["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "still")["PLAY"]);
+        for (int i = 0; i < 8 && runtime.GetSkill("seen") < 0; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1, runtime.GetSkill("seen"));
+    }
+
     [Theory]
     [InlineData(0.25, new[] { 4, 8, 12 })]
     [InlineData(0.28125, new[] { 3, 7, 10 })]
@@ -3501,10 +3714,11 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Tick_EachTickActions_ReadDistanceFromCurrentPlayerAndMovedActorPositions()
+    public void Tick_EachTickActions_ReadDistanceRefreshedAtCycleStart()
     {
-        // MY.DISTANCE is refreshed every cycle, and again after the actors move, for every thing
-        // and actor whether or not it has a proximity hook.
+        // MY.DISTANCE is refreshed at the start of a cycle for every thing and actor whether or not
+        // it has a proximity hook; an actor's move in front of the player shows only from the next
+        // cycle (OV-20261019-clip-contact, clip-move, 2026-11-02).
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
             "REGION room 0 10;#0\nTHING post 5 5 0 0;#1\nACTOR runner 10 5 0 0;#2\n" +
@@ -3524,11 +3738,16 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.Equal(8, runtime.GetSkill("post_dist"), 6);
         Assert.Equal(12, runner.X, 6);
-        Assert.Equal(15, runtime.GetSkill("runner_dist"), 6);
+        Assert.Equal(9 + 4, runtime.GetSkill("runner_dist"), 6);
 
         player.MoveTo(0, 7, 6.5f);
         runtime.Tick(1.0 / 16);
         Assert.Equal(3.5, runtime.GetSkill("post_dist"), 6);
+        Assert.Equal(14, runner.X, 6);
+        Assert.Equal(12 - 7 + 1.5, runtime.GetSkill("runner_dist"), 6);
+
+        // The player stands still: the runner's last move, in front, refreshes the next cycle.
+        runtime.Tick(1.0 / 16);
         Assert.Equal(14 - 7 + 1.5, runtime.GetSkill("runner_dist"), 6);
     }
 
@@ -3727,6 +3946,38 @@ public class WdlRuntimeTests
         player.MoveHorizontal(1, 0.5f);
         runtime.Tick(1.0 / 16);
         Assert.Equal(3, runtime.GetSkill("near_count"));
+        Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void DispatchContactEvents_WallThatStoppedThePlayer_FiresNearInTheCycleOfTheMove()
+    {
+        // OV-20261019-border-climb ceil-0 (2026-11-03 addendum): the IF_NEAR of a wall that stopped the
+        // player runs right after the move, reading the DISTANCE of the cycle's start, and not again
+        // in the next cycle; within DIST it is left to the DIST edge.
+        Level level = LoadWithMap(
+            GateMap,
+            GateCounters + "WALL gate { DIST 6; IF_NEAR near_gate; IF_FAR far_gate; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 17, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(2, 0);
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(3 + 8, runtime.GetSkill("near_dist"), 4); // from (17, 0), before the move
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 17, 4); // 3 + 4 from v1
+        runtime.Tick(1.0 / 16);
+        player.MoveHorizontal(2, 1); // stopped at 1.249 + 3 from v1: within DIST
+        runtime.DispatchContactEvents();
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, runtime.GetSkill("near_count"));
         Assert.Equal(0, runtime.GetSkill("far_count"));
     }
 
@@ -3988,6 +4239,38 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_ActorTargets_CarefulActorTestsThePlayerAlongXOrYAndIsNotNudgedWhenRefused()
+    {
+        // OV-20261029-actor-step round 3, c-pi: the point two steps ahead must lie more than the
+        // contact distance from the player along x or along y, not in a circle; and a step the
+        // player refuses entirely has no parts, so the 4/1024 nudge stops with it.
+        Level level = LoadWithMap(
+            PushMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 1; IF_NEAR near_push; FLAGS CAREFULLY; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0); // the actor walks from behind the player
+        player.MoveTo(0, 10, 1.5f);
+        Actor pusher = Assert.Single(level.Actors);
+
+        for (int i = 0; i < 30; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        double y = pusher.Y;
+        double x = pusher.X;
+        runtime.Tick(1.0 / 16);
+
+        // 1.5 to the side, a circle would let it come within about 1.6 along x
+        double contact = 1 + player.Width;
+        Assert.InRange(player.Position.X - pusher.X, contact, contact + (2.0 / 16));
+        Assert.Equal(x, pusher.X, 9);
+        Assert.Equal(y, pusher.Y, 9);
+    }
+
+    [Fact]
     public void Apply_PlayerBeamedInsideASolidThing_IsPushedOutRadiallyAndFiresItsNear()
     {
         // OV-20261019-actor-contact, beam-inside: out along the line from the centre, to contact.
@@ -4182,6 +4465,42 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_TextureAnimation_ThingFirstWithinClipDistLaterCountsItsFirstLoopWithTimeCorrOne()
+    {
+        // OV-20261019-clip-detail anim-gate: at 8 ticks a cycle, a thing first within its border in
+        // cycle k counts its first phase (DELAY 3) in cycles k + 1 to k + 3, as a loop fixed at level
+        // start with TIME_CORR 1 does, and shows phase 2 after cycle k + 3 (not one phase a cycle).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING runner 20 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; REGION room { CLIP_DIST 10; } " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 4; BMAPS p1,p2,p1,p2; DELAY 3,3,3,3; } " +
+            "THING runner { TEXTURE runnerTex; }");
+        Thing runner = Assert.Single(level.Things);
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+        }
+
+        player.MoveTo(0, 15, 0);
+        var phases = new List<double>();
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+            phases.Add(runner["CYCLE"]);
+        }
+
+        Assert.Equal([1, 1, 1, 2, 2], phases);
+    }
+
+    [Fact]
     public void Tick_ObjectEachTick_ClipDistIsTheSmallerOfThePlayersAndTheObjectsRegion()
     {
         // OV-20261019-clip-contact: the CLIP_DIST border is the smaller of the player's region's and
@@ -4249,6 +4568,65 @@ public class WdlRuntimeTests
         }
     }
 
+    private const string RoomAndPadMap =
+        "VERTEX 0 0 0;#0\nVERTEX 40 0 0;#1\nVERTEX 40 40 0;#2\nVERTEX 0 40 0;#3\n" +
+        "VERTEX 20 20 0;#4\nVERTEX 30 20 0;#5\nVERTEX 30 30 0;#6\nVERTEX 20 30 0;#7\n" +
+        "VERTEX 4 22 0;#8\nVERTEX 4 28 0;#9\n" +
+        "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 0 16;#2\n" +
+        "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+        "WALL w 4 5 2 0 0 0;#4\nWALL w 5 6 2 0 0 0;#5\nWALL w 6 7 2 0 0 0;#6\nWALL w 7 4 2 0 0 0;#7\n" +
+        "WALL post 8 9 0 0 0 0;#8\nTHING marker 25 25 0 2;#9\nPLAYER_START 5 25 0 0;#10";
+
+    [Fact]
+    public void Tick_ObjectEachTick_FreeStandingWallIsGatedByItsRegionsClipDist()
+    {
+        // OV-20261019-clip-detail addendum 2026-11-02 (clip-regions): a free-standing wall with the
+        // room (CLIP_DIST 10) on both sides ran at 8 from the room and not at 16 from the pad (30).
+        Level level = LoadWithMap(
+            RoomAndPadMap,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 10; } REGION pad { CLIP_DIST 30; } REGION solid { CLIP_DIST 0; } " +
+            "WALL post { EACH_TICK post_tick; FLAGS PASSABLE; } ACTION post_tick { RULE runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        Assert.Equal(1, Runs(0, 10)); // 6 from the room
+        Assert.Equal(0, Runs(2, 21)); // 17 from the pad
+
+        double Runs(int region, float x)
+        {
+            player.MoveTo(region, x, 25);
+            double before = runtime.GetSkill("runs");
+            runtime.Tick(1.0 / 16);
+            return runtime.GetSkill("runs") - before;
+        }
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_CycleOfAPlayerLocateIsGatedByTheRegionBefore()
+    {
+        // OV-20261019-clip-contact addendum 2026-11-02: in the cycle of a beam and LOCATE from the room
+        // (CLIP_DIST 10) into the pad (30) the pad's thing at 20 does not run; it runs from the next.
+        Level level = LoadWithMap(
+            RoomAndPadMap,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 10; } REGION pad { CLIP_DIST 30; } REGION solid { CLIP_DIST 0; } " +
+            "THING marker { EACH_TICK marker_tick; } ACTION marker_tick { RULE runs += 1; } " +
+            "EACH_TICK.1 beam; ACTION beam { SET EACH_TICK.1, NULL; SET PLAYER_X, 22; SET PLAYER_Y, 25; LOCATE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 5, 25);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, player.Region);
+        Assert.Equal(0, runtime.GetSkill("runs"));
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("runs"));
+    }
+
     [Fact]
     public void Tick_PlayerProximity_WallOutsideClipDistIsNotDistTested()
     {
@@ -4269,6 +4647,120 @@ public class WdlRuntimeTests
         player.MoveTo(0, 10, 0);
         runtime.Tick(1.0 / 16);
         Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_DistEdgeFiresInTheObjectsTurnAfterItsEachTick()
+    {
+        // OV-20261019-clip-detail, berkeley-wall, and OV-20261019-clip-contact, clip-near: the pass
+        // runs the later thing first, its EACH_TICK (3) and then its IF_NEAR (2), and then the
+        // earlier thing's EACH_TICK (1).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING first 30 30 0 0;#0\nTHING second 10 0 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            "THING first { EACH_TICK first_tick; } THING second { DIST 5; IF_NEAR second_near; EACH_TICK second_tick; } " +
+            "ACTION first_tick { RULE order = order * 10 + 1; } ACTION second_near { RULE order = order * 10 + 2; } " +
+            "ACTION second_tick { RULE order = order * 10 + 3; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(0, 7, 0); // 3 from the second thing
+        runtime.SetSkill("order", 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(321, runtime.GetSkill("order"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_PassedWallFiresInItsTurnBeforeItsEachTick()
+    {
+        // OV-20261019-wall-pass-clip, pass-dist0, and OV-20261019-clip-detail, berkeley-wall: the
+        // IF_NEAR of a wall passed in the previous cycle (2) comes after the EACH_TICK of a wall the
+        // pass reaches first (1) and before the passed wall's own EACH_TICK (3).
+        const string map =
+            "VERTEX 20 -8 0;#0\nVERTEX 20 8 0;#1\nVERTEX 30 -8 0;#2\nVERTEX 30 8 0;#3\nREGION room 0 10;#0\n" +
+            "WALL gate 0 1 0 0 0 0;#0\nWALL post 2 3 0 0 0 0;#1\nPLAYER_START 10 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            "WALL gate { IF_NEAR gate_near; EACH_TICK gate_tick; FLAGS PASSABLE; } " +
+            "WALL post { EACH_TICK post_tick; FLAGS PASSABLE; } " +
+            "ACTION post_tick { RULE order = order * 10 + 1; } ACTION gate_near { RULE order = order * 10 + 2; } " +
+            "ACTION gate_tick { RULE order = order * 10 + 3; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 16, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(5, 0); // through the gate at x = 20
+        runtime.SetSkill("order", 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(123, runtime.GetSkill("order"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts()
+    {
+        // OV-20261019-actor-contact, distance-refresh, and OV-20261019-clip-contact, clip-near: a
+        // LIBER thing is DIST-tested at any range, but its DISTANCE reads 65535.999 until the player
+        // first comes within 1.5 x CLIP_DIST.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING beacon 24 16 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            GateCounters + "REGION room { CLIP_DIST 10; } THING beacon { DIST 30; IF_NEAR near_gate; FLAGS LIBER; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        Thing beacon = Assert.Single(level.Things);
+        runtime.Tick(1.0 / 16); // 40
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 0, 16); // 24: within DIST, beyond 15
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(65535.999, runtime.GetSkill("near_dist"), 3);
+        Assert.Equal(65535.999, beacon["DISTANCE"], 3);
+
+        player.MoveTo(0, 10, 16); // 14
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(14, beacon["DISTANCE"], 3);
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance()
+    {
+        // OV-20261019-clip-contact, clip-move: CLIP_DIST 10. The runner's moves in front refresh the
+        // distances from the next cycle while they end within the border; the move that leaves it
+        // refreshes nothing, so the runner keeps the distance 9 and keeps running and moving.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR runner 5 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } SKILL runner_dist { VAL -1; } REGION room { CLIP_DIST 10; } " +
+            "ACTOR runner { TARGET MOVE; SPEED 2; EACH_TICK runner_tick; } " +
+            "ACTION runner_tick { RULE runs += 1; RULE runner_dist = my.DISTANCE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        Actor runner = Assert.Single(level.Actors);
+
+        runtime.Tick(1.0 / 16); // reads 5, moves to 7
+        runtime.Tick(1.0 / 16); // reads 7, moves to 9
+        runtime.Tick(1.0 / 16); // reads 9, moves to 11: outside, no refresh
+        Assert.Equal(11, runner.X, 6);
+        Assert.Equal(9, runtime.GetSkill("runner_dist"), 6);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(4, runtime.GetSkill("runs"));
+        Assert.Equal(13, runner.X, 6);
+        Assert.Equal(9, runner["DISTANCE"], 6);
     }
 
     [Fact]

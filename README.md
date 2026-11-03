@@ -206,8 +206,9 @@ Not yet complete:
   (OV-20261029-ui-text) and slider knobs: dragging a slider, and where a click lands relative to the
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
-- things `LOCATE`d into a `BELOW` stack (a player lands in the storey that holds its eye,
-  OV-20261030-below-beam; sided wall textures are measured and drawn, OV-20261030-wall-sides);
+- the player's stop against walls and its `IF_NEAR` timing there (`LOCATE` into a `BELOW` stack is
+  measured for the player, things and actors, OV-20261030-below-beam; sided wall textures are
+  measured and drawn, OV-20261030-wall-sides);
 - full save compatibility in play. OpenVirtue:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
@@ -217,16 +218,20 @@ Not yet complete:
     at its own pace. The `SAVE` textures and `SAVE` regions sections match the original's byte for byte
     on `legalism` (OV-20261029-save-body rounds 13 to 15);
   - writes the screen elements' section as measured, though LEGALISM's own save orders some
-    elements differently, for a reason not yet found (rounds 18 and 19); does not yet write two run-time words of the first section,
-    the engine's run-time statistics skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`,
-    `VESA_MODE`) or `INKEY` strings. V3.963 itself hung loading its own save while an object's
+    elements differently, for a reason not yet found (rounds 18 and 19);
+  - writes the first section's two run-time words, the last cycle's `TICKS` and the `WAVE` phase,
+    as measured (round 20, which also measured `WAVE` itself), though not the 0 the original wrote
+    after a script set the player's position; does not yet write the engine's
+    run-time statistics skills (`TIME_*`, `ACTIONS`, `ACTIVE_NEXUS`, `MAX_DIST`, `VESA_MODE`) or
+    `INKEY` strings. V3.963 itself hung loading its own save while an object's
     event action waited (round 17), so such saves are written as the original writes them but not
     proven to load;
-- `CAREFULLY` actors' residuals and slides (steps along an `ANGLE` and plain steps toward a
-  point match unit for unit: the engine rounds its own products, OV-20261029-actor-step round 6);
-- shots at mirrored sprites and walls: their `HIT_X` (a sprite's fractional `HIT_X` matches,
-  OV-20261009-shoot-mapping);
-- start-up `TICKS` timing, which keeps many timed probes from matching line for line
+- `CAREFULLY` actors' slides after a wall stop beyond the first (steps along an `ANGLE`, toward a
+  point and against walls match unit for unit: OV-20261029-actor-step, OV-20261029-actor-events);
+- shots at mirrored sprites and walls: their `HIT_X` (a sprite's `HIT_X` matches at every depth
+  measured, worked out in 22.10 tangents as the renderer draws it, OV-20261009-shoot-mapping round 3);
+- the replay's clock in the stretches the original's traces do not sample (the start-up, gaps
+  between samples, after the last one), which keeps many timed probes from matching line for line
   (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan

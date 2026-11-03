@@ -130,3 +130,27 @@ skips free-standing `INVISIBLE` walls. `WdlRuntime.ActorCanCross` (for `CAREFULL
 `ACTOR_CLIMB` and below the actor's texture height. `CAREFULLY` moves now pass
 `Player.WallClearance`. `ACTOR_CLIMB` defaults to 1.1. `SKIP_FRAMES` is implemented from
 OV-20261020-view-activity, which answers the second open question above.
+
+## Addendum: the actor's stop at the pad (2026-11-02)
+The `CAREFULLY` actor walking +Y into the pad's border at y = 12 is held at 11214 raw (10.951),
+1074/1024 from it, and then alternates 11218 (10.955) and 11214 every cycle it pushes. With
+`SKIP_FRAMES` 0 (round 2 `climb-skip0`, `OVBKX0.TXT` `998248b0`) the 3-cycle samples read .951
+in cycles 4, 10, 16, 22 and .955 in 7, 13, 19, 25, the per-cycle parity. round 2 `climb-actor-05`
+(`7b000d5b`), `climb-player-3` (`d16e7d24`) and round 3 `climb-eq` (`1c59c9e6`) differ from
+OpenVirtue (10.949 throughout) only there. It is the rule of the OV-20261029-actor-events addendum
+of 2026-11-02: the stop at 1074 and the 4/1024 minimum on the part left after the stop.
+
+Result: climb-actor-05, climb-player-3 and climb-eq now match in full (16 of 38 lines before).
+climb-skip0, imp-border, actor-climb-2, actor-climb-2d and imp-pass-border each gain their first
+differing line or more (13 of 45 for imp-pass-border, 9 before); what remains in them is the
+player's column and the start-up schedule.
+
+## Addendum: the player's column (2026-11-03)
+The player's column left open above is the player's stop at the pad: held 1279/1024 from the
+border (`PLAYER_WIDTH` 1228 + 51), alternating 10.751 and 10.755, and the border's `IF_NEAR` in
+the cycle of a stopped move (OV-20261019-eye-clamp and OV-20261019-border-climb addenda of
+2026-11-03). With them `eye-edge` (`OVBKX0.TXT` `4feeaf1b`, first `N` in cycle 3 as the original),
+round 2 `climb-player-05` (`5e1c2322`), round 2 `climb-skip0` (`998248b0`) and round 3
+`climb-tall` (`62f2a404`) match in full. `actor-climb-2`, `actor-climb-2d` (33 of 37 lines each, 6
+before) and `imp-border` (24 of 37, 6) now differ first at the actor's position; `invisible` and
+`invisible-border` still differ from the start-up clock.

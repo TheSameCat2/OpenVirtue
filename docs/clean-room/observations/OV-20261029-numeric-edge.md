@@ -79,8 +79,11 @@ Both `/` and `*` cut toward zero. `INT` is the odd one out: it rounds down. `Wdl
 dropped the low bits with an arithmetic shift, which rounds down; it now divides.
 
 ## Open Questions
-- Whether engine-written values (positions, distances) are truncated or rounded; OpenVirtue rounds
-  them to the nearest step, since the original computes them in fixed point to begin with.
+- Whether every engine-written value (positions, distances) is rounded rather than truncated.
+  The engine's own products are measured to round to 1/1024, where a WDL `*` cuts toward zero:
+  an actor's step and its split toward a point round (OV-20261029-actor-step round 6, v-p-y
+  `084faaf4`, v-p-d `870e40f0`). OpenVirtue rounds the other engine-written values the same way;
+  distances and wall intersections have not been probed on their own.
 
 ## Implementation
 `WdlFixed` (`Literal`, `Quantize`, the operators, `Floor`, `Result`), used by `WdlExpression`, the

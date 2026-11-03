@@ -49,7 +49,18 @@ what happens past the five-character base.
 appends the value with three decimals and no separator. `\n` in a `PRINT_STRING` appends one line
 feed byte (0x0A) on every host.
 
+## Addendum: exact halves (2026-11-03, analysis only)
+A value on the 1/1024 grid that is an odd multiple of 1/16 (13.5625, 0.0625) lies exactly between
+two three-decimal prints. Over every trace the original wrote under `oracle-runs/`, the printed
+endings that such halves would give rounded up (`…063`, `…188`, `…313`, …) appear 8323 times, the
+endings rounding to even would give 137 times (and those can come from values that are not halves);
+for negative values, away from zero 446 times against 49. eye-clamp's stop-border prints −7.813 for
+−7.8125 (`OVECX0.TXT` `afdac5e6`), and the shoot-mapping depth sweep 34.063 for 34.0625. So
+`PRINT_VALUE` rounds an exact half away from zero. OpenVirtue printed with .NET's `F3`, which rounds
+it to even (13.562); the harness's 0.002 tolerance had hidden the difference.
+
 ## Implementation
-`WdlRuntime.PrintValue`/`PrintFilePath`/`NormalizePrintBaseName` and the `PRINT_STRING` escape in
-`WdlInterpreter`; `WdlRuntimeTests.Runtime_PrintInstructions_AppendToSelectedTextFile` and
+`WdlRuntime.PrintValue` (`FormatPrintValue`)/`PrintFilePath`/`NormalizePrintBaseName` and the `PRINT_STRING` escape in
+`WdlInterpreter`; `WdlRuntimeTests.Runtime_PrintInstructions_AppendToSelectedTextFile`,
+`FormatPrintValue_ExactHalves_RoundAwayFromZero` and
 `RuntimeHostFrameClockTests.Frame_PrintInstructions_WriteTheDosFileNameAndLayout` pin it.

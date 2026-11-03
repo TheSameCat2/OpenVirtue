@@ -1,6 +1,6 @@
 # OV-20261030-below-beam: where a player beamed into a BELOW stack lands
 Date: 2026-10-30
-Status: confirmed (one round) and implemented
+Status: confirmed (two rounds) and implemented
 Observer: OpenVirtue maintainers (black-box probe, trace values)
 Implementer: OpenVirtue maintainers
 
@@ -51,9 +51,37 @@ through the slab.
 - `LevelTopology.StoreyHoldingEye` gives the storey.
 - `WdlRuntime.Locate` uses it for the player.
 - Tested by `BelowRegionTests.StoreyHoldingEye_PicksTheLowestStoreyWhoseCeilingIsNotBelowTheEye`.
-- All five carriers replay line for line from the first sampled cycle. The beam lines before it
-  differ only in the replay's start-up `TICKS`.
+- All five carriers replay line for line. The beam lines printed a frame before the first
+  sampled cycle match since the replay takes the step into that cycle from the template's start-up
+  stamp (`TCK=`, 8/32 of a tick before it here; `OracleReplay.StampStep`).
+
+## Round 2: things and actors (2026-11-03)
+Six more carriers (`round2/`) beam a thing or an actor from the room to (−8, 16), set its `HEIGHT`
+and `LOCATE` it, then read its region back as the retail scripts do (`SET bb_r, obj.REGION;`, then
+`bb_r.SKILL1`). Hashes (`OVBBM0.TXT`): thing-ground-4 `c2059df3`, thing-ground-12 `ca82c742`,
+thing-rel-0 `4603357c`, actor-rel-0 `720133b0`, actor-ground-4 `b2e1d6f5`,
+thing-ground-12-nolocate `39528551`.
+
+| Case | Region after `LOCATE` |
+|---|---|
+| `GROUND` thing, `HEIGHT` 4 | underpass (3) |
+| `GROUND` thing, `HEIGHT` 12 | deck (2) |
+| `GROUND` actor, `HEIGHT` 4 | underpass (3) |
+| thing, relative `HEIGHT` 0 | deck (2) |
+| actor, relative `HEIGHT` 0 | deck (2) |
+| `GROUND` thing, `HEIGHT` 12, no `LOCATE` | room (1) throughout |
+
+- `LOCATE` places an object as the level start does (manual p.61): with `GROUND`, the storey whose
+  ceiling is not below its feet; otherwise the top. The region never changes in the following
+  cycles, and without `LOCATE` it stays the old one.
+- `SET synonym, obj.REGION` takes the object's region; OpenVirtue read it as nothing before.
+
+Implementation: `WdlRuntime.Locate` (the storey for a placed object), `WdlRuntime.RegionOf` and
+`WdlInterpreter.ReferenceName` (`obj.REGION` as a reference). Tested by
+`BelowRegionTests.Locate_ThingBeamedUnderABridge_TakesTheStoreyOfItsStart`. All six `OVBBM0`
+traces match line for line. Their `OVPRB0` does not: OpenVirtue pushes the player off the objects
+standing 8 steps away at the start (`PX` −0.930), where the original leaves it at (0, 0); that is
+the start-up push-out (OV-20261029-overlap).
 
 ## Open Questions
-- A thing or actor `LOCATE`d into a stack (only the player was probed).
 - An eye exactly at a storey's ceiling.

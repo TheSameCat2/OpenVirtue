@@ -59,6 +59,79 @@ internal sealed record OracleTickShift(IReadOnlySet<(string Token, int Column)> 
 }
 
 /// <summary>
+/// A fitted run of frames on the 1/32-tick grid: <c>k</c> frames after the fit's origin, <c>TICKS</c>
+/// is <c>floor(Phase + k·Rate)</c> thirty-seconds of a tick past the origin's (0 ≤ <c>Phase</c> &lt; 1).
+/// </summary>
+internal sealed record OracleCadence(double Rate, double Phase)
+{
+    /// <summary>The whole thirty-seconds of a tick from the origin to frame <paramref name="k"/>.</summary>
+    public long Units(long k) => (long)Math.Floor(Phase + (k * Rate));
+
+    /// <summary>The step into frame <paramref name="k"/> after the origin, in ticks.</summary>
+    public double StepInto(long k) => (Units(k) - Units(k - 1)) / 32.0;
+}
+
+/// <summary>
+/// Collects (frame, units) points one at a time while some <see cref="OracleCadence"/> passes through
+/// all of them: for a rate R the phases that fit form [max(U − kR), min(U + 1 − kR)), which is open
+/// exactly when U_b − U_a − 1 &lt; (k_b − k_a)·R &lt; U_b − U_a + 1 for every pair, so the rates that
+/// fit are one interval, narrowed by each point.
+/// </summary>
+internal sealed class OracleCadenceFitter
+{
+    private readonly Dictionary<long, long> _points = [];
+    private double _low = double.NegativeInfinity;
+    private double _high = double.PositiveInfinity;
+
+    /// <summary>Adds a point unless no cadence would then pass through every point; says which.</summary>
+    public bool TryAdd(long k, long units)
+    {
+        if (_points.TryGetValue(k, out long seen))
+        {
+            return seen == units;
+        }
+
+        double low = _low;
+        double high = _high;
+        foreach ((long pk, long pu) in _points)
+        {
+            (long dk, long du) = k > pk ? (k - pk, units - pu) : (pk - k, pu - units);
+            low = Math.Max(low, (du - 1) / (double)dk);
+            high = Math.Min(high, (du + 1) / (double)dk);
+        }
+
+        if (low >= high - 1e-12)
+        {
+            return false;
+        }
+
+        (_low, _high) = (low, high);
+        _points[k] = units;
+        return true;
+    }
+
+    /// <summary>The cadence at the centre of the rates and then the phases that fit, origin at frame 0 (which must be a point at 0 units).</summary>
+    public OracleCadence? Fit()
+    {
+        if (_points.Count < 2 || !_points.TryGetValue(0, out long origin) || origin != 0)
+        {
+            return null;
+        }
+
+        double rate = (_low + _high) / 2;
+        double low = 0;
+        double high = 1;
+        foreach ((long k, long units) in _points)
+        {
+            low = Math.Max(low, units - (k * rate));
+            high = Math.Min(high, units + 1 - (k * rate));
+        }
+
+        return low < high - 1e-9 ? new OracleCadence(rate, (low + high) / 2) : null;
+    }
+}
+
+/// <summary>
 /// The result of comparing an original trace with a replayed one, line by line. Two lines match
 /// when their tokens and field counts agree and every field agrees: numbers within the tolerance,
 /// anything else as text (case-insensitive).
@@ -158,12 +231,13 @@ internal static class OracleTrace
             return null;
         }
 
+        string? sampler = LeadingSampler(numbered, 0, 1);
         var ticksByCount = new Dictionary<double, double>();
         for (int i = 0; i < numbered.Count; i++)
         {
             double ticks = numbered[i].Value(0)!.Value;
-            double count = numbered[i].Value(1)!.Value;
-            if (i > 0 && (ticks < numbered[i - 1].Value(0)!.Value || count < numbered[i - 1].Value(1)!.Value))
+            double count = CycleOf(numbered[i], 1, sampler);
+            if (i > 0 && (ticks < numbered[i - 1].Value(0)!.Value || count < CycleOf(numbered[i - 1], 1, sampler)))
             {
                 return null;
             }
@@ -176,14 +250,17 @@ internal static class OracleTrace
             ticksByCount[count] = ticks;
         }
 
-        return ticksByCount.Count >= 3 ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0) : null;
+        // Three printed counts, even where the phase shift folds two of them into one cycle.
+        return numbered.Select(static l => l.Value(1)!.Value).Distinct().Count() >= 3
+            ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0)
+            : null;
     }
 
     /// <summary>
     /// The <c>TIME_CORR</c> of the cycle that printed the first sample, when the timing token also
     /// prints it: a column that, scaled by 1 or 1024, equals the step between consecutive samples
-    /// on (nearly) every line, or else whose values are all whole 1/32 ticks between 0.1 and 2.
-    /// <c>null</c> when there is none.
+    /// on (nearly) every line, or else whose values are all whole 1/32 ticks between 0.1 and 2, or else
+    /// a counted sampler's <see cref="TimeCorrectionColumn"/>. <c>null</c> when there is none.
     /// </summary>
     public static double? FirstCycleStep(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
     {
@@ -243,14 +320,18 @@ internal static class OracleTrace
             }
         }
 
-        return null;
+        // A counted sampler's TIME_CORR column, checked where two samples are a cycle apart.
+        return CounterColumn(tokenLines, timing.Column) is { } counter && TimeCorrectionColumn(tokenLines, timing.Column, counter) is { } counted
+            ? tokenLines[0].Value(counted.Column) / counted.Scale
+            : null;
     }
 
     /// <summary>
     /// The <c>TIME_CORR</c> of the first sampled cycle when no column prints it: DOSBox-X's 60 Hz frames
     /// against the 16 Hz tick give a step pattern (0.25 or 0.28125) that repeats every 18 cycles once
     /// start-up is over (the scheduler-order probe's <c>startup</c> trace prints it), so the first
-    /// cycle's step is the step 18 cycles later. Used only when the steps 18 and 36 cycles later agree.
+    /// cycle's step is the step 18 cycles later. Used only when the steps 18 and 36 cycles later agree
+    /// and the first sampled step is itself a 60 Hz frame's.
     /// </summary>
     public static double? PeriodicFirstStep(IReadOnlyList<double> cycleTicks)
     {
@@ -262,8 +343,84 @@ internal static class OracleTrace
         }
 
         double Step(int cycle) => SnapTicks(cycleTicks[cycle]) - SnapTicks(cycleTicks[cycle - 1]);
+
+        // A start-up that ran slower (8-tick frames before the run sped up: view-activity near-low,
+        // occlude-edge) is not in the pattern of the later frames.
+        if (!IsFrameStep(Step(1)))
+        {
+            return null;
+        }
+
         double first = Step(Period);
         return IsFrameStep(first) && Math.Abs(first - Step(2 * Period)) < 1e-9 ? first : null;
+    }
+
+    /// <summary>The frame length of a launch that ran at 8 ticks a frame (2 fps; most of the 2026-10-15 to 2026-10-21 launches).</summary>
+    public const double SlowFrameTicks = 8;
+
+    /// <summary>
+    /// Whether the original ran at <see cref="SlowFrameTicks"/> a frame throughout: every positive
+    /// first-column value of <paramref name="lines"/> (where the trace scaffold prints <c>TICKS</c>),
+    /// and the start-up <paramref name="stamp"/> if there is one, is a whole multiple of 8, with at
+    /// least two distinct values. A 60 Hz run's <c>TICKS</c> fall on 1/32 ticks and a run that sped up
+    /// part-way prints fractions, so neither passes. Such a run's samples, often one every few cycles,
+    /// cannot place its frames, and a cycle counter it prints (<c>SECS</c>) can pass for the cycle count.
+    /// </summary>
+    public static bool RanAtSlowFrames(IReadOnlyList<OracleTraceLine> lines, double? stamp = null)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var values = new HashSet<double>();
+        foreach (double value in lines.Select(static l => l.Value(0)).OfType<double>().Append(stamp ?? 0))
+        {
+            if (value <= 0)
+            {
+                continue;
+            }
+
+            if (Math.Abs((value / SlowFrameTicks) - Math.Round(value / SlowFrameTicks)) > 1e-9)
+            {
+                return false;
+            }
+
+            values.Add(value);
+        }
+
+        return values.Count >= 2;
+    }
+
+    /// <summary>
+    /// The frame cadence at the end of the sampled cycles, with its origin at the last sample. DOSBox-X's
+    /// frames against the 16 Hz tick last whole 1/32 ticks, and their running total is
+    /// <c>floor(phase + k·rate)</c> units, so the steps take two neighbouring sizes spread as evenly as
+    /// the rate allows (at about 61 fps 8s and 9s, never three 8s in a row). Fitted to the longest run of
+    /// such steps at the end, at most <paramref name="maxSteps"/> and at least <paramref name="minSteps"/>
+    /// of them, that one (rate, phase) reproduces. <c>null</c> when there is no such run.
+    /// </summary>
+    public static OracleCadence? FitCadence(IReadOnlyList<double> cycleTicks, int maxSteps = 256, int minSteps = 8)
+    {
+        ArgumentNullException.ThrowIfNull(cycleTicks);
+        var fitter = new OracleCadenceFitter();
+        fitter.TryAdd(0, 0);
+        long total = 0;
+        long smallest = long.MaxValue;
+        long largest = long.MinValue;
+        int steps = 0;
+        for (int i = cycleTicks.Count - 1; i >= 1 && steps < maxSteps; i--)
+        {
+            double units = (SnapTicks(cycleTicks[i]) - SnapTicks(cycleTicks[i - 1])) * 32;
+            long whole = (long)Math.Round(units);
+            smallest = Math.Min(smallest, whole);
+            largest = Math.Max(largest, whole);
+            total += whole;
+            if (Math.Abs(units - whole) > 1e-6 || whole <= 0 || largest - smallest > 1 || !fitter.TryAdd(-(steps + 1), -total))
+            {
+                break;
+            }
+
+            steps++;
+        }
+
+        return steps >= minSteps ? fitter.Fit() : null;
     }
 
     /// <summary>
@@ -296,11 +453,13 @@ internal static class OracleTrace
     /// The original's <c>TICKS</c> at each cycle, from a timing column. When the same token also
     /// prints a cycle counter (a whole-number column that goes up by at least one whenever
     /// <c>TICKS</c> does), a sampler that prints only every few cycles is filled in. (Other tokens'
-    /// counters can belong to another phase of the cycle, so only the sampler's count.) A gap of
-    /// <c>n</c> counted cycles becomes <c>n</c> steps of
-    /// whole 1/32 ticks, as close to equal as they can be (the original's <c>TIME_CORR</c> is
-    /// always a whole number of 1/32 ticks); a gap that is not a whole number of them becomes
-    /// <c>n</c> equal steps.
+    /// counters can belong to another phase of the cycle, so only the sampler's count.) Runs of 60 Hz
+    /// gaps are filled along the one frame cadence (<see cref="OracleCadence"/>) that passes through
+    /// all their samples and the step into each that the sampler's <c>TIME_CORR</c> column prints, if
+    /// it has one (DOSBox-X's frames total <c>floor(phase + k·rate)</c> thirty-seconds of a tick). A
+    /// gap from inside a flic to after it keeps the flic's step for its remaining frames (see
+    /// <c>FillFlicEnd</c>). Any other gap of <c>n</c> counted cycles becomes <c>n</c> steps of whole
+    /// 1/32 ticks, as close to equal as they can be, or <c>n</c> equal steps off that grid.
     /// </summary>
     public static IReadOnlyList<double> CycleTicks(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing) =>
         CycleTicks(lines, timing, out _);
@@ -332,53 +491,278 @@ internal static class OracleTrace
             return distinct;
         }
 
+        // Where every line is a sample, those printed before the sampler counts the cycle carry the
+        // count a cycle behind. (A named sampler's other tokens are not taken as samples: an event
+        // action prints after the sampler has counted, a probe action before.)
+        string? sampler = timing.Token == OracleTimingColumn.AnyToken ? LeadingSampler(tokenLines, timing.Column, counterColumn) : null;
         var samples = new SortedDictionary<long, double>();
+        var sampleLines = new Dictionary<long, OracleTraceLine>();
         foreach (OracleTraceLine line in tokenLines)
         {
-            AddSample(samples, line, timing.Column, counterColumn);
+            AddSample(samples, line, timing.Column, counterColumn, sampler, sampleLines);
         }
 
+        (int Column, double Scale)? printedStep = TimeCorrectionColumn(tokenLines, timing.Column, counterColumn);
+        long[] counts = [.. samples.Keys];
+        double[] values = [.. samples.Values];
+        long? StepUnits(int i) =>
+            printedStep is { } p && sampleLines[counts[i]].Value(p.Column) is { } printed && Math.Abs((printed / p.Scale * 32) - Math.Round(printed / p.Scale * 32)) < 0.05
+                ? (long)Math.Round(printed / p.Scale * 32)
+                : null;
+
         var ticks = new List<double>();
-        long? lastCount = null;
-        foreach ((long count, double value) in samples)
+        if (counts.Length > 0)
         {
-            if (lastCount is { } previousCount)
+            ticks.Add(values[0]);
+        }
+
+        // The longest run of 60 Hz gaps from sample `from` that one cadence fits, through every sample
+        // and the step into it that the sample's own TIME_CORR column prints (origin at `from`).
+        (OracleCadence? Cadence, int End) Segment(int from)
+        {
+            var fitter = new OracleCadenceFitter();
+            fitter.TryAdd(0, 0);
+            if (StepUnits(from) is { } firstStep)
             {
-                double start = ticks[^1];
-                long cycles = count - previousCount;
-                double units = (value - start) * 32;
-                long wholeUnits = (long)Math.Round(units);
-                bool whole = Math.Abs(units - wholeUnits) < 1e-6;
+                fitter.TryAdd(-1, -firstStep);
+            }
+
+            int end = from;
+            for (int next = from + 1; next < counts.Length; next++)
+            {
+                double units = (values[next] - values[from]) * 32;
+                long whole = (long)Math.Round(units);
+                long k = counts[next] - counts[from];
+                double gapUnits = (values[next] - values[next - 1]) * 32 / (counts[next] - counts[next - 1]);
+                if (Math.Abs(units - whole) > 1e-6 || !IsFrameStep(gapUnits / 32) || !fitter.TryAdd(k, whole) ||
+                    (StepUnits(next) is { } step && !fitter.TryAdd(k - 1, whole - step)))
+                {
+                    break;
+                }
+
+                end = next;
+            }
+
+            return end > from && fitter.Fit() is { } cadence ? (cadence, end) : (null, from);
+        }
+
+        int segment = 0;
+        while (segment < counts.Length - 1)
+        {
+            if (Segment(segment) is ({ } cadence, int end))
+            {
+                for (int i = segment + 1; i <= end; i++)
+                {
+                    for (long c = counts[i - 1] + 1; c < counts[i]; c++)
+                    {
+                        ticks.Add(values[segment] + (cadence.Units(c - counts[segment]) / 32.0));
+                    }
+
+                    ticks.Add(values[i]);
+                }
+
+                segment = end;
+                continue;
+            }
+
+            if (!FillFlicEnd(segment))
+            {
+                // Not a 60 Hz gap (a flic's, or off the 1/32 grid): steps as equal as whole 1/32 ticks allow.
+                double start = values[segment];
+                double value = values[segment + 1];
+                long cycles = counts[segment + 1] - counts[segment];
+                double gap = (value - start) * 32;
+                long wholeUnits = (long)Math.Round(gap);
+                bool onGrid = Math.Abs(gap - wholeUnits) < 1e-6;
                 for (long k = 1; k < cycles; k++)
                 {
-                    ticks.Add(whole
+                    ticks.Add(onGrid
                         ? start + ((wholeUnits * k / cycles) / 32.0)
                         : start + ((value - start) * k / cycles));
                 }
+
+                ticks.Add(value);
             }
 
-            ticks.Add(value);
-            lastCount = count;
+            segment++;
+        }
+
+        // A gap that starts during a flic (its sample prints a TIME_CORR that is not a 60 Hz frame's,
+        // 1.094 or 0.625) and ends after it: the flic's remaining frames keep that step, as many as
+        // leave the world cycles after it at least a 60 Hz frame each, and those cycles follow the
+        // cadence the samples after the flic fit, the first absorbing the off-grid rest.
+        bool FillFlicEnd(int i)
+        {
+            if (StepUnits(i) is not { } flicUnits || IsFrameStep(flicUnits / 32.0) || flicUnits <= 0)
+            {
+                return false;
+            }
+
+            double flicStep = flicUnits / 32.0;
+            long cycles = counts[i + 1] - counts[i];
+            double gap = values[i + 1] - values[i];
+            long frames = 0;
+            while (frames + 1 < cycles && (gap - ((frames + 1) * flicStep)) / (cycles - frames - 1) >= 0.25 - 1e-9)
+            {
+                frames++;
+            }
+
+            if (frames == 0 || (gap - (frames * flicStep)) / (cycles - frames) > 0.3125 + 1e-9)
+            {
+                return false;
+            }
+
+            var filled = new List<double>();
+            for (long k = 1; k <= frames; k++)
+            {
+                filled.Add(values[i] + (k * flicStep));
+            }
+
+            // The world cycles after the flic: back from the next sample along the cadence that fits
+            // after it, or, where that does not fit in, evenly.
+            double flicEnd = filled[^1];
+            long world = cycles - frames;
+            var along = new List<double>();
+            if (Segment(i + 1).Cadence is { } after)
+            {
+                for (long c = counts[i] + frames + 1; c < counts[i + 1]; c++)
+                {
+                    along.Add(values[i + 1] + (after.Units(c - counts[i + 1]) / 32.0));
+                }
+            }
+
+            if (world > 1 && (along.Count == 0 || along[0] <= flicEnd))
+            {
+                // Whole 1/32 steps back from the next sample, the last its printed TIME_CORR.
+                along.Clear();
+                double last = values[i + 1] - ((StepUnits(i + 1) is { } lastUnits && world > 1 ? lastUnits : 0) / 32.0);
+                long steps = last < values[i + 1] ? world - 1 : world;
+                double rate = (last - flicEnd) * 32 / steps;
+                for (long j = 1; j < world; j++)
+                {
+                    along.Add(j <= steps ? last - (Math.Floor((steps - j) * rate) / 32.0) : last);
+                }
+
+                if (along[0] <= flicEnd || along[^1] >= values[i + 1])
+                {
+                    return false;
+                }
+            }
+
+            ticks.AddRange(filled);
+            ticks.AddRange(along);
+            ticks.Add(values[i + 1]);
+            return true;
         }
 
         return ticks;
     }
 
-    /// <summary>Adds a sampler line's (cycle count, <c>TICKS</c>) sample when both go up.</summary>
-    private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn)
+    /// <summary>
+    /// The column of a counted sampler's lines that prints <c>TIME_CORR</c>, and its scale (1, or 1024
+    /// for a raw value): every value a whole number of 1/32 ticks between 0.1 and 2, equal to the step
+    /// wherever two samples are one cycle apart; with no such pair, more than one value and a 60 Hz
+    /// first value (0.25 or 0.281). <c>null</c> when there is none.
+    /// </summary>
+    private static (int Column, double Scale)? TimeCorrectionColumn(List<OracleTraceLine> tokenLines, int timingColumn, int counterColumn)
     {
-        if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0)
+        if (tokenLines.Count < 2)
+        {
+            return null;
+        }
+
+        int columns = tokenLines.Min(static l => l.Fields.Count);
+        foreach (double scale in new[] { 1.0, 1024.0 })
+        {
+            for (int column = 0; column < columns; column++)
+            {
+                if (column == timingColumn || column == counterColumn ||
+                    !tokenLines.All(l => l.Value(column) is { } v && v / scale is > 0.1 and <= 2 && Math.Abs((v / scale * 32) - Math.Round(v / scale * 32)) <= 0.05))
+                {
+                    continue;
+                }
+
+                int checks = 0;
+                bool hits = true;
+                for (int i = 1; i < tokenLines.Count && hits; i++)
+                {
+                    double dn = tokenLines[i].Value(counterColumn)!.Value - tokenLines[i - 1].Value(counterColumn)!.Value;
+                    double step = SnapTicks(tokenLines[i].Value(timingColumn)!.Value) - SnapTicks(tokenLines[i - 1].Value(timingColumn)!.Value);
+                    if (dn == 1 && step > 0)
+                    {
+                        checks++;
+                        hits = Math.Abs((tokenLines[i].Value(column)!.Value / scale) - step) <= 0.002;
+                    }
+                }
+
+                double first = tokenLines[0].Value(column)!.Value / scale;
+                if (hits && (checks > 0 ||
+                    ((Math.Abs(first - 0.25) <= 0.0015 || Math.Abs(first - 0.28125) <= 0.0015) && tokenLines.Select(l => l.Value(column)!.Value).Distinct().Count() > 1)))
+                {
+                    return (column, scale);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Adds a sampler line's (cycle count, <c>TICKS</c>) sample when both go up.</summary>
+    private static void AddSample(SortedDictionary<long, double> samples, OracleTraceLine line, int timingColumn, int counterColumn, string? sampler, Dictionary<long, OracleTraceLine> sampleLines)
+    {
+        if (line.Value(counterColumn) is not { } countValue || countValue != Math.Floor(countValue) || countValue < 0 ||
+            line.Value(timingColumn) is null)
         {
             return;
         }
 
-        long count = (long)countValue;
+        long count = (long)CycleOf(line, counterColumn, sampler);
         double value = SnapTicks(line.Value(timingColumn)!.Value);
         if (!samples.ContainsKey(count) && (samples.Count == 0 || (count > samples.Keys.Last() && value > samples.Values.Last())))
         {
             samples[count] = value;
+            sampleLines[count] = line;
         }
     }
+
+    /// <summary>
+    /// The token whose counter runs a cycle ahead of the other tokens': the one whose line shares its
+    /// <c>TICKS</c> with another token's line counting exactly one less. A trace's probe action prints
+    /// before the global <c>EACH_TICK</c> sampler that raises the counter (OV-20261029-audio: <c>GO</c>
+    /// and <c>P</c> at 13.438 with count 0 beside <c>C</c> 13.438 with 1). <c>null</c> when no line
+    /// pairs so, or when two tokens would lead.
+    /// </summary>
+    internal static string? LeadingSampler(IReadOnlyList<OracleTraceLine> lines, int ticksColumn, int counterColumn)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        string? sampler = null;
+        foreach (IGrouping<long, OracleTraceLine> group in lines
+            .Where(l => l.Value(ticksColumn) is not null && l.Value(counterColumn) is { } n && n == Math.Floor(n))
+            .GroupBy(l => (long)Math.Round(SnapTicks(l.Value(ticksColumn)!.Value) * 1024)))
+        {
+            foreach (OracleTraceLine ahead in group)
+            {
+                foreach (OracleTraceLine behind in group)
+                {
+                    if (ahead.Token != behind.Token && ahead.Value(counterColumn) == behind.Value(counterColumn) + 1)
+                    {
+                        if (sampler is not null && sampler != ahead.Token)
+                        {
+                            return null;
+                        }
+
+                        sampler = ahead.Token;
+                    }
+                }
+            }
+        }
+
+        return sampler;
+    }
+
+    /// <summary>The cycle a line was printed in: its count, one more for a token other than the leading <paramref name="sampler"/>.</summary>
+    private static double CycleOf(OracleTraceLine line, int counterColumn, string? sampler) =>
+        line.Value(counterColumn)!.Value + (sampler is not null && line.Token != sampler ? 1 : 0);
 
     /// <summary>
     /// A column of <paramref name="tokenLines"/> other than the timing column that counts cycles:
