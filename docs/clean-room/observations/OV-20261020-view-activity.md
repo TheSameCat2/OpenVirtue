@@ -246,3 +246,43 @@ retail level's walls costs 3–13 ms a pass, and no retail script reads them. `R
 object `EACH_TICK` loop. `SKIP_FRAMES` defaults to 5. The
 original prints a cycle's moves one cycle after the `VISIBLE` they followed; OpenVirtue moves
 actors before the global `EACH_TICK` slots, so in OpenVirtue they show in the same cycle.
+
+## Addendum: way arrival and WMP coordinates (2026-11-02)
+No new runs. The existing traces were read again: round 3 range-d1 `5490a544`, range-d2
+`c5a6baa0`, tilt-far `07d9f6c2`; round 4 range-shape `5e6d6d6b`; round 5 range-fine-a and
+range-fine-b (identical traces, `af130627`); round 6 edge-across `fac86f9b`, edge-along `0c3c02ab`,
+edge-along-y `ce689719`; and OV-20261029-actor-events way `251db6e8`. These walkers step about 0.098
+a cycle along short ways.
+- **WMP coordinates are cut to 22.10.** A thing's, an actor's and a way point's X and Y are cut
+  toward zero to 1/1024, as a literal is. The original prints WMP 0.4 as 0.399, 0.2 as 0.199, −0.2
+  as −0.199, −0.6 as −0.600 and −20.2 as −20.199. 409/1024 = 0.3994 and −20684/1024 = −20.1992;
+  rounding would print 0.400. It also explains range-shape's first diverging step: a way to −0.4
+  (−409 raw) splits a 96-raw step into 95 raw, not the 94 that −410 gives. Vertices and
+  `PLAYER_START` are not covered: every probe vertex is a whole number.
+- **The arrival limit is 0.1 (102 raw), not 1/8, and not the step.** An actor that stops short of
+  its point arrives where it stands when less than 102 raw (|dx| + |dy|) is left.
+  - range-d1 goes 0.882, 0.980, then back to 0.882. It does not arrive with 0.118 left and does
+    arrive with 0.020 left.
+  - edge-along's second actor does not arrive at −0.100, 102 raw short of −204.
+  - actor-events' way arrives 100 raw short (19.902 for 20) and does not arrive with 0.114 left at
+    a step of 0.123.
+  - tilt-far's skipped actor does not arrive with 0.124 left. Its next long step lands on the point.
+  - OV-20261029-actor-step's v-c-y2 does not arrive 369 raw short at a 510-raw step. The step
+    lands on the point in the next cycle.
+
+  So a limit equal to the cycle's step, as the triage proposed, fails v-c-y2. min(step, 1/8)
+  fails the 0.114 case. The exact 0.1 (102.4 raw) fails the 102-raw cases in edge-along and in
+  actor-events' way: 306 fewer matching lines.
+- **Result.** Over all carriers, the WMP cut and the limit together add 448 matching lines.
+  range-d2, range-fine-a and range-fine-b now match in full. range-d1 and tilt-far differ only in
+  the last `TICKS`, and actor-events' way matches 295 of 616 lines (3 before). Two traces lose
+  lines: OV-20261029-overlap round 3 d21 (`0c7bbff9`, PX −0.119) now prints −0.121, 2 raw off
+  where it was 1 raw off (−0.120). Its actor now sits at 2150 raw, where the original has it. In
+  the same round, d06, negx and d005 move onto the original's values (−1.621, 1.921, −2.171 for
+  −2.172). d15 (1.5, which the cut does not change) is 2 raw off as well (−0.721 for −0.719). So
+  the error is in the fitted contact distance √(c² + 0.093) near 2.1, and d21 matched only
+  because its old error happened to stay within the 1-raw print tolerance.
+- Implementation: `LevelLoader.BuildEntity` and the way points use `WdlFixed.Literal`;
+  `WdlRuntime.ArrivalDistance` is 102/1024. Tests:
+  `LevelLoaderTests.LoadCore_PlacementAndWayCoordinates_AreCutTowardZeroTo1024ths` and
+  `WdlActorMotionTests.Tick_WayActorShortOfItsPoint_ArrivesWithLessThanATenthLeft`.

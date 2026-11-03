@@ -58,7 +58,8 @@ scripts set those with `SET x.TARGET, …` (23 `MOVE`, 10 `BULLET`, 7 `VERTEX`),
   Correction (OV-20261029-actor-step): a step along the actor's `ANGLE` (`MOVE`, `BULLET`) is split
   with cos and sin and each part rounded to 1/1024; only steps toward a point use \|dx\| + \|dy\|.
 - If the step reaches the point it lands on it and arrives; otherwise it arrives once less than
-  about 1/8 (\|dx\| + \|dy\|) is left, where it stands.
+  about 1/8 (\|dx\| + \|dy\|) is left, where it stands. Correction (2026-11-02): less than 0.1,
+  102 raw (OV-20261020-view-activity addendum).
 - On a `WAY` arrival `WAYPOINT` advances (wrapping to 1) before `IF_ARRIVED` runs; `TARGET_X/Y` show
   the next point only from the next step.
 - A `VERTEX` or object target triggers `IF_ARRIVED` in every cycle the actor is there. A `FOLLOW`
@@ -102,8 +103,9 @@ the cycle, `TIME_CORR` and the actor's X every cycle from the first.
   cycles. OpenVirtue takes the exact product; the cause is not found.
 
 ## Open Questions
-- Whether the arrival limit is a constant (OpenVirtue uses 1/8) or the cycle's step; the measured
-  arrivals (≤ 0.098) and non-arrivals (≥ 0.134) do not separate them.
+- Answered (2026-11-02, OV-20261020-view-activity addendum): the arrival limit is the constant 0.1
+  (102 raw), neither 1/8 nor the step. This trace's way arrives 100 raw short and does not arrive
+  with 0.114 left at a step of 0.123.
 - The fixed-point heading drift (y +0.004 a cycle at angle 0).
 - `FOLLOW`'s `IF_ARRIVED` at the pad border happened during the settling `WAITT 16`, outside the
   trace window; it was not observed.

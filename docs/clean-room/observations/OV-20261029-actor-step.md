@@ -135,9 +135,38 @@ were read again.
   actor-events' vertex and way-start traces and view-activity's view-cone. Over all carriers,
   725 more lines match.
 
+## Addendum: negative halves and the facing's range (2026-11-02)
+No new runs. Traces read again: round 5 v-c-y `ee5ded84` and v-c-y2 `a271c5ce`; round 4 w-p-diag
+`b98f90aa` and w-c-diag `b871a7f0`; OV-20261019-actor-contact actor-push-careful `3d9188f5`.
+- **The split product rounds half up.** Round 6's product of the step and the distance left along
+  an axis rounds half up (floor(x + 0.5)), not away from zero, so a negative half goes toward zero.
+  - v-c-y, line 77: 128·(−244)/1024 = −30.5 makes −30, then −0.976 cuts to 0 and the `CAREFULLY`
+    nudge makes it +4 (x 10488, as the original). Away from zero gave −31, −1, then −4 (10480).
+  - w-p-diag's return leg, line 28: −1989.5 makes −1989, a Y step of −132 (y 3847). Every step of
+    that leg fits up to the arrival.
+  - actor-push-careful's `FOLLOW` actor, line 6: −25.5 makes −25, which cuts to 0 and nudges y +4
+    (0.020, as the original).
+
+  Round 6's positive half (5629.5 → 5630) is the same under either rule.
+- **An instant turn keeps the facing in 0..2π.** With `ASPEED` 0 the actor's `ANGLE` is the leg's
+  facing (round 5's 22.10 angle in 0..2π, cut toward zero) less its placement angle, kept in 0..2π.
+  It is not made signed. Heading −Y prints 4825 raw, not −1609. Toward (−20, −7) it prints 3561, not
+  −2873. A turn at `ASPEED` > 0 keeps the signed range: no carrier prints one, and making it
+  unsigned changed no line.
+- **Result.** 129 more matching lines. v-c-y and v-c-y2 now match in full. w-p-diag and w-c-diag
+  match 90 of 91: only line 3 is left, the first cycle's step (30544 for 30540). actor-push-careful
+  now first differs at line 30 (1 raw off from line 25), where the actor slows in front of the
+  player (a contact matter).
+- Implementation: `WdlRuntime.AdvanceActorToward` (`Part`) and `TurnActorToward`. Tests:
+  `WdlActorMotionTests.Tick_WayActorAlongAnAxis_StepsByTheRoundedProductOfStepAndDistance` (a −Y
+  case) and `Tick_WayActorHeadingMinusY_KeepsItsFacingBetweenZeroAndTwoPi`.
+
 ## Open Questions
 - How a `CAREFULLY` actor slides after a wall stop, beyond the first stop.
-- The `CAREFULLY` actors' residuals (v-c-y matches to line 77, v-c-y2 to 81, v-c-d to 35).
+- The `CAREFULLY` actors' residuals: v-c-d to line 35 (v-c-y and v-c-y2 are settled by the
+  2026-11-02 addendum).
+- Whether the same half-up rounding applies to the step product itself and to the cos/sin parts
+  of a `MOVE` step; no carrier has a negative half there.
 
 ## Implementation
 - `WdlRuntime.AdvanceActorForward` implements the rule; tested by

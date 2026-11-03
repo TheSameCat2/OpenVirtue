@@ -3678,18 +3678,19 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point. Patched
-    /// V3.963 arrived at 0.098 and not at 0.134 at steps of 0.125 to 0.14 (OV-20261029-actor-events);
-    /// whether the limit is this constant or the cycle's step is unmeasured.
-    /// </summary>
-    private const double ArrivalDistance = 0.125;
-
-    /// <summary>
     /// A product the engine itself takes, as an actor's step <c>SPEED·TIME_CORR</c>: rounded to 1/1024,
     /// where a WDL <c>*</c> cuts toward zero (OV-20261029-actor-step round 6).
     /// </summary>
     private static double EngineProduct(double left, double right) =>
         Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
+
+    /// <summary>
+    /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point: 0.1 as a
+    /// 22.10 value, 102/1024. Patched V3.963 arrived with 100 raw left and not with 102, nor with
+    /// 0.114 at a step of 0.123 or 0.36 at 0.5, so the limit is neither 1/8 nor the step
+    /// (OV-20261029-actor-events, OV-20261020-view-activity 2026-11-02 addendum).
+    /// </summary>
+    private const double ArrivalDistance = 102.0 / 1024;
 
     private bool AdvanceActorToward(Actor actor, double targetX, double targetY, double timeCorrection)
     {
@@ -3698,7 +3699,7 @@ public sealed class WdlRuntime :
         // OV-20261029-actor-events: the step and the distance left are both |dx| + |dy|, so an actor
         // covers SPEED·TIME_CORR of it per cycle (diagonally, 1/√2 of that as the crow flies). It
         // arrives on the point when the step would reach it, or where it is once less than
-        // ArrivalDistance is left (measured between 0.098, arrived, and 0.134, not).
+        // ArrivalDistance is left.
         double dx = targetX - actor.X;
         double dy = targetY - actor.Y;
         double remaining = Math.Abs(dx) + Math.Abs(dy);
@@ -3737,13 +3738,14 @@ public sealed class WdlRuntime :
         // part, its nudge, and a Y part one short. Round 6: the part is the 22.10 product of the step
         // and the distance left along the axis, rounded to 1/1024, then divided by |dx| + |dy| and cut
         // toward zero, which explains the one-unit short steps (143 for 144 once 39760 units are
-        // left): every step of the plain +Y and 40:15 ways fits.
+        // left): every step of the plain +Y and 40:15 ways fits. The product rounds half up, not away
+        // from zero: -25.5 makes -25 (2026-11-02 addendum, a FOLLOW actor and a return leg).
         double rawX = Math.Round(dx * 1024);
         double rawY = Math.Round(dy * 1024);
         double rawRemaining = Math.Abs(rawX) + Math.Abs(rawY);
         double rawStep = Math.Round(distance * 1024);
         static double Part(double step, double along, double remaining) =>
-            Math.Truncate(Math.Round(step * along / 1024, MidpointRounding.AwayFromZero) * 1024 / remaining) / 1024;
+            Math.Truncate(Math.Floor((step * along / 1024) + 0.5) * 1024 / remaining) / 1024;
         double stepX = rawRemaining > 0 ? Part(rawStep, rawX, rawRemaining) : 0;
         double stepY = rawRemaining > 0 ? Part(rawStep, rawY, rawRemaining) : 0;
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);
@@ -4085,7 +4087,9 @@ public sealed class WdlRuntime :
         double maximumTurn = Math.Max(0, actor["ASPEED"]) * timeCorrection;
         if (maximumTurn <= 0)
         {
-            actor.Angle = targetAngle;
+            // An instant turn keeps the facing in 0..2π: a way heading -Y prints ANGLE 4.712, not
+            // -1.571 (OV-20261029-actor-step, 2026-11-02 addendum).
+            actor.Angle = NormalizeUnsignedAngle(desiredFacing - placementAngle);
             return;
         }
 
@@ -4120,6 +4124,12 @@ public sealed class WdlRuntime :
                 height = null;
                 return false;
         }
+    }
+
+    private static double NormalizeUnsignedAngle(double angle)
+    {
+        angle %= Math.Tau;
+        return angle < 0 ? angle + Math.Tau : angle;
     }
 
     private static double NormalizeSignedAngle(double angle)
