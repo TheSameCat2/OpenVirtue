@@ -448,7 +448,7 @@ First targets:
 ### Status (2026-11-03)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces and saves; COUNT_PLACEHOLDER. Most of the rest differ in the replay's
+against the original's traces and saves; 372 of 623 match in full and 26852 lines match (2026-11-03; 277 of 584 and 22729 lines on 2026-10-30). Most of the rest differ in the replay's
 clock where the original's traces do not sample it (start-up, gaps, after the last sample), in
 input-timed lines, or in the open items below.
 
