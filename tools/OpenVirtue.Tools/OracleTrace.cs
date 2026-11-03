@@ -869,8 +869,9 @@ internal static class OracleTrace
     /// <paramref name="firstCycle"/> on, continued past its end at its own cadence) predicts nearer,
     /// when the value lies within two typical steps (at least half a tick) of that prediction, keeps
     /// the samples' order, and its step from the sampled cycle before is a cycle's (a 60 Hz frame to
-    /// 8 ticks). A line printed after the probe switched the counter off carries a stale count and
-    /// lies cycles past its prediction, so it is left out. Returns the cycles so added.
+    /// 8 ticks); a line before the sampler's first is left to the start-up plan. A line printed
+    /// after the probe switched the counter off carries a stale count and lies cycles past its
+    /// prediction, so it is left out. Returns the cycles so added.
     /// </summary>
     private static HashSet<long> AddOtherTokenSamples(
         IReadOnlyList<OracleTraceLine> lines,
@@ -878,7 +879,7 @@ internal static class OracleTrace
         int counterColumn,
         SortedDictionary<long, double> samples,
         Dictionary<long, OracleTraceLine> sampleLines,
-        IReadOnlyList<double> baseline,
+        List<double> baseline,
         long firstCycle)
     {
         var added = new HashSet<long>();
@@ -895,6 +896,8 @@ internal static class OracleTrace
             long index = cycle - firstCycle;
             if (index < 0)
             {
+                // Before the first sampled cycle the start-up plan rules (a line placed there moved the
+                // anchor and lost three eye-clamp carriers).
                 return null;
             }
 

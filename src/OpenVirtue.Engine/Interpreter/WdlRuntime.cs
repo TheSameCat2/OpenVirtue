@@ -239,6 +239,10 @@ public sealed class WdlRuntime :
 
     /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TestCarefulEndPoint"/>).</summary>
     private bool _longSkippedStep;
+
+    // The wall hold a CAREFULLY actor is put at in place of its step's part along the wall's normal, for
+    // the move of this cycle (see MoveActorTowardTarget and MoveActor).
+    private (Actor Actor, Vector2 At)? _carefulHold;
     private readonly Dictionary<Actor, string> _actorTargetStates = [];
     private readonly Dictionary<AcknexObject, TextureAnimationState> _textureAnimationStates = [];
     private readonly LevelCollisionWorld _collisionWorld;
@@ -3678,6 +3682,16 @@ public sealed class WdlRuntime :
     {
         MoveActorTowardTarget(actor, cycleCorrection);
         _longSkippedStep = false;
+        if (_carefulHold is { } hold && ReferenceEquals(hold.Actor, actor))
+        {
+            // No move took the hold (the actor arrived where it stood): the hold alone, the untouched
+            // axis nudged 4/1024 (OV-20261103-careful-stop).
+            _carefulHold = null;
+            HoldCarefulActorAt(actor, new Vector2((float)actor.X, (float)actor.Y), hold.At, Vector2.Zero);
+            NoteFrontMove(actor);
+        }
+
+        _carefulHold = null;
     }
 
     private void MoveActorTowardTarget(Actor actor, double cycleCorrection)
@@ -3742,10 +3756,11 @@ public sealed class WdlRuntime :
                 TriggerObjectActionHook(actor, "IF_ARRIVED");
             }
 
-            HoldCarefulActorAt(actor, heldPosition);
-            _arrivedTargets.Remove(actor);
-            NoteFrontMove(actor);
-            return;
+            // The hold replaces the step's part along the wall's normal; the part along the wall is still
+            // taken: the v-c-d way walker of OV-20261029-actor-step round 5, 79 units inside the room's west
+            // wall after stepping in from rock, was put 1074 from it and still stepped its 39 units of y
+            // (2026-11-03 re-read). The move below takes it (MoveActor).
+            _carefulHold = (actor, heldPosition);
         }
 
         timeCorrection = cycleCorrection * cycles;
@@ -4108,6 +4123,18 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
+            if (_carefulHold is { } hold && ReferenceEquals(hold.Actor, actor))
+            {
+                _carefulHold = null;
+                HoldCarefulActorAt(actor, start, hold.At, step);
+                if (actor.Region != previousRegion)
+                {
+                    TriggerObjectActionHook(actor, "IF_ARRIVED");
+                }
+
+                return;
+            }
+
             // OV-20261103-careful-stop: a skipped long step's end is tried at its full, half, quarter and
             // eighth length. An end that is clear is taken. Down to the quarter, one before a wall the actor
             // may not cross but within its half width goes to the hold (the swept move) and one past such a
@@ -4126,6 +4153,18 @@ public sealed class WdlRuntime :
 
             bool endPointMove = test == CarefulEndTest.Clear;
             bool halfWayToTheHold = !endPointMove && level == 3;
+            // An actor standing in no region (placed in rock) is not held off the walls it meets: the
+            // v-c-d way walker of OV-20261029-actor-step round 5, started 4 outside the room's west wall,
+            // stepped through it at its full 93 to 104 units a cycle where OpenVirtue held it 1074/1024
+            // outside (2026-11-03 re-read; the long step's end test already enters the first open region).
+            if (!endPointMove && LevelTopology.LocateRegion(_level, actor.X, actor.Y) is null)
+            {
+                endPointMove = true;
+                endStep = step;
+                endRegion = actor.Region;
+                halfWayToTheHold = false;
+            }
+
             CircleMoveResult result = endPointMove
                 ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
@@ -4354,13 +4393,32 @@ public sealed class WdlRuntime :
         return held != start;
     }
 
-    private void HoldCarefulActorAt(Actor actor, Vector2 held)
+    /// <summary>
+    /// Puts a <c>CAREFULLY</c> actor at the wall hold <paramref name="held"/> in place of its step's part
+    /// along the hold's direction, and takes the step's part along the wall; an axis the hold does not
+    /// move and whose part is under 4/1024 moves 4/1024, with the part's sign and positive for none
+    /// (OV-20261103-careful-stop; OV-20261029-actor-step v-c-d, 2026-11-03 re-read).
+    /// </summary>
+    private void HoldCarefulActorAt(Actor actor, Vector2 start, Vector2 held, Vector2 step)
     {
         const double Nudge = 4.0 / 1024;
-        double x = Math.Round(held.X * 1024) / 1024;
-        double y = Math.Round(held.Y * 1024) / 1024;
-        actor.X = x == actor.X ? x + Nudge : x;
-        actor.Y = y == actor.Y ? y + Nudge : y;
+        Vector2 normal = held - start;
+        Vector2 parallel = normal.LengthSquared() > 0 ? step - (Vector2.Dot(step, normal) / normal.LengthSquared() * normal) : step;
+        double x = Math.Round((held.X + parallel.X) * 1024) / 1024;
+        double y = Math.Round((held.Y + parallel.Y) * 1024) / 1024;
+        if (Math.Abs(held.X - start.X) < 1e-6 && Math.Abs(x - start.X) < Nudge - 1e-9)
+        {
+            x = start.X + (step.X < 0 ? -Nudge : Nudge);
+        }
+
+        if (Math.Abs(held.Y - start.Y) < 1e-6 && Math.Abs(y - start.Y) < Nudge - 1e-9)
+        {
+            y = start.Y + (step.Y < 0 ? -Nudge : Nudge);
+        }
+
+        actor.X = x;
+        actor.Y = y;
+        UpdateActorRegion(actor);
         UpdateFootHeight(actor);
         actor["MOVED"] = 1;
     }
