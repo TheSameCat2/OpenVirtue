@@ -257,6 +257,22 @@ Implementation:
 - Results: 24 of the 27 shoot carriers replay line for line. One is 0.002 off on `HIT_X`; the
   other two come from an original run whose start-up took a cycle longer (`TICKS` 14.781 at the shot).
 
+## Round 3: other depths (2026-11-02)
+- Carriers: `ovtool oracle prepare shoot-mapping … --depths D --target-offsets O`, 32 runs under
+  `depth-sweep/d20`, `d30`, `d37` and `d44` (targets at depth 20, 30, 37 and 44, side offsets 6, 9,
+  12 and 18), each with five `SHOOT_X` columns, `SHOOT_Y` 0.01 and `PLAYER_TILT` 0.01. Local-only
+  hashes (`OVHIT0.TXT`): d20 centre `c7cdf43d`, d30 centre `2855dc6f`, d37 centre `ea7a1510`, d44
+  centre `450c1607`, d20 `SHOOT_X` 0.58 `cde6dbdf`.
+- **Per column, `HIT_X` steps by a whole number of raw units at every depth:** 561 at 20, 841 at 30,
+  1040 at 37 and 1230 at 44. The texels per pixel cut from `64 / (4·f/d)` give 559, 839, 1035 and
+  1230, so only depth 44 agrees: the measured steps imply focal lengths of about 584.1, 584.4, 582.9
+  and 586.1, not one.
+- The centre column reads 32.537, 32.791, 32.992 and 32.832: the texel offset past the centre is not
+  one constant either.
+- So the depth-44 rule below (the reciprocal edge and 733/1024) reproduces depth 44 only; the replay
+  matches 4 of the 32 new carriers (those that print no `HIT_X` difference). How the texel step
+  comes out of the depth is open.
+
 ## Addendum: the sprite's edge in fixed point (2026-11-02, analysis only)
 No new carriers. Every centre-target shot matched exactly, but every shot at the right target
 (12 steps across) read 2/1024 higher than OpenVirtue's (33.176 against 33.174 at `SHOOT_X` 0.5,
