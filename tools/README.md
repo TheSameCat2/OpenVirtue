@@ -131,7 +131,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   detected by default: a token's fractional never-decreasing column before a whole one, so a flic
   carrier's `TICKS` beats the `FLIC_FRAME` printed before it, then the densest token, three lines
   or, failing that, two (before every line as a sample: audio stop's two `C` lines place its `RET`
-  by the cadence); a
+  by the cadence). Of two columns that count (a flic carrier's `FLIC_FRAME` before its cycle
+  counter, both rising until the original's fault cut the trace), the cycle counter is the one
+  whose first gap over its cycles is the step a column prints as `TIME_CORR`. The first cycle's
+  step is read from such a column from two sampler lines on. A trace the original's run did not
+  finish (no `END` line) counts as matched when every line of it matches the replay's start; a
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
   in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
   counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`; there the lines of
