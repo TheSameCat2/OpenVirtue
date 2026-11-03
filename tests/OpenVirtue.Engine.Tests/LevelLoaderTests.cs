@@ -523,6 +523,29 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_PlacementAndWayCoordinates_AreCutTowardZeroTo1024ths()
+    {
+        // OV-20261020-view-activity, 2026-11-02 addendum: the original prints WMP 0.4 as 0.399 and
+        // -20.2 as -20.199, its 22.10 value cut toward zero.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING crate 0.2 -0.6 0 0;#1\n" +
+                        "ACTOR guard 0.4 -20.2 0 0;#2\nWAY route 0.4 -20.2 -0.4 20.6;#3\nPLAYER_START 0 0 0 0;#4",
+        };
+        const string main = "MAPFILE <m.wmp>; THING crate { } ACTOR guard { } WAY route;";
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Thing crate = Assert.Single(level.Things);
+        Actor guard = Assert.Single(level.Actors);
+        Assert.Equal((204 / 1024.0, -614 / 1024.0), (crate.X, crate.Y));
+        Assert.Equal((409 / 1024.0, -20684 / 1024.0), (guard.X, guard.Y));
+        Assert.Equal(
+            [new LevelWayPoint(409 / 1024.0, -20684 / 1024.0), new LevelWayPoint(-409 / 1024.0, 21094 / 1024.0)],
+            level.Ways["route"].Points);
+    }
+
+    [Fact]
     public void LoadCore_ActionOrder_NumbersAnActionWhereItsNameFirstAppears()
     {
         // OV-20261029-save-body round 13: a reference ahead of the declaration takes the number.

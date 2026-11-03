@@ -456,13 +456,16 @@ public sealed class WdlActorMotionTests
     [Theory]
     [InlineData(-19.09375, 0.28125, 144)]  // 40032 raw left: 144·40032/1024 is 5629.5, rounded 5630, 144.01
     [InlineData(-18.828125, 0.28125, 143)] // 39760 raw left: 5591.25 rounds to 5591, 143.99 cut to 143
+    [InlineData(19.09375, 0.28125, -143)]  // the same toward -Y: -5629.5 rounds half up to -5629, -143.99 cut to -143
     public void Tick_WayActorAlongAnAxis_StepsByTheRoundedProductOfStepAndDistance(double startY, double timeCorrection, int dyRaw)
     {
         // OV-20261029-actor-step round 6: the part of a step toward a point is the step times the
         // distance left along the axis, rounded to 1/1024, divided by |dx| + |dy| and cut toward zero;
-        // a plain actor on a way along +Y steps one short once 39760 units are left.
+        // a plain actor on a way along +Y steps one short once 39760 units are left. The product
+        // rounds half up, so a negative half goes toward zero (2026-11-02 addendum).
+        double endY = startY < 0 ? 20 : -20;
         string map = FormattableString.Invariant(
-            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 10 {startY} 0 0;#0\nWAY route 10 {startY} 10 20;#1\nPLAYER_START 40 40 0 0;#2");
+            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 10 {startY} 0 0;#0\nWAY route 10 {startY} 10 {endY};#1\nPLAYER_START 40 40 0 0;#2");
         (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
         Actor actor = Assert.Single(level.Actors);
         runtime.Tick(timeCorrection / 16); // arrives on the point it stands on
@@ -471,6 +474,44 @@ public sealed class WdlActorMotionTests
         runtime.Tick(timeCorrection / 16);
 
         Assert.Equal(dyRaw, Math.Round((actor.Y - before) * 1024), 6);
+    }
+
+    [Fact]
+    public void Tick_WayActorHeadingMinusY_KeepsItsFacingBetweenZeroAndTwoPi()
+    {
+        // OV-20261029-actor-step, 2026-11-02 addendum: an actor turned instantly toward its point
+        // prints ANGLE 4825 raw (3π/2 cut to 22.10) heading -Y, not -1609.
+        const string map = "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 10 10 0 0;#0\nWAY route 10 10 10 -10;#1\nPLAYER_START 40 40 0 0;#2";
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(0.25 / 16); // arrives on the point it stands on
+
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(4825, Math.Round(actor["ANGLE"] * 1024), 6);
+    }
+
+    [Theory]
+    [InlineData(0.5, 229, 100, true)]      // arrived with 0.098 left (OV-20261029-actor-events, way)
+    [InlineData(0.40625, 205, 101, true)]  // 0.1 as a 22.10 value is 102 raw
+    [InlineData(0.40625, 206, 102, false)] // not with 102 left at a 0.098 step (OV-20261020-view-activity, edge-along)
+    [InlineData(0.5, 243, 117, false)]     // nor with 0.114 left at a step of 0.123 (actor-events, way): the limit is not the step
+    public void Tick_WayActorShortOfItsPoint_ArrivesWithLessThanATenthLeft(double speed, int rawLength, int rawLeft, bool arrives)
+    {
+        // OV-20261020-view-activity, 2026-11-02 addendum: a step of SPEED·0.25 along a way rawLength
+        // long leaves rawLeft of it; the actor arrives where it stands when less than 0.1 (102 raw) is left.
+        string map = FormattableString.Invariant(
+            $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover 0 0 0 0;#0\nWAY route 0 0 {rawLength / 1024.0} 0;#1\nPLAYER_START 40 40 0 0;#2");
+        (WdlRuntime runtime, Level level) = Create(
+            FormattableString.Invariant($"WAY route; ACTOR mover {{ TARGET route; SPEED {speed}; }}"), map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(0.25 / 16); // arrives on the point it stands on
+        Assert.Equal(2, actor["WAYPOINT"]);
+
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(rawLength - rawLeft, Math.Round(actor.X * 1024), 6);
+        Assert.Equal(arrives ? 1 : 2, actor["WAYPOINT"]);
     }
 
     [Theory]
