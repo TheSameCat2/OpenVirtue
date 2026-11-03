@@ -228,8 +228,8 @@ Not yet complete:
     proven to load;
 - `CAREFULLY` actors' slides after a wall stop beyond the first (steps along an `ANGLE`, toward a
   point and against walls match unit for unit: OV-20261029-actor-step, OV-20261029-actor-events);
-- a sprite's `HIT_X` at depths other than 44 (the texel step per column is measured at four depths
-  but not yet explained, OV-20261009-shoot-mapping round 3), and shots at mirrored sprites and walls;
+- shots at mirrored sprites and walls: their `HIT_X` (a sprite's `HIT_X` matches at every depth
+  measured, worked out in 22.10 tangents as the renderer draws it, OV-20261009-shoot-mapping round 3);
 - the replay's clock in the stretches the original's traces do not sample (the start-up, gaps
   between samples, after the last one), which keeps many timed probes from matching line for line
   (`ovtool oracle summary` lists each probe's count).

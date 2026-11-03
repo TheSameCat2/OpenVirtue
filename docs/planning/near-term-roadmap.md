@@ -463,7 +463,7 @@ input-timed lines, or in the open items below.
 
 Also measured: slopes, `BELOW` storeys and their view test, sound channels, `INKEY`, panel
 text, widgets and sliders, `PRINTFILE` creating its file, and shots (`HIT_X`/`HIT_Y`; a sprite's
-`HIT_X` at depth 44 in fixed point, its texel step at other depths still open).
+`HIT_X` in 22.10 tangents at four depths, mirrored sprites and walls still open).
 
 ## Definition Of Done For This Phase
 
