@@ -229,8 +229,10 @@ public sealed class WdlRuntime :
 
     /// <summary>The cycles an unseen actor has skipped since it last moved (<c>SKIP_FRAMES</c>).</summary>
     private readonly Dictionary<Actor, int> _skippedCycles = [];
+    private (double X, double Y, double Angle)? _wallDistanceView;
+    private (double Cosine, double Sine) _wallDistanceFrame = (1, 0);
 
-    /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TryEndPointCarefulMove"/>).</summary>
+    /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TestCarefulEndPoint"/>).</summary>
     private bool _longSkippedStep;
     private readonly Dictionary<Actor, string> _actorTargetStates = [];
     private readonly Dictionary<AcknexObject, TextureAnimationState> _textureAnimationStates = [];
@@ -482,6 +484,8 @@ public sealed class WdlRuntime :
         RestoreLevelObjects(snapshot.LevelObjects);
         RestorePlayer(snapshot.Player);
         _skippedCycles.Clear();
+        _wallDistanceView = null;
+        _wallDistanceFrame = (1, 0);
         _entityDistances.Clear();
         _distanceView = null;
         RefreshView();
@@ -3477,23 +3481,69 @@ public sealed class WdlRuntime :
             return;
         }
 
+        // OV-20261103-careful-stop (wall-dist, round 2 wall-angles): a wall's DISTANCE is refreshed when
+        // the player's position or angle changed. A walk or a turn gives the map's |dx| + |dy| to the
+        // nearer vertex (OV-20261019-wall-distance; 10.000 at (16, 0) at every facing after a turn). A
+        // script beam without a turn gives the nearer vertex's |depth| + |lateral| in the player's view,
+        // cos and sin cut to 22.10: 9.990 for (6, 4) facing 3.1416, 7.414 for (5, 4) facing 0.5.
+        double x = player.Position.X;
+        double y = player.Position.Z;
+        double angle = WdlFixed.Quantize(GetSkill("PLAYER_ANGLE")); // the skill's 22.10 value: 0 is 0, 3.1416 is 3217/1024
+        bool turned = _wallDistanceView is not { } last || last.Angle != angle;
+        if (!turned && _wallDistanceView is { } same && same.X == x && same.Y == y)
+        {
+            return;
+        }
+
+        _wallDistanceView = (x, y, angle);
+        _wallDistanceFrame = !turned && player.LastMoveWasScripted
+            ? (Math.Truncate(Math.Cos(angle) * 1024) / 1024, Math.Truncate(Math.Sin(angle) * 1024) / 1024)
+            : (1, 0);
         foreach (Wall wall in _level.Walls)
         {
-            if (TryProximityDistance(player.Position.X, player.Position.Z, wall, out double distance))
+            if (TryWallDistance(wall, x, y, out double distance))
             {
                 wall[DistanceSkill] = distance;
             }
         }
     }
 
+    /// <summary>A wall's distance from (x, y) in the frame of the last refresh: the nearer vertex's |depth| + |lateral|.</summary>
+    private bool TryWallDistance(Wall wall, double x, double y, out double distance)
+    {
+        if (!TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by))
+        {
+            distance = 0;
+            return false;
+        }
+
+        (double cosine, double sine) = _wallDistanceFrame;
+        distance = Math.Min(ViewManhattan(ax - x, ay - y, cosine, sine), ViewManhattan(bx - x, by - y, cosine, sine));
+        return true;
+    }
+
+    /// <summary>|depth| + |lateral| of an offset seen at a facing whose cosine and sine are given.</summary>
+    private static double ViewManhattan(double dx, double dy, double cosine, double sine) =>
+        Math.Abs((dx * cosine) - (dy * sine)) + Math.Abs((dx * sine) + (dy * cosine));
+
     /// <summary>
     /// The distance the <c>DIST</c> test compares with: a thing's or actor's as last refreshed
     /// (<see cref="RefreshEntityDistances"/>, OV-20261021-distance-refresh), a wall's current one.
     /// </summary>
-    private bool TryDistTestDistance(Player player, AcknexObject target, out double distance) =>
-        target is MapEntity entity && _entityDistances.TryGetValue(entity, out distance)
-            ? true
-            : TryProximityDistance(player.Position.X, player.Position.Z, target, out distance);
+    private bool TryDistTestDistance(Player player, AcknexObject target, out double distance)
+    {
+        if (target is MapEntity entity && _entityDistances.TryGetValue(entity, out distance))
+        {
+            return true;
+        }
+
+        if (target is Wall wall)
+        {
+            return TryWallDistance(wall, player.Position.X, player.Position.Z, out distance);
+        }
+
+        return TryProximityDistance(player.Position.X, player.Position.Z, target, out distance);
+    }
 
     /// <summary>
     /// The distance a <c>DIST</c> border is compared with, the value <c>MY.DISTANCE</c> reads in
@@ -3652,6 +3702,29 @@ public sealed class WdlRuntime :
         }
 
         _skippedCycles.Remove(actor);
+
+        // A CAREFULLY actor standing nearer than its half width to a solid wall (rock beyond it) is put at
+        // the wall's hold in place of this cycle's move, the untouched axis nudged 4/1024: careful-stop's
+        // walkers placed on and 0.5 from the room's edge stood 1.049 from it after their first move, an
+        // arrival, while one exactly 1.0 from it and ones 0.07 and 0.55 from the pad's step border walked on
+        // (OV-20261103-careful-stop north-3-35, north-4-45, south-2-3, north-2-25).
+        if (actor["CAREFULLY"] > 0 &&
+            LevelTopology.LocateRegion(_level, actor.X, actor.Y) is { } standingRegion &&
+            !IsSolidRegion(standingRegion) &&
+            TryCarefulHoldPosition(actor, standingRegion, out Vector2 heldPosition))
+        {
+            // The arrival at a way point it stands on still counts: north-3-35's pushed walker headed for its
+            // next point six cycles later.
+            if (followsWay && ArriveIfStandingOnWayPoint(actor, way!))
+            {
+                TriggerObjectActionHook(actor, "IF_ARRIVED");
+            }
+
+            HoldCarefulActorAt(actor, heldPosition);
+            _arrivedTargets.Remove(actor);
+            NoteFrontMove(actor);
+            return;
+        }
 
         timeCorrection = cycleCorrection * cycles;
         _longSkippedStep = cycles > 1;
@@ -3921,7 +3994,10 @@ public sealed class WdlRuntime :
         stepX = HeldAt(stepX, dx);
         stepY = HeldAt(stepY, dy);
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);
-        return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
+        // A step that would reach the point arrives though a wall stops it short: careful-stop's walker
+        // held 0.549 before its way's end by the room's edge turned for the next point (north-3-35).
+        return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance ||
+               Math.Abs(dx - stepX) + Math.Abs(dy - stepY) < ArrivalDistance;
     }
 
     private bool AdvanceActorTowardNamedTarget(Actor actor, string target, double timeCorrection)
@@ -4008,16 +4084,20 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
-            // OV-20261020-view-activity: a skipped long step that fails its end test is tried once
-            // more at half its length before it is swept.
+            // OV-20261103-careful-stop: a skipped long step's end is tried at its full, half and quarter
+            // length. An end that is clear is taken; one before a wall the actor may not cross but within
+            // its half width goes to the hold (the swept move); one past such a border goes on to the
+            // next halving, and past it at the quarter still the actor moves half the way to the hold.
             Vector2 endStep = step;
-            bool endPointMove = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion);
-            if (!endPointMove && _longSkippedStep)
+            CarefulEndTest test = TestCarefulEndPoint(actor, step.X, step.Y, out int endRegion);
+            for (int halvings = 1; halvings <= 2 && test == CarefulEndTest.Crosses; halvings++)
             {
-                endStep = step / 2;
-                endPointMove = TryEndPointCarefulMove(actor, endStep.X, endStep.Y, out endRegion);
+                endStep = step / (1 << halvings);
+                test = TestCarefulEndPoint(actor, endStep.X, endStep.Y, out endRegion);
             }
 
+            bool endPointMove = test == CarefulEndTest.Clear;
+            bool halfWayToTheHold = test == CarefulEndTest.Crosses;
             CircleMoveResult result = endPointMove
                 ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
@@ -4035,6 +4115,20 @@ public sealed class WdlRuntime :
             double startY = y - requestedY;
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
+            const double Nudge = 4.0 / 1024;
+            if (halfWayToTheHold)
+            {
+                // From 2 before the border the walker moved 487 of the 974 units to the hold (21.524), from
+                // 2.101 it moved 538 of 1077, from 1.601 282 of 565: half, in whole units toward zero. The
+                // 4/1024 minimum then applies to the halved parts as to a step's (x alternated by 4).
+                double halfX = Math.Truncate((actor.X - start.X) * 1024 / 2) / 1024;
+                double halfY = Math.Truncate((actor.Y - start.Y) * 1024 / 2) / 1024;
+                double askedX = requestedX * scale;
+                double askedY = requestedY * scale;
+                actor.X = start.X + (Math.Abs(askedX) < Nudge - 1e-9 && Math.Abs(askedY) >= Nudge - 1e-9 ? (askedX < 0 ? -Nudge : Nudge) : halfX);
+                actor.Y = start.Y + (Math.Abs(askedY) < Nudge - 1e-9 && Math.Abs(askedX) >= Nudge - 1e-9 ? (askedY < 0 ? -Nudge : Nudge) : halfY);
+            }
+
             UpdateFootHeight(actor);
             if (result.Collided)
             {
@@ -4050,10 +4144,13 @@ public sealed class WdlRuntime :
             // (a part of −1) steps −4 (round 5).
             // The parts are those of the step taken, after the player shortened it: a step the player
             // refuses entirely has none and gets no nudge (OV-20261029-actor-step round 3, c-pi).
-            const double Nudge = 4.0 / 1024;
             double partX = requestedX * scale;
             double partY = requestedY * scale;
-            if (Math.Abs(partX) < Nudge - 1e-9 && Math.Abs(partY) >= Nudge - 1e-9)
+            if (halfWayToTheHold)
+            {
+                // nudged above
+            }
+            else if (Math.Abs(partX) < Nudge - 1e-9 && Math.Abs(partY) >= Nudge - 1e-9)
             {
                 actor.X += (partX < 0 ? -Nudge : Nudge) - partX;
             }
@@ -4216,14 +4313,69 @@ public sealed class WdlRuntime :
     /// covered the walls it can reach. Other things, actors and the player are not tested at the end
     /// either. Steps of actors that are not skipping were not measured and are always swept.
     /// </summary>
-    private bool TryEndPointCarefulMove(Actor actor, double stepX, double stepY, out int endRegion)
+    /// <summary>
+    /// Puts a <c>CAREFULLY</c> actor standing nearer than its half width to a solid wall at the wall's hold
+    /// (half width + 50/1024), the untouched axis nudged 4/1024; false when it stands clear.
+    /// </summary>
+    private bool TryCarefulHoldPosition(Actor actor, int region, out Vector2 held)
+    {
+        var start = new Vector2((float)actor.X, (float)actor.Y);
+        held = _collisionWorld.HoldOffWalls(
+            start, region, ActorCollisionRadius(actor), ActorWallClearance, (wall, current, other) => !IsSolidRegion(other), inclusive: false);
+        return held != start;
+    }
+
+    private void HoldCarefulActorAt(Actor actor, Vector2 held)
+    {
+        const double Nudge = 4.0 / 1024;
+        double x = Math.Round(held.X * 1024) / 1024;
+        double y = Math.Round(held.Y * 1024) / 1024;
+        actor.X = x == actor.X ? x + Nudge : x;
+        actor.Y = y == actor.Y ? y + Nudge : y;
+        UpdateFootHeight(actor);
+        actor["MOVED"] = 1;
+    }
+
+    /// <summary>Advances <c>WAYPOINT</c> past the point the actor stands on, as its move would have (true when it does).</summary>
+    private static bool ArriveIfStandingOnWayPoint(Actor actor, LevelWay way)
+    {
+        int waypoint = (int)Math.Truncate(actor["WAYPOINT"]);
+        waypoint = waypoint <= 0 ? 1 : waypoint > way.Points.Count ? ((waypoint - 1) % way.Points.Count) + 1 : waypoint;
+        LevelWayPoint point = way.Points[waypoint - 1];
+        if (Math.Abs(point.X - actor.X) + Math.Abs(point.Y - actor.Y) > 0.000001)
+        {
+            return false;
+        }
+
+        actor["WAYPOINT"] = (waypoint % way.Points.Count) + 1;
+        return true;
+    }
+
+    /// <summary>Whether a region index names rock: no region, or one whose floor meets its ceiling.</summary>
+    private bool IsSolidRegion(int region) =>
+        region < 0 || region >= _level.Regions.Count || _level.Regions[region].FloorHeight >= _level.Regions[region].CeilHeight;
+
+    /// <summary>How a skipped long step's end point fares (<see cref="TestCarefulEndPoint"/>).</summary>
+    private enum CarefulEndTest
+    {
+        /// <summary>The step can be taken whole.</summary>
+        Clear,
+
+        /// <summary>The end lies before a wall the actor may not cross, within its half width: the step is swept to the hold.</summary>
+        TooClose,
+
+        /// <summary>The end lies past such a border, or a free-standing wall the step crosses: a shorter step is tried.</summary>
+        Crosses,
+    }
+
+    private CarefulEndTest TestCarefulEndPoint(Actor actor, double stepX, double stepY, out int endRegion)
     {
         endRegion = actor.Region;
         double radius = ActorCollisionRadius(actor);
         double length = Math.Sqrt((stepX * stepX) + (stepY * stepY));
         if (!_longSkippedStep || length <= radius || actor.Region < 0 || actor.Region >= _level.Regions.Count)
         {
-            return false;
+            return CarefulEndTest.TooClose;
         }
 
         double directionX = stepX / length;
@@ -4237,7 +4389,7 @@ public sealed class WdlRuntime :
 
         if (region < 0 || region >= _level.Regions.Count || (region != actor.Region && !ActorCanClimbInto(actor, region)))
         {
-            return false;
+            return CarefulEndTest.Crosses;
         }
 
         double endX = actor.X + stepX;
@@ -4253,7 +4405,9 @@ public sealed class WdlRuntime :
                 TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
                 DistanceToSegment(endX, endY, ax, ay, bx, by) < radius)
             {
-                return false;
+                return TryRaySegmentDistance(actor.X, actor.Y, directionX, directionY, ax, ay, bx, by, out double crossing) && crossing <= length
+                    ? CarefulEndTest.Crosses
+                    : CarefulEndTest.TooClose;
             }
         }
 
@@ -4264,14 +4418,14 @@ public sealed class WdlRuntime :
             int other = OtherSide(wall, current);
             if (!ActorCanCross(actor, wall, current, other))
             {
-                return false;
+                return CarefulEndTest.TooClose;
             }
 
             current = other;
         }
 
         endRegion = region;
-        return true;
+        return CarefulEndTest.Clear;
     }
 
     /// <summary>The walls a segment from (x, y) along a unit direction crosses within <paramref name="length"/>, nearest first.</summary>

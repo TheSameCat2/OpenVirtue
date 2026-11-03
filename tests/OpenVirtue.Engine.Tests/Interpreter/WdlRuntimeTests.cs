@@ -3854,6 +3854,58 @@ public class WdlRuntimeTests
         Assert.Equal(33 + 1.5, plain["DISTANCE"], 6);
     }
 
+    [Fact]
+    public void Tick_WallDistance_IsTheViewsManhattanAfterAMoveAndTheMapsAfterATurn()
+    {
+        // OV-20261103-careful-stop wall-dist and round 2 wall-angles: a free-standing wall from (10, -4)
+        // to (10, 4). Moved without a turn, its DISTANCE is the nearer vertex's |depth| + |lateral| in
+        // the player's view (cos and sin cut to 22.10): 7.414 at (15, 0) facing 0.5, 8.991 facing
+        // 3.1416. In the cycle of a turn it is the map's |dx| + |dy|, and it is refreshed only when the
+        // position or the angle changed.
+        const string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX 10 -4 0;#4\nVERTEX 10 4 0;#5\nREGION room 0 16;#0\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL post 4 5 0 0 0 0;#4\nPLAYER_START 0 0 0 0;#5";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL post { }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        Wall post = level.Walls[4];
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(14, post["DISTANCE"], 6);
+
+        runtime.SetSkill("PLAYER_ANGLE", 0.5);
+        player.MoveTo(0, 16, 0);
+        WdlPlayerMotion.Apply(runtime, player, 0.25); // the motion step sees the beam
+        runtime.Tick(1.0 / 16); // a turn: the map's 6 + 4
+        Assert.Equal(10, post["DISTANCE"], 6);
+
+        player.MoveTo(0, 15, 0);
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        runtime.Tick(1.0 / 16); // a beam without a turn: (5, 4) seen at 0.5, cos 898/1024 and sin 490/1024
+        Assert.Equal(7.414, post["DISTANCE"], 3);
+
+        runtime.Tick(1.0 / 16); // nothing changed: kept
+        Assert.Equal(7.414, post["DISTANCE"], 3);
+
+        runtime.SetSkill("PLAYER_ANGLE", 3.1416);
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        runtime.Tick(1.0 / 16); // a turn without a move: the map's 5 + 4
+        Assert.Equal(9, post["DISTANCE"], 6);
+
+        player.MoveTo(0, 16, 0);
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+        runtime.Tick(1.0 / 16); // facing 3.1416, cos -1023/1024: ten units short
+        Assert.Equal(10 - (10.0 / 1024), post["DISTANCE"], 4);
+
+        runtime.SetSkill("PLAYER_VX", -4);
+        WdlPlayerMotion.Apply(runtime, player, 0.25); // a walk of 1 to (15, 0.004), its y part nudged: the map's 5 + 3.996
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(9 - (4.0 / 1024), post["DISTANCE"], 6);
+    }
+
     // A free-standing wall from (20, -8) to (20, 8) with the room on both sides.
     private const string GateMap =
         "VERTEX 20 -8 0;#0\nVERTEX 20 8 0;#1\nREGION room 0 10;#0\n" +

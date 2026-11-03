@@ -390,3 +390,17 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - a skipped actor moves in cycles 6, 12, … by six of that cycle's steps.
 
   The 3.2 step and a few one-unit pushes are open.
+
+## The refused long step, the standing hold, a wall's DISTANCE after a beam (2026-11-03 — confirmed and implemented)
+
+- `OV-20261103-careful-stop.md` — seven carriers at 60 frames a second:
+  - a skipped `CAREFULLY` actor's long step is tried whole, half and quarter: a clear end is
+    taken, one within the half width before a border goes to the 1074-unit hold, one past the
+    border at the quarter moves half the way to the hold;
+  - an actor nearer than its half width to a solid wall is put at its hold in place of its move,
+    with the standing arrival still counted; a step that would reach its way point arrives though
+    a wall stops it short;
+  - a wall's `DISTANCE` after a script beam without a turn is the nearer vertex's |depth| +
+    |lateral| in the player's view (22.10 trig), the map's |dx| + |dy| after a walk or a turn.
+
+  A walker placed in rock is left as read.
