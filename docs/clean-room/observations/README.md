@@ -325,7 +325,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 
 - `OV-20261029-actor-step.md` — a `MOVE`/`BULLET` step is `SPEED·TIME_CORR` in 22.10, split into
   `round(step·cos θ)` and `round(step·sin θ)` raw units. cos and sin are first cut toward zero to
-  22.10, which the long out-of-view steps show. 20 of 25 carriers replay line for line.
+  22.10, which the long out-of-view steps show. 20 of 25 carriers replay line for line. Addendum
+  2026-11-03: an actor in rock is held off no wall; a wall hold keeps the step's part along the
+  wall (33 of 36).
 
 ## INKEY editing (2026-10-29 — confirmed and implemented)
 

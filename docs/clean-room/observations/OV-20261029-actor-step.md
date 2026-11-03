@@ -208,3 +208,23 @@ Result: c-pi matches all 91 lines (65 before), follow-border 111 of 244 (10; its
 is the start-up), and no other carrier changed. A diagonal approach straight at the player, where
 a square and a circle part most, has not been probed.
 
+## Addendum: an actor in rock, and the hold with the step along the wall (2026-11-03, night)
+Re-read of round5 v-c-d (`OVAST0.TXT`) against the replay, no new run. The `CAREFULLY` way walker
+starts at (−20, −20), 4 outside the room's west wall, and heads for (20, −5) at `SPEED 0.5`.
+- **In rock, nothing holds.** Up to cycle 44 it steps its 93 to 104 units of x and 34 to 39 of y a
+  cycle through the wall at x = −16 as if nothing were there, ending cycle 44 at 79 units inside
+  the room. OpenVirtue held it 1074/1024 outside the wall from cycle 33 on, its regular step tested
+  against the room's walls from the room's side. Rule: an actor standing in no region is not held
+  off any wall; its regular step is free, as its long step's end test already entered the first
+  open region (OV-20261103-careful-stop). `WdlRuntime.MoveActor`.
+- **The hold keeps the step along the wall.** In cycle 45, inside the room within its half width
+  of the wall, the walker is put at the wall's hold (−15310, 1074 from the wall) in place of its
+  93 units of x, and still steps its 39 units of y. OpenVirtue took the hold alone and nudged y
+  4/1024 (OV-20261103-careful-stop's walkers all faced their walls, so their step along the wall
+  was nothing). Rule: the hold replaces the step's part along the wall's normal; the part along the
+  wall is taken; an axis the hold does not move and whose part is under 4/1024 moves 4/1024, with
+  the part's sign and positive for none. `WdlRuntime.HoldCarefulActorAt`, `_carefulHold`.
+- Result: v-c-d matches all 91 lines (35 before); the careful-stop, actor-events and border-kinds
+  carriers are unchanged (33 of 36 here; round4 w-c-y, w-c-y-fast and w-p-y differ from the
+  start, in what the walker covered during the unsampled start-up).
+

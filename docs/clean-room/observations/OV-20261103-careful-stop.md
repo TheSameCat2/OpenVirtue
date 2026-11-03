@@ -218,3 +218,11 @@ occluder's column rounding is sub-pixel and three points do not pin it; left as 
 - Result: 460 of 673 carriers (455 of 668 before): cone-w2, cone-w4, cone-w2-d20, north-4-45 and
   view-activity cone-edge match in full; dist-beam reads 48 of 112 lines (the unit residuals) and
   occlude-w2 stays open.
+
+## Addendum (2026-11-03, night): the hold and the step along the wall
+OV-20261029-actor-step round5 v-c-d, re-read: a walker put at the wall's hold still takes its
+step's part along the wall (39 units of y beside its refused 93 of x). The walkers here all faced
+their walls, so the hold alone, the untouched axis nudged 4/1024, was all they showed; the nudge
+is now the rule for an axis the hold does not move whose part is under 4/1024. An actor standing
+in no region (in rock) is held off nothing. `WdlRuntime.HoldCarefulActorAt`.
+
