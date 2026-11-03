@@ -86,3 +86,12 @@ it can be compared in an `IF`).
 `Runtime_PredefinedDefaults_…`; `ovtool oracle diff` matches the round-1 `ACCEL` carriers and
 round3 friction-quarter (the others differ from the anchor cycle on, whose `TIME_CORR` the
 harness cannot recover).
+
+## Replay notes (2026-11-02)
+- **`ONESHOT`: `PLAY` is clear when `EACH_CYCLE` runs.** In round2 anim-oneshot (trace `OVMOT0.TXT`,
+  sha256 `efd2e5b5`) the `E` line, printed by the thing's `EACH_CYCLE` in the cycle the last phase
+  ends, reads `MY.PLAY` 0; the `A` line of `EACH_TICK` just before it in the same cycle still reads 1.
+  OpenVirtue ran `EACH_CYCLE` first and cleared `PLAY` after it, so its `E` line read 1. Rule: at the
+  end of a `ONESHOT` run the engine clears `PLAY`, then runs `EACH_CYCLE`. With it the carrier matches
+  all 105 lines (was 104), and no other carrier changes. `WdlRuntime.AdvanceAnimationTarget`; test
+  `WdlRuntimeTests.Tick_OneShotTexture_ClearsPlayBeforeEachCycleRuns`.

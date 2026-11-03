@@ -4311,14 +4311,18 @@ public sealed class WdlRuntime :
             return;
         }
 
-        TriggerEachCycle(target);
-        StartAnimationLoop(texture, state, timeCorrection);
         if (texture.IsOneShot)
         {
+            // OV-20261029-motion-timing: a ONESHOT clears PLAY before its EACH_CYCLE runs.
             target["PLAY"] = 0;
             state.WasPlaying = false;
+            TriggerEachCycle(target);
+            StartAnimationLoop(texture, state, timeCorrection);
             return;
         }
+
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
 
         SetAnimationCycle(target, 1);
         QueueAnimationTextureSound(target, texture, 1);
