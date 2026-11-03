@@ -270,7 +270,7 @@ public static class LevelTopology
 
         foreach (Wall wall in level.Walls)
         {
-            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2)
+            if (!BoundsRegion(wall, regionIndex))
             {
                 continue;
             }
@@ -332,7 +332,7 @@ public static class LevelTopology
         var edges = new HashSet<(int, int)>();
         foreach (Wall wall in level.Walls)
         {
-            if ((wall.LeftRegion != regionIndex && wall.RightRegion != regionIndex) || wall.Vertex1 == wall.Vertex2 ||
+            if (!BoundsRegion(wall, regionIndex) ||
                 !edges.Add(wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1)))
             {
                 continue;
@@ -391,6 +391,18 @@ public static class LevelTopology
 
         return best;
     }
+
+    /// <summary>
+    /// Whether a wall is part of a region's boundary: it has the region on one side and another region
+    /// on the other. A free-standing wall with the same region on both sides stands inside the region
+    /// and bounds nothing; with it the region's wall graph has dangling vertices and no loop, so the
+    /// region had no outline and <c>LOCATE</c> fell through to the region around it
+    /// (OV-20261019-clip-contact addendum 2026-11-02).
+    /// </summary>
+    private static bool BoundsRegion(Wall wall, int regionIndex) =>
+        (wall.LeftRegion == regionIndex || wall.RightRegion == regionIndex) &&
+        wall.LeftRegion != wall.RightRegion &&
+        wall.Vertex1 != wall.Vertex2;
 
     private static bool ContainsPoint(Level level, List<int> loop, double x, double y)
     {

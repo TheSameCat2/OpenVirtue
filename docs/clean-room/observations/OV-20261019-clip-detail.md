@@ -80,7 +80,8 @@ Confirmed for patched V3.963:
    wall keeps its near/far state, and coming within it while within `DIST` fires `IF_NEAR`.
 4. **A wall's border is the player's region's `CLIP_DIST`**, also for a wall between two regions;
    the wall's own regions do not lower it. (A thing's or actor's is still the smaller of the
-   player's region's and its own region's, OV-20261019-clip-contact.)
+   player's region's and its own region's, OV-20261019-clip-contact.) Revised by the addendum
+   of 2026-11-02 for a wall away from the player's region.
 5. **An `INVISIBLE` wall runs no `EACH_TICK`.**
 
 ## Confidence
@@ -108,3 +109,30 @@ that and the object's own region's for a thing or actor. `DispatchProximityEvent
 The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are implemented from
 OV-20261020-view-activity, which answers the second open question above: a `BERKELEY` wall also
 runs while the player is within its `DIST`.
+
+## Addendum 2026-11-02: a free-standing wall's border is lowered to its region's CLIP_DIST
+
+Carriers (original traces, sha256 first 8): OV-20261019-clip-contact `clip-regions`
+(`OVCCX0.TXT` `19ad9a2a`), and this note's `wall-regions` (`80807bf5`) and
+`wall-regions-visible` (`f2baa539`), re-read. No new runs.
+
+Once the room in `clip-regions` locates correctly (OV-20261019-clip-contact addendum of the same
+date), its free-standing wall `cr_wall` (room `CLIP_DIST` 10 on both sides) shows a case rule 4
+did not cover: with the player in the pad (`CLIP_DIST` 30) at `MY.DISTANCE` 16 the wall never ran
+(TICKS 96–112), although 16 is inside the pad's border. OpenVirtue ran it twice there.
+`wall-regions-visible` still holds: the pad walls (room 30, pad 10) ran at 24 and 16 from the
+room, so a wall between two regions is not lowered to the smaller of its sides.
+
+Rule (revises conclusion 4): **a wall's border is the smaller of the player's region's
+`CLIP_DIST` and the larger of its two side regions'.** For a wall with the player's region on
+one side this is always the player's region's value, as rule 4 found; for a free-standing wall it
+is the smaller of the player's region's and its own region's, as for a thing. Not separated by these carriers: a wall with neither side the player's region
+and the player's value between the two sides' (the larger side or the side facing the player
+would then differ).
+
+Results (oracle diff, all carriers, on top of the free-wall outline fix): matched lines
+24092 → 24099, `clip-regions` 20 → 27 of 43, no file worse.
+
+Test: `WdlRuntimeTests.Tick_ObjectEachTick_FreeStandingWallIsGatedByItsRegionsClipDist`; the
+existing `Tick_ObjectEachTick_WallBetweenRegionsUsesThePlayersRegionClipDistAndInvisibleWallsRunNothing`
+is unchanged. `WdlRuntime.ClipBorder` applies it.
