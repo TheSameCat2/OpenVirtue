@@ -219,7 +219,9 @@ public sealed class WdlRuntime :
     private readonly Dictionary<Wall, int> _wallViewFrames = [];
 
     /// <summary>Whether an action has read a wall's <c>SEEN</c>, so every wall is tested in every frame.</summary>
-    private bool _trackWallsSeen;
+    /// <summary>The wall sample tests a frame spends on walls not yet <c>SEEN</c> (see <see cref="AccumulateWallsSeen"/>).</summary>
+    private const int WallSeenSampleBudget = 512;
+    private int _wallSeenCursor;
 
     /// <summary>The frame in which each region's <c>VISIBLE</c> was last worked out (<see cref="TestRegionView"/>).</summary>
     private readonly Dictionary<Region, int> _regionViewFrames = [];
@@ -4753,12 +4755,13 @@ public sealed class WdlRuntime :
             return;
         }
 
-        TriggerEachCycle(target);
-        StartAnimationLoop(texture, state, timeCorrection);
-
+        // The loop is back at its first cycle when its EACH_CYCLE runs: the hook read CYCLE 1 where the
+        // object's EACH_TICK of the same scheduler cycle still read the last (OV-20261029-motion-timing,
+        // anim-delay and anim-delay8 replayed).
         SetAnimationCycle(target, 1);
         QueueAnimationTextureSound(target, texture, 1);
-        state.FramesLeft = AnimationFrames(texture, 1, state);
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
     }
 
     /// <summary>Fixes the frame step and the random factor of a new animation loop.</summary>
@@ -5533,11 +5536,13 @@ public sealed class WdlRuntime :
 
         foreach (Wall wall in _level.Walls)
         {
-            if (_trackWallsSeen || wall["BERKELEY"] > 0)
+            if (wall["BERKELEY"] > 0)
             {
                 TestWallView(wall);
             }
         }
+
+        AccumulateWallsSeen();
 
         if (_trackRegionsSeen)
         {
@@ -5546,6 +5551,45 @@ public sealed class WdlRuntime :
                 TestRegionView(region);
             }
         }
+    }
+
+    /// <summary>
+    /// Sets <c>SEEN</c> on the walls the last drawn frame showed: a save after a beam still holds it for
+    /// the walls the start position showed (OV-20261029-save-format full-1 and full-2, the saves
+    /// replayed). The walls not yet seen are tested in map order from where the last frame stopped, as
+    /// many as <see cref="WallSeenSampleBudget"/> sample tests allow, so a retail level's thousands of
+    /// walls (apathy: 1200 in the cone, 15000 sample tests a frame) cost a bounded part of a frame; a
+    /// probe level's few walls are all tested every frame. A seen wall's <c>VISIBLE</c> is read on
+    /// demand (<see cref="TestWallView"/> tests once a frame).
+    /// </summary>
+    private void AccumulateWallsSeen()
+    {
+        int count = _level.Walls.Count;
+        if (count == 0 || _viewTest is null)
+        {
+            return;
+        }
+
+        long budgetEnd = _viewTest.WallSampleTests + WallSeenSampleBudget;
+        for (int i = 0; i < count; i++)
+        {
+            int index = (_wallSeenCursor + i) % count;
+            Wall wall = _level.Walls[index];
+            if (wall["SEEN"] > 0)
+            {
+                continue;
+            }
+
+            if (_viewTest.WallSampleTests >= budgetEnd)
+            {
+                _wallSeenCursor = index;
+                return;
+            }
+
+            TestWallView(wall);
+        }
+
+        _wallSeenCursor = 0;
     }
 
     /// <summary>Sets a wall's <c>VISIBLE</c> (and <c>SEEN</c>) for the last drawn frame, once a frame.</summary>
@@ -5614,7 +5658,6 @@ public sealed class WdlRuntime :
             switch (target)
             {
                 case Wall wall:
-                    _trackWallsSeen |= seen;
                     TestWallView(wall);
                     break;
                 case Region region:

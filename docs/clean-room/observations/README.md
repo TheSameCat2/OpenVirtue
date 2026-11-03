@@ -253,7 +253,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   little-endian body of self-locating sections; skill records are name, raw value, raw min, raw max.
   OpenVirtue writes `SAVE_INFO` files byte-identical to the original's, `LOAD_INFO` restores the
   `GLOBAL` and `LOCAL` skills at once, and a full original `SAVE` yields its `GLOBAL`/`PLAYER` skills
-  and player position. Seven DOSBox-X runs; implemented in `AcknexSaveFile` and `WdlRuntime`.
+  and player position. Seven DOSBox-X runs; implemented in `AcknexSaveFile` and `WdlRuntime`. Addendum 2026-11-03: `SEEN` is set in every frame a
+  wall is on the screen (the engine tests unseen walls each frame, budgeted).
 
 ## Sky (2026-10-29 — confirmed and implemented)
 
