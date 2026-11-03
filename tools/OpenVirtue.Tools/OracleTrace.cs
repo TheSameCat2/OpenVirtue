@@ -182,12 +182,17 @@ internal static class OracleTrace
     /// down. The trace scaffold prints <c>TICKS</c> right after the token, so the first column wins
     /// over later ones; then a column with fractional values (a cycle counter is whole), then the one
     /// with more distinct values, then the token with more lines. <c>null</c> if none qualifies.
+    /// A counted token that fills less than a quarter of the cycles another counted token spans
+    /// gives way to the one counting from the earliest cycle: border-climb's <c>N</c> lines print
+    /// only while the player pushes (197 lines in cycles 120…2293), its <c>TK</c> sampler every 62
+    /// cycles from cycle 1. (wall-pass-clip's <c>W</c>, from cycle 7, is a wall's event, out of phase.)
     /// </summary>
     public static OracleTimingColumn? DetectTimingColumn(IReadOnlyList<OracleTraceLine> lines)
     {
         ArgumentNullException.ThrowIfNull(lines);
         OracleTimingColumn? best = null;
         (int Column, bool Fractional, int Distinct, int Lines) bestScore = default;
+        var spans = new Dictionary<OracleTimingColumn, (int Lines, double First, double Span)>();
         foreach (IGrouping<string, OracleTraceLine> group in lines.GroupBy(static l => l.Token, StringComparer.Ordinal))
         {
             List<OracleTraceLine> tokenLines = group.ToList();
@@ -204,11 +209,31 @@ internal static class OracleTrace
                     continue;
                 }
 
+                var candidate = new OracleTimingColumn(group.Key, column);
+                if (CounterColumn(tokenLines, column) is { } counter)
+                {
+                    double first = tokenLines[0].Value(counter)!.Value;
+                    spans[candidate] = (tokenLines.Count, first, tokenLines[^1].Value(counter)!.Value - first + 1);
+                }
+
                 (int, bool, int, int) score = (column, fractional, distinct, tokenLines.Count);
                 if (best is null || Better(score, bestScore))
                 {
-                    best = new OracleTimingColumn(group.Key, column);
+                    best = candidate;
                     bestScore = score;
+                }
+            }
+        }
+
+        if (best is { } chosen && spans.TryGetValue(chosen, out (int Lines, double First, double Span) own))
+        {
+            foreach ((OracleTimingColumn other, (int _, double first, double span)) in spans)
+            {
+                (int _, double bestFirst, double bestSpan) = spans[best.Value];
+                if (other.Column == chosen.Column && span > own.Span && own.Lines < span / 4 &&
+                    (first < bestFirst || (first == bestFirst && span > bestSpan)))
+                {
+                    best = other;
                 }
             }
         }
@@ -421,6 +446,85 @@ internal static class OracleTrace
         }
 
         return steps >= minSteps ? fitter.Fit() : null;
+    }
+
+    /// <summary>
+    /// The frame cadence at the start of the sampled cycles, with its origin at the first sample: as
+    /// <see cref="FitCadence"/>, but over the longest run of 60 Hz frame steps from the first sample on.
+    /// <paramref name="firstStep"/>, the step into the first sample when its own <c>TIME_CORR</c> column
+    /// shows it, is fitted too where it agrees. <c>null</c> when the run starts slower (8-tick frames)
+    /// or the samples are not a cycle apart.
+    /// </summary>
+    public static OracleCadence? FitLeadingCadence(IReadOnlyList<double> cycleTicks, double? firstStep = null, int maxSteps = 256, int minSteps = 8)
+    {
+        ArgumentNullException.ThrowIfNull(cycleTicks);
+        var fitter = new OracleCadenceFitter();
+        fitter.TryAdd(0, 0);
+        long total = 0;
+        int steps = 0;
+        for (int i = 1; i < cycleTicks.Count && steps < maxSteps; i++)
+        {
+            double units = (SnapTicks(cycleTicks[i]) - SnapTicks(cycleTicks[i - 1])) * 32;
+            long whole = (long)Math.Round(units);
+            total += whole;
+            if (Math.Abs(units - whole) > 1e-6 || !IsFrameStep(whole / 32.0) || !fitter.TryAdd(steps + 1, total))
+            {
+                break;
+            }
+
+            steps++;
+        }
+
+        if (steps < minSteps)
+        {
+            return null;
+        }
+
+        if (firstStep is { } step && IsFrameStep(step))
+        {
+            fitter.TryAdd(-1, -(long)Math.Round(step * 32));
+        }
+
+        return fitter.Fit();
+    }
+
+    /// <summary>
+    /// The start-up frames before the first sample, in ticks, frame 1 first, from the cadence the first
+    /// samples keep (<see cref="FitLeadingCadence"/>) run backward. Every launch of the startup probe
+    /// (OV-20261103-startup-clock) ran that cadence from its second cycle: cycle 1 reads <c>TICKS</c> 0
+    /// and <c>TIME_CORR</c> 1, and is the earliest frame of the cadence whose own time is past 0, so the
+    /// step into cycle 2 (9 to 17 thirty-seconds) is the rest of the time since the clock started.
+    /// Frame 1's duration is the runtime's to ignore. <c>null</c> when no cadence fits, or when the
+    /// first sample is cycle 1's.
+    /// </summary>
+    public static IReadOnlyList<double>? StartupFrames(IReadOnlyList<double> cycleTicks, double? firstStep = null)
+    {
+        ArgumentNullException.ThrowIfNull(cycleTicks);
+        if (cycleTicks.Count == 0 || FitLeadingCadence(cycleTicks, firstStep) is not { } cadence)
+        {
+            return null;
+        }
+
+        long first = (long)Math.Round(SnapTicks(cycleTicks[0]) * 32);
+        long Position(long k) => first + cadence.Units(k);
+        long k1 = 0;
+        while (Position(k1 - 1) > 0)
+        {
+            k1--;
+        }
+
+        if (k1 == 0 || Position(k1) <= 0)
+        {
+            return null;
+        }
+
+        var frames = new List<double> { (Position(k1) - Position(k1 - 1)) / 32.0, Position(k1 + 1) / 32.0 };
+        for (long k = k1 + 2; k <= 0; k++)
+        {
+            frames.Add((Position(k) - Position(k - 1)) / 32.0);
+        }
+
+        return frames;
     }
 
     /// <summary>
