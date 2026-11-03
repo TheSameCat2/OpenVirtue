@@ -252,3 +252,36 @@ Tests: `LevelTopologyTests.LocateRegion_RoomWithAFreeStandingWall_FindsTheRoomNo
 `LOCATE`, actor relocation and the floor mesh all get the outline. `WdlRuntime.Locate` records
 the player's previous region and position; `IsWithinClipDistance` reads it through
 `ClipGateRegion` until the end of the object pass.
+
+## Addendum: hook order, the LIBER sentinel and the actor's refresh (2026-11-02)
+Read from the existing traces of clip-near (`OVCCX0.TXT`, sha256 `c234835f`) and clip-move
+(`OVCCX0.TXT`, `a8c8688c`). No new run.
+
+- clip-near: in the cycle the player comes within the actor's `DIST`, the actor's `EACH_TICK`
+  line (`A`) comes before its `IF_NEAR` line (`NA`), and both before the things' lines (`L`). A
+  thing's `IF_NEAR` also follows its own `EACH_TICK`. So the `DIST` edge fires in the object's
+  own turn of the object pass, right after its `EACH_TICK`, not in a pass before the objects.
+- clip-near: the `LIBER` thing `cn_l` (`DIST` 15, `CLIP_DIST` 10) reads 65535.999 until the
+  player first comes within 15 = 1.5 × its border (cycle 49, 14.461), although it is
+  `DIST`-tested at any range. The `DIST` test does not write the distance it compares with into
+  `DISTANCE` before the distance has started.
+- clip-move: an actor's `DISTANCE` shows its move only from the next cycle. The FOLLOW actor read
+  9.000 in the cycle that took it to 7.406, and 7.406 in the next. Only a move that ends in front
+  of the player and within the `CLIP_DIST × ACTOR_DIST` border (|dx| + |dy| < 10) triggers that
+  refresh. The WAY actor's move to 39.563 ended 11.563 away and refreshed nothing (W stays 9.969).
+- clip-move: the border gate reads the refreshed distance too. The WAY actor, 11.563 away after its
+  move but at a `DISTANCE` of 9.969, still ran its `EACH_TICK` and moved in the next cycle (orig
+  TK(46) at x = 42.750).
+
+Implemented: `DispatchDistEdge` runs in `RunObjectPass` after each object's `EACH_TICK`.
+`TryCurrentProximity` writes `DISTANCE` only for a wall or a started thing or actor.
+`NoteFrontMove` also requires the end of the move to lie within `ClipBorder`, the forced in-cycle
+refresh after the actors' moves and on a `DISTANCE` read is gone, and `IsWithinClipDistance`
+compares with `TryDistTestDistance`. Oracle diff: clip-move 27/56 → 56/56 (full match), clip-near
+119/208 → 175/208 and `OVSTA0` 1/3 → 3/3. The rest of clip-near is a thing's `EACH_CYCLE` count
+and a 9.562/9.563 print rounding, both outside this rule. Over the whole diff, 291 → 294 full
+carriers and no file got worse. Tests: `Tick_PlayerProximity_DistEdgeFiresInTheObjectsTurnAfterItsEachTick`,
+`Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts`,
+`Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance`, and
+`Tick_EachTickActions_ReadDistanceRefreshedAtCycleStart` (which replaces
+`..._ReadDistanceFromCurrentPlayerAndMovedActorPositions`).

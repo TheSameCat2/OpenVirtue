@@ -172,6 +172,9 @@ public sealed class WdlRuntime :
     private readonly string? _startupAction;
     private readonly string? _printDirectory;
     private readonly Dictionary<AcknexObject, bool> _proximityStates = [];
+
+    /// <summary>What the player's movement in the previous cycle passed through or pushed against (<see cref="DispatchProximityEvents"/>).</summary>
+    private readonly HashSet<AcknexObject> _touchedThisCycle = [];
     private readonly HashSet<MapEntity> _distanceStarted = [];
     private readonly HashSet<AcknexObject> _arrivedTargets = [];
 
@@ -478,6 +481,7 @@ public sealed class WdlRuntime :
         _distanceView = null;
         RefreshView();
         _proximityStates.Clear();
+        _touchedThisCycle.Clear();
         _arrivedTargets.Clear();
         _actorTargetStates.Clear();
         _textureAnimationStates.Clear();
@@ -2305,9 +2309,10 @@ public sealed class WdlRuntime :
     /// global <c>TIME_CORR</c> skill that movement/animation scripts scale by (see <see cref="Timing"/>).
     /// Global and object-level <c>EACH_TICK</c> hooks are dispatched after the correction is set.
     /// Waiting actions resume first and count the frame down last (see <see cref="CountDownWaitingActions"/>).
-    /// The player's region events and the proximity events come after the global slots and before
-    /// the object pass (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count
-    /// the global slot has just raised).
+    /// The player's region events come after the global slots and before the object pass
+    /// (OV-20261019-actor-contact round 8: a walker's <c>IF_ENTER</c> sees the count the global slot
+    /// has just raised); the proximity events fire in each object's turn of the pass
+    /// (<see cref="RunObjectPass"/>).
     /// Walls' <c>DISTANCE</c> is refreshed before the resumed actions (see <see cref="RefreshWallDistances"/>);
     /// things' and actors' only when the view changed or an actor in front of the player moved (see
     /// <see cref="RefreshEntityDistances"/>).
@@ -3184,71 +3189,109 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Fires <c>IF_NEAR</c> once when the player comes within an object's <c>DIST</c> and
-    /// <c>IF_FAR</c> once when they leave it. Checked every cycle from the current positions, so
-    /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
-    /// the hook (OV-20261019-proximity-events). A wall's <c>IF_NEAR</c> also fires in every cycle
-    /// after the player's movement passed through the wall or pushed against it, unless the player
-    /// is within its <c>DIST</c>. This leaves the <c>DIST</c> state alone, so no <c>IF_FAR</c>
-    /// follows, and with <c>DIST 0</c> it is the only way the wall fires (OV-20261019-wall-pass-clip).
-    /// The same holds for a wall between two regions, and for a thing or actor the player pushed
-    /// against. A thing or actor outside its <c>CLIP_DIST</c> border (see
-    /// <see cref="IsWithinClipDistance"/>) is not tested at all and keeps its state, so it fires
-    /// <c>IF_NEAR</c> when it comes within the border while the player is within <c>DIST</c>, and
-    /// no <c>IF_FAR</c> when it leaves the border (OV-20261019-clip-contact).
+    /// Takes what the player's movement in the previous cycle passed through or pushed against, for
+    /// the object pass (<see cref="DispatchTouched"/>). Without a player no object is near.
     /// </summary>
     private void DispatchProximityEvents()
     {
+        _touchedThisCycle.Clear();
         if (GetObject("player") is not Player player)
         {
             _proximityStates.Clear();
             return;
         }
 
-        AcknexObject[] touched = player.TakeTouchedObjects();
-        foreach (AcknexObject target in CurrentProximityTargets())
+        _touchedThisCycle.UnionWith(player.TakeTouchedObjects());
+    }
+
+    /// <summary>
+    /// Fires a wall's <c>IF_NEAR</c> in every cycle after the player's movement passed through the
+    /// wall or pushed against it, unless the player is within its <c>DIST</c>, in the wall's turn of
+    /// the object pass before its <c>EACH_TICK</c> (OV-20261019-wall-pass-clip, pass-dist0: the
+    /// <c>IF_NEAR</c> comes before the wall's own <c>EACH_TICK</c> output; OV-20261019-clip-detail,
+    /// berkeley-wall: after the <c>EACH_TICK</c> of a wall the pass reaches first). This leaves the
+    /// <c>DIST</c> state alone, so no <c>IF_FAR</c> follows, and with <c>DIST 0</c> it is the only
+    /// way the wall fires. The same holds for a wall between two regions, and for a thing or actor
+    /// the player pushed against, unless it is outside its <c>CLIP_DIST</c> border. The <c>DIST</c>
+    /// edges themselves fire after the <c>EACH_TICK</c> (<see cref="DispatchDistEdge"/>).
+    /// </summary>
+    private void DispatchTouched(AcknexObject target)
+    {
+        if (_touchedThisCycle.Count == 0 ||
+            !_touchedThisCycle.Remove(target) ||
+            GetObject("player") is not Player player ||
+            !ShouldTrackProximity(target))
         {
-            if (!ShouldTrackProximity(target))
-            {
-                _proximityStates.Remove(target);
-                continue;
-            }
+            return;
+        }
 
-            bool withinBorder = IsWithinClipDistance(target);
-            if (target is MapEntity && !withinBorder)
-            {
-                continue;
-            }
+        bool withinBorder = IsWithinClipDistance(target);
+        if (target is MapEntity && !withinBorder)
+        {
+            return;
+        }
 
-            // OV-20261019-clip-detail: a wall outside its CLIP_DIST border is not DIST-tested either
-            // and keeps its state; passing or touching it still counts.
-            bool wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
-            bool isNear = wasNear;
-            if (withinBorder)
-            {
-                if (TryCurrentProximity(player, target, out isNear))
-                {
-                    _proximityStates[target] = isNear;
-                }
-                else
-                {
-                    _proximityStates.Remove(target);
-                    wasNear = false;
-                }
-            }
+        // A target the player is within DIST of, by its kept state or by the test that follows its
+        // EACH_TICK, fires from the DIST edge instead.
+        bool isNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+        if (!isNear && withinBorder &&
+            TryCurrentProximity(player, target, out bool nearNow, writeDistance: false))
+        {
+            isNear = nearNow;
+        }
 
-            if (isNear && !wasNear)
-            {
-                TriggerObjectActionHook(target, "IF_NEAR");
-            }
-            else if (!isNear && wasNear)
-            {
-                TriggerObjectActionHook(target, "IF_FAR");
-            }
-            else if (!isNear && Array.IndexOf(touched, target) >= 0)
-            {
-                TriggerObjectActionHook(target, "IF_NEAR");
-            }
+        if (!isNear)
+        {
+            TriggerObjectActionHook(target, "IF_NEAR");
+        }
+    }
+
+    /// <summary>
+    /// Fires <c>IF_NEAR</c> once when the player comes within a thing's, actor's or wall's
+    /// <c>DIST</c> and <c>IF_FAR</c> once when they leave it, in the object's own turn of the object
+    /// pass right after its <c>EACH_TICK</c> (OV-20261019-clip-detail, berkeley-wall: a wall's
+    /// <c>EACH_TICK</c> output comes before its <c>IF_NEAR</c>'s; OV-20261019-clip-contact, clip-near:
+    /// an actor's comes before the things'). Checked every cycle from the current positions, so
+    /// walking, a beam and a moving actor all count; standing within <c>DIST</c> does not repeat
+    /// the hook (OV-20261019-proximity-events). A thing or actor outside its <c>CLIP_DIST</c> border
+    /// (see <see cref="IsWithinClipDistance"/>) is not tested at all and keeps its state, so it fires
+    /// <c>IF_NEAR</c> when it comes within the border while the player is within <c>DIST</c>, and
+    /// no <c>IF_FAR</c> when it leaves the border (OV-20261019-clip-contact). A wall outside its
+    /// border is not tested either and keeps its state (OV-20261019-clip-detail).
+    /// </summary>
+    private void DispatchDistEdge(AcknexObject target)
+    {
+        if (target is not (MapEntity or Wall) || GetObject("player") is not Player player)
+        {
+            return;
+        }
+
+        if (!ShouldTrackProximity(target))
+        {
+            _proximityStates.Remove(target);
+            return;
+        }
+
+        if (!IsWithinClipDistance(target))
+        {
+            return;
+        }
+
+        bool wasNear = _proximityStates.TryGetValue(target, out bool previous) && previous;
+        if (!TryCurrentProximity(player, target, out bool isNear))
+        {
+            _proximityStates.Remove(target);
+            return;
+        }
+
+        _proximityStates[target] = isNear;
+        if (isNear && !wasNear)
+        {
+            TriggerObjectActionHook(target, "IF_NEAR");
+        }
+        else if (!isNear && wasNear)
+        {
+            TriggerObjectActionHook(target, "IF_FAR");
         }
     }
 
@@ -3278,25 +3321,12 @@ public sealed class WdlRuntime :
         }
     }
 
-    private IEnumerable<AcknexObject> CurrentProximityTargets()
-    {
-        foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
-        {
-            yield return entity;
-        }
-
-        foreach (Wall wall in _level.Walls)
-        {
-            yield return wall;
-        }
-    }
-
     private static bool ShouldTrackProximity(AcknexObject target) =>
         !IsInactiveEntity(target) &&
         (TryGetObjectActionHook(target, "IF_NEAR", out _) ||
          TryGetObjectActionHook(target, "IF_FAR", out _));
 
-    private bool TryCurrentProximity(Player player, AcknexObject target, out bool isNear)
+    private bool TryCurrentProximity(Player player, AcknexObject target, out bool isNear, bool writeDistance = true)
     {
         double threshold = target["DIST"];
         if (threshold <= 0)
@@ -3312,7 +3342,14 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        target[DistanceSkill] = distance;
+        // OV-20261019-actor-contact (2026-11-02): a LIBER thing or actor is DIST-tested at any range,
+        // but its DISTANCE keeps the 65535.999 sentinel until the player first comes within the start
+        // radius (RefreshEntityDistances); the test compares with the distance all the same.
+        if (writeDistance && (target is not MapEntity started || _distanceStarted.Contains(started)))
+        {
+            target[DistanceSkill] = distance;
+        }
+
         // OV-20261019-actor-contact: the border itself is outside (strictly less than DIST), and a
         // thing or actor is near only while the eye is also less than DIST above or below its centre.
         isNear = distance < threshold &&
@@ -3389,7 +3426,9 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// Whether an object's actions run this cycle. The original runs a wall's <c>EACH_TICK</c> only
-    /// while its distance from the player (<see cref="TryProximityDistance"/>) is below
+    /// while its distance from the player (<see cref="TryDistTestDistance"/>: a thing's or actor's as
+    /// last refreshed, so an actor that walked out of the border keeps running and moving until the
+    /// next refresh; OV-20261019-clip-contact, clip-move) is below
     /// <c>CLIP_DIST</c>, a thing's below <c>CLIP_DIST × THING_DIST</c> and an actor's below
     /// <c>CLIP_DIST × ACTOR_DIST</c> (OV-20261019-wall-pass-clip). <c>CLIP_DIST</c> is the smaller
     /// of the player's region's and the object's own region's (a wall's: its side regions'). Outside
@@ -3403,7 +3442,7 @@ public sealed class WdlRuntime :
         if (target is not (Wall or MapEntity) ||
             GetObject("player") is not Player player ||
             RegionAt(ClipGateRegion(player)) is not { } region ||
-            !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
+            !TryDistTestDistance(player, target, out double distance))
         {
             return true;
         }
@@ -4176,9 +4215,12 @@ public sealed class WdlRuntime :
     /// The objects' part of a cycle, after the global slots, in the original's order
     /// (OV-20261029-scheduler-order): the regions, then the actors, the things and the walls, each
     /// kind from the last the map places to the first (the region order is assumed, one region was
-    /// measured). Each object runs its <c>EACH_TICK</c>, read when its turn comes so a <c>SET</c>
-    /// earlier in the cycle counts, and then steps its texture animation, which runs its
-    /// <c>EACH_CYCLE</c> when a cycle ends.
+    /// measured). Each object fires the <c>IF_NEAR</c> of a wall passed in the previous cycle
+    /// (<see cref="DispatchTouched"/>), runs its <c>EACH_TICK</c>, read when its turn comes so a
+    /// <c>SET</c> earlier in the cycle counts, fires its <c>DIST</c> edge (<see cref="DispatchDistEdge"/>),
+    /// and then steps its texture animation, which runs its <c>EACH_CYCLE</c> when a cycle ends. An
+    /// actor moves first; a move in front of the player refreshes the distances only at the start of
+    /// the next cycle (<see cref="NoteFrontMove"/>).
     /// </summary>
     private void RunObjectPass(double timeCorrection)
     {
@@ -4210,42 +4252,24 @@ public sealed class WdlRuntime :
             order.Add(_level.Walls[i]);
         }
 
-        bool actorsDone = false;
         foreach (AcknexObject target in order)
         {
             if (target is Actor actor)
             {
                 AdvanceActorTarget(actor, timeCorrection);
             }
-            else if (!actorsDone && target is not Region)
-            {
-                actorsDone = true;
-                FinishActorMoves();
-            }
 
+            DispatchTouched(target);
             RunObjectEachTick(target);
+            DispatchDistEdge(target);
             if (timeCorrection > 0)
             {
                 AdvanceAnimationCycle(target, timeCorrection);
             }
         }
 
-        if (!actorsDone)
-        {
-            FinishActorMoves();
-        }
-
         order.Clear();
         _clipRegionBeforeLocate = null;
-    }
-
-    private void FinishActorMoves()
-    {
-        if (_frontActorMoved)
-        {
-            // OV-20261020-view-activity round 9: the moves and the refreshed distances show together.
-            RefreshEntityDistances(force: true);
-        }
     }
 
     private void RunObjectEachTick(AcknexObject target)
@@ -5187,13 +5211,6 @@ public sealed class WdlRuntime :
                     break;
             }
         }
-        else if (_frontActorMoved && target is MapEntity && memberName.Equals("DISTANCE", StringComparison.OrdinalIgnoreCase))
-        {
-            // Actors now move in their turn of the object pass (OV-20261029-actor-events); a script
-            // that reads DISTANCE after an actor in front moved sees it refreshed, as the moves and
-            // the refreshed distances show together (OV-20261020-view-activity round 9).
-            RefreshEntityDistances(force: true);
-        }
 
         return target[memberName];
     }
@@ -5203,14 +5220,16 @@ public sealed class WdlRuntime :
     /// <c>DIST</c> test (<c>IF_NEAR</c>/<c>IF_FAR</c>, <see cref="IsWithinDist"/>) and the
     /// <c>SKIP_FRAMES</c> near range read. The original refreshes them all at once, and only when
     /// the view changed since the last refresh (the player walked or was beamed, turned or tilted)
-    /// or an actor in front of the player walked; between refreshes they keep their value, however
+    /// or an actor walked in front of the player within its border (<see cref="NoteFrontMove"/>),
+    /// at the start of the next cycle; between refreshes they keep their value, however
     /// far the objects move (OV-20261020-view-activity rule 5, OV-20261021-distance-refresh). A
     /// script's <c>SET</c> of a thing's or actor's position refreshes nothing, and reading
     /// <c>DISTANCE</c> refreshes nothing. A thing's or actor's <c>DISTANCE</c> reads 65535.999
     /// until the player first comes within 1.5 times its <c>CLIP_DIST</c> border, <c>LIBER</c> or
-    /// not (OV-20261019-actor-contact). <paramref name="force"/> refreshes after a move in front.
+    /// not (OV-20261019-actor-contact), also for a <c>LIBER</c> one the <c>DIST</c> test compares
+    /// with before then (<see cref="TryCurrentProximity"/>).
     /// </summary>
-    private void RefreshEntityDistances(bool force = false)
+    private void RefreshEntityDistances()
     {
         if (GetObject("player") is not Player player)
         {
@@ -5224,7 +5243,7 @@ public sealed class WdlRuntime :
             GetSkill("PLAYER_ANGLE"),
             GetSkill("PLAYER_TILT"),
             GetSkill("PLAYER_ARC"));
-        if (!force && !_frontActorMoved && _distanceView == view && _entityDistances.Count == _levelObjects.OfType<MapEntity>().Count())
+        if (!_frontActorMoved && _distanceView == view && _entityDistances.Count == _levelObjects.OfType<MapEntity>().Count())
         {
             return;
         }
@@ -5255,7 +5274,13 @@ public sealed class WdlRuntime :
     /// <summary>What a change of refreshes the things' and actors' distances (<see cref="RefreshEntityDistances"/>).</summary>
     private readonly record struct DistanceView(double X, double Y, double EyeHeight, double Angle, double Tilt, double Arc);
 
-    /// <summary>Notes an actor's move this cycle when it ends in front of the player (see <see cref="RefreshEntityDistances"/>).</summary>
+    /// <summary>
+    /// Notes an actor's move this cycle when it ends in front of the player and within its
+    /// <c>CLIP_DIST × ACTOR_DIST</c> border (|dx| + |dy|, <c>LIBER</c> or not), so that the next
+    /// cycle's <see cref="RefreshEntityDistances"/> runs. The move shows in <c>DISTANCE</c> only from
+    /// then: in clip-move a FOLLOW actor read 9 in the cycle that took it to 7.406, and a WAY actor's
+    /// move that ended 11.563 away, outside the border 10, refreshed nothing (OV-20261019-clip-contact).
+    /// </summary>
     private void NoteFrontMove(Actor actor, double startX, double startY)
     {
         if ((actor.X == startX && actor.Y == startY) || GetObject("player") is not Player player)
@@ -5264,8 +5289,12 @@ public sealed class WdlRuntime :
         }
 
         double angle = GetSkill("PLAYER_ANGLE");
-        double depth = ((actor.X - player.Position.X) * Math.Cos(angle)) + ((actor.Y - player.Position.Z) * Math.Sin(angle));
-        _frontActorMoved |= depth > 0;
+        double dx = actor.X - player.Position.X;
+        double dy = actor.Y - player.Position.Z;
+        double depth = (dx * Math.Cos(angle)) + (dy * Math.Sin(angle));
+        _frontActorMoved |= depth > 0 &&
+                            (RegionAt(player.Region) is not { } playerRegion ||
+                             Math.Abs(dx) + Math.Abs(dy) < ClipBorder(actor, playerRegion));
     }
 
     private Viewer? CurrentViewer()
