@@ -114,3 +114,9 @@ the cycle, `TIME_CORR` and the actor's X every cycle from the first.
 turn), with `DISTANCE` refreshed on read after a front actor moved. Tests: `WdlActorMotionTests`
 (`Tick_AssignedWay_…`, `Tick_TargetVertex_StopsAtTargetAndDispatchesArrivalInEveryCycleThere`,
 `Tick_NamedObjectTarget_…`).
+
+## Addendum: no in-cycle distance refresh (2026-11-02)
+The refresh on read after an actor in front moved (see Implementation) is gone. In clip-move
+(OV-20261019-clip-contact, trace sha256 `a8c8688c`), an actor's own `EACH_TICK` reads the
+distance from before its move. Its move shows from the next cycle's start, and only when it ends
+within the actor's `CLIP_DIST` border. No carrier of this note changed in the oracle diff.

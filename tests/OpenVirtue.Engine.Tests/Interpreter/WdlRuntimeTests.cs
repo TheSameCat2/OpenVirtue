@@ -3577,10 +3577,11 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Tick_EachTickActions_ReadDistanceFromCurrentPlayerAndMovedActorPositions()
+    public void Tick_EachTickActions_ReadDistanceRefreshedAtCycleStart()
     {
-        // MY.DISTANCE is refreshed every cycle, and again after the actors move, for every thing
-        // and actor whether or not it has a proximity hook.
+        // MY.DISTANCE is refreshed at the start of a cycle for every thing and actor whether or not
+        // it has a proximity hook; an actor's move in front of the player shows only from the next
+        // cycle (OV-20261019-clip-contact, clip-move, 2026-11-02).
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
             "REGION room 0 10;#0\nTHING post 5 5 0 0;#1\nACTOR runner 10 5 0 0;#2\n" +
@@ -3600,11 +3601,16 @@ public class WdlRuntimeTests
         runtime.Tick(1.0 / 16);
         Assert.Equal(8, runtime.GetSkill("post_dist"), 6);
         Assert.Equal(12, runner.X, 6);
-        Assert.Equal(15, runtime.GetSkill("runner_dist"), 6);
+        Assert.Equal(9 + 4, runtime.GetSkill("runner_dist"), 6);
 
         player.MoveTo(0, 7, 6.5f);
         runtime.Tick(1.0 / 16);
         Assert.Equal(3.5, runtime.GetSkill("post_dist"), 6);
+        Assert.Equal(14, runner.X, 6);
+        Assert.Equal(12 - 7 + 1.5, runtime.GetSkill("runner_dist"), 6);
+
+        // The player stands still: the runner's last move, in front, refreshes the next cycle.
+        runtime.Tick(1.0 / 16);
         Assert.Equal(14 - 7 + 1.5, runtime.GetSkill("runner_dist"), 6);
     }
 
@@ -4345,6 +4351,120 @@ public class WdlRuntimeTests
         player.MoveTo(0, 10, 0);
         runtime.Tick(1.0 / 16);
         Assert.Equal(0, runtime.GetSkill("far_count"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_DistEdgeFiresInTheObjectsTurnAfterItsEachTick()
+    {
+        // OV-20261019-clip-detail, berkeley-wall, and OV-20261019-clip-contact, clip-near: the pass
+        // runs the later thing first, its EACH_TICK (3) and then its IF_NEAR (2), and then the
+        // earlier thing's EACH_TICK (1).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING first 30 30 0 0;#0\nTHING second 10 0 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            "THING first { EACH_TICK first_tick; } THING second { DIST 5; IF_NEAR second_near; EACH_TICK second_tick; } " +
+            "ACTION first_tick { RULE order = order * 10 + 1; } ACTION second_near { RULE order = order * 10 + 2; } " +
+            "ACTION second_tick { RULE order = order * 10 + 3; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveTo(0, 7, 0); // 3 from the second thing
+        runtime.SetSkill("order", 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(321, runtime.GetSkill("order"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_PassedWallFiresInItsTurnBeforeItsEachTick()
+    {
+        // OV-20261019-wall-pass-clip, pass-dist0, and OV-20261019-clip-detail, berkeley-wall: the
+        // IF_NEAR of a wall passed in the previous cycle (2) comes after the EACH_TICK of a wall the
+        // pass reaches first (1) and before the passed wall's own EACH_TICK (3).
+        const string map =
+            "VERTEX 20 -8 0;#0\nVERTEX 20 8 0;#1\nVERTEX 30 -8 0;#2\nVERTEX 30 8 0;#3\nREGION room 0 10;#0\n" +
+            "WALL gate 0 1 0 0 0 0;#0\nWALL post 2 3 0 0 0 0;#1\nPLAYER_START 10 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL order { VAL 0; } " +
+            "WALL gate { IF_NEAR gate_near; EACH_TICK gate_tick; FLAGS PASSABLE; } " +
+            "WALL post { EACH_TICK post_tick; FLAGS PASSABLE; } " +
+            "ACTION post_tick { RULE order = order * 10 + 1; } ACTION gate_near { RULE order = order * 10 + 2; } " +
+            "ACTION gate_tick { RULE order = order * 10 + 3; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 16, 0);
+        runtime.Tick(1.0 / 16);
+
+        player.MoveHorizontal(5, 0); // through the gate at x = 20
+        runtime.SetSkill("order", 0);
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(123, runtime.GetSkill("order"));
+    }
+
+    [Fact]
+    public void Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts()
+    {
+        // OV-20261019-actor-contact, distance-refresh, and OV-20261019-clip-contact, clip-near: a
+        // LIBER thing is DIST-tested at any range, but its DISTANCE reads 65535.999 until the player
+        // first comes within 1.5 x CLIP_DIST.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING beacon 24 16 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            GateCounters + "REGION room { CLIP_DIST 10; } THING beacon { DIST 30; IF_NEAR near_gate; FLAGS LIBER; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        Thing beacon = Assert.Single(level.Things);
+        runtime.Tick(1.0 / 16); // 40
+        Assert.Equal(0, runtime.GetSkill("near_count"));
+
+        player.MoveTo(0, 0, 16); // 24: within DIST, beyond 15
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+        Assert.Equal(65535.999, runtime.GetSkill("near_dist"), 3);
+        Assert.Equal(65535.999, beacon["DISTANCE"], 3);
+
+        player.MoveTo(0, 10, 16); // 14
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(14, beacon["DISTANCE"], 3);
+    }
+
+    [Fact]
+    public void Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance()
+    {
+        // OV-20261019-clip-contact, clip-move: CLIP_DIST 10. The runner's moves in front refresh the
+        // distances from the next cycle while they end within the border; the move that leaves it
+        // refreshes nothing, so the runner keeps the distance 9 and keeps running and moving.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR runner 5 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } SKILL runner_dist { VAL -1; } REGION room { CLIP_DIST 10; } " +
+            "ACTOR runner { TARGET MOVE; SPEED 2; EACH_TICK runner_tick; } " +
+            "ACTION runner_tick { RULE runs += 1; RULE runner_dist = my.DISTANCE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        Actor runner = Assert.Single(level.Actors);
+
+        runtime.Tick(1.0 / 16); // reads 5, moves to 7
+        runtime.Tick(1.0 / 16); // reads 7, moves to 9
+        runtime.Tick(1.0 / 16); // reads 9, moves to 11: outside, no refresh
+        Assert.Equal(11, runner.X, 6);
+        Assert.Equal(9, runtime.GetSkill("runner_dist"), 6);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(4, runtime.GetSkill("runs"));
+        Assert.Equal(13, runner.X, 6);
+        Assert.Equal(9, runner["DISTANCE"], 6);
     }
 
     [Fact]

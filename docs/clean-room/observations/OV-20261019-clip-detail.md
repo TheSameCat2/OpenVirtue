@@ -108,3 +108,20 @@ that and the object's own region's for a thing or actor. `DispatchProximityEvent
 The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are implemented from
 OV-20261020-view-activity, which answers the second open question above: a `BERKELEY` wall also
 runs while the player is within its `DIST`.
+
+## Addendum: where the wall hooks run in the cycle (2026-11-02)
+Read from the existing berkeley-wall trace (`OVCDX0.TXT`, sha256 `de82696c`). No new run.
+
+The pass runs walls from the last in the map to the first, so `bw_c` (#13, `C`) comes before
+`bw_b` (#12, `B`). In cycle 14 the original prints `C`, `B` and then `N`, the `BERKELEY` wall's
+`DIST`-edge `IF_NEAR` (3 < `DIST` 4). The `DIST` edge therefore fires in the wall's own turn of
+the object pass, after its `EACH_TICK`. In cycle 20 it prints `C` and then `N`. That `N` is the
+pass-through `IF_NEAR` for the crossing in cycle 19's movement (the player is 4.78 from the
+nearer vertex, outside `DIST`), and `bw_b`, now behind the player, runs no `EACH_TICK`. So the
+deferred pass-through `IF_NEAR` also waits for the wall's turn instead of firing before the pass.
+pass-dist0 (OV-20261019-wall-pass-clip) puts it before the wall's own `EACH_TICK`.
+
+Implemented: `DispatchTouched` (before the `EACH_TICK`) and `DispatchDistEdge` (after it) run in
+`RunObjectPass`. `DispatchProximityEvents` now only takes the touched walls. berkeley-wall
+`OVCDX0` goes from 69/77 to 77/77, a full match. Test:
+`Tick_PlayerProximity_PassedWallFiresInItsTurnBeforeItsEachTick`.
