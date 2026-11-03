@@ -3857,11 +3857,11 @@ public class WdlRuntimeTests
     [Fact]
     public void Tick_WallDistance_IsTheViewsManhattanAfterAMoveAndTheMapsAfterATurn()
     {
-        // OV-20261103-careful-stop wall-dist and round 2 wall-angles: a free-standing wall from (10, -4)
-        // to (10, 4). Moved without a turn, its DISTANCE is the nearer vertex's |depth| + |lateral| in
-        // the player's view (cos and sin cut to 22.10): 7.414 at (15, 0) facing 0.5, 8.991 facing
-        // 3.1416. In the cycle of a turn it is the map's |dx| + |dy|, and it is refreshed only when the
-        // position or the angle changed.
+        // OV-20261103-careful-stop wall-dist and rounds 2 and 3: a free-standing wall from (10, -4) to
+        // (10, 4). Moved without a turn, by a beam or a walk, its DISTANCE is the nearer vertex's
+        // |depth| + |lateral| in the player's view (cos and sin cut to 22.10): 7.414 at (15, 0) facing
+        // 0.5, 8.991 facing 3.1416. In the cycle of a turn it is the map's |dx| + |dy|, and it is
+        // refreshed only when the position or the angle changed.
         const string map =
             "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
             "VERTEX 10 -4 0;#4\nVERTEX 10 4 0;#5\nREGION room 0 16;#0\n" +
@@ -3901,9 +3901,9 @@ public class WdlRuntimeTests
         Assert.Equal(10 - (10.0 / 1024), post["DISTANCE"], 4);
 
         runtime.SetSkill("PLAYER_VX", -4);
-        WdlPlayerMotion.Apply(runtime, player, 0.25); // a walk of 1 to (15, 0.004), its y part nudged: the map's 5 + 3.996
+        WdlPlayerMotion.Apply(runtime, player, 0.25); // a walk of 1 to (15, 0.004), its y part nudged: the view's again
         runtime.Tick(1.0 / 16);
-        Assert.Equal(9 - (4.0 / 1024), post["DISTANCE"], 6);
+        Assert.Equal((9 - (4.0 / 1024)) * 1023 / 1024, post["DISTANCE"], 4);
     }
 
     // A free-standing wall from (20, -8) to (20, 8) with the room on both sides.

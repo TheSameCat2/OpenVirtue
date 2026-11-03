@@ -3481,11 +3481,11 @@ public sealed class WdlRuntime :
             return;
         }
 
-        // OV-20261103-careful-stop (wall-dist, round 2 wall-angles): a wall's DISTANCE is refreshed when
-        // the player's position or angle changed. A walk or a turn gives the map's |dx| + |dy| to the
-        // nearer vertex (OV-20261019-wall-distance; 10.000 at (16, 0) at every facing after a turn). A
-        // script beam without a turn gives the nearer vertex's |depth| + |lateral| in the player's view,
-        // cos and sin cut to 22.10: 9.990 for (6, 4) facing 3.1416, 7.414 for (5, 4) facing 0.5.
+        // OV-20261103-careful-stop (wall-dist, rounds 2 and 3): a wall's DISTANCE is refreshed when the
+        // player's position or angle changed. In the cycle of a turn it is the map's |dx| + |dy| to the
+        // nearer vertex (10.000 at (16, 0) at every facing); after a move without a turn, a beam or a
+        // walk, it is the nearer vertex's |depth| + |lateral| in the player's view, cos and sin cut to
+        // 22.10: 9.990 for (6, 4) facing 3.1416, 7.414 for (5, 4) facing 0.5, 3.665 for (2, 3) facing 1.0.
         double x = player.Position.X;
         double y = player.Position.Z;
         double angle = WdlFixed.Quantize(GetSkill("PLAYER_ANGLE")); // the skill's 22.10 value: 0 is 0, 3.1416 is 3217/1024
@@ -3496,9 +3496,7 @@ public sealed class WdlRuntime :
         }
 
         _wallDistanceView = (x, y, angle);
-        _wallDistanceFrame = !turned && player.LastMoveWasScripted
-            ? (Math.Truncate(Math.Cos(angle) * 1024) / 1024, Math.Truncate(Math.Sin(angle) * 1024) / 1024)
-            : (1, 0);
+        _wallDistanceFrame = turned ? (1, 0) : ViewFrame(angle);
         foreach (Wall wall in _level.Walls)
         {
             if (TryWallDistance(wall, x, y, out double distance))
@@ -3522,9 +3520,17 @@ public sealed class WdlRuntime :
         return true;
     }
 
-    /// <summary>|depth| + |lateral| of an offset seen at a facing whose cosine and sine are given.</summary>
+    /// <summary>The cosine and sine of a 22.10 facing, each cut to 22.10 (3217 units give −1023/1024 and 0).</summary>
+    private static (double Cosine, double Sine) ViewFrame(double angle) =>
+        (Math.Truncate(Math.Cos(angle) * 1024) / 1024, Math.Truncate(Math.Sin(angle) * 1024) / 1024);
+
+    /// <summary>
+    /// |depth| + |lateral| of an offset seen at a facing whose cosine and sine are given: the depth is
+    /// dx·cos + dy·sin and the lateral dx·sin − dy·cos (careful-stop round 3 dist-beam: (2, 3) facing 1.0
+    /// reads 3.665, (8, 3) 11.950 and (−16, 5) 20.589).
+    /// </summary>
     private static double ViewManhattan(double dx, double dy, double cosine, double sine) =>
-        Math.Abs((dx * cosine) - (dy * sine)) + Math.Abs((dx * sine) + (dy * cosine));
+        Math.Abs((dx * cosine) + (dy * sine)) + Math.Abs((dx * sine) - (dy * cosine));
 
     /// <summary>
     /// The distance the <c>DIST</c> test compares with: a thing's or actor's as last refreshed
@@ -5614,13 +5620,21 @@ public sealed class WdlRuntime :
             return;
         }
 
+        // Things' and actors' DISTANCE take the same frame as walls': the view's |depth| + |lateral| after
+        // the player's own move without a turn (careful-stop round 3 dist-beam: a thing at (8, 3) and an
+        // actor at (−16, 5) facing 1.0 read 11.950 and 20.589), the map's |dx| + |dy| in the cycle of a
+        // turn and in a refresh an actor's front move brings (distance-refresh thing-refresh FW: 14.5 and
+        // 11 facing 0.3).
+        bool turned = _distanceView is not { } last || WdlFixed.Quantize(last.Angle) != WdlFixed.Quantize(view.Angle);
+        bool playerMoved = _distanceView is { } previous && (previous.X != view.X || previous.Y != view.Y);
+        (double cosine, double sine) = !turned && playerMoved ? ViewFrame(WdlFixed.Quantize(view.Angle)) : (1, 0);
         _frontActorMoved = false;
         _distanceView = view;
         _entityDistances.Clear();
         AcknexObject? playerRegion = RegionAt(player.Region);
         foreach (MapEntity entity in _levelObjects.OfType<MapEntity>())
         {
-            double distance = Math.Abs(entity.X - view.X) + Math.Abs(entity.Y - view.Y);
+            double distance = ViewManhattan(entity.X - view.X, entity.Y - view.Y, cosine, sine);
             _entityDistances[entity] = distance;
             if (!_distanceStarted.Contains(entity))
             {
