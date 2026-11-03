@@ -229,3 +229,14 @@ archive lookup, keeps `PLAY_FLICFILE` of a missing file from setting `FLIC_FRAME
 keeps a playing flic when a requested file is missing or invalid and does not reproduce the
 fault. The object/world pause during a flic, mouse hooks during a flic and flic replacement
 already matched the original.
+
+## Replay notes (2026-11-02)
+- **`PRINTFILE` creates its file.** Round 2 missing and missing-during switch
+  `PRINTFILE "ovfsh", 0; PRINTFILE "ovfld", 0;` to flush and never print to `ovfsh`; the original
+  leaves an empty `OVFSH0.TXT` in both (sha256 `e3b0c442`, the empty file). OpenVirtue created a
+  print file only on its first write, so the replays had no `OVFSH0.TXT`. Rule: selecting a print
+  file creates it if it is missing; an existing file is kept, and later prints append to it as
+  before. With it `OVFSH0.TXT` matches in both carriers (2 files, was 0); neither carrier flips,
+  since missing still differs in the flush-stretched frames and missing-during in the fault, and no
+  other carrier changes. `WdlRuntime.SetPrintFile`; test
+  `WdlRuntimeTests.Runtime_PrintFile_CreatesItsFileWithoutPrinting`.

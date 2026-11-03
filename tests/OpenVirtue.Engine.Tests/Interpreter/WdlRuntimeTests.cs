@@ -2192,6 +2192,34 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_PrintFile_CreatesItsFileWithoutPrinting()
+    {
+        // OV-20261015-flic-scheduler-detail round 2: a PRINTFILE switched away from at once left an
+        // empty OVFSH0.TXT, and switching back kept the other file's lines.
+        string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; " +
+                "ACTION log { PRINTFILE \"ovfld\", 0; PRINT_STRING \"A\\n\"; PRINTFILE \"ovfsh\", 0; " +
+                "PRINTFILE \"ovfld\", 0; PRINT_STRING \"B\\n\"; }");
+            var runtime = new WdlRuntime(level, outputDir);
+
+            Assert.True(runtime.RunAction("log"));
+
+            Assert.Equal(string.Empty, File.ReadAllText(Path.Combine(outputDir, "OVFSH0.TXT")));
+            Assert.Equal("A\nB\n", File.ReadAllText(Path.Combine(outputDir, "OVFLD0.TXT")));
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");

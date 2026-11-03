@@ -1223,6 +1223,10 @@ public sealed class WdlRuntime :
     {
         _printBaseName = NormalizePrintBaseName(baseName);
         _printNumber = Math.Clamp(number, 0, 999);
+
+        // OV-20261015-flic-scheduler-detail: PRINTFILE creates its file even when nothing is printed to
+        // it; an existing file is kept and appended to.
+        AppendPrintText(string.Empty);
     }
 
     /// <inheritdoc/>
