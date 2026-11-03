@@ -1234,6 +1234,10 @@ public sealed class WdlRuntime :
     {
         _printBaseName = NormalizePrintBaseName(baseName);
         _printNumber = Math.Clamp(number, 0, 999);
+
+        // OV-20261015-flic-scheduler-detail: PRINTFILE creates its file even when nothing is printed to
+        // it; an existing file is kept and appended to.
+        AppendPrintText(string.Empty);
     }
 
     /// <inheritdoc/>
@@ -4380,6 +4384,12 @@ public sealed class WdlRuntime :
             return; // the first phase counts from the next cycle
         }
 
+        if (state.AwaitingFirstCycle)
+        {
+            state.AwaitingFirstCycle = false;
+            return; // the first phase counts from the next cycle
+        }
+
         AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
     }
 
@@ -4436,14 +4446,18 @@ public sealed class WdlRuntime :
             return;
         }
 
-        TriggerEachCycle(target);
-        StartAnimationLoop(texture, state, timeCorrection);
         if (texture.IsOneShot)
         {
+            // OV-20261029-motion-timing: a ONESHOT clears PLAY before its EACH_CYCLE runs.
             target["PLAY"] = 0;
             state.WasPlaying = false;
+            TriggerEachCycle(target);
+            StartAnimationLoop(texture, state, timeCorrection);
             return;
         }
+
+        TriggerEachCycle(target);
+        StartAnimationLoop(texture, state, timeCorrection);
 
         SetAnimationCycle(target, 1);
         QueueAnimationTextureSound(target, texture, 1);
@@ -4482,9 +4496,31 @@ public sealed class WdlRuntime :
     {
         foreach (AcknexObject target in CurrentCycleTargets())
         {
-            if (AnimationTexture(target) is not null && target["CYCLE"] <= 0)
+            if (AnimationTexture(target) is not { } entry)
+            {
+                continue;
+            }
+
+            if (target["CYCLE"] <= 0)
             {
                 target["CYCLE"] = 1;
+            }
+
+            // OV-20261019-clip-detail anim-gate: the first loop is fixed at level start with TIME_CORR 1,
+            // also for a thing or actor whose first processed cycle comes later, when it first lies
+            // within its CLIP_DIST border; its first phase still counts from the cycle after that one.
+            if (entry.Texture.Cycles > 1 || entry.Texture.IsOneShot)
+            {
+                var state = new TextureAnimationState { AwaitingFirstCycle = true };
+                StartAnimationLoop(entry.Texture, state, timeCorrection: 1);
+                _textureAnimationStates[target] = state;
+            }
+
+            // OV-20261029-motion-timing: a looping animated texture plays from the start, so a script
+            // reads MY.PLAY 1 on it; a ONESHOT waits with PLAY 0 until a script sets it.
+            if (entry.Texture.Cycles > 1 && !entry.Texture.IsOneShot)
+            {
+                target["PLAY"] = 1;
             }
         }
     }
@@ -5408,7 +5444,7 @@ public sealed class WdlRuntime :
         if (skip <= 0 ||
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
-            _inView.Contains(actor) ||
+            (_inView.Contains(actor) && !IsBeyondClipBorder(player, actor)) ||
             _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
@@ -5428,6 +5464,16 @@ public sealed class WdlRuntime :
         _skippedCycles.Remove(actor);
         return skip + 1;
     }
+
+    /// <summary>
+    /// Whether a thing or actor lies at or beyond its <c>CLIP_DIST</c> border (<see cref="ClipBorder"/>,
+    /// <c>LIBER</c> ignored), where the original does not draw it: under <c>SKIP_FRAMES</c> it counts
+    /// as not visible even inside the view cone (OV-20261019-clip-contact clip-move-liber).
+    /// </summary>
+    private bool IsBeyondClipBorder(Player player, MapEntity entity) =>
+        RegionAt(player.Region) is { } region &&
+        TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance) &&
+        distance >= ClipBorder(entity, region);
 
     /// <summary>
     /// Whether a <c>BERKELEY</c> wall sleeps this cycle: it runs its <c>EACH_TICK</c> only while it
@@ -6285,5 +6331,8 @@ public sealed class WdlRuntime :
         public double LoopFactor { get; set; } = 1;
 
         public bool WasPlaying { get; set; }
+
+        /// <summary>A loop fixed at level start whose object has not had its first processed cycle yet.</summary>
+        public bool AwaitingFirstCycle { get; set; }
     }
 }

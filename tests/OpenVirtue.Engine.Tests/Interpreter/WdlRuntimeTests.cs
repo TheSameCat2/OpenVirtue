@@ -2192,6 +2192,34 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_PrintFile_CreatesItsFileWithoutPrinting()
+    {
+        // OV-20261015-flic-scheduler-detail round 2: a PRINTFILE switched away from at once left an
+        // empty OVFSH0.TXT, and switching back kept the other file's lines.
+        string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; " +
+                "ACTION log { PRINTFILE \"ovfld\", 0; PRINT_STRING \"A\\n\"; PRINTFILE \"ovfsh\", 0; " +
+                "PRINTFILE \"ovfld\", 0; PRINT_STRING \"B\\n\"; }");
+            var runtime = new WdlRuntime(level, outputDir);
+
+            Assert.True(runtime.RunAction("log"));
+
+            Assert.Equal(string.Empty, File.ReadAllText(Path.Combine(outputDir, "OVFSH0.TXT")));
+            Assert.Equal("A\nB\n", File.ReadAllText(Path.Combine(outputDir, "OVFLD0.TXT")));
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
         Level level = Load("MAPFILE <m.wmp>; ACTION moveMe { SET my.x, 11; }");
@@ -3241,6 +3269,67 @@ public class WdlRuntimeTests
         Assert.Equal(2, runner["CYCLE"]);
         Assert.Equal(0, runner["PLAY"]);
         Assert.Equal(1, runtime.GetSkill("cycles"));
+    }
+
+    [Fact]
+    public void Tick_OneShotTexture_ClearsPlayBeforeEachCycleRuns()
+    {
+        // OV-20261029-motion-timing anim-oneshot: the EACH_CYCLE at the end of the run reads PLAY 0.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING runner 5 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL seen { VAL -1; } " +
+            "BMAP phase1,<p1.pcx>,0,0,16,16; BMAP phase2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; FLAGS ONESHOT; } " +
+            "THING runner { TEXTURE runnerTex; EACH_CYCLE done; } " +
+            "ACTION done { RULE seen = MY.PLAY; }");
+        Thing runner = Assert.Single(level.Things);
+        var runtime = new WdlRuntime(level);
+
+        runtime.Tick(1.0 / 16);
+        runner["PLAY"] = 1;
+        for (int i = 0; i < 4 && runtime.GetSkill("seen") < 0; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(0, runtime.GetSkill("seen"));
+        Assert.Equal(0, runner["PLAY"]);
+    }
+
+    [Fact]
+    public void Runtime_LoopingAnimatedTexture_StartsWithPlaySet()
+    {
+        // OV-20261029-motion-timing round 2: MY.PLAY == 1 holds on a looping texture throughout, and a
+        // ONESHOT or a single-phase texture keeps PLAY 0.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING looper 5 0 0 0;#1\nTHING once 6 0 0 0;#1\nTHING still 7 0 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL seen { VAL -1; } " +
+            "BMAP phase1,<p1.pcx>,0,0,16,16; BMAP phase2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE loopTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; } " +
+            "TEXTURE onceTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; FLAGS ONESHOT; } " +
+            "TEXTURE stillTex { BMAPS phase1; } " +
+            "THING looper { TEXTURE loopTex; EACH_CYCLE done; } " +
+            "THING once { TEXTURE onceTex; } THING still { TEXTURE stillTex; } " +
+            "ACTION done { RULE seen = MY.PLAY; }");
+        var runtime = new WdlRuntime(level);
+        Thing looper = level.Things.Single(t => t.Name == "looper");
+
+        Assert.Equal(1, looper["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "once")["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "still")["PLAY"]);
+        for (int i = 0; i < 8 && runtime.GetSkill("seen") < 0; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1, runtime.GetSkill("seen"));
     }
 
     [Theory]
@@ -4293,6 +4382,42 @@ public class WdlRuntimeTests
         }
 
         Assert.True(runtime.GetSkill("cycles") > 0);
+    }
+
+    [Fact]
+    public void Tick_TextureAnimation_ThingFirstWithinClipDistLaterCountsItsFirstLoopWithTimeCorrOne()
+    {
+        // OV-20261019-clip-detail anim-gate: at 8 ticks a cycle, a thing first within its border in
+        // cycle k counts its first phase (DELAY 3) in cycles k + 1 to k + 3, as a loop fixed at level
+        // start with TIME_CORR 1 does, and shows phase 2 after cycle k + 3 (not one phase a cycle).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING runner 20 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; REGION room { CLIP_DIST 10; } " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 4; BMAPS p1,p2,p1,p2; DELAY 3,3,3,3; } " +
+            "THING runner { TEXTURE runnerTex; }");
+        Thing runner = Assert.Single(level.Things);
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+        }
+
+        player.MoveTo(0, 15, 0);
+        var phases = new List<double>();
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+            phases.Add(runner["CYCLE"]);
+        }
+
+        Assert.Equal([1, 1, 1, 2, 2], phases);
     }
 
     [Fact]

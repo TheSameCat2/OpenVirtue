@@ -285,3 +285,17 @@ carriers and no file got worse. Tests: `Tick_PlayerProximity_DistEdgeFiresInTheO
 `Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance`, and
 `Tick_EachTickActions_ReadDistanceRefreshedAtCycleStart` (which replaces
 `..._ReadDistanceFromCurrentPlayerAndMovedActorPositions`).
+
+## Replay notes (2026-11-02)
+- **Under `SKIP_FRAMES` an actor beyond its border counts as not drawn.** clip-move-liber (trace
+  `OVCCX0.TXT`, sha256 `b603126a`): the `LIBER` `FOLLOW` and way actors start 52 and 42 from the
+  player (`CLIP_DIST` 10), both inside the view cone, and both move in bursts of six cycles'
+  distance (|dx| + |dy| 9.561 = 6 × 1.594 between `TK(1)` and `TK(4)`, nothing between `TK(4)` and
+  `TK(7)`, and so on). OpenVirtue counted them as visible and moved them every cycle. Rule: a thing
+  or actor at or beyond its `CLIP_DIST` border (`LIBER` ignored) is not drawn, so `SKIP_FRAMES`
+  treats it as unseen even inside the view cone. `VISIBLE` beyond the border is not measured and
+  is left as it was. Result: `OVCCX0.TXT` matches 64 of 159 lines (was 56); the bursts now match up
+  to the beam to (31, −12) in probe cycle 21, after which the `FOLLOW` actor's burst in OpenVirtue
+  still heads for the old player position (not resolved here). No other carrier changes.
+  `WdlRuntime.SkipFramesMultiplier` and `IsBeyondClipBorder`; test
+  `WdlViewActivityTests.Tick_SkipFrames_ActorInViewBeyondClipDistCountsAsUnseen`.
