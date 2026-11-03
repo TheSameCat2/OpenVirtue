@@ -387,3 +387,44 @@ match in full (16 before): rounds 7, 8 and 9 entirely, walk-in, walk-out, edge-a
 edge-across. Left: berkeley-near, cone-edge, occlude-edge (one line each at a view edge), the
 range-shape `DIST 40` actor's step, edge-along's eight-actor push-out, and view-occlude and
 view-pillar.
+
+## Addendum: a beam beside a wall, and a border behind a long step (2026-11-03)
+Read from view-pillar (`OVVAX0.TXT` `7bbfd7a8`) and OV-20261019-border-kinds imp-border and
+actor-climb-2 (`3af2e1d2`, identical traces), no new run.
+- **A beam within `PLAYER_WIDTH` of a wall.** view-pillar's second stand beams the player to
+  (−15, 21), 1.0 from the room's west wall at x = −16. Thirty cycles later it stands at
+  (−14.751, 21.004): `PLAYER_WIDTH` + 51/1024 (1279 units) from the wall, as a step ending there is
+  held (OV-20261019-eye-clamp), with the untouched axis nudged 4/1024 as in an object push
+  (OV-20261029-overlap). So the hold applies to a standing player too, once, in the cycle after the
+  beam; it then stands outside the width and is left alone. OpenVirtue had pushed a beam out of
+  objects only.
+- **An `IMPASSABLE` border behind a long step's end.** imp-border's `CAREFULLY` walker, skipping
+  at 1.594 a cycle, stepped from 10.955 to 20.511 over the pad whose walls are `IMPASSABLE`
+  borders: the six-cycle step measured in |dx| + |dy| (its 7-unit x part shortening the y part),
+  ending 0.511 past the north border, within the actor's half width. The same step over the plain
+  borders of actor-climb-2 lands at 20.511 as well. So the rule of the 2026-11-02 addendum that a
+  wall behind the end point refuses the step holds for free-standing walls (long-wall), not for
+  region borders, `IMPASSABLE` or not. OpenVirtue had refused the step and taken the half step to
+  15.732.
+- **Open.** Walking back from 22.000, the same walker's refused step (full and half end inside the
+  pad) left it at 21.524, 1561 units from the border, not the 1074-unit hold (21.049) that
+  long-pad's walker took from 23.000. 487 units is half the clear distance (2048 − 1074)/2; why
+  this stop is half and long-pad's whole is not settled (probe candidate: refused long steps from
+  2, 3 and 4 before a border, at 60 frames a second and at 8 ticks a cycle).
+- **Open: the cone's edge and a wall's end.** cone-edge loses the 2-wide actor 40 ahead in the
+  frame at angle 0.521, where its near edge is 3 pixels inside the screen's edge; occlude-edge
+  hides it in the frame at `PLAYER_Y` −3.0, where its edge lies exactly on the wall's end. Both
+  fit a sprite drawn over whole columns from a rounded centre column with a width cut to whole
+  pixels (33 at depth 34.7, 29 at 40), a wall hiding every column up to the one its end falls in;
+  OpenVirtue tests the continuous edges (ADR-0010) and sees it one frame longer in each. Two lines
+  in two carriers; a column probe (sprites of several widths at several depths against the screen
+  edge and a wall end, by quarter-pixel steps) would settle the rounding.
+- **Open: berkeley-near F1.** At (16, 0) the wall's `DISTANCE` reads 9.990, ten units short of
+  |dx| + |dy| = 10 to either vertex, where N1's 3.000 and O1's 14 are exact.
+
+Implementation: `Player.PushOutOfObjects` holds a beamed player off walls through
+`LevelCollisionWorld.HoldOffWalls`; `WdlRuntime.TryEndPointCarefulMove` tests only free-standing
+walls behind the end point. Tests:
+`PlayerTests.PushOutOfObjects_BeamedWithinPlayerWidthOfASolidWall_IsHeldAtTheClearanceWithANudge`,
+`WdlViewActivityTests.Tick_SkipFrames_LongCarefulStepPastAnImpassableBorderPasses`. view-pillar
+matches in full (32 of 38); imp-border gains the step over the pad.

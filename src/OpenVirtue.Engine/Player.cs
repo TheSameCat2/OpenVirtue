@@ -305,6 +305,20 @@ public sealed class Player : AcknexObject
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
             out _pushUnfinished,
             _touchedObjects);
+        // A beam within PLAYER_WIDTH of a solid wall is held at the wall's clearance like a step ending
+        // there, the other axis nudged 4/1024 as in a push: beamed to (-15, 21), 1.0 from the room's west
+        // wall, the player stood at (-14.751, 21.004) in the next cycle (OV-20261020-view-activity
+        // view-pillar, 2026-11-03 addendum).
+        Vector2 held = _collisionWorld.HoldOffWalls(end, _region, Width, WallClearance, CanCross);
+        if (held != end)
+        {
+            const float Nudge = 4f / 1024;
+            held = new Vector2(
+                MathF.Round(held.X * 1024) / 1024 + (held.X == end.X ? Nudge : 0),
+                MathF.Round(held.Y * 1024) / 1024 + (held.Y == end.Y ? Nudge : 0));
+            end = held;
+        }
+
         _position = new Vector3(end.X, _position.Y, end.Y);
     }
 

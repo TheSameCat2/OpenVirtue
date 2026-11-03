@@ -282,6 +282,26 @@ public class PlayerTests
     }
 
     [Fact]
+    public void PushOutOfObjects_BeamedWithinPlayerWidthOfASolidWall_IsHeldAtTheClearanceWithANudge()
+    {
+        // OV-20261020-view-activity view-pillar (2026-11-03 addendum): beamed to (-15, 21), 1.0 from the
+        // room's west wall at x = -16, the player stood at (-14.751, 21.004) in the next cycle: held
+        // PLAYER_WIDTH + 51/1024 from the wall, the other axis nudged 4/1024 as in a push.
+        var player = new Player(Load()) { Width = 1228 / 1024f }; // PLAYER_WIDTH 1.2 as the runtime holds it
+        player.MoveTo(0, 1.0f, -5f); // 1.0 from the solid region across x = 0
+
+        player.PushOutOfObjects();
+
+        Assert.Equal(1279 / 1024f, player.Position.X, 6);
+        Assert.Equal(-5 + (4 / 1024f), player.Position.Z, 6);
+
+        player.Settle();
+        player.PushOutOfObjects(); // standing outside the width now: left alone
+        Assert.Equal(1279 / 1024f, player.Position.X, 6);
+        Assert.Equal(-5 + (4 / 1024f), player.Position.Z, 6);
+    }
+
+    [Fact]
     public void MoveHorizontal_IntoSolidWall_StopsPlayerWidthPlusClearanceAway()
     {
         // OV-20261019-eye-clamp, stop-solid and stop-border: 1.245–1.249 from the wall with
