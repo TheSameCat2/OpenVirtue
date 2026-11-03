@@ -4347,6 +4347,42 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_TextureAnimation_ThingFirstWithinClipDistLaterCountsItsFirstLoopWithTimeCorrOne()
+    {
+        // OV-20261019-clip-detail anim-gate: at 8 ticks a cycle, a thing first within its border in
+        // cycle k counts its first phase (DELAY 3) in cycles k + 1 to k + 3, as a loop fixed at level
+        // start with TIME_CORR 1 does, and shows phase 2 after cycle k + 3 (not one phase a cycle).
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING runner 20 0 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; REGION room { CLIP_DIST 10; } " +
+            "BMAP p1,<p1.pcx>,0,0,16,16; BMAP p2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE runnerTex { CYCLES 4; BMAPS p1,p2,p1,p2; DELAY 3,3,3,3; } " +
+            "THING runner { TEXTURE runnerTex; }");
+        Thing runner = Assert.Single(level.Things);
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        runtime.Tick(1.0 / 16);
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+        }
+
+        player.MoveTo(0, 15, 0);
+        var phases = new List<double>();
+        for (int i = 0; i < 5; i++)
+        {
+            runtime.Tick(0.5);
+            phases.Add(runner["CYCLE"]);
+        }
+
+        Assert.Equal([1, 1, 1, 2, 2], phases);
+    }
+
+    [Fact]
     public void Tick_ObjectEachTick_ClipDistIsTheSmallerOfThePlayersAndTheObjectsRegion()
     {
         // OV-20261019-clip-contact: the CLIP_DIST border is the smaller of the player's region's and

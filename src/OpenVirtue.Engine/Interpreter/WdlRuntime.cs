@@ -4259,6 +4259,12 @@ public sealed class WdlRuntime :
             return; // the first phase counts from the next cycle
         }
 
+        if (state.AwaitingFirstCycle)
+        {
+            state.AwaitingFirstCycle = false;
+            return; // the first phase counts from the next cycle
+        }
+
         AdvanceAnimationTarget(target, entry.Texture, state, timeCorrection);
     }
 
@@ -4373,6 +4379,16 @@ public sealed class WdlRuntime :
             if (target["CYCLE"] <= 0)
             {
                 target["CYCLE"] = 1;
+            }
+
+            // OV-20261019-clip-detail anim-gate: the first loop is fixed at level start with TIME_CORR 1,
+            // also for a thing or actor whose first processed cycle comes later, when it first lies
+            // within its CLIP_DIST border; its first phase still counts from the cycle after that one.
+            if (entry.Texture.Cycles > 1 || entry.Texture.IsOneShot)
+            {
+                var state = new TextureAnimationState { AwaitingFirstCycle = true };
+                StartAnimationLoop(entry.Texture, state, timeCorrection: 1);
+                _textureAnimationStates[target] = state;
             }
 
             // OV-20261029-motion-timing: a looping animated texture plays from the start, so a script
@@ -6172,5 +6188,8 @@ public sealed class WdlRuntime :
         public double LoopFactor { get; set; } = 1;
 
         public bool WasPlaying { get; set; }
+
+        /// <summary>A loop fixed at level start whose object has not had its first processed cycle yet.</summary>
+        public bool AwaitingFirstCycle { get; set; }
     }
 }

@@ -108,3 +108,25 @@ that and the object's own region's for a thing or actor. `DispatchProximityEvent
 The object `EACH_TICK` loop skips `INVISIBLE` walls. `BERKELEY` walls are implemented from
 OV-20261020-view-activity, which answers the second open question above: a `BERKELEY` wall also
 runs while the player is within its `DIST`.
+
+## Replay notes (2026-11-02)
+- **A gated object's first animation loop is fixed at level start.** anim-gate (`CYCLES 4`,
+  `DELAY 3` each, `CLIP_DIST 10`, 8 ticks a cycle; trace `OVCDX0.TXT`, sha256 `cdee4353`): the
+  player beams next to the thing in cycle 7 and its border opens with the refresh of cycle 8; the
+  thing's `CYCLE` reads 1 at V(8) to V(11) and 2 from V(12), so it advanced in cycle 11, and it
+  stays 2 once the player is away again. The actor, beamed to in cycle 19, advances in cycle 23
+  (V(24)). OpenVirtue started the loop in the first cycle within the border with that cycle's
+  `TIME_CORR` 8, one cycle a phase, and showed 2, 3, 4 from V(10) and V(22). Rule: a loop is fixed
+  when the level starts, with `TIME_CORR` 1, for every object, also one outside its border; the
+  object's first processed cycle begins the phase and its frames count from the next cycle, so
+  floor(3/1) = 3 frames give 9, 10, 11 and 21, 22, 23. Later loops are fixed with the `TIME_CORR`
+  of the cycle that starts them, as before (OV-20261029-anim-timing). OV-20261019-clip-contact
+  clip-near (`DELAY 4, 4`, `CYCLES 2`; trace `OVCCX0.TXT`, sha256 `c234835f`) agrees: its `TK`
+  lines' `EACH_CYCLE` count (0 at TK(19), 2 at TK(25), 3 at TK(28)) now matches, from a first loop
+  of 4 frames a phase. Result: anim-gate matches all 56 lines (was 35) and the carrier matches;
+  clip-near matches 152 of 208 `OVCCX0` lines (was 119; the rest is the `LIBER` distance and
+  rounding of other groups). No other carrier changes, apart from round2 anim-random, whose
+  `RANDOM` draws differ from run to run. A texture first animated later than level start, and a
+  full `LOAD`, still start the loop in their first processed cycle (unmeasured).
+  `WdlRuntime.InitializeAnimationCycles` and `AdvanceAnimationCycle`; test
+  `WdlRuntimeTests.Tick_TextureAnimation_ThingFirstWithinClipDistLaterCountsItsFirstLoopWithTimeCorrOne`.
