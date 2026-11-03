@@ -710,6 +710,21 @@ were read, all over the 99 original saves:
   set the actor heights before every actor's tick, now before a `CAREFULLY` actor's only.
 
 Result: 85 of the 107 carriers match in full (none before). Left: the four slope-flag carriers'
-`WDIST_MINX/MAXX/MINY/MAXY` (−16, 30, −24, 24: not in the manual, not modelled), flag-sensitive's
-save one frame late, three `LOAD` carriers' headers, and single fields in five carriers (+106,
-+194, +376, `PLAYER_Z` 0.214/0.213, `RESULT`).
+`WDIST_MINX/MAXX/MINY/MAXY` (−16, 30, −24, 24: not in the manual, not modelled; see the next
+addendum), flag-sensitive's save one frame late, three `LOAD` carriers' headers, and single fields
+in five carriers (+106, +194, +376, `PLAYER_Z` 0.214/0.213, `RESULT`).
+
+## Addendum: `WDIST_MINX/MAXX/MINY/MAXY` (2026-11-03, night)
+Re-read of round 15's four region-flag saves (the room declared `CEIL_ASCEND`, `CEIL_DESCEND`,
+`FLOOR_ASCEND` or `FLOOR_DESCEND`, the player at the origin), no new run. They save −16, 30, −24
+and 24 where every other carrier saves the sentinels (−2^31 and 2^31 − 1 raw). Those four numbers
+are the room's west edge, the free-standing wall `sb_w` at x = 30 (before the east edge at 48),
+and the south and north edges: the nearest wall crossings of the two axis lines through the
+player, over the region's walls, free-standing ones too — the edges the slope's scanning rule
+(OV-20261029-slope round 2) reads the surface heights at. Rule: while the player stands in a
+region with a slope flag the engine sets `WDIST_MINX/MAXX/MINY/MAXY` to those crossings (west,
+east, south, north); a flat region leaves them. Whether they hold coordinates or distances from
+the player the origin cannot tell apart (coordinates kept); nor can these saves tell when they
+are set within the cycle. With it the four carriers match in full: 89 of 107.
+`WdlRuntime.UpdateSlopeExtents`, from `WdlPlayerMotion.Synchronize`.
+

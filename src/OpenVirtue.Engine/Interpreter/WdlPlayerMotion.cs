@@ -122,6 +122,7 @@ public static class WdlPlayerMotion
         runtime.SetSkill("PLAYER_REGION", player.Region);
         runtime.SetSkill("FLOOR_HGT", player.FloorHeight);
         runtime.SetSkill("CEIL_HGT", player.CeilingHeight);
+        runtime.UpdateSlopeExtents(player);
         Vector2 slope = player.FloorSlope;
         double angle = runtime.GetSkill("PLAYER_ANGLE");
         double sin = Math.Sin(angle);
