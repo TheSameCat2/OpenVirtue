@@ -194,6 +194,15 @@ internal static class OracleReplay
             (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) ?? (carrierCase.Autotype is not null ? OracleTrace.AutotypeTiming(timingSource) : null) : null);
         bool counted = false;
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
+        if (options.DumpClock)
+        {
+            // --dump-clock: the sampled cycles' TICKS as the replay's clock will follow them.
+            Console.Error.WriteLine($"clock {carrier}: {cycleTicks.Count} cycles, counted={counted}, timing={timing}");
+            for (int i = 0; i < cycleTicks.Count; i++)
+            {
+                Console.Error.WriteLine($"clock[{i}] {cycleTicks[i]:F4}");
+            }
+        }
 
         string replayDirectory = ReplayDirectoryOf(carrier);
         if (Directory.Exists(replayDirectory))
@@ -933,7 +942,8 @@ internal static class OracleReplay
         double MaxTicks,
         int MaxFrames,
         int Context,
-        string? Error)
+        string? Error,
+        bool DumpClock = false)
     {
         public static ReplayOptions Parse(string[] args)
         {
@@ -944,6 +954,7 @@ internal static class OracleReplay
             double maxTicks = 16 * 300;
             int maxFrames = 200_000;
             int context = 2;
+            bool dumpClock = false;
             for (int i = 0; i < args.Length; i++)
             {
                 string? value = i + 1 < args.Length ? args[i + 1] : null;
@@ -967,6 +978,10 @@ internal static class OracleReplay
                     case "--context" when TryNumber(value, out double v) && v >= 0:
                         context = (int)v;
                         break;
+                    case "--dump-clock":
+                        dumpClock = true;
+                        i--; // takes no value
+                        break;
                     default:
                         return new ReplayOptions(null, null, 0, 0, 0, 0, 0, $"Unknown or malformed option '{args[i]}'.");
                 }
@@ -974,7 +989,7 @@ internal static class OracleReplay
                 i++;
             }
 
-            return new ReplayOptions(timing, fixedCorrection, tolerance, extraTicks, maxTicks, maxFrames, context, null);
+            return new ReplayOptions(timing, fixedCorrection, tolerance, extraTicks, maxTicks, maxFrames, context, null, dumpClock);
         }
 
         private static bool TryNumber(string? text, out double value) =>

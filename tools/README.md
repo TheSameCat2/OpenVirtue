@@ -188,6 +188,18 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
     says `save-anchored …`. The replay had run 56 quarter-tick frames to 14.0 there. With the walls'
     heap pointers at +28..+39 of each wall record set aside (the same far pointers in every launch),
     85 of the 107 save-body carriers match in full, from none.
+  - **Other tokens' lines.** A named sampler's other tokens still measure the clock where they
+    print the count and `TICKS`: the probe action's line after a long `WAITT`, say, long after the
+    sampler stopped (scheduler-order round2 start-wait's `W16` 49 cycles after its last `Y`), or
+    an event line between sparse samples. Such a line counts the cycle or the one before (printed
+    after or before the sampler), so it is placed in whichever of the two the sampler-only fill,
+    continued past its end at its own cadence, predicts nearer, when its value keeps the samples'
+    order and its step from the sampled cycle before is a cycle's; the fill is then done again with
+    it, when the value lies within two typical steps of the prediction (a line printed after the
+    probe switched the counter off carries a stale count and lies cycles past it). Ten more
+    carriers match in full (start-wait, turn-refresh, climb-1, climb-2, clip-wall, solid-dist0,
+    clip-regions-order, clip-regions-walk, audio reuse, flic-scheduler-detail round2 near-control)
+    and 880 more lines over all. `--dump-clock` prints the sampled cycles the replay's clock follows.
   - **Counted gaps.** A counted sampler's gaps are filled along one cadence through every sample and
     through the step into it that the sampler's `TIME_CORR` column prints (a column of whole 1/32
     ticks between 0.1 and 2 that equals the step wherever two samples are a cycle apart), for as
