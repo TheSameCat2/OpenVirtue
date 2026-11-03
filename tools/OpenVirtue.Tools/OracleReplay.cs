@@ -22,8 +22,10 @@ using OpenVirtue.Host;
 /// frame advances <c>TICKS</c> by the original's step to its next sampled value (read from one
 /// token's column, detected or given with <c>--timing TOKEN:COL</c>), so both runs see the same
 /// <c>TIME_CORR</c> sequence even though DOSBox-X's cycle rate varies from run to run. Before the
-/// first and after the last sample, and across a gap of more than four typical cycles, frames take
-/// the median cycle. A start-up that reaches the first sample at a different tick is reported once
+/// first sample, and across a gap of more than four typical cycles, frames take the median cycle;
+/// after the last they continue the last samples' frame cadence (<see cref="OracleTrace.FitCadence"/>).
+/// A launch that ran at 8 ticks a frame throughout gets fixed 8-tick frames, and <c>RANDOM</c> draws
+/// from a fixed seed. A start-up that reaches the first sample at a different tick is reported once
 /// as the start offset, and columns that print <c>TICKS</c> are compared relative to it. Scripted key presses
 /// and clicks (DOSBox-X <c>AUTOTYPE</c>, <c>x11_click.py</c>) are not replayed; such carriers are
 /// flagged.
@@ -35,6 +37,10 @@ internal static class OracleReplay
 {
     private const string ReplayDirectoryName = "ov-replay";
     private const string WorldName = OracleLaunchers.WorldName;
+
+    // The original's generator is not modelled, so any fixed seed will do: it only makes a carrier
+    // that draws RANDOM give the same replay every time (round2 anim-random gave a different one per run).
+    private const int RandomSeed = 1;
 
     // Files the autoexec writes, not the probe: the DOS directory listing and the runtime's console.
     private static readonly string[] AutoexecOutputs = ["OVDIR.TXT", "OVCON.TXT"];
@@ -169,8 +175,13 @@ internal static class OracleReplay
         IReadOnlyList<OracleTraceLine> timingSource = primary is not null && originalFiles.TryGetValue(primary, out string? primaryPath)
             ? OracleTrace.Parse(File.ReadAllText(primaryPath, Encoding.Latin1))
             : [];
+        double? stamp = originalFiles.TryGetValue("OVPRB0.TXT", out string? probe) ? StartupStamp(probe) : null;
+        bool asked = options.Timing is not null || carrierCase.Timing is not null || options.FixedTimeCorrection is not null || carrierCase.TimeCorrection is not null;
+
+        // A launch that ran at 8 ticks a frame throughout is replayed with frames of 8 ticks.
+        double? slowFrames = !asked && OracleTrace.RanAtSlowFrames(timingSource, stamp) ? OracleTrace.SlowFrameTicks : null;
         OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
-            (options.FixedTimeCorrection is null && carrierCase.TimeCorrection is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
+            (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
         bool counted = false;
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
 
@@ -186,10 +197,15 @@ internal static class OracleReplay
 
         double? firstStep = carrierCase.StartupStep ??
             (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ??
-            StampStep(originalFiles.TryGetValue("OVPRB0.TXT", out string? probe) ? StartupStamp(probe) : null, cycleTicks) ??
+            StampStep(stamp, cycleTicks) ??
             OracleTrace.PeriodicFirstStep(cycleTicks);
-        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? 0.25, firstStep, counted);
-        double stopTicks = cycleTicks.Count > 0 ? cycleTicks[^1] + options.ExtraTicks : options.MaxTicks;
+        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? slowFrames ?? 0.25, firstStep, counted);
+        // Run on past the last sample to the last TICKS any original file printed: a sampler switched
+        // off before the probe's last lines (wall-pass-clip clip-wall, border-climb climb-4) would
+        // otherwise stop the replay before them and before OVEND.
+        double stopTicks = cycleTicks.Count > 0
+            ? Math.Max(cycleTicks[^1], Math.Min(LastTicks(originalFiles.Values), options.MaxTicks)) + options.ExtraTicks
+            : options.MaxTicks;
         var window = new HeadlessWindow();
         if (carrierCase.Autotype is { } typed)
         {
@@ -202,7 +218,7 @@ internal static class OracleReplay
         int frames = 0;
         double ticks;
         var audio = new TimedAudioSink();
-        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender()))
+        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender(), RandomSeed))
         {
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
             host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
@@ -299,6 +315,40 @@ internal static class OracleReplay
         }
 
         return new OracleTickShift(columns, originalStamp.Value, replayStamp.Value);
+    }
+
+    /// <summary>
+    /// The largest <c>TICKS</c> the original's files print: the last first-column value of each token
+    /// whose first column never goes down, where the trace scaffold prints <c>TICKS</c>.
+    /// </summary>
+    internal static double LastTicks(IEnumerable<string> files)
+    {
+        double last = 0;
+        foreach (string file in files)
+        {
+            foreach (IGrouping<string, OracleTraceLine> group in OracleTrace.Parse(File.ReadAllText(file, Encoding.Latin1)).GroupBy(static l => l.Token, StringComparer.Ordinal))
+            {
+                double? previous = null;
+                bool rising = true;
+                foreach (OracleTraceLine line in group)
+                {
+                    if (line.Value(0) is not { } value || value < (previous ?? 0))
+                    {
+                        rising = false;
+                        break;
+                    }
+
+                    previous = value;
+                }
+
+                if (rising && previous is { } end)
+                {
+                    last = Math.Max(last, end);
+                }
+            }
+        }
+
+        return last;
     }
 
     /// <summary>The carrier template's start-up stamp: <c>TCK=</c> in <c>OVPRB0.TXT</c>, <c>TICKS</c> as the probe action starts.</summary>
@@ -697,6 +747,12 @@ internal static class OracleReplay
         // DOSBox-X's rate drifts within a run, so the start-up runs at the first sampled cycles' rate,
         // or at the step the first sample's own TIME_CORR column gives (FirstCycleStep).
         private readonly double _startup = firstStep ?? (cycleTicks.Count >= 3 ? Median([cycleTicks[0], cycleTicks[1], cycleTicks[2]]) : null) ?? Median(cycleTicks) ?? fallbackTicks;
+
+        // Past the last sample the frames continue the last samples' cadence (at 60 Hz the original's
+        // 8/9 thirty-seconds pattern), or the last five steps' median where no cadence fits them.
+        private readonly OracleCadence? _tail = OracleTrace.FitCadence(cycleTicks);
+        private readonly double _tailStep = RecentMedian(cycleTicks, 5) ?? Median(cycleTicks) ?? fallbackTicks;
+        private int _tailFrames;
         private int _next;
 
         /// <summary>True once <see cref="Anchor"/> has run.</summary>
@@ -765,6 +821,11 @@ internal static class OracleReplay
                     step = gap;
                 }
             }
+            else if (cycleTicks.Count > 0)
+            {
+                _tailFrames++;
+                step = _tail is { } tail ? tail.StepInto(_tailFrames) : _tailStep;
+            }
 
             return step / Timing.TicksPerSecond;
         }
@@ -795,6 +856,10 @@ internal static class OracleReplay
             int step = left / steps; // the first steps take the floor, the last ones the extra unit
             return step * unit;
         }
+
+        /// <summary>The median of the last <paramref name="gaps"/> steps between samples.</summary>
+        private static double? RecentMedian(IReadOnlyList<double> ticks, int gaps) =>
+            ticks.Count < 2 ? null : Median([.. ticks.Skip(Math.Max(0, ticks.Count - gaps - 1))]);
 
         private static double? Median(IReadOnlyList<double> ticks)
         {

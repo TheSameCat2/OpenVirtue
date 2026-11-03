@@ -299,3 +299,11 @@ carriers and no file got worse. Tests: `Tick_PlayerProximity_DistEdgeFiresInTheO
   still heads for the old player position (not resolved here). No other carrier changes.
   `WdlRuntime.SkipFramesMultiplier` and `IsBeyondClipBorder`; test
   `WdlViewActivityTests.Tick_SkipFrames_ActorInViewBeyondClipDistCountsAsUnseen`.
+
+## Replay notes (2026-11-03, harness)
+- **The lost cycle was the replay's clock.** clip-regions (`OVCCX0.TXT`, sha256 `19ad9a2a`) ran at
+  8 ticks a frame throughout: every `TICKS` it prints is a multiple of 8. The replay now runs such
+  a launch at fixed 8-tick frames instead of filling frames between sparse samples, and
+  clip-regions matches in full (43/43, was 27), with OV-20261019-clip-detail wall-regions. The
+  rerun clip-regions-order (`74b97e4c`) lost its first `TK` line (13.500) to a different start-up
+  step; that line comes 31 ticks before the first `T` sample, where no sample records the frames.

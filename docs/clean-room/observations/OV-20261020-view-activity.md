@@ -322,3 +322,18 @@ a cycle along short ways.
   `WdlRuntime.ArrivalDistance` is 102/1024. Tests:
   `LevelLoaderTests.LoadCore_PlacementAndWayCoordinates_AreCutTowardZeroTo1024ths` and
   `WdlActorMotionTests.Tick_WayActorShortOfItsPoint_ArrivesWithLessThanATenthLeft`.
+
+## Replay notes (2026-11-03, harness)
+- **The tail after the last `C` sample.** The probes end with `WAITT 2` after their last sample;
+  the replay ran those frames at the run's median step (8/32), so the wait resumed a frame late and
+  the trace gained a `TK` line (eight carriers) or printed its last line one step early. The replay
+  now continues the samples' own frame cadence, `floor(phase + k·rate)` thirty-seconds of a tick
+  (8s and 9s, never three 8s in a row at about 61 fps). round7 dist-out (`OVVAX0.TXT`, sha256
+  `9081250a`), round6 sprite-occlude (`1f9776e9`, `H3S` 22.844 after 9, 8, 8), round2 long-pad
+  (`f8dea516`) and long-wall (`0e1dbfca`), round3 range-d1 (`5490a544`) and tilt-far (`07d9f6c2`,
+  50 and 51-unit steps, `T2` 193.656) match in full; beam-back (`e5ae822d`) and the other six lose
+  the extra line.
+- **8-tick start-ups.** round2 near-low (`c4743419`) and round3 occlude-edge (`2eb19ab5`) print 24
+  and 32 at 8-tick frames before speeding up, so the replay no longer takes their first step from
+  the 60 Hz pattern 18 cycles later: near-low matches in full, occlude-edge 55/56 (was 6). No
+  engine change; `tools/README.md` describes the rules.

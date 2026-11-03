@@ -10,7 +10,8 @@ namespace OpenVirtue.Host.Tests;
 
 /// <summary>
 /// <see cref="RuntimeHost.FrameClock"/> replaces the wall clock, so the oracle replay can feed the
-/// original's per-cycle tick steps, and <c>PRINT_*</c> output lands where the replay reads it.
+/// original's per-cycle tick steps, <c>PRINT_*</c> output lands where the replay reads it, and a
+/// <c>RANDOM</c> seed makes its draws reproducible.
 /// </summary>
 public sealed class RuntimeHostFrameClockTests : IDisposable
 {
@@ -65,6 +66,21 @@ public sealed class RuntimeHostFrameClockTests : IDisposable
         Assert.Equal("BEGIN\nC 1.000\nC 2.000\n", trace);
     }
 
+    [Fact]
+    public void OpenArchive_RandomSeed_DrawsTheSameRandomOnEveryRun()
+    {
+        // The oracle replay passes a fixed seed so a carrier that draws RANDOM replays the same way.
+        const string Body = """
+            SKILL r { VAL 0; }
+            ACTION start { SET r, RANDOM(1000); }
+            """;
+        double first = SeededRandom(Body, seed: 5);
+        double second = SeededRandom(Body, seed: 5);
+
+        Assert.NotEqual(0, first);
+        Assert.Equal(first, second);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
@@ -73,7 +89,17 @@ public sealed class RuntimeHostFrameClockTests : IDisposable
         }
     }
 
-    private RuntimeHost Open(string body)
+    private double SeededRandom(string body, int seed)
+    {
+        using RuntimeHost host = Open(body, seed);
+        Assert.Equal(seed, host.RandomSeed);
+        Assert.True(host.Runtime.RandomSeeded);
+        host.FrameClock = () => 1.0 / 16;
+        host.Boot();
+        return host.Runtime.GetSkill("r");
+    }
+
+    private RuntimeHost Open(string body, int? randomSeed = null)
     {
         Directory.CreateDirectory(_directory);
         string archive = Path.Combine(_directory, "TITLE.WRS");
@@ -93,6 +119,6 @@ public sealed class RuntimeHostFrameClockTests : IDisposable
                 new WrsFile("TITLE.WDL", Encoding.ASCII.GetBytes(wdl)),
                 new WrsFile("m.wmp", Encoding.ASCII.GetBytes(Map)),
             ]);
-        return RuntimeHost.OpenArchive(archive, "TITLE.WDL", new FakeWindow(), new FakeInput(), new NullAudioSink(), new FakeRender());
+        return RuntimeHost.OpenArchive(archive, "TITLE.WDL", new FakeWindow(), new FakeInput(), new NullAudioSink(), new FakeRender(), randomSeed);
     }
 }

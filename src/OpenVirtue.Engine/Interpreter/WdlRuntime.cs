@@ -154,7 +154,7 @@ public sealed class WdlRuntime :
     private readonly List<WdlPersistenceRequest> _persistenceRequests = [];
     private readonly List<WdlInputRequest> _inputRequests = [];
     private readonly Dictionary<int, ActiveInputAction> _inputActions = [];
-    private Random _random = new();
+    private Random _random;
     private readonly Dictionary<string, AcknexObject> _objects = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<AcknexObject>> _objectsByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
@@ -255,10 +255,13 @@ public sealed class WdlRuntime :
     public WdlRuntime(
         Level level,
         string? printDirectory = null,
-        IReadOnlyDictionary<string, TextureImage>? hitTextures = null)
+        IReadOnlyDictionary<string, TextureImage>? hitTextures = null,
+        Random? random = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        _random = random ?? new Random();
+        RandomSeeded = random is not null;
         _collisionWorld = new LevelCollisionWorld(level);
         _hitTextures = hitTextures ?? new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
         _skills = new Dictionary<string, double>(level.Skills, StringComparer.OrdinalIgnoreCase);
@@ -1567,7 +1570,19 @@ public sealed class WdlRuntime :
     public double Random(double maximum) => _random.NextDouble() * maximum;
 
     /// <inheritdoc/>
-    public void Randomize() => _random = new Random();
+    public void Randomize() => _random = RandomSeeded ? new Random(_random.Next()) : new Random();
+
+    /// <summary>
+    /// The generator <c>RANDOM</c> and a texture's <c>RANDOM</c> delay draw from: the constructor's
+    /// seeded one when a host needs a reproducible run (the oracle-diff replay), else an unseeded one.
+    /// </summary>
+    public Random RandomGenerator => _random;
+
+    /// <summary>
+    /// Whether the host passed a seeded generator; <c>RANDOMIZE</c> then reseeds from it, so the run
+    /// stays reproducible.
+    /// </summary>
+    public bool RandomSeeded { get; private set; }
 
     /// <inheritdoc/>
     public bool IsSkillAtMinimum(string name) =>

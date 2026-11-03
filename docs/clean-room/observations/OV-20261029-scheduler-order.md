@@ -165,3 +165,12 @@ OpenVirtue now starts with these. The oracle summary lost no match.
 the start-up cycle in the `WdlRuntimeEachSecTests`/`WdlRuntimeWaitCountTests` helpers,
 `RuntimeHostFrameClockTests`; `ovtool oracle diff` on the probe matches `startup` (but the last
 line's tick, past the last sample) and `set-midcycle`.
+
+## Replay notes (2026-11-03, harness)
+- `startup` (`OVSDO0.TXT`, sha256 `8859dcb4`) now matches in full: past the last sample the replay
+  continues the samples' 8/9 frame cadence instead of the median step, which placed the last line
+  one step early. round5 waitt-small (`cb83adb4`) matches in full: its gap from count 3 (14.188) to
+  5 (14.719) is now filled 9 then 8 thirty-seconds, ending on the 0.250 that `R13` prints (the old
+  fill gave 8 then 9), and its first step is read from the lines' `TIME_CORR` column. round2
+  start-wait still prints `W16` at 15.750 against 15.781: its eight samples leave the phase open
+  there. `tools/README.md` describes the rules.

@@ -169,3 +169,10 @@ OV-20261015-flic-play-blocking. `SET EACH_SEC.n` outside 1–16 is ignored at ru
 rejects it at compile time, so valid scripts never contain one). A top-level
 `EACH_SEC a, NULL, b;` fills slots in order, like `EACH_TICK`. The slots and the phase of the
 second are part of the harness snapshot, and a new level starts with its own declared slots.
+
+## Replay notes (2026-11-03, harness)
+- The 8-tick launches replay at 8-tick frames. Every `TICKS` in cadence, phase, slot-16 and
+  wait-inside (`OVSEC0.TXT`, sha256 `8b674d8a`, `d4de27f7`, `2c3b9857`, `d373252c`) is a multiple
+  of 8, as the harness row above records; the replay took `SECS` for a cycle counter there and ran
+  16-tick frames. With fixed 8-tick frames all four match in full (were 2/5, 2/6, 1/4, 4/10), and
+  order-vs-tick still does. No engine change.
