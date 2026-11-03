@@ -63,14 +63,27 @@ public sealed class ViewTestTests
     }
 
     [Theory]
-    [InlineData(0.49, true)]
-    [InlineData(0.52, true)] // the centre is 0.02 outside the cone, the near edge inside
-    [InlineData(0.53, false)]
-    public void IsSpriteVisible_AtTheConesEdge_CountsTheSpritesWidth(double angle, bool expected)
+    [InlineData(0.49, 1, true)]
+    [InlineData(0.52, 1, true)] // the centre is 0.02 outside the cone, the near edge 1.6 px inside the screen
+    [InlineData(0.521, 1, false)] // 0.9 px inside: not a full column
+    [InlineData(0.53, 1, false)]
+    [InlineData(0.542, 2, true)] // 4 wide
+    [InlineData(0.543, 2, false)]
+    public void IsSpriteVisible_AtTheConesEdge_NeedsAFullColumn(double angle, double halfWidth, bool expected)
     {
-        // OV-20261020-view-activity, cone-edge: a 2-wide actor 40 ahead went out of view between
-        // PLAYER_ANGLE 0.517 and 0.521; its centre leaves the cone at 0.5, its last column at 0.525.
-        Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 30, angle), 40, 30, 1, 0, 2));
+        // OV-20261103-careful-stop round 3 cone-w2 and cone-w4: a 2-wide actor 40 ahead was last seen in
+        // the frame at PLAYER_ANGLE 0.520 and a 4-wide one at 0.542 (their near edges leave the cone at
+        // 0.525 and 0.550): a billboard shows while a full pixel column of it is on the screen.
+        Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 30, angle), 40, 30, halfWidth, 0, 2));
+    }
+
+    [Theory]
+    [InlineData(0.542, true)]
+    [InlineData(0.543, false)]
+    public void IsSpriteVisible_AtTheConesEdgeNearer_NeedsAFullColumnToo(double angle, bool expected)
+    {
+        // careful-stop round 3 cone-w2-d20: a 2-wide actor 20 ahead was last seen at 0.542.
+        Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 30, angle), 20, 30, 1, 0, 2));
     }
 
     [Fact]

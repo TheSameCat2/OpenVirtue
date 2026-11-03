@@ -1,6 +1,6 @@
 # OV-20261103-careful-stop: a refused long step's stop, and a wall's DISTANCE after a beam
 Date: 2026-11-03
-Status: confirmed (seven carriers at 60 frames a second) and implemented; one carrier (a walker placed in rock) left as read
+Status: confirmed (twelve carriers over three rounds, at 60 frames a second) and implemented; a walker placed in rock and a wall end's column rounding left as read
 Observer: OpenVirtue maintainers (black-box probe, trace values)
 Implementer: OpenVirtue maintainers
 
@@ -156,3 +156,60 @@ not tried here.
   view's after a scripted beam (`Player.LastMoveWasScripted`, set by `WdlPlayerMotion.Apply`).
 - Result: 455 of 668 carriers match in full (446 of 661 before, 6 of this probe's 7); long-pad,
   berkeley-near, border-kinds actor-climb-2 and actor-climb-2d gained.
+
+## Round 3: entities after a beam and a walk, the sprite's column edge (2026-11-03)
+Five more carriers under `round3/`, all rc 0 at 60 frames a second.
+
+### `dist-beam`
+The wall of wall-dist, a still 2-wide thing at (16, 4) and a still actor at (−8, 6), their `DISTANCE`
+printed every cycle. The beam to (10, 0) landed on the wall and the player stood at (8.751, 0.004),
+held `PLAYER_WIDTH` + 51/1024 from it with the y nudge (the beam hold of the view-activity
+addendum, again).
+
+| Stand | Player | Facing | Wall | Thing | Actor | Reading |
+|---|---|---|---|---|---|---|
+| A: beam + turn | (8.751, 0.004) | 0.5 | 5.245 | 11.245 | 22.747 | the map's |dx| + |dy| |
+| B: beam to the same | (8.751, 0.004) | 0.5 | kept | kept | kept | no refresh |
+| C: turn only | (8.751, 0.004) | 1.0 | kept | kept | kept | the map's again (same values) |
+| D: beam, no turn | (8, 1) | 1.0 | 3.665 | 11.950 | 20.589 | the view's: dx·c + dy·s and dx·s − dy·c with c 553/1024, s 861/1024 give 3.664, 11.949, 20.590 |
+| E: walk +X by velocity | (8.05, 1.004) … | 1.0 | 3.595 … | 11.880 … | 20.659 … | the view's in every cycle (3.594 computed at the first) |
+| against the wall | (8.751/8.755, 1.063 …) | 1.0 | 3.682/3.678 | 10.891/10.885 | 21.648/21.654 | the view's, alternating with the 4-unit push |
+| F: walk diagonal | (8.751, 1.820) | 1.0 | 2.640 | 10.669 | 21.870 | the view's |
+| G: beam, no turn | (12, 2) | 1.0 | 3.368 | 6.128 | 26.411 | the view's (3.363, 6.125, 26.414 computed) |
+
+So things and actors take the frame walls do, and a walk by velocity gives the view's value as a
+beam does; only a turn gives the map's. The computed values are 1 to 5 units off here and there
+(the thing and actor exact in the walk where the wall is 2 off), so the engine's rounding of the
+products is not yet the same.
+
+OV-20261021-distance-refresh thing-refresh, re-read: the refresh an actor's front move brings (FW,
+cycle 84: 14.5 and 11 facing 0.3), the eye-height change (PZ: 12.25) and the `PLAYER_ARC` change
+(PA: 13) all read the map's value. So the view's frame goes with the player's own move alone.
+
+### `cone-w2`, `cone-w4`, `cone-w2-d20`
+`PLAYER_ANGLE` swept by 0.001 past the cone's edge, `VISIBLE` printed every cycle (a cycle behind
+the angle, as before). The 2-wide actor 40 ahead was seen in the frame at 0.520 and not at 0.521;
+the 4-wide one 40 ahead and the 2-wide one 20 ahead at 0.542 and not at 0.543. Their near edges
+leave the cone at 0.525 and 0.550. Drawn as a billboard at its centre's depth, the sprite's near
+edge in those frames stands 1.6 px inside the screen's edge when seen and 0.9 px (w2@40), 1.5 and
+0.8 (w4@40), 1.5 and 0.9 (w2@20) when not: a sprite shows while a full pixel column of it is on the
+screen, its edge at most at column W − 1. The measured bottom row (479.9 unseen, 478.1 seen) fits
+the same rule, so the screen's four edges are one pixel inside.
+
+### `occlude-w2`
+The 2-wide actor at (40, 0) behind the end of a wall from (30, −20) to (30, 0), `PLAYER_Y` from
+−3.5 by 0.05: unseen up to the frame at −2.903, seen at −2.853, unseen at −2.803, seen from −2.753.
+The exposed sliver beside the wall's end is 0.72, 0.97 and 1.21 px wide in those frames, so the
+occluder's column rounding is sub-pixel and three points do not pin it; left as read.
+
+### Implementation (round 3)
+- `WdlRuntime.ViewManhattan` is |dx·c + dy·s| + |dx·s − dy·c|; `RefreshWallDistances` takes the
+  view's frame after any move without a turn, and `RefreshEntityDistances` the same when the
+  player's own position changed (not a front move, an eye or an arc change).
+- `ViewTest.OnScreenColumn` tests the billboard's columns one pixel inside the screen's sides, and
+  `IntersectsScreen` a full row at its top and bottom.
+- Tests: `ViewTestTests.IsSpriteVisible_AtTheConesEdge_NeedsAFullColumn`,
+  `IsSpriteVisible_AtTheConesEdgeNearer_NeedsAFullColumnToo`; the wall-distance test's walk.
+- Result: 459 of 673 carriers (455 of 668 before): cone-w2, cone-w4, cone-w2-d20 and
+  view-activity cone-edge match in full; dist-beam reads 48 of 112 lines (the 1-to-5-unit
+  residuals), occlude-w2 and the walker in rock stay open.

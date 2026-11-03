@@ -206,21 +206,42 @@ public sealed class ViewTest
         // Across the line of sight (to the viewer's right when looking at the sprite).
         double sideX = length > Epsilon ? dy / length : 0;
         double sideY = length > Epsilon ? -dx / length : 0;
+        // A sprite is a billboard drawn at its centre's depth: its columns spread from its centre's
+        // screen column by its half width over that depth, and the screen's top and bottom are tested
+        // at that depth for every column (OV-20261029-actor-events round 3).
+        double depth = (dx * Math.Cos(viewer.Angle)) + (dy * Math.Sin(viewer.Angle));
+        double lateral = (dx * Math.Sin(viewer.Angle)) - (dy * Math.Cos(viewer.Angle));
         for (int i = 0; i < SpriteSamples; i++)
         {
             double offset = halfWidth * ((2.0 * i / (SpriteSamples - 1)) - 1);
             double px = x + (sideX * offset);
             double py = y + (sideY * offset);
-            // A sprite is a billboard drawn at its centre's depth, so the screen's top and bottom are
-            // tested there for every column: a 2-high sprite 6 to the side stays below the screen at a
-            // centre depth of 16.4 though its far edge is deeper (OV-20261029-actor-events round 3).
-            if (InCone(viewer, px, py) && Sees(viewer, px, py, bottom, top, null, region, (x, y)))
+            if (OnScreenColumn(viewer, depth, lateral + offset) && Sees(viewer, px, py, bottom, top, null, region, (x, y)))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether a billboard column at <paramref name="lateral"/> across the view at <paramref name="depth"/>
+    /// is drawn: a sprite shows only while a full pixel column of it is on the screen, its edge at most
+    /// at column W − 1. A 2-wide actor 40 ahead was lost in the frame at <c>PLAYER_ANGLE</c> 0.521 (its
+    /// near edge 0.9 px inside the screen's edge) and seen at 0.520 (1.6 px); 4-wide at 40 and 2-wide
+    /// at 20, at 0.543 and 0.542 (OV-20261103-careful-stop round 3 cone-*).
+    /// </summary>
+    private static bool OnScreenColumn(Viewer viewer, double depth, double lateral)
+    {
+        if (depth <= Epsilon)
+        {
+            return false;
+        }
+
+        double columns = Math.Max(2, viewer.Projection.ScreenWidth);
+        double inside = viewer.Projection.HorizontalHalfTangent * (1 - (2 / columns));
+        return Math.Abs(lateral) <= (depth * inside) + Epsilon;
     }
 
     /// <summary>Tests a wall, sampled along the part of it inside the cone, between its regions' lowest floor and highest ceiling.</summary>
@@ -641,12 +662,13 @@ public sealed class ViewTest
         double tangent = viewer.Projection.VerticalHalfTangent;
         double shear = 2 * viewer.Projection.PlayerTilt * tangent;
 
-        // A sprite or wall shows only if it covers the centre of a pixel row: the screen's top and
-        // bottom are half a row inside its edges. A 2-high actor whose top fell to row 479.9 of 480
-        // (16.481 ahead of an eye at 8) was already unseen, while at row 478.1 it was seen
-        // (OV-20261020-view-activity, 2026-11-03 addendum, read from actor-events way).
-        double rows = Math.Max(1, viewer.Projection.ScreenHeight);
-        double inside = tangent - (tangent / rows);
+        // A sprite or wall shows only while a full pixel row of it is on the screen: the screen's top
+        // and bottom are a row inside its edges, as its sides are a column inside (OnScreenColumn). A
+        // 2-high actor whose top fell to row 479.9 of 480 (16.481 ahead of an eye at 8) was already
+        // unseen, while at row 478.1 it was seen (OV-20261020-view-activity, 2026-11-03 addendum, read
+        // from actor-events way; the column rule from OV-20261103-careful-stop round 3).
+        double rows = Math.Max(2, viewer.Projection.ScreenHeight);
+        double inside = tangent - (2 * tangent / rows);
         double screenLow = viewer.EyeHeight + (depth * (-inside - shear));
         double screenHigh = viewer.EyeHeight + (depth * (inside - shear));
         return low < screenHigh && high > screenLow;

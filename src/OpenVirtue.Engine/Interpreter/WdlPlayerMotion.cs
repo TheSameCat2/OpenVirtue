@@ -25,7 +25,6 @@ public static class WdlPlayerMotion
         player.ThingWidthFactor = (float)Math.Max(0, runtime.GetSkill("THING_WIDTH"));
         player.StepUp = (float)Math.Max(0, runtime.GetSkill("PLAYER_CLIMB"));
 
-        bool positionScripted = player.PositionSetFromOutside;
         player.PushOutOfObjects();
         runtime.SetSkill("PLAYER_LAST_X", player.Position.X);
         runtime.SetSkill("PLAYER_LAST_Y", player.Position.Z);
@@ -59,7 +58,6 @@ public static class WdlPlayerMotion
         Vector2 displacement = timeCorrection > 0
             ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
             : Vector2.Zero;
-        player.LastMoveWasScripted = positionScripted && displacement == Vector2.Zero;
 
         if (timeCorrection > 0)
         {

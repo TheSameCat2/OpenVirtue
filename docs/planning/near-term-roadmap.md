@@ -448,10 +448,11 @@ First targets:
 ### Status (2026-11-03)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces and saves; 455 of 668 match in full (2026-11-03, after
+against the original's traces and saves; 459 of 673 match in full (2026-11-03, after
 OV-20261103-careful-stop: the refused long step's three-way end test, the standing hold at a solid
-wall and a wall's `DISTANCE` in the view after a beam; 7 new carriers, 6 of them in full, and
-long-pad, berkeley-near and the two actor-climb-2 carriers gained). Before that 446 of 661 (after the
+wall, walls', things' and actors' `DISTANCE` in the player's view after the player's own move
+without a turn, and the sprite's full-column edge; 12 new carriers over three rounds, 9 of them in
+full, and long-pad, berkeley-near, cone-edge and the two actor-climb-2 carriers gained). Before that 446 of 661 (after the
 standing actor's skip count, the player's plane and the arrival that refreshes of
 OV-20261020-view-activity and OV-20261021-distance-refresh, then a beam held off a wall and the
 `IMPASSABLE` border behind a long step: 18 more carriers, 1313 more lines, none lost), and 428 of 661,

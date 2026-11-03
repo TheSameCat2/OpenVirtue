@@ -411,14 +411,10 @@ actor-climb-2 (`3af2e1d2`, identical traces), no new run.
   walker took from 23.000. Answered by OV-20261103-careful-stop: the quarter step still ends past
   the border from 22, so the actor moves half the way to the hold; from 23 the quarter ends before
   the border, within the half width, and the actor goes to the hold.
-- **Open: the cone's edge and a wall's end.** cone-edge loses the 2-wide actor 40 ahead in the
-  frame at angle 0.521, where its near edge is 3 pixels inside the screen's edge; occlude-edge
-  hides it in the frame at `PLAYER_Y` −3.0, where its edge lies exactly on the wall's end. Both
-  fit a sprite drawn over whole columns from a rounded centre column with a width cut to whole
-  pixels (33 at depth 34.7, 29 at 40), a wall hiding every column up to the one its end falls in;
-  OpenVirtue tests the continuous edges (ADR-0010) and sees it one frame longer in each. Two lines
-  in two carriers; a column probe (sprites of several widths at several depths against the screen
-  edge and a wall end, by quarter-pixel steps) would settle the rounding.
+- The cone's edge: cone-edge loses the 2-wide actor 40 ahead in the frame at angle 0.521.
+  Answered by OV-20261103-careful-stop round 3: drawn at its centre's depth, a sprite shows while
+  a full pixel column of it is on the screen (its edge at most at column W − 1), as the bottom row
+  rule; the wall end of occlude-edge stays open (its column rounding flickers sub-pixel).
 - berkeley-near F1's 9.990 at (16, 0) is the wall's `DISTANCE` in the player's view after a beam
   without a turn (OV-20261103-careful-stop): (6, 4) seen facing 3.1416, cosine −1023/1024.
 

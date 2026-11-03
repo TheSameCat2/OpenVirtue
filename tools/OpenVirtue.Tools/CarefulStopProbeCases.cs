@@ -114,6 +114,97 @@ internal static class CarefulStopProbeCases
             Stand(16, 0, a, $"A{i}") + Stand(16, 0, a, $"B{i}") + Stand(15, 0, a, $"C{i}"))) +
         "    RULE cs_p = 0;\n" + ClearSampler;
 
+    // ---- round 3: entities' DISTANCE after a beam, a walk at a facing, the sprite's column edge ----
+
+    /// <summary>
+    /// The wall of wall-dist, a still 2-wide thing at (16, 4) and a still 2-wide actor at (−8, 6), their
+    /// <c>DISTANCE</c> printed with the wall's in every cycle: beams with and without a turn at facings
+    /// 0.5 and 1.0, then a walk by velocity along +X facing 1.0.
+    /// </summary>
+    private static readonly string DistBeamDeclarations =
+        Skills + "SKILL cs_p { VAL 0; }\nSKILL cs_d { VAL 0; }\nSKILL cs_dk { VAL 0; }\nSKILL cs_da { VAL 0; }\n" +
+        "SYNONYM cs_sw { TYPE WALL; }\nSYNONYM cs_sk { TYPE THING; }\nSYNONYM cs_sa { TYPE ACTOR; }\n" +
+        "TEXTURE cs_tex { SCALE_X 32; SCALE_Y 32; BMAPS red_map; }\n" +
+        "WALL cs_wall { TEXTURE red_tex; }\nTHING cs_k { TEXTURE cs_tex; DIST 1; }\nACTOR cs_a { TEXTURE cs_tex; SPEED 0; DIST 1; }\n" +
+        Sampler(
+            "    IF (cs_p > 0) {\n        RULE cs_d = cs_sw.DISTANCE;\n        RULE cs_dk = cs_sk.DISTANCE;\n        RULE cs_da = cs_sa.DISTANCE;\n" +
+            Indent(L("W", "cs_d", "cs_dk", "cs_da", "PLAYER_X", "PLAYER_Y", "PLAYER_ANGLE")) + "    }\n");
+
+    private static readonly string DistBeamRun =
+        "    SET cs_sw, cs_wall;\n    SET cs_sk, cs_k;\n    SET cs_sa, cs_a;\n" + ArmSampler + "    RULE cs_p = 1;\n" + L("GO", "PLAYER_X", "PLAYER_Y") +
+        Stand(10, 0, 0.5, "A") + Stand(9, 0, 0.5, "B") + Stand(9, 0, 1.0, "C") + Stand(8, 1, 1.0, "D") +
+        "    RULE pe_vx = 0.2;\n    WAITT 8;\n    RULE pe_vx = 0;\n" + L("E", "PLAYER_X", "PLAYER_Y") + "    WAIT 6;\n" +
+        "    RULE pe_vx = 0.2;\n    RULE pe_vy = 0.1;\n    WAITT 8;\n    RULE pe_vx = 0;\n    RULE pe_vy = 0;\n" + L("F", "PLAYER_X", "PLAYER_Y") + "    WAIT 6;\n" +
+        Stand(12, 2, 1.0, "G") +
+        "    RULE cs_p = 0;\n" + ClearSampler;
+
+    /// <summary>A still 2- or 4-wide actor 40 ahead (or 20), <c>PLAYER_ANGLE</c> swept by 0.001 across the cone's edge, its <c>VISIBLE</c> printed every cycle.</summary>
+    private static string ColumnsDeclarations(string texture) =>
+        Skills + "SKILL cs_p { VAL 0; }\nSKILL cs_k { VAL 0; }\nSKILL cs_v { VAL 0; }\nSYNONYM cs_s1 { TYPE ACTOR; }\n" +
+        texture + "ACTOR cs_a1 { TEXTURE cs_tex; DIST 1; }\nWALL cs_occ { TEXTURE red_tex; }\n" +
+        Sampler(
+            "    IF (cs_p > 0) {\n        IF (cs_s1.VISIBLE == 1) {\n            RULE cs_v = 1;\n        } ELSE {\n            RULE cs_v = 0;\n        }\n" +
+            Indent(L("C", "cs_v", "PLAYER_ANGLE", "PLAYER_Y")) + "    }\n");
+
+    private static string Sweep(string skill, double from, double to, double step) =>
+        FormattableString.Invariant($"    RULE cs_k = {from};\n    WHILE (cs_k < {to + (step / 2):0.####}) {{\n        RULE {skill} = cs_k;\n        WAIT 1;\n        RULE cs_k = cs_k + {step};\n    }}\n");
+
+    private static string ColumnsRun(double angleFrom, double angleTo) =>
+        "    SET cs_s1, cs_a1;\n" + ArmSampler + "    RULE cs_p = 1;\n" + L("GO", "PLAYER_X", "PLAYER_Y") +
+        FormattableString.Invariant($"    SET PLAYER_ANGLE, {angleFrom};\n    WAIT 4;\n") + Sweep("PLAYER_ANGLE", angleFrom, angleTo, 0.001) + "    WAIT 4;\n" +
+        "    RULE cs_p = 0;\n" + ClearSampler;
+
+    private static readonly string OccludeRun =
+        "    SET cs_s1, cs_a1;\n" + ArmSampler + "    RULE cs_p = 1;\n" + L("GO", "PLAYER_X", "PLAYER_Y") +
+        "    SET PLAYER_ANGLE, 0;\n    SET PLAYER_Y, -3.5;\n    WAIT 4;\n" + Sweep("PLAYER_Y", -3.5, -2.3, 0.05) + "    WAIT 4;\n" +
+        "    RULE cs_p = 0;\n" + ClearSampler;
+
+    private const string Width2 = "TEXTURE cs_tex { SCALE_X 32; SCALE_Y 32; BMAPS red_map; }\n";
+    private const string Width4 = "TEXTURE cs_tex { SCALE_X 16; SCALE_Y 16; BMAPS red_map; }\n";
+
+    private static readonly IReadOnlyList<TraceProbeCase> Round3 =
+    [
+        new(
+            "round3/dist-beam",
+            "Round 3. A thing at (16, 4), an actor at (-8, 6) and the wall from (10, -4) to (10, 4): their DISTANCE after beams with and without a turn at facings 0.5 and 1.0, and after walks by velocity facing 1.0 (E along +X, F diagonal).",
+            DistBeamDeclarations,
+            DistBeamRun,
+            Predict(
+                ("things and actors as walls", "after B and D (no turn) the thing's and actor's DISTANCE are their view-space values; after a walk the map's"),
+                ("things and actors always the map's", "|dx| + |dy| at every stand")),
+            Map: new TraceProbeMap(Placements: ["THING cs_k 16 4 0 0", "ACTOR cs_a -8 6 0 0"], Walls: [new TraceProbeWall("cs_wall", 10, -4, 10, 4)])),
+        new(
+            "round3/cone-w2",
+            "Round 3. A 2-wide actor 40 ahead at (40, 0); PLAYER_ANGLE from 0.505 to 0.535 by 0.001: in which frame is it no longer VISIBLE (its near edge leaves the cone at 0.525)?",
+            ColumnsDeclarations(Width2),
+            ColumnsRun(0.505, 0.535),
+            Predict(
+                ("whole columns from a rounded centre, width cut to pixels", "lost in the frame at about 0.521"),
+                ("the continuous edge", "lost in the frame at 0.525")),
+            Map: new TraceProbeMap(Placements: ["ACTOR cs_a1 40 0 0 0"])),
+        new(
+            "round3/cone-w4",
+            "Round 3. A 4-wide actor 40 ahead; PLAYER_ANGLE from 0.530 to 0.560 by 0.001 (its near edge leaves the cone at 0.550).",
+            ColumnsDeclarations(Width4),
+            ColumnsRun(0.530, 0.560),
+            Predict(("whole columns", "lost a few thousandths before 0.550"), ("the continuous edge", "lost at 0.550")),
+            Map: new TraceProbeMap(Placements: ["ACTOR cs_a1 40 0 0 0"])),
+        new(
+            "round3/cone-w2-d20",
+            "Round 3. A 2-wide actor 20 ahead at (20, 0); PLAYER_ANGLE from 0.530 to 0.560 by 0.001 (its near edge leaves the cone at 0.550).",
+            ColumnsDeclarations(Width2),
+            ColumnsRun(0.530, 0.560),
+            Predict(("whole columns", "lost a few thousandths before 0.550"), ("the continuous edge", "lost at 0.550")),
+            Map: new TraceProbeMap(Placements: ["ACTOR cs_a1 20 0 0 0"])),
+        new(
+            "round3/occlude-w2",
+            "Round 3. The 2-wide actor at (40, 0) behind the end of a plain wall from (30, -20) to (30, 0); PLAYER_Y from -3.5 to -2.3 by 0.05 facing +X (its edge clears the wall's end at -3.0).",
+            ColumnsDeclarations(Width2),
+            OccludeRun,
+            Predict(("whole columns", "VISIBLE from about -2.8"), ("the continuous edge", "VISIBLE from -2.95")),
+            Map: new TraceProbeMap(Placements: ["ACTOR cs_a1 40 0 0 0"], Walls: [new TraceProbeWall("cs_occ", 30, -20, 30, 0)])),
+    ];
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
         new TraceProbeCase(
@@ -141,6 +232,7 @@ internal static class CarefulStopProbeCases
                 ("ten units short at (16, 0) only", "9.990 at S1, S2 and S10, the others exact"),
                 ("short whenever |dy| equals the vertex's y", "9.990 at (16, 0) and (20, 4)")),
             Map: new TraceProbeMap(Walls: [new TraceProbeWall("cs_wall", 10, -4, 10, 4)])),
+        .. Round3,
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

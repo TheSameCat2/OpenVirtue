@@ -400,7 +400,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - an actor nearer than its half width to a solid wall is put at its hold in place of its move,
     with the standing arrival still counted; a step that would reach its way point arrives though
     a wall stops it short;
-  - a wall's `DISTANCE` after a script beam without a turn is the nearer vertex's |depth| +
-    |lateral| in the player's view (22.10 trig), the map's |dx| + |dy| after a walk or a turn.
+  - a wall's, a thing's and an actor's `DISTANCE` after the player's own move without a turn (a
+    beam or a walk) is the point's |depth| + |lateral| in the player's view (22.10 trig); a turn,
+    an actor's front move, the eye height and `PLAYER_ARC` give the map's |dx| + |dy| (round 3);
+  - a sprite shows while a full pixel column of it is on the screen (round 3: 2- and 4-wide actors
+    at 40 and 20 lost at 0.521 and 0.543), as the measured bottom row.
 
-  A walker placed in rock is left as read.
+  A walker placed in rock, a wall end's column rounding and 1-to-5-unit residuals of the view's
+  value are left as read.
