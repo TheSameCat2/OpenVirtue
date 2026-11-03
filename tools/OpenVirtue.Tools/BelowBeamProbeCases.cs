@@ -20,12 +20,44 @@ internal static class BelowBeamProbeCases
         "SKILL bb_i { VAL 0; }\nSKILL bb_h { VAL 0; }\n" +
         "WALL bb_wall { TEXTURE grn_tex; FLAGS PASSABLE; }\n";
 
+    // Round 2: a thing and an actor in the room, each GROUND (absolute HEIGHT) or not, read back
+    // through a REGION synonym as the retail scripts do (SET curRegion, MY.REGION).
+    private const string ObjectDeclarations = Declarations +
+        "SYNONYM bb_r { TYPE REGION; }\n" +
+        "THING bb_t { TEXTURE mag_tex; }\nTHING bb_tg { TEXTURE mag_tex; FLAGS GROUND; }\n" +
+        "ACTOR bb_a { TEXTURE yel_tex; }\nACTOR bb_ag { TEXTURE yel_tex; FLAGS GROUND; }\n";
+
     private static readonly TraceProbeMap Bridge = new(
         RoomBody: "SKILL1 1;",
         PadBody: "BELOW bb_low; SKILL1 2;",
         PadWall: "bb_wall",
         PadFloor: 10,
         Textures: "REGION bb_low { FLOOR_HGT 0; CEIL_HGT 8; FLOOR_TEX flr_tex; CEIL_TEX cel_tex; SKILL1 3; }\n");
+
+    private static readonly TraceProbeMap ObjectBridge = Bridge with
+    {
+        Placements = ["THING bb_t 8 6 0 0", "THING bb_tg 8 2 0 0", "ACTOR bb_a 8 -2 0 0", "ACTOR bb_ag 8 -6 0 0"],
+    };
+
+    private static string ObjectSample(string token, string target) =>
+        FormattableString.Invariant($"    SET bb_r, {target}.REGION;\n    RULE bb_h = bb_r.SKILL1;\n") +
+        V(token, "TICKS", "bb_i", $"{target}.X", $"{target}.Y", $"{target}.HEIGHT", "bb_h");
+
+    private static TraceProbeCase Object(string label, string question, string target, double height, bool locate) => new(
+        label,
+        question,
+        ObjectDeclarations,
+        ObjectSample("B0", target) +
+        FormattableString.Invariant(
+            $"    SET {target}.X, -8;\n    SET {target}.Y, 16;\n    SET {target}.HEIGHT, {height};\n") +
+        (locate ? $"    LOCATE {target};\n" : "") +
+        ObjectSample("B1", target) +
+        "    WHILE (bb_i < 12) {\n        RULE bb_i = bb_i + 1;\n        WAIT 1;\n" + Indent(ObjectSample("C", target)) + "    }\n",
+        Predict(
+            ("the storey holding its feet", "GROUND 4: underpass (3); GROUND 12: deck (2); relative 0: ?"),
+            ("always the top", "every LOCATE ends on the deck (2)"),
+            ("no LOCATE keeps the room", "without LOCATE the region stays the room (1)")),
+        Map: ObjectBridge);
 
     private static string Sample(string token) =>
         "    RULE bb_h = HERE.SKILL1;\n" + V(token, "TICKS", "bb_i", "PLAYER_X", "PLAYER_Y", "PLAYER_Z", "PLAYER_HGT", "bb_h");
@@ -52,6 +84,12 @@ internal static class BelowBeamProbeCases
         Beam("mid-locate", "Beamed with eye 9 (above the underpass's ceiling, below the deck) and LOCATE.", 9, true),
         Beam("low-nolocate", "Beamed with eye 4 and no LOCATE: does the region follow the next movement?", 4, false),
         Beam("high-nolocate", "Beamed with eye 14 and no LOCATE.", 14, false),
+        Object("thing-ground-4", "A GROUND thing beamed to (-8, 16) at HEIGHT 4 (inside the underpass) and LOCATEd: which storey?", "bb_tg", 4, true),
+        Object("thing-ground-12", "A GROUND thing beamed at HEIGHT 12 (on the deck) and LOCATEd.", "bb_tg", 12, true),
+        Object("thing-rel-0", "A thing with relative HEIGHT 0 beamed and LOCATEd: which storey's floor does it stand on?", "bb_t", 0, true),
+        Object("actor-rel-0", "An actor with relative HEIGHT 0 beamed and LOCATEd.", "bb_a", 0, true),
+        Object("actor-ground-4", "A GROUND actor beamed at HEIGHT 4 and LOCATEd.", "bb_ag", 4, true),
+        Object("thing-ground-12-nolocate", "A GROUND thing beamed at HEIGHT 12 without LOCATE: does its region stay the room?", "bb_tg", 12, false),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
@@ -60,6 +98,7 @@ internal static class BelowBeamProbeCases
         TraceFile,
         "ovbbs",
         "`B0`/`B1` lines before and after the beam, then `C` each cycle: `TICKS`, the cycle, the player's\n" +
-        "X, Y, Z, `PLAYER_HGT` and the region's `SKILL1` (room 1, deck 2, underpass 3).",
+        "X, Y, Z, `PLAYER_HGT` and the region's `SKILL1` (room 1, deck 2, underpass 3). The object cases\n" +
+        "(round 2) print the object's X, Y and `HEIGHT` in place of the player's three, and its region's `SKILL1`.",
         All);
 }
