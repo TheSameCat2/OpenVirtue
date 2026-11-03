@@ -878,15 +878,22 @@ public class WdlRuntimeTests
     }
 
     [Theory]
-    [InlineData(0, 0, 32.832)] // OV-20261009-shoot-mapping: the centre sprite, 44 ahead, at the centre column
-    [InlineData(160, 12, 33.176)] // the right sprite at SHOOT_X 0.5 (the 22.10 pixels per step gave 33.174)
-    [InlineData(-160, -12, 32.488)] // the left sprite at SHOOT_X -0.5 (32.489)
-    public void SpriteHitColumn_ProjectsTheEdgeWithAReciprocalOfTheDepth(double column, double centerRight, double hitX)
+    [InlineData(44, 0, 0, 32.832)] // OV-20261009-shoot-mapping: the centre sprite, 44 ahead, at the centre column
+    [InlineData(44, 160, 12, 33.176)] // the right sprite at SHOOT_X 0.5
+    [InlineData(44, -160, -12, 32.488)] // the left sprite at SHOOT_X -0.5
+    [InlineData(20, 0, 0, 32.537)] // round 3: depth 20 steps 561/1024 a column
+    [InlineData(20, 185, 6, 37.608)]
+    [InlineData(37, 9, 0, 42.133)] // depth 37 steps 1040/1024
+    [InlineData(37, -189, -12, 34.063)] // 34.0625 exactly: PRINT_VALUE rounds the tie up
+    [InlineData(44, 249, 18, 44.502)]
+    public void SpriteHitColumn_ProjectsTheSpriteInFixedPointTangents(double depth, double column, double centerRight, double hitX)
     {
-        // 640 wide at PLAYER_ARC 1: a focal length of 599680/1024; a 64-texel sprite 4 steps wide.
-        var shot = new WdlRuntime.ShotPixel(column, 599680 / 1024.0);
+        // 640 wide at PLAYER_ARC 1: a focal length of (320 << 20) / 559; a 64-texel sprite 4 steps wide.
+        var shot = new WdlRuntime.ShotPixel(column, (320L << 20) / 559);
 
-        Assert.Equal(hitX, WdlRuntime.SpriteHitColumn(shot, centerRight, 44, 2, 64), 3);
+        double raw = WdlRuntime.SpriteHitColumn(shot, centerRight, depth, 2, 64) * 1024;
+
+        Assert.Equal(hitX, Math.Floor((raw * 1000 / 1024) + 0.5) / 1000, 3);
     }
 
     [Fact]
@@ -2411,10 +2418,10 @@ public class WdlRuntimeTests
 
         Assert.Same(level.Things.Single(thing => thing.Name == "far"), runtime.GetObject("hit"));
         Assert.Equal(7, runtime.GetSkill("HIT_DIST"), 6);
-        // The texel column the renderer steps to at the centre column: 0.714 pixels past the half-way
-        // point at a texels-per-pixel step cut to 22.10 (24/1024 here), a little short of 1
-        // (OV-20261009-shoot-mapping, sweep).
-        Assert.Equal(1012 / 1024.0, runtime.GetSkill("HIT_X"), 6);
+        // The texel column the renderer steps to one pixel past the centre column, in 22.10 tangents
+        // with a texels-per-pixel step of about 24/1024 here: a little short of 1
+        // (OV-20261009-shoot-mapping round 3).
+        Assert.Equal(1014 / 1024.0, runtime.GetSkill("HIT_X"), 6);
         Assert.Equal(4, runtime.GetSkill("HIT_Y")); // the sampled row + 1 (OV-20261009-shoot-mapping)
     }
 

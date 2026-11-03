@@ -4739,7 +4739,7 @@ public sealed class WdlRuntime :
             range / distanceScale,
             distanceScale,
             player.Region,
-            new ShotPixel(column, halfWidth * Math.Truncate(1024 / projection.HorizontalHalfTangent) / 1024));
+            new ShotPixel(column, ((long)halfWidth << 20) / Math.Max(1, (long)Math.Truncate(projection.HorizontalHalfTangent * 1024))));
         if (hit is null)
         {
             ClearHitResult();
@@ -6286,29 +6286,31 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// A shot's screen column, as an offset from the centre, and the focal length the original
-    /// projects sprites with: half the width times 1/tan(<c>PLAYER_ARC</c>/2) cut to 22.10.
+    /// projects sprites with, in 2^-10 pixels: half the width over tan(<c>PLAYER_ARC</c>/2) cut to
+    /// 22.10 (600258 for 640 wide at arc 1; OV-20261009-shoot-mapping round 3).
     /// </summary>
-    internal readonly record struct ShotPixel(double Column, double FocalLength);
+    internal readonly record struct ShotPixel(double Column, long FocalRaw);
 
     /// <summary>
-    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping, sweep): the texel column the renderer
-    /// steps to at the shot's screen column. It counts from the sprite's projected left edge,
-    /// 733/1024 pixels further on. The edge is projected with 1/depth as a 2^-20 reciprocal, its
-    /// centre and half-width each cut toward zero to 1/1024 pixel; the texels per pixel come from the
-    /// pixels per step cut to 22.10 (1230/1024 texels for a 64-texel 4-step sprite 44 ahead), and
-    /// the texel is floored. This gives all 27 shots of the sweep exactly (round 2).
+    /// A sprite's <c>HIT_X</c> (OV-20261009-shoot-mapping round 3): the renderer's texel at the shot's
+    /// column, worked out in 22.10 tangents. The sprite's centre, half width and width over its depth
+    /// are each a 22.10 quotient cut toward zero; the width in pixels is that tangent times the focal
+    /// length, and the texels per pixel are the bitmap's width less 1/1024 over it. The texel is counted
+    /// from the left edge to one pixel past the shot's column, plus 768/2^20, and floored. This gives
+    /// all 45 shots at depths 20, 30, 37 and 44 and agrees with the drawn spans in the screenshots.
     /// </summary>
     internal static double SpriteHitColumn(ShotPixel shot, double centerRight, double depth, double halfWidth, int textureWidth)
     {
-        const int EdgeOffset = 733;
-        long focal = (long)Math.Round(shot.FocalLength * 1024);
-        long reciprocal = (1L << 30) / Math.Max(1, (long)Math.Round(depth * 1024));
-        long centre = (long)Math.Truncate(centerRight * focal * reciprocal / (1 << 20));
-        long half = (long)Math.Truncate(halfWidth * focal * reciprocal / (1 << 20));
-        double pixelsPerStep = Math.Truncate(1024 * shot.FocalLength / depth) / 1024;
-        long texelsPerPixel = (long)Math.Truncate(1024 * textureWidth / (2 * halfWidth * pixelsPerStep));
-        long position = (long)Math.Round(shot.Column * 1024) + EdgeOffset - (centre - half);
-        long texel = (long)Math.Floor(position * texelsPerPixel / 1024.0);
+        const long SampleOffset = (1L << 20) + 768;
+        long depthRaw = Math.Max(1, (long)Math.Round(depth * 1024));
+        long halfRaw = (long)Math.Round(halfWidth * 1024);
+        long centre = Math.DivRem((long)Math.Round(centerRight * 1024) << 10, depthRaw).Quotient; // toward zero
+        long half = (halfRaw << 10) / depthRaw;
+        long width = ((2 * halfRaw) << 10) / depthRaw;
+        long widthPixels = Math.Max(1, (width * shot.FocalRaw) >> 10);
+        long texelsPerPixel = (((long)textureWidth * 1024) - 1) * 1024 / widthPixels;
+        long position = ((long)Math.Round(shot.Column) << 20) + SampleOffset - ((centre - half) * shot.FocalRaw);
+        long texel = (long)Math.Floor(position * (double)texelsPerPixel / (1 << 20));
         return Math.Clamp(texel, 0, (textureWidth * 1024L) - 1) / 1024.0;
     }
 

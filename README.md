@@ -206,8 +206,9 @@ Not yet complete:
   (OV-20261029-ui-text) and slider knobs: dragging a slider, and where a click lands relative to the
   pointer's hot spot;
 - how floor and texture-cycle sounds take channels;
-- things `LOCATE`d into a `BELOW` stack (a player lands in the storey that holds its eye,
-  OV-20261030-below-beam; sided wall textures are measured and drawn, OV-20261030-wall-sides);
+- the player's stop against walls and its `IF_NEAR` timing there (`LOCATE` into a `BELOW` stack is
+  measured for the player, things and actors, OV-20261030-below-beam; sided wall textures are
+  measured and drawn, OV-20261030-wall-sides);
 - full save compatibility in play. OpenVirtue:
   - reads and writes `SAVE_INFO`;
   - imports the original's full saves (skills, objects, waiting actions, slots);
@@ -225,11 +226,12 @@ Not yet complete:
     `INKEY` strings. V3.963 itself hung loading its own save while an object's
     event action waited (round 17), so such saves are written as the original writes them but not
     proven to load;
-- `CAREFULLY` actors' residuals and slides (steps along an `ANGLE` and plain steps toward a
-  point match unit for unit: the engine rounds its own products, OV-20261029-actor-step round 6);
-- shots at mirrored sprites and walls: their `HIT_X` (a sprite's fractional `HIT_X` matches,
-  OV-20261009-shoot-mapping);
-- start-up `TICKS` timing, which keeps many timed probes from matching line for line
+- `CAREFULLY` actors' slides after a wall stop beyond the first (steps along an `ANGLE`, toward a
+  point and against walls match unit for unit: OV-20261029-actor-step, OV-20261029-actor-events);
+- a sprite's `HIT_X` at depths other than 44 (the texel step per column is measured at four depths
+  but not yet explained, OV-20261009-shoot-mapping round 3), and shots at mirrored sprites and walls;
+- the replay's clock in the stretches the original's traces do not sample (the start-up, gaps
+  between samples, after the last one), which keeps many timed probes from matching line for line
   (`ovtool oracle summary` lists each probe's count).
 **The app is a level viewer with debug walking, not yet a playable game.** See the
 [milestone roadmap](docs/recon/06-reimplementation-strategy.md) for the full plan

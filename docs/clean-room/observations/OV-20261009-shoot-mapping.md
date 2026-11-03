@@ -269,9 +269,31 @@ Implementation:
   and 586.1, not one.
 - The centre column reads 32.537, 32.791, 32.992 and 32.832: the texel offset past the centre is not
   one constant either.
-- So the depth-44 rule below (the reciprocal edge and 733/1024) reproduces depth 44 only; the replay
-  matches 4 of the 32 new carriers (those that print no `HIT_X` difference). How the texel step
-  comes out of the depth is open.
+- So the depth-44 rule below (the reciprocal edge and 733/1024) reproduced depth 44 only; the replay
+  matched 4 of the 32 new carriers.
+
+**The rule (2026-11-03, analysis only).** Three independent fits of all 45 shots (both sweeps)
+arrived at the same structure, and an independent check rebuilt it from its description and
+reproduced 45 of 45. The renderer works in 22.10 tangents:
+- The sprite's centre, half width and full width over its depth are each a 22.10 quotient, the
+  centre's cut toward zero: 0, 102 and 204/1024 at depth 20; 279, 46 and 93 for the right target at
+  44 (93, not twice 46, is why depth 44 looked different).
+- The focal length is half the screen width over tan(`PLAYER_ARC`/2) cut to 22.10 (559/1024):
+  600258/1024 pixels, not 320 × 1874/1024. Only that integer fits all rows.
+- The width in pixels is the width tangent times the focal length, cut to 1/1024; the texels per
+  pixel are the bitmap's width less 1/1024 (65535/1024, as the save's sprite sizes show) over it:
+  561, 841, 1040 and 1230.
+- The texel is counted from the left edge (centre less half, times the focal length, unrounded)
+  to one pixel past the shot's column plus 768/2^20 pixels (any of 732 to 828 fits), and floored.
+- `PRINT_VALUE` rounds half up: 34.0625 prints as 34.063.
+
+The fits also predict the screenshots: for all 15 depth-sweep targets the first and last drawn
+columns and the column where the bitmap's colour changes at texel 32 fall where the rule puts them,
+so `HIT_X` is the renderer's own texel. Open: where the 768/2^20 comes from, and whether the widths
+are 2048 and 4096 or 2047 and 4095 raw over the depth (depth 32 or 64 would separate them).
+
+`WdlRuntime.SpriteHitColumn` implements it; `WdlRuntimeTests.SpriteHitColumn_ProjectsTheSpriteInFixedPointTangents`.
+All 59 shoot-mapping carriers now match in full (27 before round 3, 32 in it).
 
 ## Addendum: the sprite's edge in fixed point (2026-11-02, analysis only)
 No new carriers. Every centre-target shot matched exactly, but every shot at the right target
