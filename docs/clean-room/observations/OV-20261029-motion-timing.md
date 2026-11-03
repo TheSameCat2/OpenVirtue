@@ -104,3 +104,13 @@ harness cannot recover).
   anim-delay8 178 of 217 (was 3) and anim-random 136 of 636 (was 2); the rest is the phase and
   `RANDOM` difference. No other carrier changes. `WdlRuntime.InitializeAnimationCycles`; test
   `WdlRuntimeTests.Runtime_LoopingAnimatedTexture_StartsWithPlaySet`.
+
+## Replay notes (2026-11-03, harness)
+- **anim-random replays the same way every time.** Its `RANDOM 1` delay factor is drawn from the
+  runtime's generator, which was seeded from the clock, so the same build matched 12, 23 or 263 of
+  636 lines of round2 anim-random (`OVMOT0.TXT`, sha256 `ac0b253c`) from run to run; the 136 above
+  was one such draw. The replay now passes a fixed seed (`RuntimeHost.OpenArchive`'s `randomSeed`,
+  1), and the carrier matches 72 lines on every run. The original's generator is not modelled, so
+  the line count says nothing about `RANDOM`'s distribution. Outside the replay the runtime still
+  draws unseeded. Tests: `WdlRuntimeRandomTests`,
+  `RuntimeHostFrameClockTests.OpenArchive_RandomSeed_DrawsTheSameRandomOnEveryRun`.

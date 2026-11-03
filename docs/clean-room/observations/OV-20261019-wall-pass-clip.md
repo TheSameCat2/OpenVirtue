@@ -186,3 +186,13 @@ pass before all the objects (`WdlRuntime.DispatchTouched`). This carrier still d
 (start offset), so the diff cannot score it. solid-dist0 prints `W` before `N` at a later player
 position in the same cycle, which suggests that a push against a solid wall fires after that
 cycle's movement. That case is not implemented. It stays an open question.
+
+## Replay notes (2026-11-03, harness)
+- The replay now runs to 64 ticks past the last `TICKS` any original file prints, not only the
+  last sample: clip-wall (`OVWPC0.TXT`, sha256 `4d2b0144`), solid-dist0 (`68337dd4`) and
+  solid-dist6 (`9be93427`) now write their `OVEND0.TXT`, which matches. clip-objects (`9019d198`)
+  matches in full with the cadence fill of counted gaps (190/190, was 135).
+- pass-dist6's `OVEND0.TXT` (sha256 `8d109c0c`, `END` alone) no longer matches: the replay prints
+  one `W` after `END`. Both before and after the change the replay starts off by the start-up
+  offset this note's 2026-10-30 entry explains (−1.375, now −1.531), and none of its `W` lines
+  matches either way, so the earlier match depended on that offset, not on the clock's rules.

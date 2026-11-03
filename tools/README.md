@@ -111,8 +111,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   match line for line.
 - `oracle replay | diff <carrier-or-probe-dir>` — the oracle-diff harness. `replay` packs a carrier's
   `work/` files (not `VRUN.EXE` or the original's `OV*` outputs) into `<carrier>/ov-replay/TITLE.WRS`
-  and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the
-  original's last sample; the replay's `PRINTFILE` output lands in
+  and runs it headless through `RuntimeHost` until the probe's `EXIT` or 64 ticks past the later of
+  the original's last sample and the last `TICKS` any of its files prints (the last first-column
+  value of a token whose first column never falls), so a sampler switched off early no longer stops
+  the replay before `OVEND`; the replay's `PRINTFILE` output lands in
   `<carrier>/ov-replay/openvirtue-prints/TITLE/`. `diff` does the same and compares every `OV*.TXT`
   the original wrote (except the autoexec's `OVDIR.TXT`/`OVCON.TXT`) with the replay's, line by line:
   same token, same field count, numbers within `--tolerance` (default 0.002). Given a probe folder it
@@ -131,7 +133,8 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   less, are taken as printed a cycle later: the probe action prints before the sampler counts).
   Until the replay prints its first sampled cycle every frame lasts the original's first sampled
   step. That step, the first sampled cycle's `TIME_CORR`, is read from a column that prints it,
-  or else from the step 18 cycles later: DOSBox-X's 60 Hz steps repeat every 18 cycles. This
+  or else from the step 18 cycles later (where the first sampled step is a frame's): DOSBox-X's
+  60 Hz steps repeat every 18 cycles. This
   moved the first difference of the bullet carrier from line 3 to line 284, and added 668 matching
   lines over all carriers; from then on each frame lands `TICKS` on the original's next sample, shifted by the start
   offset, which is reported, and columns that print `TICKS` are compared relative to it. A gap of
@@ -160,7 +163,56 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   1.094-tick gaps, though its start-up ran 60 Hz frames; the 18-cycle rule accepts only such frames
   (0.25 to 0.3125). With these, the flic replays no longer start one flic step late. A
   `"time_corr"` asks for fixed frames, for a carrier whose lines print no `TICKS`.
-  `--time-corr x` runs fixed frames instead. With `OV_REPLAY_ROOT` set, each carrier's replay goes
+  `--time-corr x` runs fixed frames instead.
+  The replay clock since 2026-11-03 (all harness-only; `RANDOM` aside, no engine behaviour changed):
+  - **Frame cadence.** DOSBox-X's frames last whole 1/32 ticks and their running total is
+    `floor(phase + k·rate)` units: at about 61 fps 8s and 9s spread as evenly as the rate allows,
+    never three 8s in a row. `OracleTrace.FitCadence` finds the (rate, phase) that reproduces the
+    longest run of steps of two neighbouring sizes (at most 256), and after the last sample the
+    replay continues that cadence instead of the run's median step (the median of the last five
+    steps where none fits). The probes' `WAITT 2` tails then resume when the original's did: the
+    extra `TK` line after `PS`/`S`/`QS` is gone from all eight view-activity carriers that had it, and dist-out,
+    sprite-occlude, long-pad, long-wall, range-d1, tilt-far (50/51-unit steps) and
+    scheduler-order startup match in full.
+  - **Counted gaps.** A counted sampler's gaps are filled along one cadence through every sample and
+    through the step into it that the sampler's `TIME_CORR` column prints (a column of whole 1/32
+    ticks between 0.1 and 2 that equals the step wherever two samples are a cycle apart), for as
+    many consecutive 60 Hz gaps as one cadence fits. The old fill restarted at phase 0 in every gap,
+    which no constant-rate run produces, and always made the step into a sample 9/32. That column
+    also gives the first cycle's step when no other rule does. waits-control (27 samples 123 cycles
+    apart, one cadence through all), scheduler-order round5 waitt-small, wall-pass-clip
+    clip-objects and audio round2 stop-lag match in full.
+  - **Across a flic's end.** A gap whose first sample prints a flic step (`TIME_CORR` 1.094 or
+    0.625, not a 60 Hz frame's) keeps that step for as many cycles as leave the world cycles after
+    it at least 8/32 each (the flic's remaining frames: 10 in waits, 44 in round3 speed, 14 in
+    replace's second flic). The world cycles follow the cadence of the samples after the flic, or
+    whole 1/32 steps back from the next sample ending on its printed `TIME_CORR`, the first cycle
+    taking the off-grid rest. flic-scheduler-detail waits, round3 speed and replace match in full.
+  - **8-tick launches.** Most launches from 2026-10-15 to 2026-10-21 ran at 8 ticks a frame. When
+    every positive first-column value of the trace (and the `TCK=` stamp) is a whole multiple of 8,
+    the replay runs fixed 8-tick frames (`OracleTrace.RanAtSlowFrames`) instead of guessing frames
+    from samples that often come one per several cycles; the each-sec-cadence carriers' `SECS`
+    column no longer passes for a cycle counter. each-sec-cadence cadence, phase, slot-16 and
+    wait-inside, clip-contact clip-regions and clip-detail wall-regions, round2 wall-dist-clip and
+    round3 wall-regions-visible match in full (the last two had a stalled `pe_n` that sent the
+    counter detection to another object's run count).
+  - **Start-up.** The 18-cycle rule for the first step applies only when the first sampled step
+    is a 60 Hz frame's: view-activity near-low and occlude-edge start at 8-tick frames (24, 32)
+    before they speed up, and their start offset of −10.656 is gone (near-low matches in full).
+  - **`RANDOM`.** The replay opens the archive with a fixed `RANDOM` seed (1), kept across level
+    changes, so a carrier that draws `RANDOM` replays the same way every time. Before, motion-timing
+    round2 anim-random matched a different number of lines on each run of one build (12, 23 and
+    263 of 636 were seen); with the seed it matches 72. The original's generator is not modelled.
+  Over all carriers (against the 2026-11-03 merged baseline): 307 → 330 full carriers of those
+  run, 2242 → 2276 matching files, 26042 → 26231 matching lines (26042 − 263 → 26231 − 72 without
+  anim-random). Four files match fewer lines, none on the evidence: anim-random (random); clip-contact
+  rerun clip-regions-order (its first `TK` line, 31 ticks before the first `T` sample, where the
+  start-up is unsampled); proximity-events near-walk (`TK` every 62 cycles with no `TIME_CORR`; one
+  cadence fits all 40 samples with the phase within 0.06, and the replay's position drifts from the
+  original's by 0.006 to 0.018 a sample either way, so the old line-4 match was 0.002 inside the
+  tolerance); wall-pass-clip pass-dist6's `OVEND0.TXT`, where both replays carry a start offset
+  (−1.375 then −1.531) and the later one prints its last `W` after `END`.
+  With `OV_REPLAY_ROOT` set, each carrier's replay goes
   under that folder (at the carrier's own path) instead of `<carrier>/ov-replay/`, so several
   checkouts can diff the same carriers at once. Carriers with scripted input (`AUTOTYPE`,
   `x11_click.py`) are flagged: the replay presses nothing.

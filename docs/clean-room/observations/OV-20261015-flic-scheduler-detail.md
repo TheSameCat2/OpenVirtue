@@ -251,3 +251,19 @@ already matched the original.
   rule is supported yet. The three `OVEND0.TXT` files the stop rule made match (clip-contact
   rerun/liber, wall-distance wall-behind, wall-pass-clip pass-dist0) lost a line that a two-tick
   print throttle happened to let through, not one the original suppresses.
+
+## Replay notes (2026-11-03, harness)
+- **The gap after the flic, resolved.** The 2026-10-30 note's next difference was the replay's: its
+  counted fill spread the 92 cycles from `TK` 421 (472.813, `TIME_CORR` 1.094) to `TK` 513
+  (504.956) evenly, while the original spent the first ten on the flic's last frames. The fill
+  now keeps the flic step for as many cycles as leave the world cycles after it at least 8/32 each
+  (10 in waits, 44 in round3 speed, 14 in replace's second flic: each the flic's real remaining
+  frames), then steps back from the next sample in whole 1/32 ticks ending on its printed
+  `TIME_CORR`. Traces: waits `OVFLD0.TXT` sha256 `ee4bfcdc`, round3 speed `af12dfd1`, replace
+  `26c30abd`; all three match in full (were 40/54, 11/21, 17/34).
+- **Sparse samples between flics.** Outside a flic, one 60 Hz cadence, `floor(phase + k·rate)`
+  thirty-seconds of a tick, passes through all 27 waits-control `TK` samples and the `TIME_CORR`
+  each prints (`OVFLD0.TXT` sha256 `5e1b5141`; rate 8.38810 to 8.38815 units a cycle), and filling
+  the gaps along it puts `WB16` at 17.594, `S2` at 146.813, `S4` at 166.219 and `S6` at 183.25 as
+  in the original. waits-control matches in full (was 23/45); round2 near-control 28/29 (was 14),
+  walk-control 7/28, missing 20/25. `tools/README.md` describes the rules.
