@@ -128,7 +128,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   first section's run-time words (+36, +40) and the run-time statistics skills
   (`TIME_*`, `ACTIONS`, `ACTIVE_*`, `MAX_DIST`, `VISIBLES`, `VESA_MODE`, `RANDOM`).
   Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
-  detected by default: the first non-negative, never-decreasing column of the densest token; a
+  detected by default: a token's fractional never-decreasing column before a whole one, so a flic
+  carrier's `TICKS` beats the `FLIC_FRAME` printed before it, then the densest token, three lines
+  or, failing that, two; a
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
   in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
   counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`; there the lines of

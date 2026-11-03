@@ -193,30 +193,46 @@ internal static class OracleTrace
         OracleTimingColumn? best = null;
         (int Column, bool Fractional, int Distinct, int Lines) bestScore = default;
         var spans = new Dictionary<OracleTimingColumn, (int Lines, double First, double Span)>();
-        foreach (IGrouping<string, OracleTraceLine> group in lines.GroupBy(static l => l.Token, StringComparer.Ordinal))
+        // A token's own best column first: a fractional one (TICKS, in 1/32 steps) over a whole one in
+        // a lower column (the flic carriers print FLIC_FRAME before TICKS); then the densest token.
+        for (int minimumLines = 3; minimumLines >= 2 && best is null; minimumLines--)
         {
-            List<OracleTraceLine> tokenLines = group.ToList();
-            if (tokenLines.Count < 3)
+            foreach (IGrouping<string, OracleTraceLine> group in lines.GroupBy(static l => l.Token, StringComparer.Ordinal))
             {
-                continue;
-            }
-
-            int columns = tokenLines.Min(static l => l.Fields.Count);
-            for (int column = 0; column < columns; column++)
-            {
-                if (!TryMonotonic(tokenLines, column, out int distinct, out bool fractional) || distinct < 3)
+                List<OracleTraceLine> tokenLines = group.ToList();
+                if (tokenLines.Count < minimumLines)
                 {
                     continue;
                 }
 
-                var candidate = new OracleTimingColumn(group.Key, column);
-                if (CounterColumn(tokenLines, column) is { } counter)
+                int columns = tokenLines.Min(static l => l.Fields.Count);
+                (int Column, bool Fractional, int Distinct)? tokenBest = null;
+                for (int column = 0; column < columns; column++)
+                {
+                    if (!TryMonotonic(tokenLines, column, out int distinct, out bool fractional) || distinct < minimumLines)
+                    {
+                        continue;
+                    }
+
+                    if (tokenBest is not { } o || (fractional && !o.Fractional))
+                    {
+                        tokenBest = (column, fractional, distinct);
+                    }
+                }
+
+                if (tokenBest is not { } pick)
+                {
+                    continue;
+                }
+
+                var candidate = new OracleTimingColumn(group.Key, pick.Column);
+                if (CounterColumn(tokenLines, pick.Column) is { } counter)
                 {
                     double first = tokenLines[0].Value(counter)!.Value;
                     spans[candidate] = (tokenLines.Count, first, tokenLines[^1].Value(counter)!.Value - first + 1);
                 }
 
-                (int, bool, int, int) score = (column, fractional, distinct, tokenLines.Count);
+                (int, bool, int, int) score = (pick.Column, pick.Fractional, pick.Distinct, tokenLines.Count);
                 if (best is null || Better(score, bestScore))
                 {
                     best = candidate;
