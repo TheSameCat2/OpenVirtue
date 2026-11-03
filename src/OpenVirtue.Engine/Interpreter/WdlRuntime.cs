@@ -4218,13 +4218,14 @@ public sealed class WdlRuntime :
             actor.X = x;
             actor.Y = y;
             UpdateActorRegion(actor);
-            // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it.
-            if (blocked is not null &&
-                blocked.PushAway(
-                    actor,
-                    new Vector2((float)actor.X, (float)actor.Y),
-                    LevelCollisionWorld.ContactDistance(ActorCollisionRadius(actor) + blocked.Width)))
+            // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it. The
+            // push is a move of the player's, not a beam: the player's own motion later in the cycle
+            // pushes out of nothing and so fires no second IF_NEAR, and PLAYER_X/PLAYER_Y already read
+            // the pushed position in the hook (actor-push: one N a cycle, with the pushed position).
+            if (blocked is not null && blocked.PushAway(actor, ActorCollisionRadius(actor)))
             {
+                blocked.Settle();
+                WdlPlayerMotion.Synchronize(this, blocked);
                 FireActorContact(actor);
             }
         }

@@ -149,6 +149,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   player ahead of it and fires `IF_NEAR` in every pushing cycle. A `CAREFULLY` one stops short,
   halving its step until the point two steps ahead is clear, and fires `IF_NEAR` while blocked.
   A beam inside a solid object is pushed straight out at the next move. `DIST` is strict (`<`).
+  Addendum 2026-11-03: the push is the start-up push-out's 22.10 distance from the actor's centre
+  (the lateral part scaled, 4/1024 aside where there is none), once a cycle with the skills already
+  pushed; a push a wall would stop is refused whole.
   For things and actors the eye must also be less than `DIST` above or below the texture's
   centre, which is why small `DIST`s on low objects never fired. `DISTANCE` reads 65535.999
   until the player first comes within 1.5 × the `CLIP_DIST` border. Eighteen DOSBox-X runs;
