@@ -176,19 +176,23 @@ public sealed class LevelCollisionWorld
     private static long ContactTestSquared(long contact) => (contact - 1) * (contact - 1) / 1024;
 
     /// <summary>
-    /// The squared length, in 22.10 raw units, to which the original pushes a point out of an object:
-    /// (c − 1)²/1024 + <see cref="PushSlackSquaredRaw"/>. It is the only such term that gives all 21
-    /// measured push-outs of 1- to 16-wide objects; c²/1024 + 98 missed the two 4-wide ones off the
-    /// axes by a unit (OV-20261103-startup-clock).
+    /// The squared length, in 22.10 raw units, to which the start-up (or a beam's) push-out puts the
+    /// player: (c − 1)²/1024 + <see cref="PushSlackSquaredRaw"/>. It is the only such term that gives
+    /// all 21 measured push-outs of 1- to 16-wide objects; c²/1024 + 98 missed the two 4-wide ones off
+    /// the axes by a unit (OV-20261103-startup-clock).
     /// </summary>
-    private static long PushTargetSquared(long contact, MapEntity entity) =>
-        entity is Thing ? (contact * contact / 1024) + ThingSlackSquaredRaw : ContactTestSquared(contact) + PushSlackSquaredRaw;
+    private static long PushTargetSquared(long contact) => ContactTestSquared(contact) + PushSlackSquaredRaw;
 
     /// <summary>
-    /// What the push adds for a thing, on top of c²/1024: 98. A 4-wide thing walked into fits
-    /// C² = 10578, where 4-wide actors at start-up fit 10576 (OV-20261103-contact-clock).
+    /// The squared length, in 22.10 raw units, to which a step into a thing or actor is pushed back:
+    /// c²/1024 + <see cref="WalkSlackSquaredRaw"/>. Walking into 4-wide things and actors fits 10578,
+    /// where the start-up push-out gives 10576, and the term is the best of every form tried over 78
+    /// pushes with player widths 0.5, 1.2 and 2 (65 exact; OV-20261103-contact-clock).
     /// </summary>
-    public const int ThingSlackSquaredRaw = 98;
+    private static long WalkTargetSquared(long contact) => (contact * contact / 1024) + WalkSlackSquaredRaw;
+
+    /// <summary>What a step's push-back adds to c²/1024: 98 (OV-20261103-contact-clock).</summary>
+    public const int WalkSlackSquaredRaw = 98;
 
     /// <summary>
     /// The squared length, in 22.10 raw units, from which the push-out no longer finds an object:
@@ -252,7 +256,7 @@ public sealed class LevelCollisionWorld
             }
 
             long contact = Raw(Math.Max(0.01f, radius)) + Raw(Math.Max(0, entityRadius(entity)));
-            long contactSquared = PushTargetSquared(contact, entity);
+            long contactSquared = PushTargetSquared(contact);
             long ax = Raw(entity.X);
             long ay = Raw(entity.Y);
             long dx = px - ax;
@@ -467,7 +471,7 @@ public sealed class LevelCollisionWorld
                 // A step past the centre, onto it or too near it for the 22.10 root keeps the plain rule.
                 bool ahead = (dx * ((long)Math.Round(from.X * 1024.0) - ax)) + (dy * ((long)Math.Round(from.Y * 1024.0) - ay)) >= 0;
                 if (lengthSquared > 0 && ahead &&
-                    ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact, entity)) is (double ox, double oy))
+                    ScaleToContact(dx, dy, lengthSquared, WalkTargetSquared(contact)) is (double ox, double oy))
                 {
                     var pushed = new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024));
                     objectPush += pushed - desired;

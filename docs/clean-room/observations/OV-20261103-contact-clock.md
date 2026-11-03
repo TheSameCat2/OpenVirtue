@@ -61,12 +61,13 @@ The rest are off by 1 to 3 units:
 - two `step04-off` pushes;
 - the 4-wide thing before the fix below.
 
-**Things and actors.** The two give C² differently, and only from 4 wide does it show:
-- a thing gives C² = c²/1024 + 98;
-- an actor gives (c − 1)²/1024 + 102;
+**Walking and the start-up give C² differently**, and only from 4 wide does it show:
+- a step walked into a thing or an actor is pushed back to C² = c²/1024 + 98;
+- the start-up push-out uses (c − 1)²/1024 + 102;
 - for 2-wide objects both are 5050;
-- for 4-wide things walked into (`step16-w4`; actor-contact `dist-4wide`, `dist-fine`) it is 10578,
-  and for 4-wide start-up actors (OV-20261103-startup-clock) 10576.
+- for 4-wide objects walked into it is 10578: `step16-w4`, round 2's 4-wide actor `act-b4`, and
+  actor-contact `dist-4wide` and `dist-fine`;
+- the 4-wide start-up actors (OV-20261103-startup-clock) give 10576.
 
 Both are tested against (c − 1)²/1024. With this, `step16-w4` matches in full.
 
@@ -137,6 +138,25 @@ Against the 2026-11-03 commit `9d3194b`, no carrier loses a line.
   `contact-actor`/`contact-thing` 28 each.
 - **Seconds clock.** `clock-sec`, scheduler-order anim-clock, order and order-wmp match in full.
 
+## Round 3: player widths, actors, longer steps (2026-11-03)
+Nine more carriers at 60 frames a second, under `round2/round2/`:
+- `PLAYER_WIDTH` 2 and 0.5 into 2- and 4-wide things;
+- 1.6 steps into still 2- and 4-wide actors;
+- steps of 2.4, 2.8, and 3.2 on the line.
+
+All ran (rc 0).
+- **Actors.** Walked into, they give the things' terms: `act-b2` fits 5050, and `act-b4` 10578,
+  not the start-up's 10576. So the term belongs to the walk, not to the kind of object.
+- **Player widths.** c is the player's `PLAYER_WIDTH` (cut to 1/1024) plus the object's half width:
+  3072, 4096, 1536 and 2560. Over the 78 pushes whose step ends short of the centre, the one-push
+  rule with c²/1024 + 98 gives 65 exactly. That is the best of every form tried: square roots to
+  1/32 or 1/256, C/L ratios, exact roots, slack from 80 to 119, and (c − 1) or c. The other 13
+  push to within 1 to 4 units, and no constant term fits them all. The arithmetic of those is open.
+- **Steps past the centre.** Steps of 2.4 and more end beyond the centre (`step24-off`: from
+  (−2272, 61) the step ends at (185, 65)). The player is still put back on the near side, at about
+  C (−2268, 141). This is not a push from the step's end; how it is made is open. Steps longer than
+  the player's width keep OpenVirtue's sub-step test.
+
 ## Tests To Add Or Update
 - `PlayerTests.MoveHorizontal_StepIntoAThing_IsPushedBackOnceFromTheWholeStepsEnd`.
 - `WdlRuntimeTests.Tick_SecondsClockRate_SlowsSecsAgainstTicks`.
@@ -146,8 +166,8 @@ Against the 2026-11-03 commit `9d3194b`, no carrier loses a line.
   whole step, from the step's start, on the 1/1024 grid (rounded). This applies to steps no longer
   than the player's width (2 × `PLAYER_WIDTH`/2). Longer steps, unmeasured beyond `step32-off`
   (which did not pass through), keep the sub-step test, so a long move cannot pass through a thing.
-- `LevelCollisionWorld.PushTargetSquared` takes c²/1024 + `ThingSlackSquaredRaw` (98) for a thing and
-  (c − 1)²/1024 + `PushSlackSquaredRaw` (102) for an actor.
+- `LevelCollisionWorld.WalkTargetSquared` (c²/1024 + `WalkSlackSquaredRaw`, 98) for steps, and
+  `PushTargetSquared` ((c − 1)²/1024 + `PushSlackSquaredRaw`, 102) for the start-up push-out.
 - `WdlRuntime.SecondsClockRate` and `SecondsClockStartTicks` default to 1 and 0. The oracle replay
   sets 0.991 and 1.28 for runs at the 60 Hz cadence, or a carrier's `"seconds_offset"`.
 - `WdlRuntime` sets `TIME_TOTAL`.

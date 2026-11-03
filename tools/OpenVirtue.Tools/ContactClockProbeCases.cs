@@ -48,11 +48,13 @@ internal static class ContactClockProbeCases
     private static readonly string NearHook =
         Action("cc_near", "    RULE cc_d = MY.DISTANCE;\n" + Position + V("N", "TICKS", "cc_n", "cc_d", "cc_x", "cc_y"));
 
-    private static TraceProbeCase Step(string label, double step, string thing, string question) => new(
+    private static TraceProbeCase Step(string label, double step, string thing, string question, double? width = null) => new(
         label,
         question,
         Skills + NearHook + Sampler("Y", Position, "cc_x", "cc_y") +
-        "THING cc_k2 { TEXTURE cc_t2; IF_NEAR cc_near; }\nTHING cc_k4 { TEXTURE cc_t4; IF_NEAR cc_near; }\n",
+        "THING cc_k2 { TEXTURE cc_t2; IF_NEAR cc_near; }\nTHING cc_k4 { TEXTURE cc_t4; IF_NEAR cc_near; }\n" +
+        "ACTOR cc_b2 { TEXTURE cc_t2; SPEED 0; IF_NEAR cc_near; }\nACTOR cc_b4 { TEXTURE cc_t4; SPEED 0; IF_NEAR cc_near; }\n",
+        (width is { } w ? FormattableString.Invariant($"    SET PLAYER_WIDTH, {w};\n") : "") +
         FormattableString.Invariant($"    RULE cc_s = {step};\n    RULE cc_go = 1;\n") + V("GO", "TICKS", "cc_n") +
         "    WAIT 90;\n    RULE cc_go = 0;\n    SET PLAYER_VX, 0;\n" + P("RET"),
         Predict(
@@ -99,6 +101,15 @@ internal static class ContactClockProbeCases
         Step("step04-off", 0.4, "THING cc_k2 16 -0.01953125 0 0", "0.4 steps into the 2-wide thing 20/1024 off the line."),
         Step("step32-off", 3.2, "THING cc_k2 16 -0.01953125 0 0", "3.2 steps, more than the contact distance, into the 2-wide thing: stopped or through?"),
         Step("step16-w4", 1.6, "THING cc_k4 16 -0.01953125 0 0", "1.6 steps into a 4-wide thing 20/1024 off the line."),
+        Step("round2/pw2-k2", 1.6, "THING cc_k2 16 -0.01953125 0 0", "PLAYER_WIDTH 2, 1.6 steps into the 2-wide thing: how does the player's width enter c?", 2),
+        Step("round2/pw2-k4", 1.6, "THING cc_k4 16 -0.01953125 0 0", "PLAYER_WIDTH 2 into the 4-wide thing.", 2),
+        Step("round2/pw05-k2", 1.6, "THING cc_k2 16 -0.01953125 0 0", "PLAYER_WIDTH 0.5 into the 2-wide thing.", 0.5),
+        Step("round2/pw05-k4", 1.6, "THING cc_k4 16 -0.01953125 0 0", "PLAYER_WIDTH 0.5 into the 4-wide thing.", 0.5),
+        Step("round2/act-b2", 1.6, "ACTOR cc_b2 16 -0.01953125 0 0", "1.6 steps into a still 2-wide actor: the actor's contact term when walking."),
+        Step("round2/act-b4", 1.6, "ACTOR cc_b4 16 -0.01953125 0 0", "1.6 steps into a still 4-wide actor."),
+        Step("round2/step24-off", 2.4, "THING cc_k2 16 -0.01953125 0 0", "2.4 steps into the 2-wide thing (between 1.6 and 3.2)."),
+        Step("round2/step28-off", 2.8, "THING cc_k2 16 -0.01953125 0 0", "2.8 steps into the 2-wide thing."),
+        Step("round2/step32-on", 3.2, "THING cc_k2 16 0 0 0", "3.2 steps into the 2-wide thing on the line."),
         Clock("clock-sec", "SECS, TOTAL_FRAMES and EACH_SEC every cycle from IF_START for 420 cycles: when does a second end?"),
         Clock("clock-stats", "The clock-sec sampler with TOTAL_TIME and the save's run-time statistics TIME_TOTAL, TIME_DRAW and TIME_FBUFFER: is one of them a finer clock?",
             "TOTAL_TIME", "TIME_TOTAL", "TIME_DRAW", "TIME_FBUFFER"),
