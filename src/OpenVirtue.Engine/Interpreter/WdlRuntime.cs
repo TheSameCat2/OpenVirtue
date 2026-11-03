@@ -230,6 +230,9 @@ public sealed class WdlRuntime :
     /// <summary>The cycles an unseen actor has skipped since it last moved (<c>SKIP_FRAMES</c>).</summary>
     private readonly Dictionary<Actor, int> _skippedCycles = [];
     private (double X, double Y, double Angle)? _wallDistanceView;
+
+    /// <summary>Each region's floor height as the level loaded it: a save holds an object's floor as of then (OV-20261029-save-body).</summary>
+    private readonly double[] _loadFloorHeights;
     private (double Cosine, double Sine) _wallDistanceFrame = (1, 0);
 
     /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TestCarefulEndPoint"/>).</summary>
@@ -264,6 +267,7 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        _loadFloorHeights = [.. level.Regions.Select(static r => r.FloorHeight)];
         _random = random ?? new Random();
         RandomSeeded = random is not null;
         _collisionWorld = new LevelCollisionWorld(level);
@@ -701,8 +705,11 @@ public sealed class WdlRuntime :
                 Flags = FlagsOf(entity),
                 Size = (Step(texture?.Width ?? 0, texture?.ScaleX ?? 0), Step(texture?.Height ?? 0, texture?.ScaleY ?? 0)),
                 Region = Math.Max(0, entity.Region),
+                // The floor under the object as the level loaded it: a script's SET HERE.FLOOR_HGT, -2 left
+                // the saved floor at 0 (region-floor, region-save, region-fields; re-read 2026-11-03).
                 Floor = entity.Region >= 0 && entity.Region < _level.Regions.Count && !(unplaced.Contains(entity) && entity["INVISIBLE"] > 0)
-                    ? Raw(LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y))
+                    ? Raw(LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y) - _level.Regions[entity.Region].FloorHeight +
+                          (entity.Region < _loadFloorHeights.Length ? _loadFloorHeights[entity.Region] : _level.Regions[entity.Region].FloorHeight))
                     : 0,
                 Attach = AttachNumber(entity.AttachTexture),
                 Events = Events(entity),
@@ -714,10 +721,13 @@ public sealed class WdlRuntime :
         FullSaveWall WallRecord(Wall wall)
         {
             LevelTexture? texture = TextureOf(wall.Texture);
+            TestWallView(wall); // the view bits of the last drawn frame, as the original saves them
             var record = new FullSaveWall(Fields(wall, wallFields), 0, 0, (0, 0), (0, 0), 0, TextureNumber(wall.Texture))
             {
                 Flags = FlagsOf(wall),
                 OneRegion = wall.LeftRegion == wall.RightRegion,
+                Visible = wall["VISIBLE"] > 0,
+                Seen = wall["SEEN"] > 0,
                 TextureStep = Step(texture?.Height ?? 0, texture?.ScaleY ?? 0),
                 Attach = AttachNumber(wall.AttachTexture),
                 Events = Events(wall),
@@ -3825,7 +3835,9 @@ public sealed class WdlRuntime :
         SetSkill("ACTOR_IMPACT_VY", actor["IMPACT_VY"]);
         SetSkill("ACTOR_IMPACT_VZ", actor["IMPACT_VZ"]);
         SetSkill("IMPACT_VROT", actor["IMPACT_VROT"]);
-        if (actor.Region >= 0 && actor.Region < _level.Regions.Count)
+        // A CAREFULLY actor's heights; a plain actor's EACH_TICK leaves them (ACTOR_CEIL_HGT stayed 0 in the
+        // saves of OV-20261029-save-body events, my-you, with an actor without CAREFULLY ticking).
+        if (actor["CAREFULLY"] > 0 && actor.Region >= 0 && actor.Region < _level.Regions.Count)
         {
             SetSkill("ACTOR_FLOOR_HGT", LevelTopology.FloorHeightAt(_level, actor.Region, actor.X, actor.Y));
             SetSkill("ACTOR_CEIL_HGT", LevelTopology.CeilingHeightAt(_level, actor.Region, actor.X, actor.Y));
@@ -5541,11 +5553,19 @@ public sealed class WdlRuntime :
         }
 
         _wallViewFrames[wall] = _viewFrame;
-        bool visible = wall["INVISIBLE"] <= 0 && _viewTest.IsWallVisible(viewer, wall);
+        // An INVISIBLE wall is never VISIBLE but is SEEN once on the screen: the original's save of
+        // round 12 flag-invisible holds 0x242 for it, the SEEN bit with INVISIBLE's 0x40
+        // (OV-20261029-save-body, re-read 2026-11-03).
+        bool onScreen = _viewTest.IsWallVisible(viewer, wall);
+        bool visible = wall["INVISIBLE"] <= 0 && onScreen;
         wall["VISIBLE"] = visible ? 1 : 0;
-        if (visible)
+        if (onScreen)
         {
             wall["SEEN"] = 1;
+        }
+
+        if (visible)
+        {
             _inView.Add(wall);
         }
     }

@@ -174,6 +174,15 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
     extra `TK` line after `PS`/`S`/`QS` is gone from all eight view-activity carriers that had it, and dist-out,
     sprite-occlude, long-pad, long-wall, range-d1, tilt-far (50/51-unit steps) and
     scheduler-order startup match in full.
+  - **Save-anchored start-ups.** A carrier with no timing column but an original full save
+    (`OVSAV*.SAV` in `work/`) takes the earliest save's `TOTAL_FRAMES` and `TICKS` as its clock: that
+    many frames summing to those ticks in whole 1/32 units. The save's own `TIME_CORR` is a 60 Hz
+    frame's in the save-body carriers, so the last frames run the 61 fps cadence, phased to end on
+    that frame, and the first frame takes the surplus (44 frames to 13.875: a 78-unit first frame,
+    then 8s and 9s); a run with no surplus is spread evenly, phased the same way. The header line
+    says `save-anchored …`. The replay had run 56 quarter-tick frames to 14.0 there. With the walls'
+    heap pointers at +28..+39 of each wall record set aside (the same far pointers in every launch),
+    85 of the 107 save-body carriers match in full, from none.
   - **Counted gaps.** A counted sampler's gaps are filled along one cadence through every sample and
     through the step into it that the sampler's `TIME_CORR` column prints (a column of whole 1/32
     ticks between 0.1 and 2 that equals the step wherever two samples are a cycle apart), for as

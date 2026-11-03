@@ -67,6 +67,16 @@ public sealed record FullSaveWall(
     /// <summary>Whether one region lies on both sides (its second flag word then holds <c>0x200</c>).</summary>
     public bool OneRegion { get; init; }
 
+    /// <summary>
+    /// The wall's view bits in its first flag word: <c>VISIBLE</c> <c>0x400</c> and <c>SEEN</c> <c>0x200</c>.
+    /// The original's saves hold 0x602 for every wall on the screen and 0x002 for the one behind the
+    /// player, never seen (OV-20261029-save-body, re-read 2026-11-03 over 99 saves: 1175 and 98).
+    /// </summary>
+    public bool Visible { get; init; } = true;
+
+    /// <summary>See <see cref="Visible"/>.</summary>
+    public bool Seen { get; init; } = true;
+
     /// <summary>The region on its left (round 13).</summary>
     public int LeftRegion { get; init; }
 
@@ -544,7 +554,7 @@ public static class AcknexFullSave
         Int16(record, 4, unchecked((short)wall.TextureStep));
         Int32(record, 8, wall.RawLength);
         bool Has(string flag) => wall.Flags.Contains(flag, StringComparer.OrdinalIgnoreCase);
-        (int first, int second) = FlagWords(wall.Flags, WallFlagBits, 0x602, wall.OneRegion ? 0x380 : 0x180);
+        (int first, int second) = FlagWords(wall.Flags, WallFlagBits, 0x2 | (wall.Visible ? 0x400 : 0) | (wall.Seen ? 0x200 : 0), wall.OneRegion ? 0x380 : 0x180);
         if (Has("INVISIBLE"))
         {
             first = (first & ~0x400) | 0x40;

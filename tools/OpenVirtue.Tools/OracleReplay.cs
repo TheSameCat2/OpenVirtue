@@ -209,7 +209,17 @@ internal static class OracleReplay
             (timing is { } ft ? OracleTrace.FirstCycleStep(timingSource, ft) : null) ??
             StampStep(stamp, cycleTicks) ??
             OracleTrace.PeriodicFirstStep(cycleTicks);
-        var clock = new ReplayClock(cycleTicks, options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? slowFrames ?? 0.25, firstStep, counted);
+        // A carrier with no timing samples but an original full save: the save's TICKS and TOTAL_FRAMES
+        // say how many frames the original ran to the save and how long they were in all, so the
+        // start-up is planned as that many frames of whole 1/32 ticks spread evenly (the save-body
+        // carriers: 44 frames to 13.875, about 10/32 each, where the replay ran 56 of 8/32).
+        (IReadOnlyList<double> Frames, double Rate, string Note)? savePlan = !asked && cycleTicks.Count == 0 && slowFrames is null ? SaveClockPlan(work) : null;
+        var clock = new ReplayClock(
+            cycleTicks,
+            options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? slowFrames ?? savePlan?.Rate ?? 0.25,
+            firstStep,
+            counted,
+            savePlan?.Frames);
         // Run on past the last sample to the last TICKS any original file printed: a sampler switched
         // off before the probe's last lines (wall-pass-clip clip-wall, border-climb climb-4) would
         // otherwise stop the replay before them and before OVEND.
@@ -262,7 +272,7 @@ internal static class OracleReplay
         Dictionary<string, string> replayFiles = Directory.Exists(printDirectory)
             ? Directory.EnumerateFiles(printDirectory, "*.TXT").ToDictionary(static f => Path.GetFileName(f).ToUpperInvariant(), static f => f, StringComparer.Ordinal)
             : [];
-        return new CarrierResult(carrierCase, primary, timing, cycleTicks, clock.Anchored ? clock.Offset : null, frames, ticks, replayDirectory, originalFiles, replayFiles, carrier);
+        return new CarrierResult(carrierCase, primary, timing, cycleTicks, clock.Anchored ? clock.Offset : null, frames, ticks, replayDirectory, originalFiles, replayFiles, carrier, savePlan?.Note);
     }
 
     /// <summary>
@@ -371,6 +381,117 @@ internal static class OracleReplay
     }
 
     /// <summary>The carrier template's start-up stamp: <c>TCK=</c> in <c>OVPRB0.TXT</c>, <c>TICKS</c> as the probe action starts.</summary>
+    /// <summary>
+    /// The start-up plan an original full save under <paramref name="work"/> gives: its <c>TOTAL_FRAMES</c>
+    /// frames (the earliest save's) summing to its <c>TICKS</c>, as whole 1/32 ticks spread along
+    /// floor(k·units/frames), with a first entry for cycle 1 (whose duration the runtime ignores), and
+    /// the frames' mean rate in ticks. Null without such a save.
+    /// </summary>
+    private static (IReadOnlyList<double> Frames, double Rate, string Note)? SaveClockPlan(string work)
+    {
+        (int Frames, long Units, long LastUnits)? best = null;
+        foreach (string save in Directory.EnumerateFiles(work, "OVSAV*.SAV"))
+        {
+            IReadOnlyList<SaveSkill> skills;
+            try
+            {
+                skills = AcknexSaveFile.ReadSkills(AcknexSaveFile.Unpack(File.ReadAllBytes(save)));
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException)
+            {
+                continue;
+            }
+
+            SaveSkill? ticks = skills.FirstOrDefault(static k => k.Name.Equals("TICKS", StringComparison.OrdinalIgnoreCase));
+            SaveSkill? frames = skills.FirstOrDefault(static k => k.Name.Equals("TOTAL_FRAMES", StringComparison.OrdinalIgnoreCase));
+            SaveSkill? last = skills.FirstOrDefault(static k => k.Name.Equals("TIME_CORR", StringComparison.OrdinalIgnoreCase));
+            if (ticks is null || frames is null)
+            {
+                continue;
+            }
+
+            int count = (int)Math.Round(frames.RawValue / 1024.0);
+            long units = (long)Math.Round(ticks.RawValue / 32.0);
+            long lastUnits = last is null ? 0 : (long)Math.Round(last.RawValue / 32.0);
+            if (count > 0 && units > 0 && (best is null || count < best.Value.Frames))
+            {
+                best = (count, units, lastUnits);
+            }
+        }
+
+        if (best is not { } anchor)
+        {
+            return null;
+        }
+
+        // The save's TIME_CORR is a 60 Hz frame's (8 or 9 units) in the save-body carriers, so the run
+        // ended on the 60 Hz cadence and its surplus over that cadence lies in the first frames: the
+        // last frames run the cadence, phased to end on the save's own frame, and the first frame takes
+        // the rest. A run with no surplus (or no 60 Hz frame at the save) is spread evenly instead.
+        const double SixtyHertzUnits = 128.0 / 15;
+        var plan = new List<double>();
+        int cadenceFrames = anchor.Frames - 1;
+        long cadenceSum = -1;
+        double phase = 0;
+        if (anchor.LastUnits is 8 or 9 && cadenceFrames > 0)
+        {
+            for (int p = 0; p < 15 && cadenceSum < 0; p++)
+            {
+                double candidate = p / 15.0;
+                long before = (long)Math.Floor(candidate + ((cadenceFrames - 1) * SixtyHertzUnits) + 1e-9);
+                long end = (long)Math.Floor(candidate + (cadenceFrames * SixtyHertzUnits) + 1e-9);
+                if (end - before == anchor.LastUnits && anchor.Units - end >= 8)
+                {
+                    cadenceSum = end;
+                    phase = candidate;
+                }
+            }
+        }
+
+        double rate = anchor.Units / (double)anchor.Frames / 32;
+        if (cadenceSum >= 0)
+        {
+            plan.Add(SixtyHertzUnits / 32);
+            plan.Add((anchor.Units - cadenceSum) / 32.0);
+            long previous = 0;
+            for (int k = 1; k <= cadenceFrames; k++)
+            {
+                long at = (long)Math.Floor(phase + (k * SixtyHertzUnits) + 1e-9);
+                plan.Add((at - previous) / 32.0);
+                previous = at;
+            }
+
+            return (plan, SixtyHertzUnits / 32, $"save-anchored {anchor.Frames} frames to TICKS {anchor.Units / 32.0:F3} (first {plan[1] * 32:F0}, cadence from phase {phase:F2}, last {anchor.LastUnits})");
+        }
+
+        // Spread evenly: floor(phase + k·units/frames), the phase chosen so the last frame is the save's
+        // (a 61 fps run of 54 frames to 14.219 ends on 8, not the 9 of phase 0).
+        plan.Add(rate);
+        double evenRate = anchor.Units / (double)anchor.Frames;
+        double evenPhase = 0;
+        for (int p = 0; p < 15 && anchor.LastUnits > 0; p++)
+        {
+            double candidate = p / 15.0;
+            long before = (long)Math.Floor(candidate + ((anchor.Frames - 1) * evenRate) + 1e-9);
+            long end = (long)Math.Floor(candidate + (anchor.Frames * evenRate) + 1e-9);
+            if (end - before == anchor.LastUnits)
+            {
+                evenPhase = candidate;
+                break;
+            }
+        }
+
+        long sum = (long)Math.Floor(evenPhase + 1e-9);
+        for (int k = 1; k <= anchor.Frames; k++)
+        {
+            long at = (long)Math.Floor(evenPhase + (k * evenRate) + 1e-9);
+            plan.Add((at - sum) / 32.0);
+            sum = at;
+        }
+
+        return (plan, rate, $"save-anchored {anchor.Frames} even frames to TICKS {anchor.Units / 32.0:F3} (phase {evenPhase:F2}, last {anchor.LastUnits})");
+    }
+
     private static double? StartupStamp(string path) =>
         File.ReadLines(path, Encoding.Latin1)
             .Where(static l => l.StartsWith("TCK=", StringComparison.Ordinal))
@@ -424,7 +545,7 @@ internal static class OracleReplay
     {
         var sb = new StringBuilder();
         bool ok = true;
-        string timing = result.Timing is { } t ? $"timing {t} ({result.CycleTicks.Count} cycles)" : "fixed timing";
+        string timing = result.Timing is { } t ? $"timing {t} ({result.CycleTicks.Count} cycles)" : result.ClockNote ?? "fixed timing";
         sb.Append(CultureInfo.InvariantCulture, $"{label}: {timing}, {result.Frames} frames to TICKS {result.FinalTicks:F3}");
         if (result.AnchorOffset is { } offset && result.CycleTicks.Count > 0)
         {
@@ -594,6 +715,18 @@ internal static class OracleReplay
             {
                 setAside.Add("section 0 +36/+40");
             }
+            else if (i == 3 && x.Length == y.Length && WallPointersAside(x, y, out byte[] mx, out byte[] my))
+            {
+                // Each wall record's +28/+30 is a far pointer into the runtime's heap (−23568, 90 for the
+                // first wall of the probe's room in every save), the same in every launch and nothing
+                // the replay models.
+                setAside.Add("walls' +28..+39 pointers");
+                if (!mx.AsSpan().SequenceEqual(my))
+                {
+                    int at = mx.AsSpan().CommonPrefixLength(my) & ~1;
+                    differing.Add($"{section} at +{at} ({Words(mx, at)} / {Words(my, at)})");
+                }
+            }
             else if (i == 8)
             {
                 List<string> skills = CompareSkills(a, b, setAside);
@@ -602,13 +735,70 @@ internal static class OracleReplay
                     differing.Add($"{section}: {string.Join(" ", skills.Take(12))}{(skills.Count > 12 ? $" and {skills.Count - 12} more" : "")}");
                 }
             }
+            else if (x.Length == y.Length)
+            {
+                int at = x.CommonPrefixLength(y) & ~1;
+                differing.Add($"{section} at +{at} ({Words(x, at)} / {Words(y, at)})");
+            }
             else
             {
-                differing.Add(x.Length == y.Length ? $"{section} at +{x.CommonPrefixLength(y)}" : $"{section} ({x.Length} original, {y.Length} replay bytes)");
+                differing.Add($"{section} ({x.Length} original, {y.Length} replay bytes)");
             }
         }
 
         return (differing, setAside);
+    }
+
+    /// <summary>
+    /// Copies an object section with each wall record's +28..+39 zeroed, when the section's size splits
+    /// into 170-byte entity and 178-byte wall records one way; false otherwise.
+    /// </summary>
+    private static bool WallPointersAside(ReadOnlySpan<byte> x, ReadOnlySpan<byte> y, out byte[] mx, out byte[] my)
+    {
+        mx = x.ToArray();
+        my = y.ToArray();
+        (int Entities, int Walls)? split = null;
+        for (int entities = 0; entities * 170 <= x.Length; entities++)
+        {
+            int rest = x.Length - (entities * 170);
+            if (rest % 178 == 0)
+            {
+                if (split is not null)
+                {
+                    return false;
+                }
+
+                split = (entities, rest / 178);
+            }
+        }
+
+        if (split is not { } s || s.Walls == 0)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < s.Walls; i++)
+        {
+            // The pointer at +28/+30, the same again at +32/+34 from the third wall on, and an unplaced
+            // wall's at +36/+38 (round 13 unplaced: 25792, 91).
+            int at = (s.Entities * 170) + (i * 178) + 28;
+            Array.Clear(mx, at, 12);
+            Array.Clear(my, at, 12);
+        }
+
+        return true;
+    }
+
+    /// <summary>Up to four little-endian 16-bit words of a section from <paramref name="at"/>, for the diff's eye.</summary>
+    private static string Words(ReadOnlySpan<byte> section, int at)
+    {
+        var words = new List<string>();
+        for (int i = at; i + 1 < section.Length && words.Count < 4; i += 2)
+        {
+            words.Add(BitConverter.ToInt16(section.Slice(i, 2)).ToString(CultureInfo.InvariantCulture));
+        }
+
+        return string.Join(' ', words);
     }
 
     private static List<string> CompareSkills(byte[] a, byte[] b, List<string> setAside)
@@ -652,7 +842,8 @@ internal static class OracleReplay
         string ReplayDirectory,
         IReadOnlyDictionary<string, string> OriginalFiles,
         IReadOnlyDictionary<string, string> ReplayFiles,
-        string Carrier);
+        string Carrier,
+        string? ClockNote = null);
 
     /// <summary>
     /// The parts of a carrier's <c>case.json</c> the replay needs. A carrier may name its timing column
@@ -763,7 +954,7 @@ internal static class OracleReplay
     /// the following frames land <c>TICKS</c> on the original's sampled values, whatever the start-up
     /// took. With no samples every frame lasts <c>fallbackTicks</c>.
     /// </summary>
-    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null, bool consecutive = false)
+    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null, bool consecutive = false, IReadOnlyList<double>? plannedStartup = null)
     {
         private const double Epsilon = 0.0005;
         private readonly double _typical = Median(cycleTicks) ?? fallbackTicks;
@@ -779,7 +970,7 @@ internal static class OracleReplay
 
         // Before the first sample the frames run the first samples' cadence backward, cycle 1 the
         // earliest of it past TICKS 0 (OV-20261103-startup-clock).
-        private readonly IReadOnlyList<double>? _startupFrames = OracleTrace.StartupFrames(cycleTicks, firstStep);
+        private readonly IReadOnlyList<double>? _startupFrames = plannedStartup ?? OracleTrace.StartupFrames(cycleTicks, firstStep);
         private int _startupFrame;
         private int _tailFrames;
         private int _next;
