@@ -377,7 +377,8 @@ public sealed class WdlViewActivityTests
     }
 
     [Theory]
-    [InlineData(2.0, 21.524)] // the quarter step still ends inside the pad: half the way to the hold
+    [InlineData(2.0, 21.524)] // the eighth ends too close to the border: half the way to the hold
+    [InlineData(2.272, 21.073)] // the eighth (1.199 along the cut sine) is clear (north-4-45)
     [InlineData(2.5, 21.049)] // the quarter ends before the border within the half width: the hold
     [InlineData(3.0, 21.049)]
     [InlineData(4.0, 21.602)] // the quarter (2.398 along the cut sine) is clear
@@ -385,9 +386,9 @@ public sealed class WdlViewActivityTests
     public void Tick_SkipFrames_RefusedLongStep_StopsAsMeasured(double gap, double expectedY)
     {
         // OV-20261103-careful-stop north-*/south-*: a skipped CAREFULLY walker's six-cycle step toward a
-        // pad 2 steps up is tried whole, half and quarter; a clear end is taken, one within the half
-        // width before the border goes to the 1074-unit hold, and one still past the border at the
-        // quarter moves half the way to the hold.
+        // pad 2 steps up is tried whole, half, quarter and eighth; a clear end is taken, one within the
+        // half width before the border at the quarter or longer goes to the 1074-unit hold, and at the
+        // eighth an end not clear moves half the way to the hold.
         string map =
             "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
             "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
@@ -411,6 +412,7 @@ public sealed class WdlViewActivityTests
     [InlineData(49.5, 50 - (1074.0 / 1024))] // 0.5 from the edge: put at the hold, no step
     [InlineData(50.0, 50 - (1074.0 / 1024))] // on the edge
     [InlineData(49.0, 49 - (6 * 1.6 * 1023 / 1024))] // exactly its half width from it: its long step as usual
+    [InlineData(50.5, 50.5 - (6 * 1.6 * 1023 / 1024))] // placed in rock beyond the edge (north-4-45): walks in unhindered
     public void Tick_SkipFrames_CarefulActorStandingWithinItsHalfWidthOfASolidWall_IsPutAtTheHoldInPlaceOfItsMove(double startY, double expectedY)
     {
         // OV-20261103-careful-stop north-3-35, north-4-45, south-2-3: walkers placed 0.5 from and on the

@@ -394,9 +394,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 ## The refused long step, the standing hold, a wall's DISTANCE after a beam (2026-11-03 — confirmed and implemented)
 
 - `OV-20261103-careful-stop.md` — seven carriers at 60 frames a second:
-  - a skipped `CAREFULLY` actor's long step is tried whole, half and quarter: a clear end is
-    taken, one within the half width before a border goes to the 1074-unit hold, one past the
-    border at the quarter moves half the way to the hold;
+  - a skipped `CAREFULLY` actor's long step is tried whole, half, quarter and eighth: a clear end
+    is taken, one within the half width before a border goes to the 1074-unit hold down to the
+    quarter, and at the eighth an end not clear moves half the way to the hold;
   - an actor nearer than its half width to a solid wall is put at its hold in place of its move,
     with the standing arrival still counted; a step that would reach its way point arrives though
     a wall stops it short;
@@ -406,5 +406,4 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - a sprite shows while a full pixel column of it is on the screen (round 3: 2- and 4-wide actors
     at 40 and 20 lost at 0.521 and 0.543), as the measured bottom row.
 
-  A walker placed in rock, a wall end's column rounding and 1-to-5-unit residuals of the view's
-  value are left as read.
+  A wall end's column rounding and unit residuals of the view's value are left as read.
