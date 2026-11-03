@@ -114,3 +114,24 @@ A 2-wide actor on the x axis 0.05, 0.1, 0.6, 1, 1.5 and 2.1 from the player, plu
   - the overlap probe matches 12 of 21 carriers, up from 2; the rest are off by 0.001–0.008;
   - the view-activity start positions are within 0.002 of the original's;
   - all probes match 169 of 431, up from 159.
+
+## Addendum: the push-out in 22.10 (2026-11-03)
+OV-20261103-startup-clock printed the player's raw position every cycle from `IF_START`. Its
+`OVSUP0.TXT` traces: push-d21 `041d20fa`, push-d10 `41aeb573`, push-d01 `a6c3c6cb`, push-d005
+`43819f47`, push-w4-14 `0b98cdd4`, last-far `f9a63e21`, wide16-3 `f0a5744a`, wide16-bb
+`41046da6`, wide8-49 `3d729f9f`. It also re-reads this probe's round 3 `d15` (`OVOVL0.TXT`
+`a80ba319`) and `d21` (`0c7bbff9`). It replaces the √(c² + 0.093) fit for the push-out and
+settles three open questions:
+- **The off-axis residual** comes from 22.10 arithmetic. Coordinates are cut toward zero, L² and
+  C² = c²/1024 + 98 are cut, and the offset is scaled by √(C²/L²), with the ratio and its root cut.
+  This gives `w8-14`'s (−4.661, 1.162), `still-off`'s (−1.759, 0.438), `d21`'s −0.119, `d15`'s
+  −0.719 and `d01`'s 2.239. The 4-wide off-axis cases stay one unit short.
+- **The 0.05 case** is pushed twice: to (−0.300, 0.004) in cycle 2, then out to (−2.172, 0.024) in
+  cycle 3, along the line from that point. OpenVirtue still pushes once.
+- **Which object.** A far actor placed last does not stop the push, so the first overlapping object
+  counts, whether things or actors come last.
+
+The push also reaches no object 8 steps or more away. That is why below-beam round 2 left the
+player alone beside 16-wide objects 8.25 away.
+
+Implemented in `LevelCollisionWorld.PushOutOfEntities`. The walking contact keeps √(c² + 0.093).
