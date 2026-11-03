@@ -240,3 +240,14 @@ already matched the original.
   since missing still differs in the flush-stretched frames and missing-during in the fault, and no
   other carrier changes. `WdlRuntime.SetPrintFile`; test
   `WdlRuntimeTests.Runtime_PrintFile_CreatesItsFileWithoutPrinting`.
+- **`EXIT` does not end the cycle at once (not implemented).** With `--timing TK:1` the world and
+  world-control replays print a `NEAR` line into `OVEND0.TXT` after `END`, which the original's
+  (sha256 `8d109c0c`, `END` alone) lacks. Stopping every action after `EXIT` removes it but breaks
+  three carriers whose original also prints after `END` in that cycle: OV-20261019-clip-contact
+  berkeley (`OVEND0.TXT` sha256 `e585d1f5`, a thing's `EACH_TICK` `C` line) and clip-near, and
+  OV-20261019-clip-detail berkeley-wall (`7c0a2600`, `C` and `B`). So the object pass still runs
+  after `EXIT`. Skipping only the player's move and the contact events after the tick leaves one of
+  the two `NEAR` lines, and the default replays (which stop before `END`) do not change, so neither
+  rule is supported yet. The three `OVEND0.TXT` files the stop rule made match (clip-contact
+  rerun/liber, wall-distance wall-behind, wall-pass-clip pass-dist0) lost a line that a two-tick
+  print throttle happened to let through, not one the original suppresses.
