@@ -1521,6 +1521,12 @@ public sealed class WdlRuntime :
             // In a BELOW stack, the storey that holds the eye (OV-20261030-below-beam).
             region = LevelTopology.StoreyHoldingEye(_level, region, GetSkill("PLAYER_Z"));
         }
+        else if (target is MapEntity entity)
+        {
+            // A GROUND object goes to the storey that holds its feet, any other to the top, as at the
+            // level start (manual p.61; below-beam round 2). Past every ceiling the rule gives the top.
+            region = LevelTopology.StoreyHoldingEye(_level, region, entity["GROUND"] > 0 ? entity.Z : double.PositiveInfinity);
+        }
 
         target["region"] = region;
         if (ReferenceEquals(target, GetObject("player")))
@@ -2036,7 +2042,21 @@ public sealed class WdlRuntime :
     /// <inheritdoc/>
     public AcknexObject? GetObject(string name) =>
         _objects.GetValueOrDefault(name) ??
-        (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null);
+        (_objectsByName.TryGetValue(name, out List<AcknexObject>? matches) ? matches.FirstOrDefault() : null) ??
+        RegionOf(name);
+
+    /// <summary>
+    /// An object's <c>REGION</c> read as a reference, as the retail scripts' <c>SET curRegion, MY.REGION</c>
+    /// does (OV-20261030-below-beam round 2). <c>null</c> for any other name.
+    /// </summary>
+    private Region? RegionOf(string name)
+    {
+        int dot = name.LastIndexOf('.');
+        return dot > 0 && name.AsSpan(dot + 1).Equals("REGION", StringComparison.OrdinalIgnoreCase) &&
+            GetObject(name[..dot]) is { } owner
+            ? RegionAt((int)owner["region"])
+            : null;
+    }
 
     /// <inheritdoc/>
     public IEnumerable<AcknexObject> GetObjectsByName(string name) =>
