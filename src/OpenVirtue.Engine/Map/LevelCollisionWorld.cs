@@ -5,13 +5,17 @@ using System.Numerics;
 
 namespace OpenVirtue.Engine.Map;
 
-/// <summary>Result of radius-aware horizontal movement through level geometry.</summary>
+/// <summary>
+/// Result of radius-aware horizontal movement through level geometry. <see cref="ObjectPush"/> is
+/// the part of <see cref="Displacement"/> by which things and actors pushed a raw-contact mover back.
+/// </summary>
 public readonly record struct CircleMoveResult(
     Vector2 Position,
     int Region,
     Vector2 Displacement,
     bool Collided,
-    bool RegionChanged);
+    bool RegionChanged,
+    Vector2 ObjectPush = default);
 
 /// <summary>Reusable circle collision against walls and live map entities.</summary>
 public sealed class LevelCollisionWorld
@@ -57,7 +61,11 @@ public sealed class LevelCollisionWorld
     /// With <paramref name="stopAtContact"/> a step that would end exactly <paramref name="radius"/>
     /// from a wall is stopped too (the player's, OV-20261019-eye-clamp stop-border). When
     /// <paramref name="blocked"/> is given, the solid walls that pushed the circle back go there
-    /// instead of into <paramref name="touched"/>.
+    /// instead of into <paramref name="touched"/>. With <paramref name="rawContact"/> (the player's)
+    /// a thing or actor is touched when the step ends with L² &lt; (c − 1)² in 22.10 (c in 1/1024
+    /// units), and the step is then pushed out to C² as in <see cref="PushOutOfEntities(Vector2, int, float, Func{MapEntity, float}, Func{MapEntity, bool}, ICollection{AcknexObject}?)"/>:
+    /// a player creeping 4/1024 a step into a 2-wide actor was left alone at L² 4951 and put back to
+    /// C² 4948 + 102 at 4946 and 4939, below (c − 1)² 4948 (OV-20261029-overlap still-walk).
     /// </summary>
     public CircleMoveResult Move(
         Vector2 start,
@@ -73,7 +81,8 @@ public sealed class LevelCollisionWorld
         float contactSlackSquared = 0,
         bool clearanceOnContact = false,
         bool stopAtContact = false,
-        ICollection<AcknexObject>? blocked = null)
+        ICollection<AcknexObject>? blocked = null,
+        bool rawContact = false)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         ArgumentNullException.ThrowIfNull(entityRadius);
@@ -94,6 +103,7 @@ public sealed class LevelCollisionWorld
 
         Vector2 position = start;
         int region = startRegion;
+        Vector2 objectPush = Vector2.Zero;
         bool collided = false;
         bool regionChanged = false;
         float maximumStep = Math.Max(0.1f, radius * 0.5f);
@@ -112,7 +122,7 @@ public sealed class LevelCollisionWorld
                 bool adjusted = ResolveWalls(
                     from, region, wallContact, wallRadius, canCross, crossedWallIndex, blocked ?? touched, ref desired);
                 adjusted |= ResolveEntities(
-                    from, region, radius, contactSlackSquared, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired);
+                    from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired, ref objectPush);
                 collided |= adjusted;
                 if (!adjusted)
                 {
@@ -128,7 +138,7 @@ public sealed class LevelCollisionWorld
             position = desired;
         }
 
-        return new CircleMoveResult(position, region, position - start, collided, regionChanged);
+        return new CircleMoveResult(position, region, position - start, collided, regionChanged, objectPush);
     }
 
     /// <summary>
@@ -145,9 +155,25 @@ public sealed class LevelCollisionWorld
 
     /// <summary>
     /// What the original's start-up push-out adds to the square of the contact distance, in 22.10
-    /// raw units of a squared length: 98, about 0.096 (OV-20261103-startup-clock).
+    /// raw units of a squared length, on top of the square of one unit less than the contact:
+    /// 102, about 0.1 (OV-20261103-startup-clock, 2026-11-03 width addendum).
     /// </summary>
-    public const int PushSlackSquaredRaw = 98;
+    public const int PushSlackSquaredRaw = 102;
+
+    /// <summary>
+    /// The squared length, in 22.10 raw units, below which a step or a start-up position counts as
+    /// inside an object at contact distance <paramref name="contact"/> (raw): (c − 1)²/1024, cut. The
+    /// original tests one unit inside the summed radii (OV-20261029-overlap still-walk).
+    /// </summary>
+    private static long ContactTestSquared(long contact) => (contact - 1) * (contact - 1) / 1024;
+
+    /// <summary>
+    /// The squared length, in 22.10 raw units, to which the original pushes a point out of an object:
+    /// (c − 1)²/1024 + <see cref="PushSlackSquaredRaw"/>. It is the only such term that gives all 21
+    /// measured push-outs of 1- to 16-wide objects; c²/1024 + 98 missed the two 4-wide ones off the
+    /// axes by a unit (OV-20261103-startup-clock).
+    /// </summary>
+    private static long PushTargetSquared(long contact) => ContactTestSquared(contact) + PushSlackSquaredRaw;
 
     /// <summary>
     /// The squared length, in 22.10 raw units, from which the push-out no longer finds an object:
@@ -165,7 +191,7 @@ public sealed class LevelCollisionWorld
     /// still overlaps (OV-20261029-overlap).
     /// <para>
     /// The arithmetic is the original's 22.10 (OV-20261103-startup-clock): coordinates cut toward zero;
-    /// the squared length L² = (dx² + dy²)/1024 and C² = c²/1024 + <see cref="PushSlackSquaredRaw"/>
+    /// the squared length L² = (dx² + dy²)/1024 and C² = (c − 1)²/1024 + <see cref="PushSlackSquaredRaw"/>
     /// (c the summed radii) cut; the object counts when L² &lt; C² and L² &lt; 8²; the offset is then
     /// scaled by √(C²/L²), the ratio and its root each cut to 1/1024, and the product rounded. That
     /// gives the measured 2.272 out of a 2-wide actor 2.1 away, 2.274 from 1.0 away and 2.292 from
@@ -178,10 +204,29 @@ public sealed class LevelCollisionWorld
         float radius,
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
+        ICollection<AcknexObject>? touched = null) =>
+        PushOutOfEntities(position, region, radius, entityRadius, canCrossEntity, out _, touched);
+
+    /// <summary>
+    /// Pushes out as <see cref="PushOutOfEntities(Vector2, int, float, Func{MapEntity, float}, Func{MapEntity, bool}, ICollection{AcknexObject}?)"/>,
+    /// and tells whether the push fell short. Very near the centre the root's argument, the ratio
+    /// times 1024, no longer fits in 32 bits; the original then moved the player only a quarter of
+    /// <paramref name="radius"/> (the player's <c>PLAYER_WIDTH</c>) away from the centre, and pushed
+    /// it out in full the cycle after (OV-20261103-startup-clock push-d005: 0.05 from a 2-wide actor's
+    /// centre, to −307/1024 in cycle 2 and −2224/1024 in cycle 3).
+    /// </summary>
+    public Vector2 PushOutOfEntities(
+        Vector2 position,
+        int region,
+        float radius,
+        Func<MapEntity, float> entityRadius,
+        Func<MapEntity, bool> canCrossEntity,
+        out bool unfinished,
         ICollection<AcknexObject>? touched = null)
     {
         ArgumentNullException.ThrowIfNull(entityRadius);
         ArgumentNullException.ThrowIfNull(canCrossEntity);
+        unfinished = false;
         long px = Raw(position.X);
         long py = Raw(position.Y);
         foreach (MapEntity entity in _level.Actors.Reverse<MapEntity>().Concat(_level.Things.Reverse<MapEntity>()))
@@ -192,7 +237,7 @@ public sealed class LevelCollisionWorld
             }
 
             long contact = Raw(Math.Max(0.01f, radius)) + Raw(Math.Max(0, entityRadius(entity)));
-            long contactSquared = (contact * contact / 1024) + PushSlackSquaredRaw;
+            long contactSquared = PushTargetSquared(contact);
             long ax = Raw(entity.X);
             long ay = Raw(entity.Y);
             long dx = px - ax;
@@ -208,10 +253,21 @@ public sealed class LevelCollisionWorld
                 return position;
             }
 
-            long ratio = contactSquared * 1024 / lengthSquared;
-            double scale = Math.Floor(Math.Sqrt(ratio * 1024.0));
-            double ex = ax + Math.Floor((dx * scale / 1024) + 0.5);
-            double ey = ay + Math.Floor((dy * scale / 1024) + 0.5);
+            double ex;
+            double ey;
+            if (ScaleToContact(dx, dy, lengthSquared, contactSquared) is (double ox, double oy))
+            {
+                ex = ax + ox;
+                ey = ay + oy;
+            }
+            else
+            {
+                long step = Raw(Math.Max(0.01f, radius)) / 4;
+                double length = Math.Sqrt((dx * dx) + (dy * dy));
+                ex = px + Math.Floor((step * dx / length) + 0.5);
+                ey = py + Math.Floor((step * dy / length) + 0.5);
+                unfinished = true;
+            }
 
             // The push is a step with no part along the other axis, and the original then moves
             // the player 4/1024 along that axis, always positive (OV-20261029-actor-step).
@@ -234,6 +290,23 @@ public sealed class LevelCollisionWorld
         }
 
         return position;
+    }
+
+    /// <summary>
+    /// The 22.10 offset (dx, dy) scaled from its squared length L² to the squared contact C², in raw
+    /// units: the ratio C²·1024/L² and its root each cut, the product rounded
+    /// (OV-20261103-startup-clock). Null when the root's argument overflows 32 bits.
+    /// </summary>
+    private static (double X, double Y)? ScaleToContact(long dx, long dy, long lengthSquared, long contactSquared)
+    {
+        long ratio = contactSquared * 1024 / lengthSquared;
+        if (ratio * 1024 > int.MaxValue)
+        {
+            return null;
+        }
+
+        double scale = Math.Floor(Math.Sqrt(ratio * 1024.0));
+        return (Math.Floor((dx * scale / 1024) + 0.5), Math.Floor((dy * scale / 1024) + 0.5));
     }
 
     /// <summary>A coordinate in 1/1024 steps, cut toward zero.</summary>
@@ -344,11 +417,13 @@ public sealed class LevelCollisionWorld
         int region,
         float radius,
         float contactSlackSquared,
+        bool rawContact,
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity,
         ICollection<AcknexObject>? touched,
-        ref Vector2 desired)
+        ref Vector2 desired,
+        ref Vector2 objectPush)
     {
         bool adjusted = false;
         foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
@@ -358,6 +433,37 @@ public sealed class LevelCollisionWorld
                 canCrossEntity(entity))
             {
                 continue;
+            }
+
+            if (rawContact)
+            {
+                long contact = Raw(radius) + Raw(Math.Max(0, entityRadius(entity)));
+                long ax = Raw(entity.X);
+                long ay = Raw(entity.Y);
+                long dx = Raw(desired.X) - ax;
+                long dy = Raw(desired.Y) - ay;
+                long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
+                if (lengthSquared >= ContactTestSquared(contact))
+                {
+                    continue;
+                }
+
+                // A step past the centre, onto it or too near it for the 22.10 root keeps the plain rule.
+                bool ahead = (dx * (Raw(from.X) - ax)) + (dy * (Raw(from.Y) - ay)) >= 0;
+                if (lengthSquared > 0 && ahead &&
+                    ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact)) is (double ox, double oy))
+                {
+                    var pushed = new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024));
+                    objectPush += pushed - desired;
+                    desired = pushed;
+                    adjusted = true;
+                    if (touched is not null && !touched.Contains(entity))
+                    {
+                        touched.Add(entity);
+                    }
+
+                    continue;
+                }
             }
 
             float combinedRadius = radius + Math.Max(0, entityRadius(entity));

@@ -337,3 +337,22 @@ a cycle along short ways.
   and 32 at 8-tick frames before speeding up, so the replay no longer takes their first step from
   the 60 Hz pattern 18 cycles later: near-low matches in full, occlude-edge 55/56 (was 6). No
   engine change; `tools/README.md` describes the rules.
+
+## Addendum: the screen's last row (2026-11-03)
+Read from OV-20261029-actor-events `way` (`OVAEV0.TXT`), no new run. The way actor (2 wide, 2 high)
+walks −X along y = 6, 6 to the side of an eye at 8, in a 640×480 view with `PLAYER_ARC` 1. Its top
+reaches the screen's bottom edge at depth 6/0.36420 = 16.474.
+- **Cycle 141.** It stands 16.605 ahead, with its top on row 240 + 0.36134 × 659.0 = 478.1. It is
+  seen.
+- **Cycle 142.** It stands 16.481 ahead, with its top on row 479.9: inside the screen, but below the
+  last row's centre (479.5). It is not seen: it skips from cycle 143 and next moves in 148, six
+  cycles after its last move.
+
+OpenVirtue tested the continuous screen edge, still saw it at cycle 142, and skipped one cycle
+later. So a sprite (or wall) counts as on the screen only if it covers a pixel row's centre: the
+screen's top and bottom are taken half a row inside their edges. The cone's left and right edges
+are not measured this finely and stay as they were.
+
+Implementation: `ViewTest.IntersectsScreen`. Test:
+`ViewTestTests.IsSpriteVisible_AtTheScreensBottomRow_NeedsARowCentre`. With this and the way
+arrival of OV-20261029-actor-events (same day), `way` matches in full (616 lines).

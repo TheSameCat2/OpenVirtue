@@ -222,6 +222,7 @@ internal static class OracleReplay
         {
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
             host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
+            host.FatalErrors = true; // a division by zero shuts the original down (OV-20261029-numeric-edge)
             audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
             host.Boot();
             string? replayPrimary = primary is null ? null : Path.Combine(replayDirectory, "openvirtue-prints", WorldName, primary);

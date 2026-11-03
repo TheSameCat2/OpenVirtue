@@ -640,8 +640,15 @@ public sealed class ViewTest
         // A positive tilt moves the eye line up the screen (ProjectionModel.ShearNdc), showing more below it.
         double tangent = viewer.Projection.VerticalHalfTangent;
         double shear = 2 * viewer.Projection.PlayerTilt * tangent;
-        double screenLow = viewer.EyeHeight + (depth * (-tangent - shear));
-        double screenHigh = viewer.EyeHeight + (depth * (tangent - shear));
+
+        // A sprite or wall shows only if it covers the centre of a pixel row: the screen's top and
+        // bottom are half a row inside its edges. A 2-high actor whose top fell to row 479.9 of 480
+        // (16.481 ahead of an eye at 8) was already unseen, while at row 478.1 it was seen
+        // (OV-20261020-view-activity, 2026-11-03 addendum, read from actor-events way).
+        double rows = Math.Max(1, viewer.Projection.ScreenHeight);
+        double inside = tangent - (tangent / rows);
+        double screenLow = viewer.EyeHeight + (depth * (-inside - shear));
+        double screenHigh = viewer.EyeHeight + (depth * (inside - shear));
         return low < screenHigh && high > screenLow;
     }
 

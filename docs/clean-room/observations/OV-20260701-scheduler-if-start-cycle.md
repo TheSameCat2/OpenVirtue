@@ -1,6 +1,6 @@
 # OV-20260701-scheduler-if-start-cycle: IF_START Versus First EACH_TICK Dispatch
 Date: 2026-07-01
-Status: proposed
+Status: confirmed; both open questions answered by later probes (2026-11-03 resolution below)
 Observer: OpenVirtue maintainers
 Implementer: OpenVirtue maintainers
 
@@ -92,6 +92,14 @@ frame-level timing.
   number `0`, despite the manual's three-digit description?
 - Does assigning `EACH_TICK.1` during `IF_START` run the callback on the same
   frame, the next frame, or only after another engine transition?
+
+Resolved (2026-11-03, no new run):
+- The suffix: `PRINTFILE "name", 0` writes `NAME0.TXT`, the number unpadded, in every later probe
+  (OV-20261029-print-output).
+- The first dispatch: a slot armed in `IF_START` first runs in cycle 1, the first world cycle,
+  which reads `TIME_CORR` 1 and `TICKS` 0 (OV-20261029-scheduler-order `startup`;
+  OV-20261103-startup-clock for that cycle's timing). `WdlRuntime.RunStartup` and the first
+  `Tick` follow it.
 
 ## Tests To Add Or Update
 - Added `Runtime_RunStartup_AssignsEachTickAction_AndDispatchesOnFirstTick` to

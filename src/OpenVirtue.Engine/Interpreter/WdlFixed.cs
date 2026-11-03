@@ -68,7 +68,7 @@ public static class WdlFixed
     {
         int divisor = ToRaw(right);
         return divisor == 0
-            ? throw new WdlExpressionException("Division by zero.")
+            ? throw new WdlExpressionException("Division by zero.", fatal: true)
             : FromRaw(((long)ToRaw(left) << 10) / divisor);
     }
 
@@ -77,7 +77,7 @@ public static class WdlFixed
     {
         long divisor = Math.Abs((long)ToRaw(right));
         return divisor == 0
-            ? throw new WdlExpressionException("Modulo by zero.")
+            ? throw new WdlExpressionException("Modulo by zero.", fatal: true)
             : FromRaw((uint)ToRaw(left) % divisor);
     }
 

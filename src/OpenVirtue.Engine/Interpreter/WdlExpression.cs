@@ -3,8 +3,15 @@
 
 namespace OpenVirtue.Engine.Interpreter;
 
-/// <summary>An invalid WDL arithmetic operation that aborts expression evaluation.</summary>
-public sealed class WdlExpressionException(string message) : InvalidOperationException(message);
+/// <summary>
+/// An invalid WDL arithmetic operation that aborts expression evaluation. <see cref="IsFatal"/> marks
+/// one that shuts the original runtime down (a division by zero, OV-20261029-numeric-edge).
+/// </summary>
+public sealed class WdlExpressionException(string message, bool fatal = false) : InvalidOperationException(message)
+{
+    /// <summary>Whether the original runtime shuts down on this error.</summary>
+    public bool IsFatal { get; } = fatal;
+}
 
 /// <summary>A WDL expression node that can be evaluated against an <see cref="IWdlContext"/>.</summary>
 public abstract class WdlExpression

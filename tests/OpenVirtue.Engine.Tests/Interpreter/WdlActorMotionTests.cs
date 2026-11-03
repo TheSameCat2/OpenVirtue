@@ -515,6 +515,29 @@ public sealed class WdlActorMotionTests
     }
 
     [Theory]
+    [InlineData(20478, 6007, 20480, 6144, 0.28125, 20478, 6144)] // x part rounds to 0: 2 short (actor-events, way)
+    [InlineData(10357, 6144, 10240, 6144, 0.25, 10240, 6144)]    // the x part (-131) is held at the -117 left
+    public void Tick_WayActorWhoseStepReachesThePoint_HoldsEachPartAtThePoint(
+        int fromX, int fromY, int toX, int toY, double timeCorrection, int endX, int endY)
+    {
+        // OV-20261029-actor-events, 2026-11-03 addendum: a step that reaches the point does not land
+        // on it; each 22.10 part stops at the point's coordinate.
+        string map =
+            FormattableString.Invariant($"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR mover {fromX / 1024.0} {fromY / 1024.0} 0 0;#0\n") +
+            FormattableString.Invariant($"WAY route {fromX / 1024.0} {fromY / 1024.0} {toX / 1024.0} {toY / 1024.0};#1\nPLAYER_START 40 40 0 0;#2");
+        (WdlRuntime runtime, Level level) = Create("WAY route; ACTOR mover { TARGET route; SPEED 0.5; }", map);
+        Actor actor = Assert.Single(level.Actors);
+        runtime.Tick(0.25 / 16); // arrives on the point it stands on
+        Assert.Equal(2, actor["WAYPOINT"]);
+
+        runtime.Tick(timeCorrection / 16);
+
+        Assert.Equal(endX, Math.Round(actor.X * 1024), 6);
+        Assert.Equal(endY, Math.Round(actor.Y * 1024), 6);
+        Assert.Equal(1, actor["WAYPOINT"]);
+    }
+
+    [Theory]
     [InlineData(1, 0.25, 69, 108)]
     [InlineData(1, 0.28125, 78, 121)]
     [InlineData(0.78515625, 0.25, 91, 90)]

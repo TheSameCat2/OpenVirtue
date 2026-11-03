@@ -45,6 +45,16 @@ public sealed class ViewTestTests
         Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 0, 0), x, -6, 1, 0, 2));
     }
 
+    [Theory]
+    [InlineData(16.605, true)]  // its top on row 478.1 of 480
+    [InlineData(16.481, false)] // on row 479.9: inside the screen, but short of the last row's centre
+    public void IsSpriteVisible_AtTheScreensBottomRow_NeedsARowCentre(double x, bool expected)
+    {
+        // OV-20261020-view-activity, 2026-11-03 addendum (actor-events way): a 2-high actor 6 to the
+        // side of an eye at 8 skipped from the cycle after it stood 16.481 ahead.
+        Assert.Equal(expected, View.IsSpriteVisible(Viewer(0, 0, 0), x, 6, 1, 0, 2));
+    }
+
     [Fact]
     public void IsSpriteVisible_HalfBehindTheWallsEnd_IsVisible()
     {

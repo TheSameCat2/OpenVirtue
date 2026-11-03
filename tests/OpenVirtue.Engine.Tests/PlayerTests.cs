@@ -411,9 +411,10 @@ public class PlayerTests
 
         blocked.MoveHorizontal(-10, 0);
 
-        // √(2.2² + 0.093): the original stops the player about 0.02 beyond (OV-20261029-overlap).
-        Assert.Equal(LevelCollisionWorld.ContactDistance(2.2f), blocked.Position.X, 3);
-        Assert.Equal(2.221f, blocked.Position.X, 3);
+        // The original stops the player about 0.02 beyond (OV-20261029-overlap): the step into the
+        // thing is pushed back to C² = 2252²/1024 + 98 in 22.10 (still-walk).
+        Assert.Equal(LevelCollisionWorld.ContactDistance(2.2f), blocked.Position.X, 2);
+        Assert.Equal(2273 / 1024f, blocked.Position.X, 6);
 
         level.Things[0]["passable"] = 1;
         var passable = new Player(level);

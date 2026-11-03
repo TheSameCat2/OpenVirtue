@@ -174,3 +174,27 @@ line's tick, past the last sample) and `set-midcycle`.
   fill gave 8 then 9), and its first step is read from the lines' `TIME_CORR` column. round2
   start-wait still prints `W16` at 15.750 against 15.781: its eight samples leave the phase open
   there. `tools/README.md` describes the rules.
+
+## Addendum: the seconds clock, as far as the traces go (2026-11-03)
+No new run. `round4/anim-clock` (`OVSDO0.TXT` `69f6d4b9`) and `order-wmp` (`b1152cf8`) were re-read
+for the second boundaries:
+
+| Carrier | Last cycle before | First cycle after |
+|---|---|---|
+| anim-clock, `SECS` 0 → 1 | `TOTAL_FRAMES` 57, `TICKS` 15.000 | 58, 15.250 |
+| anim-clock, `SECS` 1 → 2 | 118, 31.000 | 119, 31.250 |
+| anim-clock, `SECS` 2 → 3 | 180, 47.250 | 181, 47.500 |
+| order-wmp, `EACH_SEC` | the `SEC` lines come in cycles 6 and 68 (62 apart), at `TICKS` 15.000 and 31.250 | |
+
+- A second takes 61 or 62 cycles, at 0.25 and 0.28125 ticks a cycle: 16.0 to 16.5 `TICKS`.
+- The first boundary comes 0.75 to 1 tick before `TICKS` reaches 16.
+- Later boundaries drift about 0.25 tick a second further from the multiples of 16.
+
+No constant offset, frame count or `TICKS` threshold fits all six boundaries. That is the
+behaviour of a finer real-time clock which `TICKS`, summed from 1/32-tick steps, loses ground to.
+The traces print no such clock (`TOTAL_TIME` equals `TICKS`), so the replay cannot place these
+boundaries. OpenVirtue keeps one clock for both, and `order-wmp`, `anim-clock` and `start-wait`
+differ only there.
+
+A probe that times `EACH_SEC` against a DOS clock it can read (for example `SET` at a flic boundary,
+or a long `WAITT` cadence) would settle it.
