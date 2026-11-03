@@ -406,11 +406,11 @@ actor-climb-2 (`3af2e1d2`, identical traces), no new run.
   wall behind the end point refuses the step holds for free-standing walls (long-wall), not for
   region borders, `IMPASSABLE` or not. OpenVirtue had refused the step and taken the half step to
   15.732.
-- **Open.** Walking back from 22.000, the same walker's refused step (full and half end inside the
-  pad) left it at 21.524, 1561 units from the border, not the 1074-unit hold (21.049) that
-  long-pad's walker took from 23.000. 487 units is half the clear distance (2048 − 1074)/2; why
-  this stop is half and long-pad's whole is not settled (probe candidate: refused long steps from
-  2, 3 and 4 before a border, at 60 frames a second and at 8 ticks a cycle).
+- Walking back from 22.000, the same walker's refused step (full and half end inside the pad)
+  left it at 21.524, 1561 units from the border, not the 1074-unit hold (21.049) that long-pad's
+  walker took from 23.000. Answered by OV-20261103-careful-stop: the quarter step still ends past
+  the border from 22, so the actor moves half the way to the hold; from 23 the quarter ends before
+  the border, within the half width, and the actor goes to the hold.
 - **Open: the cone's edge and a wall's end.** cone-edge loses the 2-wide actor 40 ahead in the
   frame at angle 0.521, where its near edge is 3 pixels inside the screen's edge; occlude-edge
   hides it in the frame at `PLAYER_Y` −3.0, where its edge lies exactly on the wall's end. Both
@@ -419,8 +419,8 @@ actor-climb-2 (`3af2e1d2`, identical traces), no new run.
   OpenVirtue tests the continuous edges (ADR-0010) and sees it one frame longer in each. Two lines
   in two carriers; a column probe (sprites of several widths at several depths against the screen
   edge and a wall end, by quarter-pixel steps) would settle the rounding.
-- **Open: berkeley-near F1.** At (16, 0) the wall's `DISTANCE` reads 9.990, ten units short of
-  |dx| + |dy| = 10 to either vertex, where N1's 3.000 and O1's 14 are exact.
+- berkeley-near F1's 9.990 at (16, 0) is the wall's `DISTANCE` in the player's view after a beam
+  without a turn (OV-20261103-careful-stop): (6, 4) seen facing 3.1416, cosine −1023/1024.
 
 Implementation: `Player.PushOutOfObjects` holds a beamed player off walls through
 `LevelCollisionWorld.HoldOffWalls`; `WdlRuntime.TryEndPointCarefulMove` tests only free-standing

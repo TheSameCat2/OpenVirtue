@@ -268,8 +268,9 @@ public sealed class WdlViewActivityTests
     public void Tick_SkipFrames_LongCarefulStepIsTestedAtItsEndOnly()
     {
         // OV-20261020-view-activity, long-pad: a skipped CAREFULLY actor's step of 9 jumps a pad two
-        // steps up when it lands beyond it. A step of 6 that would land inside the pad is tried at
-        // half its length (round 2 addendum, 2026-11-02), which lands 1 short of the pad.
+        // steps up when it lands beyond it. A step of 6 that would end half a step before the pad, within
+        // the actor's half width, goes to the 1074-unit hold (OV-20261103-careful-stop: the walker from
+        // 2.000 whose step ended 0.4 before the border stood at 10.951).
         const string map =
             "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
             "VERTEX -10 4 0;#4\nVERTEX -6 4 0;#5\nVERTEX -6 8 0;#6\nVERTEX -10 8 0;#7\n" +
@@ -292,8 +293,8 @@ public sealed class WdlViewActivityTests
         // 1.5 x 6 from y 1 to about 10, beyond the pad (y 4..8); sin 90° is 1023/1024 in 22.10 (OV-20261029-actor-step)
         Assert.Equal(1 + (9 * 1023.0 / 1024), jumper.Y, 4);
         Assert.Equal(0, jumper.Region);
-        // 6 from y -2.5 would end at 3.5, half a step short of the pad; half of it ends at 0.5
-        Assert.Equal(-2.5 + (3 * 1023.0 / 1024), stopper.Y, 4);
+        // 6 from y -2.5 would end at 3.5, within 1 of the pad's wall at 4: held 1074/1024 before it
+        Assert.Equal(4 - (1074.0 / 1024), stopper.Y, 4);
     }
 
     [Fact]
@@ -373,6 +374,100 @@ public sealed class WdlViewActivityTests
 
         // Six steps of 1632 units along the cut sine of 90 degrees (1023/1024): 20.507, not the half step's 15.7.
         Assert.InRange(walker.Y, 20.49, 20.53);
+    }
+
+    [Theory]
+    [InlineData(2.0, 21.524)] // the quarter step still ends inside the pad: half the way to the hold
+    [InlineData(2.5, 21.049)] // the quarter ends before the border within the half width: the hold
+    [InlineData(3.0, 21.049)]
+    [InlineData(4.0, 21.602)] // the quarter (2.398 along the cut sine) is clear
+    [InlineData(4.5, 22.102)]
+    public void Tick_SkipFrames_RefusedLongStep_StopsAsMeasured(double gap, double expectedY)
+    {
+        // OV-20261103-careful-stop north-*/south-*: a skipped CAREFULLY walker's six-cycle step toward a
+        // pad 2 steps up is tried whole, half and quarter; a clear end is taken, one within the half
+        // width before the border goes to the 1074-unit hold, and one still past the border at the
+        // quarter moves half the way to the hold.
+        string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+            "REGION room 0 16;#0\nREGION pad 2 16;#1\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL border 4 5 1 0 0 0;#4\nWALL border 5 6 1 0 0 0;#5\nWALL border 6 7 1 0 0 0;#6\nWALL border 7 4 1 0 0 0;#7\n" +
+            "ACTOR walker -10.5 " + (20 + gap).ToString(System.Globalization.CultureInfo.InvariantCulture) + " 270 0;#8\nPLAYER_START 40 0 0 0;#9";
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "WALL border { } ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 1.6; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(expectedY, walker.Y, 2);
+    }
+
+    [Theory]
+    [InlineData(49.5, 50 - (1074.0 / 1024))] // 0.5 from the edge: put at the hold, no step
+    [InlineData(50.0, 50 - (1074.0 / 1024))] // on the edge
+    [InlineData(49.0, 49 - (6 * 1.6 * 1023 / 1024))] // exactly its half width from it: its long step as usual
+    public void Tick_SkipFrames_CarefulActorStandingWithinItsHalfWidthOfASolidWall_IsPutAtTheHoldInPlaceOfItsMove(double startY, double expectedY)
+    {
+        // OV-20261103-careful-stop north-3-35, north-4-45, south-2-3: walkers placed 0.5 from and on the
+        // room's north edge stood 1.049 from it after their first move, with the 4/1024 nudge along x;
+        // one exactly 1.0 from it took its step.
+        string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\nREGION room 0 16;#0\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "ACTOR walker -10.5 " + startY.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 270 0;#4\nPLAYER_START 40 0 0 0;#5";
+        (WdlRuntime runtime, Actor walker, _) = Create("ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 1.6; DIST 1; FLAGS CAREFULLY; }", map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(expectedY, walker.Y, 2);
+        Assert.Equal(-10.5 + (4.0 / 1024), walker.X, 6);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        // The next long step goes on from there (north-3-35's pushed walker stepped to the pad's hold six cycles later).
+        Assert.Equal(expectedY - (6 * 1.6 * 1023 / 1024), walker.Y, 2);
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_PushedWalkerThenTakesItsRefusedStepToTheHold()
+    {
+        // OV-20261103-careful-stop north-3-35: the walker placed 0.5 from the room's north edge (y 24)
+        // stood at 22.951 after its first move and at the pad's hold, 21.049, six cycles later.
+        const string map =
+            "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+            "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+            "REGION room 0 16;#0\nREGION pad 2 16;#1\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL border 4 5 1 0 0 0;#4\nWALL border 5 6 1 0 0 0;#5\nWALL border 6 7 1 0 0 0;#6\nWALL border 7 4 1 0 0 0;#7\n" +
+            "ACTOR walker -5.5 23.5 270 0;#8\nPLAYER_START 40 0 0 0;#9";
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "WALL border { } ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 1.6; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(24 - (1074.0 / 1024), walker.Y, 3);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(20 + (1074.0 / 1024), walker.Y, 3);
     }
 
     // ---- BERKELEY walls ----------------------------------------------------------------------

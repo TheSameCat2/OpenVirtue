@@ -344,11 +344,14 @@ public sealed class LevelCollisionWorld
         float radius,
         float clearance,
         Func<Wall, int, int, bool> canCross,
-        ICollection<AcknexObject>? touched = null)
+        ICollection<AcknexObject>? touched = null,
+        bool inclusive = true)
     {
         ArgumentNullException.ThrowIfNull(canCross);
         radius = Math.Max(0.01f, radius);
-        float contact = radius + (0.5f / 1024);
+        // Inclusive: a circle exactly the radius from the wall is held too (the player's step rule). An actor
+        // exactly its half width from the room's edge was left there (OV-20261103-careful-stop south-2-3).
+        float contact = radius + (inclusive ? 0.5f / 1024 : 0);
         Vector2 desired = position;
         for (int pass = 0; pass < 4; pass++)
         {

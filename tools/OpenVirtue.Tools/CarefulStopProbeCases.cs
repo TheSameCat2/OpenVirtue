@@ -103,8 +103,29 @@ internal static class CarefulStopProbeCases
         Stand(16, 0, Math.PI, "S10") +
         "    RULE cs_p = 0;\n" + ClearSampler;
 
+    /// <summary>
+    /// Round 2: at (16, 0), each facing twice in a row (a beam to the same point with the same
+    /// angle), then at (15, 0) with the angle kept, for angles from 0 to 5.5: is the wall's
+    /// <c>DISTANCE</c> the map's |dx| + |dy| or a rotation of the offset in 22.10?
+    /// </summary>
+    private static readonly string WallAnglesRun =
+        "    SET cs_sw, cs_wall;\n" + ArmSampler + "    RULE cs_p = 1;\n" + L("GO", "PLAYER_X", "PLAYER_Y") +
+        string.Concat(new[] { 0.0, 0.5, 1.0, 1.5708, 2.0, 2.5, 3.1416, 4.0, 4.7124, 5.5 }.Select((a, i) =>
+            Stand(16, 0, a, $"A{i}") + Stand(16, 0, a, $"B{i}") + Stand(15, 0, a, $"C{i}"))) +
+        "    RULE cs_p = 0;\n" + ClearSampler;
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        new TraceProbeCase(
+            "round2/wall-angles",
+            "Round 2. The wall of wall-dist read 9.990 at (16, 0) when the player faced 3.1416 in two successive stands and 10.000 after a turn: stands at (16, 0) twice and (15, 0) once for ten facings.",
+            WallDistDeclarations,
+            WallAnglesRun,
+            Predict(
+                ("|dx| + |dy| in the map", "10 and 9 at every facing"),
+                ("the offset rotated by the facing, in 22.10", "at 1.0: 6·553/1024 + 4·861/1024 = 6.604 and |6·861 − 4·553|/1024 = 2.885, 9.488 in all; 9.990 at 3.1416"),
+                ("short only after a repeated facing", "A exact, B and C short")),
+            Map: new TraceProbeMap(Walls: [new TraceProbeWall("cs_wall", 10, -4, 10, 4)])),
         Walkers("north-2-25", "From 2 and 2.5 before the pad's north border (22 and 22.5), walking south: the six-cycle step and its half end inside the pad. Where does each walker stop?", 22, 22.5, 2),
         Walkers("north-3-35", "From 3 and 3.5 before the north border (long-pad's 23 stopped at 21.049).", 23, 23.5, 2),
         Walkers("north-4-45", "From 4 and 4.5 before the north border.", 24, 24.5, 2),

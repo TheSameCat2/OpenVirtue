@@ -325,6 +325,15 @@ public sealed class Player : AcknexObject
     /// <summary>Marks the end of the player's own movement in a cycle: the next <see cref="PushOutOfObjects"/> skips an unmoved player.</summary>
     public void Settle() => _settled = new Vector2(_position.X, _position.Z);
 
+    /// <summary>Whether the position was set from outside (a script beam) since the last <see cref="Settle"/>.</summary>
+    public bool PositionSetFromOutside => _settled is { } settled && settled != new Vector2(_position.X, _position.Z);
+
+    /// <summary>
+    /// Whether the last motion step found the position set by a script and moved it by no velocity: walls'
+    /// <c>DISTANCE</c> is then refreshed in the player's view rather than the map (OV-20261103-careful-stop).
+    /// </summary>
+    public bool LastMoveWasScripted { get; set; }
+
     /// <summary>
     /// Moves the player straight away from <paramref name="center"/> to
     /// <paramref name="contactDistance"/> when it is closer, as an actor walking into the player
