@@ -191,7 +191,7 @@ internal static class OracleReplay
         // A launch that ran at 8 ticks a frame throughout is replayed with frames of 8 ticks.
         double? slowFrames = !asked && OracleTrace.RanAtSlowFrames(timingSource, stamp) ? OracleTrace.SlowFrameTicks : null;
         OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
-            (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) : null);
+            (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) ?? (carrierCase.Autotype is not null ? OracleTrace.AutotypeTiming(timingSource) : null) : null);
         bool counted = false;
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
 
@@ -233,6 +233,11 @@ internal static class OracleReplay
             {
                 window.TypedKeys.Enqueue(key);
             }
+
+            // DOSBox-X typed the keys on its wall clock; the original's trace says in which cycle the
+            // input ended (the inkey carriers' R line) against the cycle before it (B): the replay
+            // holds the keys that many polls, one a cycle, so the INKEY completes in the same cycle.
+            window.KeyDelayPolls = InputEndDelay(timingSource);
         }
 
         int frames = 0;
@@ -256,6 +261,7 @@ internal static class OracleReplay
             string? replayPrimary = primary is null ? null : Path.Combine(replayDirectory, "openvirtue-prints", WorldName, primary);
             while (!host.ExitRequested && frames < options.MaxFrames && host.Runtime.GetSkill(Timing.TicksSkill) <= stopTicks + clock.Offset)
             {
+                window.Frame = frames;
                 host.Frame(present: false);
                 frames++;
                 if (timing is { } anchorColumn && !clock.Anchored && replayPrimary is not null && File.Exists(replayPrimary) &&
@@ -381,6 +387,33 @@ internal static class OracleReplay
     }
 
     /// <summary>The carrier template's start-up stamp: <c>TCK=</c> in <c>OVPRB0.TXT</c>, <c>TICKS</c> as the probe action starts.</summary>
+    /// <summary>
+    /// The cycles from the trace line before the first <c>R</c> line to that line, the original's input
+    /// span for a carrier with typed keys (0 without such lines).
+    /// </summary>
+    private static int InputEndDelay(IReadOnlyList<OracleTraceLine> lines)
+    {
+        for (int i = 1; i < lines.Count; i++)
+        {
+            if (lines[i].Token != "R")
+            {
+                continue;
+            }
+
+            for (int j = i - 1; j >= 0; j--)
+            {
+                if (lines[i].Value(1) is { } end && lines[j].Value(1) is { } start && end >= start)
+                {
+                    return (int)Math.Round(end - start);
+                }
+            }
+
+            return 0;
+        }
+
+        return 0;
+    }
+
     /// <summary>
     /// The start-up plan an original full save under <paramref name="work"/> gives: its <c>TOTAL_FRAMES</c>
     /// frames (the earliest save's) summing to its <c>TICKS</c>, as whole 1/32 ticks spread along
@@ -558,7 +591,7 @@ internal static class OracleReplay
         }
         if (result.Case.Autotype is not null)
         {
-            sb.Append(", AUTOTYPE keys typed into INKEY at once (their wall-clock timing and other key hooks not replayed)");
+            sb.Append(", AUTOTYPE keys typed into INKEY, delivered in the original's R cycle (other key hooks not replayed)");
         }
         else if (result.Case.ScriptedInput)
         {
@@ -1129,10 +1162,30 @@ internal static class OracleReplay
         /// <summary>The carrier's AUTOTYPE keys, typed into the first INKEY the replay opens.</summary>
         public Queue<(InkeyKey Key, char Character)> TypedKeys { get; } = new();
 
-        public bool BeginTextInput() => true;
+        /// <summary>
+        /// The cycles from the line before the original's R line to it: the keys are delivered that many
+        /// frames less one after the input opens, so it completes in the cycle the original's did.
+        /// </summary>
+        public int KeyDelayPolls { get; set; }
+
+        /// <summary>The replay's frame, set by the loop (the host polls the keys more than once a frame).</summary>
+        public int Frame { get; set; }
+
+        private int _openedAt = -1;
+
+        public bool BeginTextInput()
+        {
+            _openedAt = Frame;
+            return true;
+        }
 
         public IReadOnlyList<(InkeyKey Key, char Character)> ConsumeTextKeys()
         {
+            if (_openedAt >= 0 && Frame - _openedAt < KeyDelayPolls - 1)
+            {
+                return [];
+            }
+
             var keys = TypedKeys.ToArray();
             TypedKeys.Clear();
             return keys;

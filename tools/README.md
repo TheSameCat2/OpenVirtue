@@ -154,7 +154,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   sample, that gap is the step into it: the probe action starts a frame ahead of the first sample
   in most carriers, and the first cycles' rate cannot tell 8/32 from 9/32 there (below-beam's five
   carriers then match in full). A carrier's `AUTOTYPE` keys are typed into the
-  first `INKEY` it opens; clicks and key hooks are still not replayed.
+  first `INKEY` it opens, held until the frame before the cycle the original's line after the
+  input (`R`) counted, with that line and the one before it (`B`) as the clock's two samples
+  (OV-20261029-inkey addendum: 10 of 13 carriers); clicks and key hooks are still not replayed.
   A carrier's `case.json` may name its timing column (`"timing": "TK:1"`) where detection picks a
   wrong one: the flic carriers print `FLIC_FRAME`, whole and never falling, before `TICKS`. The
   local flic carriers carry these hints; with them the flic probes match 126 more lines and replay to
