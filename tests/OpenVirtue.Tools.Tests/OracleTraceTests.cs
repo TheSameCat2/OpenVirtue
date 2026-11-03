@@ -102,8 +102,11 @@ public sealed class OracleTraceTests
         OracleTimingColumn? timing = OracleTrace.DetectTimingColumn(lines);
 
         Assert.Equal("C", OracleTrace.LeadingSampler(lines, 0, 1));
-        Assert.Equal(new OracleTimingColumn(OracleTimingColumn.AnyToken, 0), timing);
+        // The two C lines are the sampler (a two-line sampler before every line as a sample); RET's
+        // count 5 lands in cycle 6 by the sampled cadence, as the every-line rule's "a cycle behind".
+        Assert.Equal(new OracleTimingColumn("C", 0), timing);
         Assert.Equal([13.4375, 13.6875, 13.96875, 14.21875, 14.46875, 14.71875], OracleTrace.CycleTicks(lines, timing!.Value));
+        Assert.Equal([13.4375, 13.6875, 13.96875, 14.21875, 14.46875, 14.71875], OracleTrace.CycleTicks(lines, new OracleTimingColumn(OracleTimingColumn.AnyToken, 0)));
     }
 
     [Fact]

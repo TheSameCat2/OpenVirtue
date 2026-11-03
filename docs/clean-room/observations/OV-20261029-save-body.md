@@ -728,3 +728,15 @@ the player the origin cannot tell apart (coordinates kept); nor can these saves 
 are set within the cycle. With it the four carriers match in full: 89 of 107.
 `WdlRuntime.UpdateSlopeExtents`, from `WdlPlayerMotion.Synchronize`.
 
+## Addendum: +106, and the unplaced object's pointer (2026-11-03, night)
+- **round 13 unplaced, +376.** The unplaced thing's record holds (25792, 91) at +36, where a placed
+  one's `HEIGHT` is: a far pointer like the walls' (segment 90 there), nothing the replay models.
+  The diff sets it aside with the walls' pointers (an entity's +36 whose segment word lies within
+  one of a wall pointer's, against the replay's 0). The carrier then matches in full.
+- **round 15b texture-anim, +106.** The actor's record holds 1.0 at +106 where every other save
+  holds 0, with a three-cycle `SAVE` texture of `DELAY 1` declared on an unplaced wall. OpenVirtue
+  now writes an animated texture's current-cycle `DELAY` at +106 of the objects that carry one
+  (apathy's saves hold 3.0 on a thing, read as that), which leaves this carrier as it was: the
+  actor's texture is still. What puts the actor's +106 at 1.0 is open.
+- Result: 90 of 107 save-body carriers match in full.
+

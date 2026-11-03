@@ -130,7 +130,8 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   Timing: the original's `TICKS` per cycle come from one token's column (`--timing TOKEN:COL`,
   detected by default: a token's fractional never-decreasing column before a whole one, so a flic
   carrier's `TICKS` beats the `FLIC_FRAME` printed before it, then the densest token, three lines
-  or, failing that, two; a
+  or, failing that, two (before every line as a sample: audio stop's two `C` lines place its `RET`
+  by the cadence); a
   whole-number cycle counter on the same lines fills in samplers that print only every few cycles,
   in whole 1/32 ticks; a trace where no token repeats but every line prints `TICKS` and one cycle
   counter, each counted cycle with one `TICKS`, is its own sampler, `*:0`; there the lines of
@@ -189,7 +190,8 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
     then 8s and 9s); a run with no surplus is spread evenly, phased the same way. The header line
     says `save-anchored …`. The replay had run 56 quarter-tick frames to 14.0 there. With the walls'
     heap pointers at +28..+39 of each wall record set aside (the same far pointers in every launch),
-    85 of the 107 save-body carriers match in full, from none.
+    85 of the 107 save-body carriers match in full, from none. An unplaced thing's or actor's +36,
+    a pointer too (segment within one of the walls'), is set aside with them (round 13 unplaced).
   - **Other tokens' lines.** A named sampler's other tokens still measure the clock where they
     print the count and `TICKS`: the probe action's line after a long `WAITT`, say, long after the
     sampler stopped (scheduler-order round2 start-wait's `W16` 49 cycles after its last `Y`), or
