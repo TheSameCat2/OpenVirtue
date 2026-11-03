@@ -115,11 +115,13 @@ residual open.
 
 ## Open Questions
 - **The 4-wide residual.** For c = 3276 the term is 96 or 97, not 98. Round 2 `w4-diag` and
-  `w4-14` land one unit closer than the rule gives.
+  `w4-14` land one unit closer than the rule gives. Answered by the width addendum below:
+  C² = (c − 1)²/1024 + 102.
 - **The reach edge.** Is the 8-step limit Euclidean or per axis (|dx| < 8)? The one excluded case
   has dx = 8 exactly. Is it the same in walking contact?
 - **push-d005.** A start offset of 51 (L² = 2) first moved the player only to −307, a quarter of
-  `PLAYER_WIDTH` from the start, and pushed it out the cycle after. OpenVirtue pushes once.
+  `PLAYER_WIDTH` from the start, and pushed it out the cycle after. Answered by the addendum
+  below: the root's argument overflows.
 - **Slow start-ups.** A start-up that renders at about 2 frames a tick cannot be planned from later
   samples.
 - **view-activity `pair-*`.** With the planned start-up, the far actors' first skipped move comes
@@ -168,3 +170,45 @@ another counted token spans. It takes the one counting from the earliest cycle i
 
 Diff gain: 821 matched lines, none lost (`OracleTraceTests.DetectTimingColumn_SparseEventToken_*`,
 `DetectTimingColumn_SamplerEveryOtherCycle_IsKept`).
+
+## Addendum: the push that falls short (2026-11-03)
+Read from push-d005 (`OVSUP0.TXT` `43819f47`) and OV-20261029-overlap round 3 `d005`, no new run.
+
+The player starts 51 raw from the 2-wide actor's centre: dx = −51, dy = 0, L² = 2601/1024, cut to 2.
+C² is 5050, so the ratio C²·1024/L² is 2585600, and the root's argument, the ratio times 1024, is
+2647654400. That is past 2³¹. The push then does not scale the offset:
+- **Cycle 2.** The player moves `PLAYER_WIDTH`/4 (1228/4 = 307) away from the centre, from where it
+  stands, and gets the 4/1024 nudge along the axis with no part: (−307, 4).
+- **Cycle 3.** It is still inside, and the usual push applies from there. dx = −358, dy = 4,
+  L² = 125, ratio 41369, root 6508: (51 − 2275, 0 + 25) = (−2224, 25), the printed (−2.172, 0.024).
+
+The fall-back applies when the root's argument does not fit in a signed 32-bit integer. For this
+contact that is L² of 1 or 2. Only L² = 2 is measured, so a plain "L² below 3" threshold is not
+ruled out. The 22.10 √ is the only step here whose argument is that large.
+
+Implementation: `LevelCollisionWorld.PushOutOfEntities` (with `ScaleToContact`) reports an unfinished
+push. `Player.PushOutOfObjects` then pushes again the next cycle, although the player has settled.
+Test: `WdlRuntimeTests.Apply_PlayerStartingVeryNearAnActorsCentre_IsPushedAQuarterWidthThenOutTheNextCycle`.
+push-d005 and overlap `d005` match in full.
+
+## Addendum: the contact term across widths (2026-11-03)
+No new run. The 21 push-outs of this note and OV-20261029-overlap (1, 2, 4, 8 and 16 wide; on the
+axes, on the diagonal, at 14°; 0.1 to 4.9 off the centre) were fitted again. Thirteen print raw
+positions; the others print three decimals.
+
+With C² = c²/1024 + K, no single K fits every width: 1-wide allows 98–101, 2-wide only 98, 4-wide
+96–97, 8-wide 88–99. A search over other forms found one that fits all 21:
+- C² = (c−d)²/1024 + K for d from −4 to 29 and K from 0 to 129;
+- C² = (c² + X)/1024 for any X;
+- a slack proportional to c²;
+- the product rounded, cut or floored, and the root cut or rounded.
+
+The one is **C² = (c − 1)²/1024 + 102**, with the product rounded and the root cut. It is the same
+(c − 1)² the walking test of OV-20261029-overlap (still-walk) uses. For a 2-wide object
+(c = 2252) it gives 5050 as before, so nothing measured at that width moves. For the 4-wide ones
+(c = 3276) it gives 10577, and `w4-14` lands on (−2789, 695) and `w4-diag` on (−2020, 2020), the
+printed (−1.973, 1.973).
+
+Implementation: `LevelCollisionWorld.PushTargetSquared` and `ContactTestSquared`, with
+`PushSlackSquaredRaw` now 102. Tests: `Apply_PlayerStartingInsideAnActor_IsPushedOutIn2210Steps`
+gains the 4-wide cases at 14° and on the diagonal, and the 1-wide one.

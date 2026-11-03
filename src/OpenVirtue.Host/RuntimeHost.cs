@@ -131,6 +131,24 @@ public sealed partial class RuntimeHost : IDisposable
     public int? RandomSeed => _randomSeed;
 
     /// <summary>
+    /// Whether a fatal script error (a division by zero) halts the runtime and drops the unflushed
+    /// print text, as the original's shutdown does (<see cref="WdlRuntime.FatalErrors"/>), on every
+    /// level. Off by default; the oracle replay turns it on.
+    /// </summary>
+    public bool FatalErrors
+    {
+        get => _fatalErrors;
+        set
+        {
+            _fatalErrors = value;
+            if (_runtime is not null)
+            {
+                _runtime.FatalErrors = value;
+            }
+        }
+    }
+
+    /// <summary>
     /// Whether a full <c>SAVE</c> also writes the original's own save file, which the DOS runtime loads
     /// (OV-20261029-save-body round 9). Off by default until it has been checked against more levels;
     /// OpenVirtue's own saves are written either way.
@@ -149,6 +167,7 @@ public sealed partial class RuntimeHost : IDisposable
     }
 
     private bool _writeOriginalSaves;
+    private bool _fatalErrors;
 
     private (string, string, string)? OriginalSaveNames() =>
         _writeOriginalSaves ? (_mainWdlName, _level.MapFileName, Path.GetFileName(_archivePath ?? "TITLE.WRS")) : null;
@@ -393,6 +412,7 @@ public sealed partial class RuntimeHost : IDisposable
             SoundPlayedOut = channel => _hostedChannels.Contains(channel) && !_audio.IsChannelPlaying(channel),
         };
         _runtime.OriginalSaveNames = OriginalSaveNames();
+        _runtime.FatalErrors = _fatalErrors;
         _clearColor = ChooseBackgroundColor();
         _booted = false;
         _geometryReady = false;

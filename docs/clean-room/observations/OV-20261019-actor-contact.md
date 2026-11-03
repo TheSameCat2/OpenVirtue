@@ -196,3 +196,20 @@ that distance. `TryCurrentProximity` now writes `DISTANCE` only for a wall or fo
 whose distance has started. distance-refresh `OVACX0` goes from 44/50 to 50/50, a full match.
 refresh-20 and refresh-default still match. Test:
 `Tick_PlayerProximity_LiberThingKeepsTheDistanceSentinelUntilItsDistanceStarts`.
+
+## Addendum: stop-width at 8 ticks a cycle, a lead (2026-11-03)
+Re-read of `stop-width` (`OVACX0.TXT`) against the 22.10 walking contact of OV-20261029-overlap
+(still-walk), no new run. The player walks +X at `PLAYER_VX` 0.2, 1632 raw a cycle, toward a
+2-wide thing at (24, −14), starting 20 raw above its centre line.
+- **Cycle 8, `N2`.** `MY.DISTANCE` 2.461 is |dx| + |dy| (2496 + 24 raw) at the step's end
+  (22080, −14312). That end is outside the contact, yet the player is put at (21.779, −13.928):
+  74 raw above the line. OpenVirtue reaches the same x and 57 above.
+- **The fit.** The 22.10 push to C² 5050, started from two steps ahead with two nudges
+  (23712, −14308), gives (22302, −14262) exactly: L² 729, ratio 7093, root 2695.
+- **What does not fit.** still-walk is pushed from one step ahead, and two steps ahead there
+  misses by two units. A push one step ahead of cycle 8's end misses cycle 9 by 3 raw in x and
+  1 in y.
+
+Settled by OV-20261103-contact-clock: the push is one per step, from where the whole step ends
+(the 8-tick round of that probe gives the same). Re-done from the right start, cycle 8 follows from
+it; the two-steps-ahead fit was a coincidence of the wrong start.

@@ -1,6 +1,6 @@
 # OV-20261029-overlap: a player who starts inside an actor
 Date: 2026-10-29
-Status: confirmed (three rounds, 21 carriers); implemented. A residual of up to 0.008 off the axes is open
+Status: confirmed (three rounds, 21 carriers); implemented, and the walking contact too (2026-11-03 addendum)
 Observer: OpenVirtue maintainers (black-box probe, trace values)
 Implementer: OpenVirtue maintainers
 
@@ -134,4 +134,48 @@ settles three open questions:
 The push also reaches no object 8 steps or more away. That is why below-beam round 2 left the
 player alone beside 16-wide objects 8.25 away.
 
-Implemented in `LevelCollisionWorld.PushOutOfEntities`. The walking contact keeps √(c² + 0.093).
+Implemented in `LevelCollisionWorld.PushOutOfEntities`. The walking contact kept √(c² + 0.093) until
+the still-walk addendum below.
+
+## Addendum: walking into an actor, and the 0.05 start (2026-11-03)
+Read from the existing traces, no new run: `still-walk` (`OVOVL0.TXT` `7ddf58c7`) and round 3
+`d005` (the same layout as OV-20261103-startup-clock push-d005, `OVSUP0.TXT` `43819f47`).
+
+**`still-walk`.** The start-up push leaves the player at (−1801, 449) raw beside the 2-wide actor at
+(409, −102) (c = 1228 + 1024 = 2252). `PLAYER_VX` 0.01 is set once. Every cycle then adds exactly 4 to
+x and 4 to y. About every eight cycles the player is put back about 0.02, and then creeps on toward
+the actor. All 39 positions follow from three rules:
+- **The step.** `PLAYER_VX` 0.01 times `TIME_CORR` is 3 raw or less. As for a `CAREFULLY` actor
+  (OV-20261029-actor-step), a part under 4 becomes 4 with its sign, and a part of 0 becomes +4. That
+  happens before the step meets walls and objects: the push-back below starts from the nudged point.
+- **The test.** The step is taken in full, and then tested in 22.10: L² = (dx² + dy²)/1024, cut. At
+  L² 4951 (cycle 10) the player is left alone; at 4946 and 4939 it is pushed. A threshold of 4947 or
+  4948 fits all 39 lines, 4946 and below fits 18, 4949–4951 fit 26 and c²/1024 = 4952 fits 9. The
+  rule taken is L² < (c − 1)²/1024 = 4948. One width only, so c² − 4 is not ruled out.
+- **The push.** It is the start-up push-out of OV-20261103-startup-clock: the offset scaled to
+  C² = c²/1024 + 98. From (−1761, 489), L² 4939, it gives (−1784, 495), the printed (−1.742, 0.483).
+  The push does not reach `PLAYER_VX`: the player creeps on at +4 a cycle. Had it counted, as
+  OpenVirtue's write-back of the speed moved did, the player would have walked away.
+
+So walking contact with an object is no longer √(c² + 0.093) in floats. A straight walk into a 2-wide
+thing now stops 2273/1024 from its centre, not 2.221.
+
+**`d005`.** See OV-20261103-startup-clock, addendum of the same day: the push falls short when the
+root's argument overflows, and finishes the cycle after.
+
+Implementation:
+- `LevelCollisionWorld.Move` takes `rawContact` (the player's). `ResolveEntities` then applies the
+  test and `ScaleToContact`, and reports the push-back as `CircleMoveResult.ObjectPush`.
+- `Player.LastObjectPush` is left out of the speed `WdlPlayerMotion.Apply` writes back.
+- `WdlPlayerMotion.Apply` raises the step's parts to the 4/1024 minimum before the move, not after
+  it. The minimum is not counted in the speed either.
+- Test: `WdlRuntimeTests.Apply_PlayerCreepingIntoAnActor_StepsInUntilWithinTheContactThenIsPushedBackAndCreepsOn`.
+  `PlayerTests.MoveHorizontal_ThingCollisionUsesTextureScaleAndLivePassableFlag` and
+  `WdlRuntimeTests.Tick_PlayerProximity_PushingAgainstThingOrActorFiresNearEveryCycleOutsideDist`
+  now expect the 22.10 stop.
+
+Result, with the push-d005 fall-back: overlap matches 21 of 21 carriers (19 before),
+proximity-events 3 of 5 (2), actor-contact 10 of 18 (9) and startup-clock 16 of 17 (15); all probes
+415 of 640 (410). 332 more lines match, in 12 carriers (the actor-contact `dist-*` and `stop-*`
+walks, clip-contact `contact-actor`/`contact-thing`, proximity-events `near-walk`), and no carrier
+loses a line.

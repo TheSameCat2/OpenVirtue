@@ -2237,6 +2237,40 @@ public class WdlRuntimeTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Runtime_DivisionByZero_HaltsAndDropsTheSelectedFilesTextOnlyWithFatalErrors(bool fatal)
+    {
+        // OV-20261029-numeric-edge div-zero: the original shut down, left OVSTA0.TXT whole and an empty
+        // OVNUM0.TXT (its BEGIN and B lines lost), and printed nothing more. By default an action
+        // stops and the rest goes on.
+        string outputDir = Path.Combine(Path.GetTempPath(), "OpenVirtue-print-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Level level = Load(
+                "MAPFILE <m.wmp>; SKILL zero { VAL 0; } SKILL n { VAL 1; } " +
+                "ACTION sub { RULE n = n / zero; } " +
+                "ACTION log { PRINTFILE \"ovsta\", 0; PRINT_STRING \"START\\n\"; PRINTFILE \"ovnum\", 0; " +
+                "PRINT_STRING \"BEGIN\\n\"; CALL sub; PRINT_STRING \"C\\n\"; }");
+            var runtime = new WdlRuntime(level, outputDir) { FatalErrors = fatal };
+
+            Assert.True(runtime.RunAction("log"));
+
+            Assert.Equal("START\n", File.ReadAllText(Path.Combine(outputDir, "OVSTA0.TXT")));
+            Assert.Equal(fatal ? string.Empty : "BEGIN\nC\n", File.ReadAllText(Path.Combine(outputDir, "OVNUM0.TXT")));
+            Assert.Equal(fatal, runtime.ExitRequested);
+            Assert.Equal(fatal, runtime.FatalError is not null);
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public void Runtime_RegisterObject_AddsExplicitReference()
     {
@@ -4109,7 +4143,8 @@ public class WdlRuntimeTests
 
         player.MoveHorizontal(4, 0);
         runtime.Tick(1.0 / 16);
-        Assert.Equal(10 - LevelCollisionWorld.ContactDistance(2.2f), player.Position.X, 3);
+        Assert.Equal((10240 - 2273) / 1024f, player.Position.X, 6); // pushed back to C² 4948 + 102 in 22.10
+        Assert.Equal(10 - LevelCollisionWorld.ContactDistance(2.2f), player.Position.X, 2);
         Assert.Equal(1, runtime.GetSkill("near_count"));
         player.MoveHorizontal(1, 0);
         runtime.Tick(1.0 / 16);
@@ -4333,11 +4368,15 @@ public class WdlRuntimeTests
     [InlineData("1.0 0", 16, -1250, 4)] // 2.274
     [InlineData("0.1 0", 16, -2190, 4)] // 2.292
     [InlineData("0.4 -0.1", 4, -4773, 1190)] // 8 wide, 14 degrees off the axis (round 2 w8-14)
+    [InlineData("0.4 -0.1", 8, -2789, 695)] // 4 wide, 14 degrees off (startup push-w4-14): (c − 1)², not c²
+    [InlineData("0.3 -0.3", 8, -2020, 2020)] // 4 wide on the diagonal (overlap round 2 w4-diag)
+    [InlineData("0.3 0", 32, -1462, 4)] // 1 wide (overlap round 2 w1-axis)
     [InlineData("3 0", 2, -6351, 4)] // 16 wide: pushed out to 9.2
     [InlineData("8 -2", 2, 0, 0)] // 16 wide 8.25 away: under its contact, but 8 steps or more
     public void Apply_PlayerStartingInsideAnActor_IsPushedOutIn2210Steps(string at, int scale, int x, int y)
     {
-        // OV-20261103-startup-clock: the push-out's 22.10 arithmetic, in 1/1024 units.
+        // OV-20261103-startup-clock: the push-out's 22.10 arithmetic, in 1/1024 units, to
+        // C² = (c − 1)²/1024 + 102.
         Level level = LoadWithMap(
             $"VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR guard {at} 0 0;#0\nPLAYER_START 0 0 0 0;#1",
             $"MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex {{ SCALE_X {scale}; BMAPS postMap; }} " +
@@ -4350,6 +4389,65 @@ public class WdlRuntimeTests
 
         Assert.Equal(x / 1024f, player.Position.X, 6);
         Assert.Equal(y / 1024f, player.Position.Z, 6);
+    }
+
+    [Fact]
+    public void Apply_PlayerStartingVeryNearAnActorsCentre_IsPushedAQuarterWidthThenOutTheNextCycle()
+    {
+        // OV-20261103-startup-clock push-d005: 0.05 from a 2-wide actor's centre the root's argument
+        // overflows; the player moves a quarter of PLAYER_WIDTH (307/1024) and the nudge in cycle 2,
+        // and from there out to the contact distance in cycle 3.
+        Level level = LoadWithMap(
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR guard 0.05 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+            "MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex { SCALE_X 16; BMAPS postMap; } " +
+            "ACTOR guard { TEXTURE postTex; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        Assert.Equal(-307 / 1024f, player.Position.X, 6);
+        Assert.Equal(4 / 1024f, player.Position.Z, 6);
+
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        Assert.Equal(-2224 / 1024f, player.Position.X, 6);
+        Assert.Equal(25 / 1024f, player.Position.Z, 6);
+
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        Assert.Equal(-2224 / 1024f, player.Position.X, 6);
+        Assert.Equal(25 / 1024f, player.Position.Z, 6);
+    }
+
+    [Fact]
+    public void Apply_PlayerCreepingIntoAnActor_StepsInUntilWithinTheContactThenIsPushedBackAndCreepsOn()
+    {
+        // OV-20261029-overlap still-walk: PLAYER_VX 0.01, set once, steps about 3/1024 a cycle, so
+        // each step part is 4/1024 (the Y part 0 too). The step ends in the actor while L² stays at
+        // or above (c − 1)² = 4948 (4951 is not pushed), and is pushed back to C² 5050 below it
+        // (4939). PLAYER_VX keeps its sign, so the player creeps on toward the actor.
+        Level level = LoadWithMap(
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR guard 0.4 -0.1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+            "MAPFILE <m.wmp>; BMAP postMap, <post.pcx>, 0, 0, 32, 16; TEXTURE postTex { SCALE_X 16; BMAPS postMap; } " +
+            "ACTOR guard { TEXTURE postTex; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        WdlPlayerMotion.Apply(runtime, player, 1);
+        Assert.Equal(new Vector2(-1801, 449), new Vector2(player.Position.X, player.Position.Z) * 1024);
+
+        runtime.SetSkill("PLAYER_VX", 0.01);
+        var path = new List<Vector2>();
+        for (int cycle = 0; cycle < 19; cycle++)
+        {
+            WdlPlayerMotion.Apply(runtime, player, cycle % 2 == 0 ? 0.25 : 0.28125);
+            path.Add(new Vector2(player.Position.X, player.Position.Z) * 1024);
+        }
+
+        Assert.Equal(new Vector2(-1765, 485), path[8]); // L² 4951: not pushed
+        Assert.Equal(new Vector2(-1784, 495), path[9]); // L² 4939: pushed back
+        Assert.Equal(new Vector2(-1756, 523), path[16]);
+        Assert.Equal(new Vector2(-1773, 533), path[17]); // L² 4946: pushed back
+        Assert.Equal(new Vector2(-1769, 537), path[18]);
     }
 
     [Fact]

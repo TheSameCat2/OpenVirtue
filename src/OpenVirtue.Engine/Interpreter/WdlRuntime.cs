@@ -237,6 +237,8 @@ public sealed class WdlRuntime :
     private readonly LevelCollisionWorld _collisionWorld;
     private readonly IReadOnlyDictionary<string, TextureImage> _hitTextures;
     private string _printBaseName = "PRINT";
+    private double _secondsClockStartTicks;
+    private long _printSelectedLength;
 
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
     private readonly List<AcknexObject> _objectPassBuffer = [];
@@ -1241,6 +1243,7 @@ public sealed class WdlRuntime :
         // OV-20261015-flic-scheduler-detail: PRINTFILE creates its file even when nothing is printed to
         // it; an existing file is kept and appended to.
         AppendPrintText(string.Empty);
+        _printSelectedLength = _printDirectory is not null && File.Exists(PrintFilePath()) ? new FileInfo(PrintFilePath()).Length : 0;
     }
 
     /// <inheritdoc/>
@@ -2428,6 +2431,9 @@ public sealed class WdlRuntime :
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
         _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
         _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
+        // The frame's time in milliseconds as the original's statistics count it: 16, 18 and 20 at
+        // TIME_CORR 0.25, 0.28125 and 0.3125 (OV-20261103-contact-clock clock-stats).
+        _skills["TIME_TOTAL"] = Math.Round(timeCorrection * 64);
         _skills["HERE_INDEX"] = GetSkill("PLAYER_REGION"); // the player's region, as the saves hold it (round 16)
         // "RENDER_MODE is returned to 0.5 automatically after each frame cycle" (manual p.104): a probe that
         // set 2 saved 0.5. 0, which suppresses rendering, stays (save-body round 18).
@@ -2515,9 +2521,33 @@ public sealed class WdlRuntime :
     /// causes a burst of catch-up seconds.
     /// </summary>
     /// <returns><c>true</c> if a second completed during this frame.</returns>
+    /// <summary>
+    /// How fast the clock behind <c>SECS</c> and <c>EACH_SEC</c> runs against the frame time that
+    /// <c>TICKS</c> sums: 1 natively. In the original under DOSBox-X at 60 frames a second, <c>TICKS</c>,
+    /// summed from 8/32- and 9/32-tick frames, gained 0.9% on that clock (a second took 16.15 <c>TICKS</c>),
+    /// while at 8 ticks a frame the two kept step; the oracle replay sets 0.991 for such runs
+    /// (OV-20261103-contact-clock).
+    /// </summary>
+    public double SecondsClockRate { get; set; } = 1;
+
+    /// <summary>
+    /// Where the seconds clock stands, in ticks, when the first cycle runs (0 natively). The original's
+    /// had already run about 1.0 to 1.35 ticks, varying from launch to launch with the start-up
+    /// (OV-20261103-contact-clock). Set before the first cycle.
+    /// </summary>
+    public double SecondsClockStartTicks
+    {
+        get => _secondsClockStartTicks;
+        set
+        {
+            _secondsClockStartTicks = value;
+            _secondFraction = value / Timing.TicksPerSecond;
+        }
+    }
+
     private bool AdvanceSecond(double deltaSeconds)
     {
-        _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds);
+        _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds) * SecondsClockRate;
         if (_secondFraction < 1)
         {
             return false;
@@ -2760,13 +2790,38 @@ public sealed class WdlRuntime :
     public string? LastActionError { get; private set; }
 
     /// <summary>
+    /// Whether a fatal error halts the runtime as it does the original's, instead of stopping only
+    /// the action. Off by default, so a game goes on past a script's division by zero; the oracle
+    /// replay turns it on to compare with the original's files.
+    /// </summary>
+    public bool FatalErrors { get; set; }
+
+    /// <summary>The fatal error that halted the runtime under <see cref="FatalErrors"/>; <c>null</c> if none.</summary>
+    public string? FatalError { get; private set; }
+
+    /// <summary>
     /// Stops an action that hit a division by zero (which crashes the DOS runtime,
-    /// OV-20261029-numeric-edge) or a runaway-loop limit; its caller and the cycle go on.
+    /// OV-20261029-numeric-edge) or a runaway-loop limit; its caller and the cycle go on. Under
+    /// <see cref="FatalErrors"/> a division by zero halts the runtime instead, as in the original:
+    /// <c>>>> Division by zero at RULE DO_ACTION ne_sub &lt;&lt;&lt;</c>, and the shutdown lost what had
+    /// been printed to the selected print file since <c>PRINTFILE</c> selected it (the file itself
+    /// was left, empty), and printed nothing more.
     /// </summary>
     private void AbortAction(string actionName, WdlExpressionException ex)
     {
         LastActionError = $"{actionName}: {ex.Message}";
         Console.Error.WriteLine($"WDL action stopped: {LastActionError}");
+        if (FatalErrors && ex.IsFatal && FatalError is null)
+        {
+            if (_printDirectory is not null && File.Exists(PrintFilePath()))
+            {
+                using var file = new FileStream(PrintFilePath(), FileMode.Open, FileAccess.Write);
+                file.SetLength(Math.Min(file.Length, _printSelectedLength));
+            }
+
+            FatalError = LastActionError;
+            RequestExit(LastActionError);
+        }
     }
 
     private bool IsPlayerMovementAction(string? name) =>
@@ -3808,7 +3863,9 @@ public sealed class WdlRuntime :
         // OV-20261029-actor-events: the step and the distance left are both |dx| + |dy|, so an actor
         // covers SPEED·TIME_CORR of it per cycle (diagonally, 1/√2 of that as the crow flies). It
         // arrives on the point when the step would reach it, or where it is once less than
-        // ArrivalDistance is left.
+        // ArrivalDistance is left. A step that reaches the point does not land on it: each part is
+        // held at the point's coordinate, so a part that rounds to nothing leaves its axis short
+        // (19.998 for 20 on a way along +Y, 2026-11-03 addendum).
         double dx = targetX - actor.X;
         double dy = targetY - actor.Y;
         double remaining = Math.Abs(dx) + Math.Abs(dy);
@@ -3836,11 +3893,6 @@ public sealed class WdlRuntime :
         }
 
         TurnActorToward(actor, leg.Facing, timeCorrection);
-        if (distance >= remaining)
-        {
-            MoveActor(actor, targetX, targetY);
-            return true;
-        }
 
         // OV-20261029-actor-step round 5: each part of the step is cut toward zero to 1/1024 (40:15
         // split a 128-unit step 93 and 34), so a CAREFULLY actor 4 units off its line gets no X
@@ -3857,6 +3909,9 @@ public sealed class WdlRuntime :
             Math.Truncate(Math.Floor((step * along / 1024) + 0.5) * 1024 / remaining) / 1024;
         double stepX = rawRemaining > 0 ? Part(rawStep, rawX, rawRemaining) : 0;
         double stepY = rawRemaining > 0 ? Part(rawStep, rawY, rawRemaining) : 0;
+        static double HeldAt(double part, double left) => Math.Abs(part) > Math.Abs(left) ? left : part;
+        stepX = HeldAt(stepX, dx);
+        stepY = HeldAt(stepY, dy);
         MoveActor(actor, actor.X + stepX, actor.Y + stepY);
         return Math.Abs(targetX - actor.X) + Math.Abs(targetY - actor.Y) < ArrivalDistance;
     }
@@ -6060,7 +6115,7 @@ public sealed class WdlRuntime :
 
     private void AppendPrintText(string text)
     {
-        if (_printDirectory is null)
+        if (_printDirectory is null || FatalError is not null)
         {
             return;
         }

@@ -281,6 +281,25 @@ public class WdlRuntimeEachSecTests
     }
 
     [Fact]
+    public void Tick_SecondsClockRate_SlowsSecsAgainstTicks()
+    {
+        // OV-20261103-contact-clock: at 60 frames a second the original's seconds clock ran 0.991 of
+        // TICKS and stood 1.0 to 1.35 ticks on at the first cycle. With 0.991 and 1.28, SECS goes up
+        // at TICKS 15 (0.991 · 15 + 1.28 ≥ 16), not at 14.75 and not at 16.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
+        Level level = LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        var runtime = new WdlRuntime(level) { SecondsClockRate = 0.991, SecondsClockStartTicks = 1.28 };
+        runtime.RunStartup();
+        runtime.Tick(OneTick);
+
+        Ticks(runtime, 59, OneTick / 4);
+        Assert.Equal(14.75, runtime.GetSkill("TICKS"));
+        Assert.Equal(0, runtime.GetSkill("SECS"));
+        Ticks(runtime, 1, OneTick / 4);
+        Assert.Equal(1, runtime.GetSkill("SECS"));
+    }
+
+    [Fact]
     public void RetailWorlds_WithAnEachSecFadeIn_ShowTheirControlPanelAfterIt()
     {
         // Guarded on the user's own archives under _research/ (a no-op otherwise). HEART, LEGALISM

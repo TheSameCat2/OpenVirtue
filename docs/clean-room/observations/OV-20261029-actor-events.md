@@ -146,3 +146,27 @@ Implementation: `WdlRuntime.MoveActor` (`ActorWallClearance`, `MinimumCarefulPar
 bullet matches all 569 lines (285 before) and move-border all 428 (368). With
 OV-20261019-border-kinds (addendum there) the change flips five carriers to full matches and makes
 no line worse in any carrier.
+
+## Addendum: a step that reaches its point (2026-11-03)
+Read from `way` (`OVAEV0.TXT`, the round 1 trace), no new run. Each arrival's last steps:
+
+| Arrival | Before | After | Step (raw) |
+|---|---|---|---|
+| 1 (20, −6) | (19.763, −6) | (19.902, −6), 0.098 left | 144, short of the point |
+| 2 (20, 6) | (19.998, 5.866) | (19.998, 6.000) | 144, with 2 + 137 left |
+| 3 (10, 6) | (10.114, 6) | (10.000, 6) | 128, with 117 left |
+| 5 (20, 6) | (19.999, 5.840) | (19.999, 5.979), 0.021 left | 144, with 1 + 164 left |
+
+At arrival 2 the step reaches the point, but the actor does not land on it: x stays 2/1024 short.
+The step is split as on any other cycle:
+- **x:** round(144·2/1024) = 0, so no part.
+- **y:** round(144·137/1024) = 19, and 19·1024/139 = 139, more than the 137 left.
+
+Each part is then held at the point's coordinate, so y ends on 6.000 and x on 19.998. Arrival 3 is
+the same rule on one axis: −131 held at −117. The 0.1 arrival test then counts the actor as
+arrived. OpenVirtue used to put the actor on the point whenever the step reached it, so after
+arrival 2 every later line was 0.002 off.
+
+Implementation: `WdlRuntime.AdvanceActorToward` no longer lands on the point; it holds each part at
+the point's coordinate. Test:
+`WdlActorMotionTests.Tick_WayActorWhoseStepReachesThePoint_HoldsEachPartAtThePoint` (arrivals 2 and 3).

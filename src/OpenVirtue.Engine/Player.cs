@@ -32,6 +32,7 @@ public sealed class Player : AcknexObject
     private readonly Dictionary<int, RegionSurface?> _regionSurfaces = [];
     private Vector3 _position;
     private Vector2? _settled;
+    private bool _pushUnfinished;
     private int _region;
     private float _velocityY;
     private readonly List<PlayerVerticalTransition> _verticalTransitions = [];
@@ -212,6 +213,14 @@ public sealed class Player : AcknexObject
         return contacts;
     }
 
+    /// <summary>
+    /// How far things and actors pushed the player back in its last horizontal move. The speed
+    /// written back to <c>PLAYER_VX</c>/<c>PLAYER_VY</c> leaves it out: pushed back about 0.02 from an
+    /// actor, a player creeping at <c>PLAYER_VX</c> 0.01 went on creeping toward it the next cycle
+    /// (OV-20261029-overlap still-walk).
+    /// </summary>
+    public Vector2 LastObjectPush { get; private set; }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null, out _);
 
@@ -249,8 +258,10 @@ public sealed class Player : AcknexObject
             LevelCollisionWorld.ContactSlackSquared,
             clearanceOnContact: true,
             stopAtContact: true,
-            blocked: blocking);
+            blocked: blocking,
+            rawContact: true);
         _region = result.Region == _region ? _region : StoreyFor(result.Region);
+        LastObjectPush = result.ObjectPush;
         Vector2 end = result.Position;
         wallStopped = blocking.Count > 0;
         if (wallStopped)
@@ -275,12 +286,13 @@ public sealed class Player : AcknexObject
     /// and counts the object as touched. The original does this at the start and after a beam into
     /// an object (OV-20261019-actor-contact), out of one object only, and leaves a player standing
     /// on others alone (OV-20261029-overlap): there is no push unless the position was set from
-    /// outside since the last one.
+    /// outside since the last one, or the last push fell short of the contact distance
+    /// (OV-20261103-startup-clock push-d005).
     /// </summary>
     public void PushOutOfObjects()
     {
         var start = new Vector2(_position.X, _position.Z);
-        if (_settled == start)
+        if (_settled == start && !_pushUnfinished)
         {
             return;
         }
@@ -291,6 +303,7 @@ public sealed class Player : AcknexObject
             Width,
             EntityCollisionRadius,
             static entity => entity["PASSABLE"] > 0 || entity["INVISIBLE"] > 0,
+            out _pushUnfinished,
             _touchedObjects);
         _position = new Vector3(end.X, _position.Y, end.Y);
     }

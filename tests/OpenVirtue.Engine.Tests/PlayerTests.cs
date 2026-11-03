@@ -411,15 +411,42 @@ public class PlayerTests
 
         blocked.MoveHorizontal(-10, 0);
 
-        // √(2.2² + 0.093): the original stops the player about 0.02 beyond (OV-20261029-overlap).
-        Assert.Equal(LevelCollisionWorld.ContactDistance(2.2f), blocked.Position.X, 3);
-        Assert.Equal(2.221f, blocked.Position.X, 3);
+        // The original stops the player about 0.02 beyond (OV-20261029-overlap): the step into the
+        // thing is pushed back to C² = 2252²/1024 + 98 in 22.10 (still-walk).
+        Assert.Equal(LevelCollisionWorld.ContactDistance(2.2f), blocked.Position.X, 2);
+        Assert.Equal(2273 / 1024f, blocked.Position.X, 6);
 
         level.Things[0]["passable"] = 1;
         var passable = new Player(level);
         passable.MoveHorizontal(-10, 0);
 
         Assert.Equal(-5, passable.Position.X, 3);
+    }
+
+    [Fact]
+    public void MoveHorizontal_StepIntoAThing_IsPushedBackOnceFromTheWholeStepsEnd()
+    {
+        // OV-20261103-contact-clock step16-off: from (13104, 32) a 1638-unit step and the 4/1024 nudge
+        // end at (14742, 36), 20 above a 2-wide thing at (16, -20/1024); pushed to C² in 22.10 from
+        // there, the player stands at (14112, 57). Pushing on a first sub-step gave (14113, 55).
+        const string map =
+            "VERTEX -20 -20 0;#0\nVERTEX 40 -20 0;#1\n" +
+            "REGION room 0 20;#0\nTHING crate 16 -0.01953125 0 0;#0\n" +
+            "PLAYER_START 12.796875 0.03125 0 0;#1";
+        const string main =
+            "MAPFILE <m.wmp>; " +
+            "BMAP crateMap, <crate.pcx>, 0, 0, 32, 16; " +
+            "TEXTURE crateTex { BMAPS crateMap; } " +
+            "THING crate { TEXTURE crateTex; }";
+        var player = new Player(Load(map, main));
+
+        Vector2 moved = player.MoveHorizontal(1638 / 1024f, 4 / 1024f);
+
+        Assert.Equal(14112, Math.Round(player.Position.X * 1024));
+        Assert.Equal(57, Math.Round(player.Position.Z * 1024));
+        Assert.Equal(14112 - 13104, Math.Round(moved.X * 1024));
+        Assert.Equal(14112 - 14742, Math.Round(player.LastObjectPush.X * 1024)); // the push-back from the step's end
+        Assert.Equal(57 - 36, Math.Round(player.LastObjectPush.Y * 1024));
     }
 
     [Fact]

@@ -93,3 +93,25 @@ it (`LastActionError`) and goes on, instead of shutting down. Tests:
 `WdlExpressionTests.Evaluates_TheOriginalsFixedPointArithmetic`,
 `UndefinedFunctionResults_ReadAsTheOriginalsValues`, `DivisionByZero_Throws`. `ovtool oracle diff`
 matches `values`, `logic`, `sqrt-neg`, `log-zero` and `asin-two`.
+
+## Addendum: the shutdown in the replay (2026-11-03)
+No new run. `div-zero` and `mod-zero` never matched, because OpenVirtue stops only the action
+while the original shuts down. The traces fix what the shutdown leaves behind:
+- `OVSTA0.TXT` and `OVPRB0.TXT` are whole: they were written before `PRINTFILE "ovnum"` selected
+  another file.
+- `OVNUM0.TXT` exists but is empty: `PRINTFILE` created it, and its `BEGIN` and `B` lines,
+  printed since then, were lost.
+- There is no `OVEND0.TXT`.
+
+So the shutdown loses the selected print file's text since it was selected, and nothing runs after
+it.
+
+A game keeps the forgiving default. `WdlRuntime.FatalErrors` (and `RuntimeHost.FatalErrors`, kept
+across level changes) is the parity switch: off by default, and on in the oracle replay. Under it
+a division or modulo by zero (`WdlExpressionException.IsFatal`) does three things:
+- it cuts the selected print file back to its length when selected;
+- it halts printing;
+- it requests the exit.
+
+Test: `WdlRuntimeTests.Runtime_DivisionByZero_HaltsAndDropsTheSelectedFilesTextOnlyWithFatalErrors`.
+Both carriers now match in full, and the other five are unchanged.

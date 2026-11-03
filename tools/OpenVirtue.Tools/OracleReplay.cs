@@ -42,6 +42,16 @@ internal static class OracleReplay
     // that draws RANDOM give the same replay every time (round2 anim-random gave a different one per run).
     private const int RandomSeed = 1;
 
+    /// <summary>The original's seconds clock against <c>TICKS</c> at 60 frames a second (OV-20261103-contact-clock).</summary>
+    private const double SecondsClockRate = 0.991;
+
+    /// <summary>
+    /// Where that clock stood at the first cycle when a carrier does not say: 1.28 ticks puts every
+    /// second of contact-clock clock-sec and scheduler-order anim-clock, order and order-wmp where the
+    /// original's are.
+    /// </summary>
+    private const double SecondsClockStartTicks = 1.28;
+
     // Files the autoexec writes, not the probe: the DOS directory listing and the runtime's console.
     private static readonly string[] AutoexecOutputs = ["OVDIR.TXT", "OVCON.TXT"];
 
@@ -222,6 +232,15 @@ internal static class OracleReplay
         {
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
             host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
+            host.FatalErrors = true; // a division by zero shuts the original down (OV-20261029-numeric-edge)
+
+            // The original's seconds clock: TICKS gains 0.9% on it at 60 frames a second, and it had run
+            // 1.0 to 1.35 ticks by the first cycle (OV-20261103-contact-clock).
+            if (slowFrames is null)
+            {
+                host.Runtime.SecondsClockRate = SecondsClockRate;
+                host.Runtime.SecondsClockStartTicks = carrierCase.SecondsOffset ?? SecondsClockStartTicks;
+            }
             audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
             host.Boot();
             string? replayPrimary = primary is null ? null : Path.Combine(replayDirectory, "openvirtue-prints", WorldName, primary);
@@ -642,11 +661,13 @@ internal static class OracleReplay
     /// cycle's step (<c>"startup_step": 0.28125</c>) where the samples cannot show it: a trace sampled
     /// only during a flic gives 1.094-tick gaps, though its start-up ran 60 Hz frames. It may ask for
     /// fixed frames (<c>"time_corr": 0.28125</c>) when no column prints <c>TICKS</c> and detection
-    /// would take a coordinate for it.
+    /// would take a coordinate for it. It may give where the original's seconds clock stood at the first
+    /// cycle (<c>"seconds_offset": 1.3</c>, ticks), read off its <c>SECS</c> or <c>EACH_SEC</c> lines, which
+    /// differs from launch to launch (OV-20261103-contact-clock).
     /// </summary>
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
-        double? TimeCorrection = null)
+        double? TimeCorrection = null, double? SecondsOffset = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -673,7 +694,10 @@ internal static class OracleReplay
             double? timeCorrection = root.TryGetProperty("time_corr", out JsonElement tc) && tc.ValueKind == JsonValueKind.Number
                 ? tc.GetDouble()
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection);
+            double? secondsOffset = root.TryGetProperty("seconds_offset", out JsonElement so) && so.ValueKind == JsonValueKind.Number
+                ? so.GetDouble()
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset);
         }
     }
 

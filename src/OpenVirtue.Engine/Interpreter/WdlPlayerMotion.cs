@@ -37,26 +37,30 @@ public static class WdlPlayerMotion
         var start = new Vector2(player.Position.X, player.Position.Z);
         double stepX = WdlRuntime.EngineProduct(requestedVelocityX, timeCorrection);
         double stepY = WdlRuntime.EngineProduct(requestedVelocityY, timeCorrection);
+
+        // OV-20261029-actor-step: like a CAREFULLY actor, a moving player's step part under 4/1024
+        // becomes 4/1024 with its sign, and a part of 0 becomes +4/1024 (the border-climb walker went
+        // from x −8 to −7.992 in two steps along +y). It is part of the step the walls and objects
+        // test: PLAYER_VX 0.01 (about 3/1024 a step) crept 4/1024 a step into an actor, and was
+        // pushed back from the nudged position (OV-20261029-overlap still-walk).
+        const float Nudge = 4f / 1024;
+        double nudgeX = 0;
+        double nudgeY = 0;
+        if (timeCorrection > 0 && (requestedVelocityX != 0 || requestedVelocityY != 0))
+        {
+            nudgeX = MinimumStep(stepX, Nudge) - stepX;
+            nudgeY = MinimumStep(stepY, Nudge) - stepY;
+            stepX += nudgeX;
+            stepY += nudgeY;
+        }
+
         bool wallStopped = false;
         Vector2 displacement = timeCorrection > 0
             ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
             : Vector2.Zero;
 
-        // OV-20261029-actor-step: like a CAREFULLY actor, the player stepping with no X part (or no
-        // Y part) is then moved 4/1024 along that axis, always positive (the border-climb walker went
-        // from x −8 to −7.992 in two steps along +y).
         if (timeCorrection > 0)
         {
-            const float Nudge = 4f / 1024;
-            if (requestedVelocityX == 0 && requestedVelocityY != 0)
-            {
-                player.Position += new Vector3(Nudge, 0, 0);
-            }
-            else if (requestedVelocityY == 0 && requestedVelocityX != 0)
-            {
-                player.Position += new Vector3(0, 0, Nudge);
-            }
-
             // As for a CAREFULLY actor (OV-20261029-actor-events), a part a wall stopped takes the
             // same minimum from what is left of it: a step held at the wall (0) moves 4/1024 into it,
             // and the next stop pulls it back by 4, so the player alternates 1279 and 1275 from a
@@ -70,8 +74,10 @@ public static class WdlPlayerMotion
             }
         }
 
-        double actualVelocityX = timeCorrection > 0 ? displacement.X / timeCorrection : requestedVelocityX;
-        double actualVelocityY = timeCorrection > 0 ? displacement.Y / timeCorrection : requestedVelocityY;
+        // Neither the minimum's addition nor an object's push-back counts toward the speed the player moved.
+        displacement -= player.LastObjectPush;
+        double actualVelocityX = timeCorrection > 0 ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
+        double actualVelocityY = timeCorrection > 0 ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
         runtime.SetSkill("PLAYER_VY", actualVelocityY);
         runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + actualVelocityX - requestedVelocityX);
@@ -133,6 +139,17 @@ public static class WdlPlayerMotion
     /// horizontal velocities scale by <c>TIME_CORR</c> alone.
     /// </summary>
     private static double VerticalScale(double timeCorrection) => Math.Max(timeCorrection, 4);
+
+    /// <summary>A step's part raised to <paramref name="minimum"/> with its sign, positive for none.</summary>
+    private static double MinimumStep(double part, float minimum)
+    {
+        if (Math.Abs(part) >= minimum - 1e-9)
+        {
+            return part;
+        }
+
+        return part < 0 ? -minimum : minimum;
+    }
 
     /// <summary>
     /// A wall-stopped step's part along one axis: a part requested at <paramref name="minimum"/> or

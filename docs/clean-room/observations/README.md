@@ -183,7 +183,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `INVISIBLE` walls hide nothing, nor do sprites. Every wall gets `VISIBLE`; walls and actors keep
   `SEEN` once seen.
   Twenty-one DOSBox-X launches (seventeen usable); implemented in `ViewTest` and `WdlRuntime`
-  (ADR-0010).
+  (ADR-0010). The screen's top and bottom are half a row inside its edges: a sprite must cover a
+  row's centre (2026-11-03 addendum, read from actor-events `way`).
 
 ## Distance refresh (2026-10-21 — confirmed and implemented)
 
@@ -216,21 +217,24 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261029-numeric-edge.md` — skills are 22.10 fixed point (steps of 1/1024, ±2097152). Literals
   truncate and saturate, `+ − *` wrap in 32 bits, `INT` rounds down, `%` and the bitwise operators act
   on the raw bits, functions truncate their results and read −2097151.999 when undefined, and a
-  division by zero is fatal in the original. Seven DOSBox-X runs; implemented in `WdlFixed`.
+  division by zero is fatal in the original. Seven DOSBox-X runs; implemented in `WdlFixed`. The
+  shutdown loses the selected print file's text since it was selected; the replay reproduces it
+  under the opt-in `FatalErrors` switch, while a game goes on (2026-11-03 addendum).
 
-## Motion timing (2026-10-29 — ACCEL confirmed and implemented; animation phases open)
+## Motion timing (2026-10-29 — confirmed and implemented; animation phases in OV-20261029-anim-timing)
 
 - `OV-20261029-motion-timing.md` — `FRICTION` defaults to 0 (not 0.5). `ACCEL v, a` integrates
   `(a − FRICTION·v)/INERTIA` per tick over `TIME_CORR`, a tick at a time, so the speed tends to
   `a/FRICTION`; it fits all 247 traced calls. `CYCLE` counts from 1, an object's `EACH_TICK` runs
-  before its animation step, and a `ONESHOT` rests on its last phase. Phase lengths follow a
-  frame-rate estimate that is not yet understood. Fourteen DOSBox-X runs; `ACCEL` implemented in
+  before its animation step, and a `ONESHOT` rests on its last phase. Phase lengths are answered by
+  OV-20261029-anim-timing. Fourteen DOSBox-X runs; `ACCEL` implemented in
   `WdlInterpreter`.
 
 ## Actor events (2026-10-29 — confirmed and implemented)
 
 - `OV-20261029-actor-events.md` — actors step `SPEED·TIME_CORR` in \|dx\| + \|dy\| toward a point or
-  along their angle, land on the point when the step reaches it or arrive within about 1/8, advance
+  along their angle, arrive within 0.1 of a point (a step that reaches it is held at the point's
+  coordinate on each axis, so a part that rounds to nothing leaves that axis short), advance
   `WAYPOINT` before `IF_ARRIVED` (with `TARGET_X/Y` still the point reached), trigger `IF_ARRIVED` in
   every cycle at a `VERTEX` or object target and `IF_HIT` in every cycle a `BULLET` is blocked, and
   move in their own turn of the object pass. Six DOSBox-X runs (three more failed to compile on a
@@ -252,7 +256,7 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   moving it down, edge rows repeated. Fourteen DOSBox-X runs (ten failed to compile in round 1);
   implemented in `SkyPanorama`.
 
-## Shading (2026-10-29 — confirmed and implemented; AUTORANGE table open)
+## Shading (2026-10-29 — confirmed and implemented; the AUTORANGE table in OV-20261029-autorange)
 
 - `OV-20261029-shading.md` — the shade level is `30 − 32·AMBIENT − 30.4·PLAYER_LIGHT·LIGHT_DIST/d`,
   rounded down to even and clamped to 0…30 (16 grades over a 32-colour range): inverse-distance
@@ -348,6 +352,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - A zero component gets the 4/1024 nudge.
   - Off-axis residuals of up to 0.008 are open. Settled by the 22.10 push-out of
     OV-20261103-startup-clock, but for one unit on 4-wide objects.
+  - Walking into an object (2026-11-03 addendum, still-walk): the step, its parts raised to
+    4/1024, is taken in full; when it ends with L² < (c − 1)²/1024 in 22.10 it is pushed back to
+    C² as at start-up, and the push-back does not count in `PLAYER_VX`/`PLAYER_VY`.
 
 ## The start-up frames and push-out (2026-11-03 — confirmed and implemented)
 
@@ -360,3 +367,19 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
     + 98, the offset scaled by the root of the cut ratio. It reaches no object 8 steps or more away.
   - An addendum covers the replay's choice of timing column when an event token is denser than the
     sampler (border-climb).
+  - A push whose root argument overflows 32 bits (0.05 from a 2-wide actor's centre) moves the
+    player `PLAYER_WIDTH`/4 and finishes the cycle after (2026-11-03 addendum, push-d005).
+  - The contact term is C² = (c − 1)²/1024 + 102 for every width measured, 1 to 16 wide (2026-11-03
+    width addendum); the two 4-wide pushes off the axes now land on the unit.
+
+## Contact steps, the seconds clock, a skipped follower (2026-11-03 — confirmed and implemented)
+
+- `OV-20261103-contact-clock.md` — ten carriers at 60 frames a second and two at 8 ticks a cycle:
+  - a player step meets things and actors once, at its end, nudge included, and is pushed back in
+    22.10: C² = c²/1024 + 98 for a thing, (c − 1)²/1024 + 102 for an actor;
+  - `SECS` and `EACH_SEC` run on real time, which `TICKS`, summed from 8/32- and 9/32-tick frames,
+    gains 0.9% on at 60 frames a second (the replay: 0.991 and a 1.28-tick start);
+  - `TIME_TOTAL` is 64 × `TIME_CORR`;
+  - a skipped actor moves in cycles 6, 12, … by six of that cycle's steps.
+
+  The 3.2 step and a few one-unit pushes are open.
