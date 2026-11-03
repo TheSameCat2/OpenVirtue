@@ -721,6 +721,8 @@ public sealed class WdlRuntime :
                 Events = Events(entity),
                 MapColor = (int)entity["MAP_COLOR"],
                 Unplaced = unplaced.Contains(entity),
+                // +106: the current cycle's DELAY of an animated texture (round 15b texture-anim, 2026-11-03).
+                FrameDelay = texture is { Cycles: > 1 } animated ? Raw(AnimationDelay(animated, Math.Max(1, (int)entity["CYCLE"]))) : 0,
             };
         }
 

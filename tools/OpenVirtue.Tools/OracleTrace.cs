@@ -195,8 +195,15 @@ internal static class OracleTrace
         var spans = new Dictionary<OracleTimingColumn, (int Lines, double First, double Span)>();
         // A token's own best column first: a fractional one (TICKS, in 1/32 steps) over a whole one in
         // a lower column (the flic carriers print FLIC_FRAME before TICKS); then the densest token.
-        for (int minimumLines = 3; minimumLines >= 2 && best is null; minimumLines--)
+        // A two-line sampler before every line as a sample: the audio stop carrier's two C lines place
+        // its RET by the sampled cadence where the every-line rule put it a cycle early.
+        foreach (int minimumLines in new[] { 3, 2 })
         {
+            if (best is not null)
+            {
+                break;
+            }
+
             foreach (IGrouping<string, OracleTraceLine> group in lines.GroupBy(static l => l.Token, StringComparer.Ordinal))
             {
                 List<OracleTraceLine> tokenLines = group.ToList();

@@ -762,7 +762,7 @@ internal static class OracleReplay
                 // Each wall record's +28/+30 is a far pointer into the runtime's heap (−23568, 90 for the
                 // first wall of the probe's room in every save), the same in every launch and nothing
                 // the replay models.
-                setAside.Add("walls' +28..+39 pointers");
+                setAside.Add("walls' +28..+39 and unplaced objects' +36 pointers");
                 if (!mx.AsSpan().SequenceEqual(my))
                 {
                     int at = mx.AsSpan().CommonPrefixLength(my) & ~1;
@@ -826,6 +826,33 @@ internal static class OracleReplay
             int at = (s.Entities * 170) + (i * 178) + 28;
             Array.Clear(mx, at, 12);
             Array.Clear(my, at, 12);
+        }
+
+        // An unplaced thing's or actor's +36/+38 holds such a pointer too, where a placed one's HEIGHT
+        // is (round 13 unplaced: 25792, 91 in the thing's record): a segment word within one of the
+        // walls' pointers' (90), against the replay's 0.
+        var segments = new HashSet<int>();
+        for (int i = 0; i < s.Walls; i++)
+        {
+            for (int word = 28; word <= 36; word += 4)
+            {
+                int at = (s.Entities * 170) + (i * 178) + word;
+                if (BitConverter.ToInt32(x[at..]) != 0)
+                {
+                    segments.Add(BitConverter.ToUInt16(x[(at + 2)..]));
+                }
+            }
+        }
+
+        for (int i = 0; i < s.Entities; i++)
+        {
+            int at = (i * 170) + 36;
+            int high = BitConverter.ToUInt16(x[(at + 2)..]);
+            if (segments.Any(segment => Math.Abs(high - segment) <= 1) && BitConverter.ToInt32(y[at..]) == 0 && BitConverter.ToInt32(x[at..]) != 0)
+            {
+                Array.Clear(mx, at, 4);
+                Array.Clear(my, at, 4);
+            }
         }
 
         return true;

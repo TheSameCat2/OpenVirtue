@@ -48,6 +48,13 @@ public sealed record FullSaveEntity(bool Actor, IReadOnlyDictionary<string, int>
 
     /// <summary>The floor's height under it (raw, round 13).</summary>
     public int Floor { get; init; }
+
+    /// <summary>
+    /// The current animation cycle's <c>DELAY</c> (raw) for an animated texture, 0 for a still one: +106
+    /// (round 15b texture-anim: 1.0 for a three-cycle <c>SAVE</c> texture with <c>DELAY 1</c>; apathy's
+    /// saves hold 3.0 on a thing). Whether it counts down within the cycle is not measured.
+    /// </summary>
+    public int FrameDelay { get; init; }
 }
 
 /// <summary>
@@ -529,6 +536,7 @@ public static class AcknexFullSave
         Int16(record, 26, 5);
         MapColor(record, entity.MapColor);
         Int32(record, 102, 1024);
+        Int32(record, 106, entity.FrameDelay);
         Int32(record, 126, entity.Region);
         if (!entity.Unplaced || entity.Actor)
         {
