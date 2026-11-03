@@ -3874,14 +3874,18 @@ public sealed class WdlRuntime :
             // 4/1024, keeping its sign and positive for none, even when a wall stopped the step:
             // axis-aligned walkers creep 4 units a step, and one drifting back toward its way's line
             // (a part of −1) steps −4 (round 5).
+            // The parts are those of the step taken, after the player shortened it: a step the player
+            // refuses entirely has none and gets no nudge (OV-20261029-actor-step round 3, c-pi).
             const double Nudge = 4.0 / 1024;
-            if (Math.Abs(requestedX) < Nudge - 1e-9 && Math.Abs(requestedY) >= Nudge - 1e-9)
+            double partX = requestedX * scale;
+            double partY = requestedY * scale;
+            if (Math.Abs(partX) < Nudge - 1e-9 && Math.Abs(partY) >= Nudge - 1e-9)
             {
-                actor.X += (requestedX < 0 ? -Nudge : Nudge) - requestedX;
+                actor.X += (partX < 0 ? -Nudge : Nudge) - partX;
             }
-            else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
+            else if (Math.Abs(partY) < Nudge - 1e-9 && Math.Abs(partX) >= Nudge - 1e-9)
             {
-                actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
+                actor.Y += (partY < 0 ? -Nudge : Nudge) - partY;
             }
 
             // A wall-stopped part takes the same minimum from what is left of it: a step held at the
@@ -3889,8 +3893,8 @@ public sealed class WdlRuntime :
             // alternates 1074 and 1070 from a wall ahead (1078 behind; OV-20261029-actor-events).
             if (result.Collided)
             {
-                actor.X = MinimumCarefulPart(actor.X, startX, requestedX, Nudge);
-                actor.Y = MinimumCarefulPart(actor.Y, startY, requestedY, Nudge);
+                actor.X = MinimumCarefulPart(actor.X, startX, partX, Nudge);
+                actor.Y = MinimumCarefulPart(actor.Y, startY, partY, Nudge);
             }
 
             actor.Region = result.Region;
@@ -3961,9 +3965,10 @@ public sealed class WdlRuntime :
 
     /// <summary>
     /// The share of its step a <c>CAREFULLY</c> actor takes toward the player
-    /// (OV-20261019-actor-contact): the position two steps ahead must lie at least the contact
-    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player; otherwise the
-    /// step is halved, up to four times, and with no free step the actor stays.
+    /// (OV-20261019-actor-contact): the position two steps ahead must lie further than the contact
+    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player along x or y, a
+    /// square around the player rather than a circle (OV-20261029-actor-step round 3, c-pi);
+    /// otherwise the step is halved, up to four times, and with no free step the actor stays.
     /// </summary>
     private double CarefulStepScale(Actor actor, Player player, double stepX, double stepY)
     {
@@ -3973,7 +3978,7 @@ public sealed class WdlRuntime :
         {
             double dx = actor.X + (2 * scale * stepX) - player.Position.X;
             double dy = actor.Y + (2 * scale * stepY) - player.Position.Z;
-            if ((dx * dx) + (dy * dy) >= contact * contact)
+            if (Math.Max(Math.Abs(dx), Math.Abs(dy)) > contact)
             {
                 return scale;
             }

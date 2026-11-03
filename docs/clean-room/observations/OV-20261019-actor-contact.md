@@ -105,7 +105,8 @@ Confirmed for patched V3.963:
    is outside its `DIST`. Walls stop the push.
 3. **A `CAREFULLY` actor does not push**: it stops short of the player. It halves its step until
    the point two steps ahead is at least the contact distance away (at most four halvings, then
-   no step), and fires `IF_NEAR` in every cycle its full step is refused.
+   no step), and fires `IF_NEAR` in every cycle its full step is refused. Revised 2026-11-02
+   (OV-20261029-actor-step addendum): "away" is along x or along y, a square, not a circle.
 4. **A beam inside a solid object is resolved at the next movement**: the player is pushed
    straight out from the centre to the contact distance, and the contact fires `IF_NEAR`.
    `PASSABLE` objects are not pushed out of.
