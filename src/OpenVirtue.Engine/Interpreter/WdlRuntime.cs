@@ -1219,8 +1219,9 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Completes a pending <c>INKEY</c> request and resumes the suspended action, if any.
-    /// Result code 0 accepts <paramref name="value"/>; other documented codes restore the original string.
+    /// Completes a pending <c>INKEY</c> request; the suspended action, if any, resumes in the next
+    /// cycle's resume slot. Result code 0 accepts <paramref name="value"/>; other documented codes
+    /// restore the original string.
     /// </summary>
     public bool CompleteInput(int requestId, string? value, int resultCode = 0)
     {
@@ -1241,8 +1242,11 @@ public sealed class WdlRuntime :
 
         if (_inputActions.Remove(requestId, out ActiveInputAction? action))
         {
-            WdlExecutionResult result = ContinueWithScope(action.State, action.Scope);
-            StoreSuspendedAction(action.State, result, action.Scope);
+            // The action goes on in the next cycle's resume slot, as one coming out of a WAIT does
+            // (manual p.85: INKEY "waits for [Return] like WAIT"): the original's trace line after the
+            // input counts the cycles exactly as the line before it, both printed before the global
+            // EACH_TICK slots (OV-20261029-inkey, the carriers replayed).
+            _waitingActions.Add(new ActiveAction(action.State, new WdlWaitRequest(0, WdlWaitMode.FrameCycles), action.Scope));
         }
 
         return true;

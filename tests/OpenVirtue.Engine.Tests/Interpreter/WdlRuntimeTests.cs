@@ -1425,6 +1425,10 @@ public class WdlRuntimeTests
         Assert.Equal("Faith", runtime.Strings["player_name"].Value);
         Assert.Equal(0, runtime.GetSkill("RESULT"));
         Assert.Equal(5, runtime.GetSkill("STR_LEN"));
+
+        // The action goes on in the next cycle's resume slot, like one coming out of a WAIT.
+        Assert.Equal(0, runtime.GetSkill("after"));
+        runtime.Tick(1.0 / 16);
         Assert.Equal(1, runtime.GetSkill("after"));
     }
 
@@ -1440,6 +1444,7 @@ public class WdlRuntimeTests
 
         WdlInputRequest request = Assert.Single(runtime.PendingInputRequests);
         Assert.True(runtime.CompleteInput(request.Id, "new", resultCode: -1));
+        runtime.Tick(1.0 / 16);
 
         Assert.Equal("old", runtime.Strings["player_name"].Value);
         Assert.Equal(-1, runtime.GetSkill("RESULT"));

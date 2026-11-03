@@ -247,6 +247,38 @@ internal static class OracleTrace
     /// distinct cycles, and each counted cycle with one <c>TICKS</c> only. The last check keeps out
     /// traces that print from both sides of the counting action, whose counters are a cycle apart.
     /// </summary>
+    /// <summary>
+    /// The timing of a carrier whose keys DOSBox-X typed on its wall clock (<c>AUTOTYPE</c>): its trace
+    /// prints <c>TICKS</c> and the cycle only before and after the input (the inkey carriers' <c>B</c>
+    /// and <c>R</c>), two samples that still place the input's end on the original's clock. Any token,
+    /// column 0, when at least two lines print ticks and whole counts that rise together; null otherwise.
+    /// </summary>
+    public static OracleTimingColumn? AutotypeTiming(IReadOnlyList<OracleTraceLine> lines)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        List<OracleTraceLine> numbered = [.. lines.Where(static l => l.Value(0) is not null && l.Value(1) is { } n && n == Math.Floor(n) && n >= 0)];
+        if (numbered.Count < 2)
+        {
+            return null;
+        }
+
+        bool rose = false;
+        for (int i = 1; i < numbered.Count; i++)
+        {
+            double ticks = numbered[i].Value(0)!.Value - numbered[i - 1].Value(0)!.Value;
+            double cycles = numbered[i].Value(1)!.Value - numbered[i - 1].Value(1)!.Value;
+            if (ticks < 0 || cycles < 0 || (cycles > 0) != (ticks > 0))
+            {
+                // A flic carrier's KEY/RET lines print FLIC_FRAME 0 before a rising TICKS: not a clock.
+                return null;
+            }
+
+            rose |= cycles > 0;
+        }
+
+        return rose ? new OracleTimingColumn(OracleTimingColumn.AnyToken, 0) : null;
+    }
+
     private static OracleTimingColumn? AnyTokenTiming(IReadOnlyList<OracleTraceLine> lines)
     {
         List<OracleTraceLine> numbered = [.. lines.Where(static l => l.Value(0) is not null)];

@@ -327,7 +327,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 
 - `OV-20261029-inkey.md` — the input edits the old content with the cursor at its start, inserting
   and cutting to the declared length (the last character is replaced at the end); BackSpace deletes
-  before the cursor; the world keeps running. Eleven DOSBox-X runs with scripted keys.
+  before the cursor; the world keeps running. Eleven DOSBox-X runs with scripted keys. Addendum
+  2026-11-03: a completed `INKEY` resumes its action in the next cycle's resume slot, like a
+  `WAIT`; the carriers replay (10 of 13, the rest failed runs).
 
 ## DIGITS and TEXT layout (2026-10-29 — confirmed and implemented)
 
