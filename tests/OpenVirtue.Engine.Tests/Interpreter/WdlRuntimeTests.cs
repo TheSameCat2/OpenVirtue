@@ -3299,6 +3299,39 @@ public class WdlRuntimeTests
         Assert.Equal(0, runner["PLAY"]);
     }
 
+    [Fact]
+    public void Runtime_LoopingAnimatedTexture_StartsWithPlaySet()
+    {
+        // OV-20261029-motion-timing round 2: MY.PLAY == 1 holds on a looping texture throughout, and a
+        // ONESHOT or a single-phase texture keeps PLAY 0.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING looper 5 0 0 0;#1\nTHING once 6 0 0 0;#1\nTHING still 7 0 0 0;#1\n" +
+            "PLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL seen { VAL -1; } " +
+            "BMAP phase1,<p1.pcx>,0,0,16,16; BMAP phase2,<p2.pcx>,0,0,16,16; " +
+            "TEXTURE loopTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; } " +
+            "TEXTURE onceTex { CYCLES 2; BMAPS phase1,phase2; DELAY 1,1; FLAGS ONESHOT; } " +
+            "TEXTURE stillTex { BMAPS phase1; } " +
+            "THING looper { TEXTURE loopTex; EACH_CYCLE done; } " +
+            "THING once { TEXTURE onceTex; } THING still { TEXTURE stillTex; } " +
+            "ACTION done { RULE seen = MY.PLAY; }");
+        var runtime = new WdlRuntime(level);
+        Thing looper = level.Things.Single(t => t.Name == "looper");
+
+        Assert.Equal(1, looper["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "once")["PLAY"]);
+        Assert.Equal(0, level.Things.Single(t => t.Name == "still")["PLAY"]);
+        for (int i = 0; i < 8 && runtime.GetSkill("seen") < 0; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        Assert.Equal(1, runtime.GetSkill("seen"));
+    }
+
     [Theory]
     [InlineData(0.25, new[] { 4, 8, 12 })]
     [InlineData(0.28125, new[] { 3, 7, 10 })]

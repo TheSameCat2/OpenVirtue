@@ -95,3 +95,12 @@ harness cannot recover).
   end of a `ONESHOT` run the engine clears `PLAY`, then runs `EACH_CYCLE`. With it the carrier matches
   all 105 lines (was 104), and no other carrier changes. `WdlRuntime.AdvanceAnimationTarget`; test
   `WdlRuntimeTests.Tick_OneShotTexture_ClearsPlayBeforeEachCycleRuns`.
+- **A looping animated texture has `PLAY` set.** In round2 anim-delay, anim-delay8 and anim-random
+  (traces `OVMOT0.TXT`, sha256 `621ee562`, `42efe866`, `ac0b253c`) every `A` and `E` line prints
+  `mt_p` 1 (`IF (MY.PLAY == 1)`), from the first line on; no script sets `PLAY` there. OpenVirtue
+  left it 0. Rule: at level start an object whose texture loops (`CYCLES` above 1, no `ONESHOT`)
+  gets `PLAY` 1; a `ONESHOT` keeps 0 until a script sets it. Whether a single-phase texture or one
+  assigned later sets `PLAY` is not measured. With it anim-delay matches 56 of 158 lines (was 2),
+  anim-delay8 178 of 217 (was 3) and anim-random 136 of 636 (was 2); the rest is the phase and
+  `RANDOM` difference. No other carrier changes. `WdlRuntime.InitializeAnimationCycles`; test
+  `WdlRuntimeTests.Runtime_LoopingAnimatedTexture_StartsWithPlaySet`.

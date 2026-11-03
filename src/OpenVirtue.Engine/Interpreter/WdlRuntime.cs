@@ -4365,9 +4365,21 @@ public sealed class WdlRuntime :
     {
         foreach (AcknexObject target in CurrentCycleTargets())
         {
-            if (AnimationTexture(target) is not null && target["CYCLE"] <= 0)
+            if (AnimationTexture(target) is not { } entry)
+            {
+                continue;
+            }
+
+            if (target["CYCLE"] <= 0)
             {
                 target["CYCLE"] = 1;
+            }
+
+            // OV-20261029-motion-timing: a looping animated texture plays from the start, so a script
+            // reads MY.PLAY 1 on it; a ONESHOT waits with PLAY 0 until a script sets it.
+            if (entry.Texture.Cycles > 1 && !entry.Texture.IsOneShot)
+            {
+                target["PLAY"] = 1;
             }
         }
     }
