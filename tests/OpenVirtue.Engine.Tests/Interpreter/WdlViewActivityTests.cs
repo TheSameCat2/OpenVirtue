@@ -53,6 +53,18 @@ public sealed class WdlViewActivityTests
         Assert.Equal(0, mover["VISIBLE"]);
     }
 
+    [Fact]
+    public void Tick_SkipFrames_FirstMoveAfterSkippingCoversTheSkippedCycles()
+    {
+        // OV-20261021-distance-refresh, turn-refresh: an actor that stops skipping between two of its
+        // skipped moves covers the cycles skipped since its last move in its first move, then one a cycle.
+        (WdlRuntime runtime, Actor mover, _) = Create("ACTOR mover { TEXTURE moverTex; TARGET MOVE; SPEED 1; DIST 1; }");
+        Assert.Equal([0, 0, 0], Positions(runtime, mover, 3));
+
+        runtime.SetSkill("PLAYER_ANGLE", Math.PI);
+        Assert.Equal([4, 5, 6], Positions(runtime, mover, 3));
+    }
+
     [Theory]
     [InlineData("FLAGS FAR;", 5)] // p.71
     [InlineData("DIST 50;", 5)] // within DIST
@@ -166,16 +178,16 @@ public sealed class WdlViewActivityTests
     [Fact]
     public void Tick_SkipFrames_LongCarefulStepIsTestedAtItsEndOnly()
     {
-        // OV-20261020-view-activity, long-pad: a skipped CAREFULLY actor's step of 6 jumps a pad two
-        // steps up when it lands beyond it, and stops 1.05 short of the pad's wall when it would land
-        // inside it.
+        // OV-20261020-view-activity, long-pad: a skipped CAREFULLY actor's step of 9 jumps a pad two
+        // steps up when it lands beyond it. A step of 6 that would land inside the pad is tried at
+        // half its length (round 2 addendum, 2026-11-02), which lands 1 short of the pad.
         const string map =
             "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
             "VERTEX -10 4 0;#4\nVERTEX -6 4 0;#5\nVERTEX -6 8 0;#6\nVERTEX -10 8 0;#7\n" +
             "REGION room 0 16;#0\nREGION pad 2 16;#1\n" +
             "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
             "WALL rim 4 5 1 0 0 0;#4\nWALL rim 5 6 1 0 0 0;#5\nWALL rim 6 7 1 0 0 0;#6\nWALL rim 7 4 1 0 0 0;#7\n" +
-            "ACTOR jumper -9 1 90 0;#8\nACTOR stopper -7 -1 90 0;#9\nPLAYER_START 40 0 0 0;#10";
+            "ACTOR jumper -9 1 90 0;#8\nACTOR stopper -7 -2.5 90 0;#9\nPLAYER_START 40 0 0 0;#10";
         (WdlRuntime runtime, _, Level level) = Create(
             "WALL rim { } ACTOR jumper { TEXTURE moverTex; TARGET MOVE; SPEED 1.5; DIST 1; FLAGS CAREFULLY; } " +
             "ACTOR stopper { TEXTURE moverTex; TARGET MOVE; SPEED 1; DIST 1; FLAGS CAREFULLY; }",
@@ -191,7 +203,60 @@ public sealed class WdlViewActivityTests
         // 1.5 x 6 from y 1 to about 10, beyond the pad (y 4..8); sin 90° is 1023/1024 in 22.10 (OV-20261029-actor-step)
         Assert.Equal(1 + (9 * 1023.0 / 1024), jumper.Y, 4);
         Assert.Equal(0, jumper.Region);
-        Assert.Equal(Math.Truncate((4 - 1 - Player.WallClearance) * 1024) / 1024, stopper.Y, 3); // cut to 1/1024 at the wall (OV-20261029-actor-step) // 6 from y -1 would end at 5, inside
+        // 6 from y -2.5 would end at 3.5, half a step short of the pad; half of it ends at 0.5
+        Assert.Equal(-2.5 + (3 * 1023.0 / 1024), stopper.Y, 4);
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_LongCarefulStepFailingAtHalfLengthStopsAtTheFirstWall()
+    {
+        // OV-20261020-view-activity, long-pad: from 1 short of the pad both the step of 6 and its
+        // half end inside the pad, so the step is swept and stops 1.05 short of the pad's wall.
+        const string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX -10 4 0;#4\nVERTEX -6 4 0;#5\nVERTEX -6 12 0;#6\nVERTEX -10 12 0;#7\n" +
+            "REGION room 0 16;#0\nREGION pad 2 16;#1\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL rim 4 5 1 0 0 0;#4\nWALL rim 5 6 1 0 0 0;#5\nWALL rim 6 7 1 0 0 0;#6\nWALL rim 7 4 1 0 0 0;#7\n" +
+            "ACTOR stopper -7 1 90 0;#8\nPLAYER_START 40 0 0 0;#9";
+        (WdlRuntime runtime, Actor stopper, _) = Create(
+            "WALL rim { } ACTOR stopper { TEXTURE moverTex; TARGET MOVE; SPEED 1; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.InRange(stopper.Y, 4 - 1 - Player.WallClearance - (2.0 / 1024), 4 - 1 - Player.WallClearance + (2.0 / 1024));
+    }
+
+    [Theory]
+    [InlineData(8, 4.8, 10.4)] // 12.8 is 0.8 beyond the wall: the half step
+    [InlineData(4, 9.6, 13.6)] // 1.6 beyond it: through
+    public void Tick_SkipFrames_LongCarefulStepEndingNearAFreeStandingWallIsRefused(double startY, double step, double expectedY)
+    {
+        // OV-20261020-view-activity, long-wall: an IMPASSABLE wall within the actor's half width of
+        // the step's end refuses the step, behind the end as well as ahead of it; one the step jumps
+        // and leaves further behind does not.
+        string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX -14 12 0;#4\nVERTEX -2 12 0;#5\n" +
+            "REGION room 0 16;#0\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL fence 4 5 0 0 0 0;#4\n" +
+            "ACTOR walker -8 " + startY.ToString(System.Globalization.CultureInfo.InvariantCulture) + " 90 0;#5\nPLAYER_START 40 0 0 0;#6";
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "WALL fence { FLAGS IMPASSABLE; } ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED " +
+            (step / 6).ToString(System.Globalization.CultureInfo.InvariantCulture) + "; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(expectedY, walker.Y, 1);
     }
 
     // ---- BERKELEY walls ----------------------------------------------------------------------

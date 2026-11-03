@@ -3834,8 +3834,18 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
-            CircleMoveResult result = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion)
-                ? new CircleMoveResult(start + step, endRegion, step, Collided: false, RegionChanged: endRegion != actor.Region)
+            // OV-20261020-view-activity: a skipped long step that fails its end test is tried once
+            // more at half its length before it is swept.
+            Vector2 endStep = step;
+            bool endPointMove = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion);
+            if (!endPointMove && _longSkippedStep)
+            {
+                endStep = step / 2;
+                endPointMove = TryEndPointCarefulMove(actor, endStep.X, endStep.Y, out endRegion);
+            }
+
+            CircleMoveResult result = endPointMove
+                ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
                     start,
                     actor.Region,
@@ -3985,10 +3995,11 @@ public sealed class WdlRuntime :
     /// <summary>
     /// A skipped actor's <c>CAREFULLY</c> step (<c>SKIP_FRAMES</c>) longer than its half width is
     /// tested at its end only (OV-20261020-view-activity, long-wall and long-pad): it goes through when the region at its
-    /// end point may be entered (<see cref="ActorCanClimbInto"/>) and no wall the actor may not cross
-    /// lies within its half width and the wall clearance ahead of that point. Walls in between are
-    /// not tested, so the step can jump a wall or a whole raised region. Otherwise the step is swept
-    /// as usual and stops at the first wall. A shorter step is swept: the end test of the step before
+    /// end point may be entered (<see cref="ActorCanClimbInto"/>), no <c>IMPASSABLE</c> or free-standing
+    /// wall comes closer than its half width to that point in any direction, and no wall the actor may
+    /// not cross lies closer than its half width ahead of it (touching passes). Walls in between are
+    /// not tested, so the step can jump a wall or a whole raised region. Otherwise <see cref="MoveActor"/>
+    /// tries the half step, and then sweeps the step as usual, stopping at the first wall. A shorter step is swept: the end test of the step before
     /// covered the walls it can reach. Other things, actors and the player are not tested at the end
     /// either. Steps of actors that are not skipping were not measured and are always swept.
     /// </summary>
@@ -4018,8 +4029,19 @@ public sealed class WdlRuntime :
 
         double endX = actor.X + stepX;
         double endY = actor.Y + stepY;
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((wall["IMPASSABLE"] > 0 || (wall.LeftRegion == wall.RightRegion && wall["PASSABLE"] <= 0)) &&
+                TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
+                DistanceToSegment(endX, endY, ax, ay, bx, by) < radius)
+            {
+                return false;
+            }
+        }
+
         int current = region;
-        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius + Player.WallClearance))
+        // Touching a wall ahead passes: a way actor's step to a point its half width from a wall goes through.
+        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius - 1e-6))
         {
             int other = OtherSide(wall, current);
             if (!ActorCanCross(actor, wall, current, other))
@@ -5269,7 +5291,8 @@ public sealed class WdlRuntime :
     /// <see cref="RefreshEntityDistances"/>) moves only every
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
-    /// (OV-20261019-border-kinds, OV-20261020-view-activity).
+    /// (OV-20261019-border-kinds, OV-20261020-view-activity). The first move after it is lifted
+    /// covers the cycles skipped since the last move too (OV-20261021-distance-refresh).
     /// </summary>
     private int SkipFramesMultiplier(Actor actor)
     {
@@ -5281,8 +5304,10 @@ public sealed class WdlRuntime :
             _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
+            // The first move after skipping covers the cycles skipped since the last one too.
+            int pending = _skippedCycles.GetValueOrDefault(actor);
             _skippedCycles.Remove(actor);
-            return 1;
+            return pending + 1;
         }
 
         int skipped = _skippedCycles.GetValueOrDefault(actor) + 1;

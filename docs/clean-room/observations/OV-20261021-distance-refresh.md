@@ -148,3 +148,24 @@ bands) and its drawn border walls along the part of its border inside the cone, 
 sight-line walk as walls; for a convex floor the border holds the farthest points. Regions are
 tested on demand when an action reads `VISIBLE` or `SEEN` (`TestRegionView`), the player's own
 region counting as visible, and every region in every frame once `SEEN` has been read, as walls.
+
+## Addendum: the first move after skipping (2026-11-02)
+An oracle-diff replay showed one actor step wrong in three carriers, each the first move of an
+actor whose refreshed distance or view lifts `SKIP_FRAMES` between two of its skipped moves:
+- turn-refresh (`OVDRX0.TXT` `530110c3`): the last skipped move came in cycle 33; after the turn
+  the actor moved −19.188 → −18.719, 0.469 = 5 × 0.094, and then 0.094 a cycle.
+- round 2 thing-refresh (`39ce4524`): after M2's refresh, −18.625 → −18.344, 0.281 = 3 × 0.094.
+- view-activity view-pillar (`OVVAX0.TXT` `7bbfd7a8`): after the beam, −8.624 → −8.660,
+  0.036 = 3 × 0.012, and then 0.012 a cycle.
+
+OpenVirtue moved one cycle's step. In all three the step is the number of cycles the actor had
+skipped since its last move plus one, times that cycle's `TIME_CORR`.
+
+Rule: an actor's first move after it stops skipping covers every cycle since its last move, as a
+skipped move does (`WdlRuntime.SkipFramesMultiplier`; test
+`WdlViewActivityTests.Tick_SkipFrames_FirstMoveAfterSkippingCoversTheSkippedCycles`).
+
+Result: turn-refresh matches 171 of 173 lines (83 before), thing-refresh 159 of 188 (95), and
+view-pillar 85 of 87 (57); the rest are the tail of the run and, in thing-refresh, a thing's
+position that the refresh does not explain. clip-contact clip-move-liber gains a line. No other
+carrier changed.
