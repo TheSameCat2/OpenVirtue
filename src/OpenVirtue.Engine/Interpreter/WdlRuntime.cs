@@ -5313,7 +5313,7 @@ public sealed class WdlRuntime :
         if (skip <= 0 ||
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
-            _inView.Contains(actor) ||
+            (_inView.Contains(actor) && !IsBeyondClipBorder(player, actor)) ||
             _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
@@ -5331,6 +5331,16 @@ public sealed class WdlRuntime :
         _skippedCycles.Remove(actor);
         return skip + 1;
     }
+
+    /// <summary>
+    /// Whether a thing or actor lies at or beyond its <c>CLIP_DIST</c> border (<see cref="ClipBorder"/>,
+    /// <c>LIBER</c> ignored), where the original does not draw it: under <c>SKIP_FRAMES</c> it counts
+    /// as not visible even inside the view cone (OV-20261019-clip-contact clip-move-liber).
+    /// </summary>
+    private bool IsBeyondClipBorder(Player player, MapEntity entity) =>
+        RegionAt(player.Region) is { } region &&
+        TryProximityDistance(player.Position.X, player.Position.Z, entity, out double distance) &&
+        distance >= ClipBorder(entity, region);
 
     /// <summary>
     /// Whether a <c>BERKELEY</c> wall sleeps this cycle: it runs its <c>EACH_TICK</c> only while it

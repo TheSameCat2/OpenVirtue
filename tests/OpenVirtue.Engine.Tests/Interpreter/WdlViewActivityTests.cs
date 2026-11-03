@@ -40,6 +40,19 @@ public sealed class WdlViewActivityTests
     }
 
     [Fact]
+    public void Tick_SkipFrames_ActorInViewBeyondClipDistCountsAsUnseen()
+    {
+        // OV-20261019-clip-contact clip-move-liber: a LIBER actor in the view cone but beyond its
+        // CLIP_DIST border is not drawn, so it moves every 6th cycle by six cycles' distance.
+        (WdlRuntime runtime, Actor mover, _) = Create(
+            "REGION room { CLIP_DIST 10; } ACTOR mover { TEXTURE moverTex; TARGET MOVE; SPEED 1; DIST 1; FLAGS LIBER; }");
+        runtime.SetSkill("PLAYER_ANGLE", Math.PI);
+
+        Assert.Equal([0, 0, 0, 0, 0, 6, 6], Positions(runtime, mover, 7));
+        Assert.Equal(1, mover["VISIBLE"]);
+    }
+
+    [Fact]
     public void Tick_SkipFrames_CountStartsAtTheActorsLastMove()
     {
         // OV-20261020-view-activity, skip-phase: an actor the player turns away from moves again six
