@@ -3430,7 +3430,10 @@ public sealed class WdlRuntime :
     /// The <c>CLIP_DIST</c> border of a wall, thing or actor, ignoring <c>LIBER</c>. A thing's or
     /// actor's is the smaller of the player's region's and its own region's <c>CLIP_DIST</c>
     /// (OV-20261019-clip-contact), times <c>THING_DIST</c> or <c>ACTOR_DIST</c>. A wall's is the
-    /// player's region's alone, even for a wall between two regions (OV-20261019-clip-detail).
+    /// player's region's, lowered to the larger of its two sides' <c>CLIP_DIST</c>: a wall between the
+    /// room (30) and a pad (10) runs at 24 from the room (OV-20261019-clip-detail), and a free-standing
+    /// wall with the room (10) on both sides does not run at 16 from the pad (30)
+    /// (OV-20261019-clip-detail addendum 2026-11-02).
     /// </summary>
     private double ClipBorder(AcknexObject target, AcknexObject playerRegion)
     {
@@ -3438,6 +3441,10 @@ public sealed class WdlRuntime :
         if (target is MapEntity entity && RegionAt(entity.Region) is { } ownRegion)
         {
             clipDistance = Math.Min(clipDistance, ownRegion["CLIP_DIST"]);
+        }
+        else if (target is Wall wall && RegionAt(wall.LeftRegion) is { } left && RegionAt(wall.RightRegion) is { } right)
+        {
+            clipDistance = Math.Min(clipDistance, Math.Max(left["CLIP_DIST"], right["CLIP_DIST"]));
         }
 
         return clipDistance * target switch

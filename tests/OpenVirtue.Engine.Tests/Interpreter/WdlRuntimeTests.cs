@@ -4335,6 +4335,32 @@ public class WdlRuntimeTests
         "WALL post 8 9 0 0 0 0;#8\nTHING marker 25 25 0 2;#9\nPLAYER_START 5 25 0 0;#10";
 
     [Fact]
+    public void Tick_ObjectEachTick_FreeStandingWallIsGatedByItsRegionsClipDist()
+    {
+        // OV-20261019-clip-detail addendum 2026-11-02 (clip-regions): a free-standing wall with the
+        // room (CLIP_DIST 10) on both sides ran at 8 from the room and not at 16 from the pad (30).
+        Level level = LoadWithMap(
+            RoomAndPadMap,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 10; } REGION pad { CLIP_DIST 30; } REGION solid { CLIP_DIST 0; } " +
+            "WALL post { EACH_TICK post_tick; FLAGS PASSABLE; } ACTION post_tick { RULE runs += 1; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+
+        Assert.Equal(1, Runs(0, 10)); // 6 from the room
+        Assert.Equal(0, Runs(2, 21)); // 17 from the pad
+
+        double Runs(int region, float x)
+        {
+            player.MoveTo(region, x, 25);
+            double before = runtime.GetSkill("runs");
+            runtime.Tick(1.0 / 16);
+            return runtime.GetSkill("runs") - before;
+        }
+    }
+
+    [Fact]
     public void Tick_ObjectEachTick_CycleOfAPlayerLocateIsGatedByTheRegionBefore()
     {
         // OV-20261019-clip-contact addendum 2026-11-02: in the cycle of a beam and LOCATE from the room
