@@ -237,6 +237,7 @@ public sealed class WdlRuntime :
     private readonly LevelCollisionWorld _collisionWorld;
     private readonly IReadOnlyDictionary<string, TextureImage> _hitTextures;
     private string _printBaseName = "PRINT";
+    private double _secondsClockStartTicks;
     private long _printSelectedLength;
 
     /// <summary>The storage of the last cycle's object <c>EACH_TICK</c> snapshot, reused by the next one.</summary>
@@ -2430,6 +2431,9 @@ public sealed class WdlRuntime :
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
         _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
         _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
+        // The frame's time in milliseconds as the original's statistics count it: 16, 18 and 20 at
+        // TIME_CORR 0.25, 0.28125 and 0.3125 (OV-20261103-contact-clock clock-stats).
+        _skills["TIME_TOTAL"] = Math.Round(timeCorrection * 64);
         _skills["HERE_INDEX"] = GetSkill("PLAYER_REGION"); // the player's region, as the saves hold it (round 16)
         // "RENDER_MODE is returned to 0.5 automatically after each frame cycle" (manual p.104): a probe that
         // set 2 saved 0.5. 0, which suppresses rendering, stays (save-body round 18).
@@ -2517,9 +2521,33 @@ public sealed class WdlRuntime :
     /// causes a burst of catch-up seconds.
     /// </summary>
     /// <returns><c>true</c> if a second completed during this frame.</returns>
+    /// <summary>
+    /// How fast the clock behind <c>SECS</c> and <c>EACH_SEC</c> runs against the frame time that
+    /// <c>TICKS</c> sums: 1 natively. In the original under DOSBox-X at 60 frames a second, <c>TICKS</c>,
+    /// summed from 8/32- and 9/32-tick frames, gained 0.9% on that clock (a second took 16.15 <c>TICKS</c>),
+    /// while at 8 ticks a frame the two kept step; the oracle replay sets 0.991 for such runs
+    /// (OV-20261103-contact-clock).
+    /// </summary>
+    public double SecondsClockRate { get; set; } = 1;
+
+    /// <summary>
+    /// Where the seconds clock stands, in ticks, when the first cycle runs (0 natively). The original's
+    /// had already run about 1.0 to 1.35 ticks, varying from launch to launch with the start-up
+    /// (OV-20261103-contact-clock). Set before the first cycle.
+    /// </summary>
+    public double SecondsClockStartTicks
+    {
+        get => _secondsClockStartTicks;
+        set
+        {
+            _secondsClockStartTicks = value;
+            _secondFraction = value / Timing.TicksPerSecond;
+        }
+    }
+
     private bool AdvanceSecond(double deltaSeconds)
     {
-        _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds);
+        _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds) * SecondsClockRate;
         if (_secondFraction < 1)
         {
             return false;

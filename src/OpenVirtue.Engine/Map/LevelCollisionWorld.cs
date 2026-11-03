@@ -104,6 +104,7 @@ public sealed class LevelCollisionWorld
         Vector2 position = start;
         int region = startRegion;
         Vector2 objectPush = Vector2.Zero;
+        bool endOnly = rawContact && requested.Length() <= 2 * radius;
         bool collided = false;
         bool regionChanged = false;
         float maximumStep = Math.Max(0.1f, radius * 0.5f);
@@ -121,8 +122,15 @@ public sealed class LevelCollisionWorld
             {
                 bool adjusted = ResolveWalls(
                     from, region, wallContact, wallRadius, canCross, crossedWallIndex, blocked ?? touched, ref desired);
-                adjusted |= ResolveEntities(
-                    from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired, ref objectPush);
+                // The player's step meets things and actors once, at its end: steps of 0.4 to 1.6 into a
+                // 2-wide thing were put back from where the whole step ended (OV-20261103-contact-clock).
+                // A step longer than the player's width is not measured that way (3.2 did not pass
+                // through), so it keeps testing each sub-step.
+                if (!endOnly || i == stepCount - 1)
+                {
+                    adjusted |= ResolveEntities(
+                        endOnly ? start : from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired, ref objectPush);
+                }
                 collided |= adjusted;
                 if (!adjusted)
                 {
@@ -173,7 +181,14 @@ public sealed class LevelCollisionWorld
     /// measured push-outs of 1- to 16-wide objects; c²/1024 + 98 missed the two 4-wide ones off the
     /// axes by a unit (OV-20261103-startup-clock).
     /// </summary>
-    private static long PushTargetSquared(long contact) => ContactTestSquared(contact) + PushSlackSquaredRaw;
+    private static long PushTargetSquared(long contact, MapEntity entity) =>
+        entity is Thing ? (contact * contact / 1024) + ThingSlackSquaredRaw : ContactTestSquared(contact) + PushSlackSquaredRaw;
+
+    /// <summary>
+    /// What the push adds for a thing, on top of c²/1024: 98. A 4-wide thing walked into fits
+    /// C² = 10578, where 4-wide actors at start-up fit 10576 (OV-20261103-contact-clock).
+    /// </summary>
+    public const int ThingSlackSquaredRaw = 98;
 
     /// <summary>
     /// The squared length, in 22.10 raw units, from which the push-out no longer finds an object:
@@ -237,7 +252,7 @@ public sealed class LevelCollisionWorld
             }
 
             long contact = Raw(Math.Max(0.01f, radius)) + Raw(Math.Max(0, entityRadius(entity)));
-            long contactSquared = PushTargetSquared(contact);
+            long contactSquared = PushTargetSquared(contact, entity);
             long ax = Raw(entity.X);
             long ay = Raw(entity.Y);
             long dx = px - ax;
@@ -440,8 +455,9 @@ public sealed class LevelCollisionWorld
                 long contact = Raw(radius) + Raw(Math.Max(0, entityRadius(entity)));
                 long ax = Raw(entity.X);
                 long ay = Raw(entity.Y);
-                long dx = Raw(desired.X) - ax;
-                long dy = Raw(desired.Y) - ay;
+                // The step's end is on the 1/1024 grid; rounding undoes the sub-steps' float error.
+                long dx = (long)Math.Round(desired.X * 1024.0) - ax;
+                long dy = (long)Math.Round(desired.Y * 1024.0) - ay;
                 long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
                 if (lengthSquared >= ContactTestSquared(contact))
                 {
@@ -449,9 +465,9 @@ public sealed class LevelCollisionWorld
                 }
 
                 // A step past the centre, onto it or too near it for the 22.10 root keeps the plain rule.
-                bool ahead = (dx * (Raw(from.X) - ax)) + (dy * (Raw(from.Y) - ay)) >= 0;
+                bool ahead = (dx * ((long)Math.Round(from.X * 1024.0) - ax)) + (dy * ((long)Math.Round(from.Y * 1024.0) - ay)) >= 0;
                 if (lengthSquared > 0 && ahead &&
-                    ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact)) is (double ox, double oy))
+                    ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact, entity)) is (double ox, double oy))
                 {
                     var pushed = new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024));
                     objectPush += pushed - desired;

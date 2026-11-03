@@ -371,3 +371,15 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
     player `PLAYER_WIDTH`/4 and finishes the cycle after (2026-11-03 addendum, push-d005).
   - The contact term is C² = (c − 1)²/1024 + 102 for every width measured, 1 to 16 wide (2026-11-03
     width addendum); the two 4-wide pushes off the axes now land on the unit.
+
+## Contact steps, the seconds clock, a skipped follower (2026-11-03 — confirmed and implemented)
+
+- `OV-20261103-contact-clock.md` — ten carriers at 60 frames a second and two at 8 ticks a cycle:
+  - a player step meets things and actors once, at its end, nudge included, and is pushed back in
+    22.10: C² = c²/1024 + 98 for a thing, (c − 1)²/1024 + 102 for an actor;
+  - `SECS` and `EACH_SEC` run on real time, which `TICKS`, summed from 8/32- and 9/32-tick frames,
+    gains 0.9% on at 60 frames a second (the replay: 0.991 and a 1.28-tick start);
+  - `TIME_TOTAL` is 64 × `TIME_CORR`;
+  - a skipped actor moves in cycles 6, 12, … by six of that cycle's steps.
+
+  The 3.2 step and a few one-unit pushes are open.

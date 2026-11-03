@@ -210,6 +210,6 @@ Re-read of `stop-width` (`OVACX0.TXT`) against the 22.10 walking contact of OV-2
   misses by two units. A push one step ahead of cycle 8's end misses cycle 9 by 3 raw in x and
   1 in y.
 
-The rule for steps larger than the contact slack is still open. The next probe should print
-`PLAYER_X`/`PLAYER_Y` × 1024 every cycle while 8- and 4-tick steps push into a thing, on and off
-its centre line.
+Settled by OV-20261103-contact-clock: the push is one per step, from where the whole step ends
+(the 8-tick round of that probe gives the same). Re-done from the right start, cycle 8 follows from
+it; the two-steps-ahead fit was a coincidence of the wrong start.
