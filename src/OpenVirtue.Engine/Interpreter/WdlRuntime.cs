@@ -200,6 +200,13 @@ public sealed class WdlRuntime :
     /// <summary>Whether an actor in front of the player moved since the last refresh of <see cref="_entityDistances"/>.</summary>
     private bool _frontActorMoved;
 
+    /// <summary>
+    /// The player's region before a <c>LOCATE</c> moved it to another, and the position the player
+    /// object still held then. Until the host applies the beam the object pass gates by this region
+    /// (<see cref="IsWithinClipDistance"/>); the next object pass drops it.
+    /// </summary>
+    private (int Region, Vector3 Position)? _clipRegionBeforeLocate;
+
     /// <summary>The view of the last drawn frame (<see cref="RefreshView"/>), counted by <see cref="_viewFrame"/>.</summary>
     private Viewer? _lastViewer;
 
@@ -1526,6 +1533,11 @@ public sealed class WdlRuntime :
             // A GROUND object goes to the storey that holds its feet, any other to the top, as at the
             // level start (manual p.61; below-beam round 2). Past every ceiling the rule gives the top.
             region = LevelTopology.StoreyHoldingEye(_level, region, entity["GROUND"] > 0 ? entity.Z : double.PositiveInfinity);
+        }
+
+        if (target is Player located && located.Region != region)
+        {
+            _clipRegionBeforeLocate ??= (located.Region, located.Position);
         }
 
         target["region"] = region;
@@ -3390,7 +3402,7 @@ public sealed class WdlRuntime :
     {
         if (target is not (Wall or MapEntity) ||
             GetObject("player") is not Player player ||
-            RegionAt(player.Region) is not { } region ||
+            RegionAt(ClipGateRegion(player)) is not { } region ||
             !TryProximityDistance(player.Position.X, player.Position.Z, target, out double distance))
         {
             return true;
@@ -3403,6 +3415,16 @@ public sealed class WdlRuntime :
 
         return target["LIBER"] > 0 || distance < ClipBorder(target, region);
     }
+
+    /// <summary>
+    /// The player's region as the <c>CLIP_DIST</c> gate reads it. A script that beams the player
+    /// (<c>SET PLAYER_X</c>/<c>PLAYER_Y</c>, <c>LOCATE</c>) moves <c>HERE</c> at once, but the objects
+    /// of that cycle are still gated by the region and position the player had before: in the cycle of a <c>LOCATE</c> from the room (<c>CLIP_DIST</c> 10) into a pad
+    /// (30) the room's thing and wall at 8 run once more and the pad's thing at 20 does not; from
+    /// the next cycle the pad gates them (OV-20261019-clip-contact addendum 2026-11-02).
+    /// </summary>
+    private int ClipGateRegion(Player player) =>
+        _clipRegionBeforeLocate is { } before && before.Position == player.Position ? before.Region : player.Region;
 
     /// <summary>
     /// The <c>CLIP_DIST</c> border of a wall, thing or actor, ignoring <c>LIBER</c>. A thing's or
@@ -4207,6 +4229,7 @@ public sealed class WdlRuntime :
         }
 
         order.Clear();
+        _clipRegionBeforeLocate = null;
     }
 
     private void FinishActorMoves()

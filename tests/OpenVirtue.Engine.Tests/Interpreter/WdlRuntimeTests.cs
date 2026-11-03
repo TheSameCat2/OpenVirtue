@@ -4325,6 +4325,39 @@ public class WdlRuntimeTests
         }
     }
 
+    private const string RoomAndPadMap =
+        "VERTEX 0 0 0;#0\nVERTEX 40 0 0;#1\nVERTEX 40 40 0;#2\nVERTEX 0 40 0;#3\n" +
+        "VERTEX 20 20 0;#4\nVERTEX 30 20 0;#5\nVERTEX 30 30 0;#6\nVERTEX 20 30 0;#7\n" +
+        "VERTEX 4 22 0;#8\nVERTEX 4 28 0;#9\n" +
+        "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 0 16;#2\n" +
+        "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+        "WALL w 4 5 2 0 0 0;#4\nWALL w 5 6 2 0 0 0;#5\nWALL w 6 7 2 0 0 0;#6\nWALL w 7 4 2 0 0 0;#7\n" +
+        "WALL post 8 9 0 0 0 0;#8\nTHING marker 25 25 0 2;#9\nPLAYER_START 5 25 0 0;#10";
+
+    [Fact]
+    public void Tick_ObjectEachTick_CycleOfAPlayerLocateIsGatedByTheRegionBefore()
+    {
+        // OV-20261019-clip-contact addendum 2026-11-02: in the cycle of a beam and LOCATE from the room
+        // (CLIP_DIST 10) into the pad (30) the pad's thing at 20 does not run; it runs from the next.
+        Level level = LoadWithMap(
+            RoomAndPadMap,
+            "MAPFILE <m.wmp>; SKILL runs { VAL 0; } " +
+            "REGION room { CLIP_DIST 10; } REGION pad { CLIP_DIST 30; } REGION solid { CLIP_DIST 0; } " +
+            "THING marker { EACH_TICK marker_tick; } ACTION marker_tick { RULE runs += 1; } " +
+            "EACH_TICK.1 beam; ACTION beam { SET EACH_TICK.1, NULL; SET PLAYER_X, 22; SET PLAYER_Y, 25; LOCATE; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        player.MoveTo(0, 5, 25);
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(2, player.Region);
+        Assert.Equal(0, runtime.GetSkill("runs"));
+
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("runs"));
+    }
+
     [Fact]
     public void Tick_PlayerProximity_WallOutsideClipDistIsNotDistTested()
     {

@@ -71,6 +71,54 @@ public class LevelTopologyTests
         Assert.Equal(region, level.Regions[found.Value].Name);
     }
 
+    private const string FreeWallMap =
+        "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+        "VERTEX 4 4 0;#4\nVERTEX 8 4 0;#5\nVERTEX 8 8 0;#6\nVERTEX 4 8 0;#7\n" +
+        "VERTEX 2 1 0;#8\nVERTEX 2 3 0;#9\n" +
+        "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 0 16;#2\n" +
+        "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+        "WALL w 4 5 2 0 0 0;#4\nWALL w 5 6 2 0 0 0;#5\nWALL w 6 7 2 0 0 0;#6\nWALL w 7 4 2 0 0 0;#7\n" +
+        "WALL post 8 9 0 0 0 0;#8\nPLAYER_START 1 2 0 0;#9";
+
+    [Theory]
+    [InlineData(1, 2, "room")]
+    [InlineData(9, 9, "room")]
+    [InlineData(6, 6, "pad")]
+    public void LocateRegion_RoomWithAFreeStandingWall_FindsTheRoomNotTheRegionAroundIt(double x, double y, string region)
+    {
+        // A free-standing wall with the room on both sides bounds nothing: the room keeps its outline,
+        // and a point in it is the room, not the outer region with the same outline
+        // (OV-20261019-clip-contact addendum 2026-11-02: LOCATE to (-8, 0) gave HERE.SKILL1 1).
+        Level level = LoadMap(FreeWallMap);
+
+        int? found = LevelTopology.LocateRegion(level, x, y);
+
+        Assert.NotNull(found);
+        Assert.Equal(region, level.Regions[found.Value].Name);
+    }
+
+    [Fact]
+    public void TraceRegionLoop_RegionWithAFreeStandingWall_TracesItsBoundary()
+    {
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "VERTEX 2 1 0;#4\nVERTEX 2 3 0;#5\nREGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL post 4 5 0 0 0 0;#4\nPLAYER_START 5 5 0 0;#5";
+        Level level = LoadMap(map);
+
+        List<int>? loop = LevelTopology.TraceRegionLoop(level, 0);
+
+        Assert.NotNull(loop);
+        Assert.Equal([0, 1, 2, 3], loop.Order());
+    }
+
+    private static Level LoadMap(string map)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+    }
+
     private static Level Load((float X, float Y, float Z)[] corners)
     {
         string map = string.Concat(corners.Select((c, i) =>

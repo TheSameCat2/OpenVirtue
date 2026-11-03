@@ -201,3 +201,54 @@ start "on the line", and that step was never counted as a crossing. The player t
 the other region without changing region. `CrossesPortal` now counts a step that starts on the
 line and ends clearly off it, and the caller still changes region only when the end lies on the
 other region's side.
+
+## Addendum 2026-11-02: a free-standing wall keeps its region's outline; the LOCATE cycle gates by the region before
+
+Carriers (original traces, sha256 first 8): `clip-regions` (`OVCCX0.TXT` `19ad9a2a`),
+`rerun/clip-regions-walk` (`OVCCX0.TXT` `f907812c`), and from other notes
+OV-20261019-clip-detail `wall-regions` (`OVCDX0.TXT` `80807bf5`), OV-20261019-eye-clamp
+`stop-solid` (`OVECX0.TXT` `648dc091`), OV-20261020-view-activity `round2/long-wall`
+(`OVVAX0.TXT` `0e1dbfca`) and `view-occlude` (`OVVAX0.TXT` `c83636bc`). No new runs; these
+are re-read traces.
+
+Each of these maps has a free-standing wall with the same region on both sides
+(`WALL cr_wall 16 17 0 0` in `clip-regions`). OpenVirtue traced a region's outline only when
+every vertex of its walls had exactly two neighbours, so the wall's two dangling ends left the
+room without an outline. `LOCATE` then fell through to the outer `solid` region, which shares
+the room's perimeter (`CLIP_DIST` 0, `SKILL1` 0): the original's `TK` after `R1L` reads
+`HERE.SKILL1` 1, OpenVirtue's read 0, and no room object ran again. In `stop-solid` the player
+then stood at the solid region's floor 16 (`AS` `PLAYER_Z` 15.650 against the original's 8) and
+walked through the wall; in `long-wall` and `view-occlude` the actors froze at the 0 border.
+
+The `clip-regions` trace also shows the cycle of a `LOCATE` into another region. At TICKS 88,
+after `P1L` (room, `CLIP_DIST` 10, to the pad, 30), the room's thing and wall at 8 run once
+more and the pad's thing does not; `TK` already reads `HERE.SKILL1` 2 in that cycle, and from 96
+only the pad's thing runs. `wall-regions` agrees: the room wall at 26 runs at 120 right after
+`P1L` into its pad (10) and then never again, and after `R3L` back to the room (152) it waits
+for the next cycle (160). At `R2L` (120, pad to room) `clip-regions` prints the pad's thing once
+more.
+
+Rules:
+
+1. **A wall with the same region on both sides is not part of that region's boundary.** It
+   stands inside the region; the outline is traced from the other walls.
+2. **In the cycle of a script `LOCATE` that moves the player to another region, the object pass
+   still gates by the region the player had before**, at the position the player object still
+   holds (the host moves it after the cycle). `HERE` and the region events change at once.
+
+Results (oracle diff, all carriers): matched lines 23968 → 24099 over 623 carriers, no file
+worse, no new full match. `clip-regions` 6 → 27 of 43 lines, `clip-regions-walk` 3 → 35 of
+141, `wall-regions` 10 → 28 of 39, `long-wall` 19 → 43 of 67, `view-occlude` 25 → 61 of 220.
+`stop-solid` now prints the original's `AS` 8/0/0 and stops at the wall, but its lines still
+differ by the clock. The remaining `clip-regions` and `wall-regions` differences start where
+the replay clock loses a cycle in a stretch without object prints (pe_n 15 against 16 at TICKS
+144), a harness timing matter; the wall gate change of OV-20261019-clip-detail's addendum of the
+same date accounts for 7 of the `clip-regions` lines (the counts above include it).
+
+Tests: `LevelTopologyTests.LocateRegion_RoomWithAFreeStandingWall_FindsTheRoomNotTheRegionAroundIt`,
+`LevelTopologyTests.TraceRegionLoop_RegionWithAFreeStandingWall_TracesItsBoundary`,
+`WdlRuntimeTests.Tick_ObjectEachTick_CycleOfAPlayerLocateIsGatedByTheRegionBefore`.
+`LevelTopology` skips such walls in `TraceRegionLoop` and `LargestLoop` (`BoundsRegion`), so
+`LOCATE`, actor relocation and the floor mesh all get the outline. `WdlRuntime.Locate` records
+the player's previous region and position; `IsWithinClipDistance` reads it through
+`ClipGateRegion` until the end of the object pass.
