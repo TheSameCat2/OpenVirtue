@@ -316,6 +316,67 @@ public sealed class LevelCollisionWorld
     /// units: the ratio C²·1024/L² and its root each cut, the product rounded
     /// (OV-20261103-startup-clock). Null when the root's argument overflows 32 bits.
     /// </summary>
+    /// <summary>
+    /// Where an actor that walks into a circle (the player) pushes it: straight out from the actor's
+    /// centre to the start-up push-out's distance (<see cref="PushTargetSquared"/>: (c − 1)²/1024 + 102,
+    /// c the summed radii), in the 22.10 arithmetic of
+    /// <see cref="PushOutOfEntities(Vector2, int, float, Func{MapEntity, float}, Func{MapEntity, bool}, out bool, ICollection{AcknexObject}?)"/>,
+    /// with the 4/1024 nudge along an axis the offset has no part on. A 4-wide actor stepping 1.594
+    /// a cycle along x into a 1.2-wide player left it 3289 then 3290 units ahead of its centre and 4
+    /// aside, then 8 (OV-20261019-actor-contact actor-push); a small one walking a player along x
+    /// at an angle left it 17, 38 and 60 aside after 3, 6 and 9 pushes (OV-20261019-proximity-events
+    /// near-actor), which the lateral part scaled with the rest gives exactly (replayed 2026-11-03).
+    /// <c>null</c> when the circle is not within the contact distance; the circle's own position when
+    /// it is on the centre.
+    /// </summary>
+    public static Vector2? PushOutOfEntity(Vector2 position, MapEntity entity, float radius, float entityRadius)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        long px = Raw(position.X);
+        long py = Raw(position.Y);
+        long contact = Raw(Math.Max(0.01f, radius)) + Raw(Math.Max(0, entityRadius));
+        long ax = Raw(entity.X);
+        long ay = Raw(entity.Y);
+        long dx = px - ax;
+        long dy = py - ay;
+        long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
+        if (lengthSquared >= ContactTestSquared(contact))
+        {
+            return null;
+        }
+
+        if (lengthSquared == 0)
+        {
+            return position;
+        }
+
+        double ex;
+        double ey;
+        if (ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact)) is (double ox, double oy))
+        {
+            ex = ax + ox;
+            ey = ay + oy;
+        }
+        else
+        {
+            long step = Raw(Math.Max(0.01f, radius)) / 4;
+            double length = Math.Sqrt((dx * dx) + (dy * dy));
+            ex = px + Math.Floor((step * dx / length) + 0.5);
+            ey = py + Math.Floor((step * dy / length) + 0.5);
+        }
+
+        if (dx == 0)
+        {
+            ex += 4;
+        }
+        else if (dy == 0)
+        {
+            ey += 4;
+        }
+
+        return new Vector2((float)(ex / 1024), (float)(ey / 1024));
+    }
+
     private static (double X, double Y)? ScaleToContact(long dx, long dy, long lengthSquared, long contactSquared)
     {
         long ratio = contactSquared * 1024 / lengthSquared;

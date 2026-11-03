@@ -213,3 +213,39 @@ Re-read of `stop-width` (`OVACX0.TXT`) against the 22.10 walking contact of OV-2
 Settled by OV-20261103-contact-clock: the push is one per step, from where the whole step ends
 (the 8-tick round of that probe gives the same). Re-done from the right start, cycle 8 follows from
 it; the two-steps-ahead fit was a coincidence of the wrong start.
+
+## Addendum: the push itself, re-read from actor-push (2026-11-03, night)
+Re-read of `actor-push` (`OVACX0.TXT`, sha256 `7ac82f97…`) against the replay, no new run. The
+4-wide actor (`SPEED 0.2`, 1632 raw a cycle along −x) walks into the player standing at the origin.
+- **One `N` a cycle, with the pushed position.** The actor's `IF_NEAR` fires once in each pushing
+  cycle and `PLAYER_X/Y` already read the pushed position in it. OpenVirtue fired it twice: once
+  in the actor's move with the old position still in the skills, and once more from the player's
+  own motion, which took the pushed position for a beam and pushed out of the actor again. The
+  push is a move of the player's: the skills are synchronised and the position settled at once.
+- **The push, in 22.10.** The player lands 3289 then 3290 raw units ahead of the actor's centre on
+  x in cycles 15 and 16, and 4 then 8 aside on y. That is the start-up push-out's distance
+  (OV-20261103-startup-clock: (c − 1)²/1024 + 102 with c the summed radii, 3276 here, cut, rooted
+  and rounded as there) applied to the whole offset from the actor's centre, with the "step with no
+  part along the other axis" 4/1024 nudge of OV-20261029-actor-step where the offset has none; the
+  lateral part scales with the rest. The near-actor carrier of OV-20261019-proximity-events, whose
+  small actor walks the player along x at a slight angle, confirms the scaling: 17, 38 and 60 raw
+  aside after 3, 6 and 9 pushes, all three exact (0.017, 0.038, 0.060). The circle-to-contact push
+  OpenVirtue used (3291 to 3292) missed by one to three units and lost the nudge.
+- **Open: the actor's own y.** From cycle 17 the player's y in actor-push runs 12, 16, 20 (+4 a
+  cycle) while OpenVirtue's runs 10, 13, 16 (+3): the pushes agree given the same offset, but the
+  original's actor, following a player 8 raw aside, steps 4 raw in y where OpenVirtue's steps 3
+  (its sine cut to 2/1024 gives 1632 · 2/1024 = 3.2). One more unit of sine precision somewhere in
+  the follow step; left with the actor-step residuals.
+- **At the wall.** With the player 2.78 from the west wall (cycle 24) and from cycle 27 on,
+  pressed against it, the push is refused whole: the player does not move, `N` still fires, and
+  the actor walks on into the player (1.06 apart, its 1.59 step cut to 1.589 once). OpenVirtue
+  slid the player to the wall's clearance; it now refuses a push a wall would stop.
+- **Open: at the wall's edge.** The two cycles between (25 and 26) move the player 318 then 735 raw
+  on x and 8 then 18 on y, from 36 raw off the actor's centre, to rest 1793 raw (1.751) from the
+  wall: neither the quarter-width step of a push from near the centre (307) nor a wall stop at the
+  player's clearance (1279) gives them.
+- Result: actor-push matches 28 of 82 lines (22 before, the first four pushes now exact), near-actor
+  13 of 24 (11); the 1- to 3-unit residuals of the other contact carriers are unchanged.
+  `LevelCollisionWorld.PushOutOfEntity`, `Player.PushAway`, `WdlRuntime.MoveActor`; test
+  `Tick_ActorTargets_PlainActorPushesThePlayerAndFiresNearEveryPushingCycle`.
+

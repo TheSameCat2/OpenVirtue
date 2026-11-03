@@ -327,26 +327,37 @@ public sealed class Player : AcknexObject
 
 
     /// <summary>
-    /// Moves the player straight away from <paramref name="center"/> to
-    /// <paramref name="contactDistance"/> when it is closer, as an actor walking into the player
-    /// does (OV-20261019-actor-contact). Walls and other objects stop the push; the move ignores
-    /// <paramref name="pusher"/>, whose contact hook is the caller's.
+    /// Moves the player straight away from <paramref name="pusher"/>'s centre to the contact distance
+    /// when it is closer, as an actor walking into the player does (OV-20261019-actor-contact), with
+    /// the original's 22.10 push (<see cref="LevelCollisionWorld.PushOutOfEntity"/>). Walls and other
+    /// objects stop the push; the move ignores the pusher, whose contact hook is the caller's.
     /// </summary>
-    /// <returns>Whether the player was within <paramref name="contactDistance"/>.</returns>
-    public bool PushAway(MapEntity pusher, Vector2 center, float contactDistance)
+    /// <returns>Whether the player was within the contact distance.</returns>
+    public bool PushAway(MapEntity pusher, float pusherRadius)
     {
         ArgumentNullException.ThrowIfNull(pusher);
         var position = new Vector2(_position.X, _position.Z);
-        Vector2 offset = position - center;
-        float distance = offset.Length();
-        if (distance >= contactDistance)
+        if (LevelCollisionWorld.PushOutOfEntity(position, pusher, Width, pusherRadius) is not { } target)
         {
             return false;
         }
 
-        Vector2 normal = distance > 1e-6f ? offset / distance : Vector2.UnitX;
-        Vector2 push = center + (normal * contactDistance) - position;
-        MoveHorizontal(push.X, push.Y, pusher, out _);
+        int region = _region;
+        int blockingWalls = _blockingWalls.Count;
+        MoveHorizontal(target.X - position.X, target.Y - position.Y, pusher, out bool wallStopped);
+        if (wallStopped)
+        {
+            // A push a wall would stop is refused whole: pressed against the back wall the player stayed
+            // at 2.78 from it while the actor walked on into it, 1.6 apart (actor-push, cycles 24 on).
+            _position = new Vector3(position.X, _position.Y, position.Y);
+            _region = region;
+            _blockingWalls.RemoveRange(blockingWalls, _blockingWalls.Count - blockingWalls);
+            return true;
+        }
+
+        // The pushed position is a 22.10 one; the move's float sums are put back on that grid, or the
+        // next push's cut toward zero loses a unit (y 12 read as 11.999999).
+        _position = new Vector3(MathF.Round(_position.X * 1024) / 1024, _position.Y, MathF.Round(_position.Z * 1024) / 1024);
         return true;
     }
 
