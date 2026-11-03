@@ -172,12 +172,15 @@ Confirmed for patched V3.963:
 2. **`SKIP_FRAMES` follows `VISIBLE`.** An actor that was not visible in the last drawn frame, is
    outside its `DIST`, has no `FAR` and is more than 20 from the player moves only every
    (`SKIP_FRAMES` + 1)th cycle, counted from its own last move, by that many times the cycle's
-   step. Actors up to 20 away move every cycle whatever their `DIST` (not in the manual). The
+   step; the first move after it stops skipping covers the cycles since its last move too
+   (OV-20261021-distance-refresh addendum, 2026-11-02). Actors up to 20 away move every cycle
+   whatever their `DIST` (not in the manual). The
    distance is the actor's `DISTANCE` (|dx| + |dy|) as last refreshed, not its current one (rule 5).
 3. **A skipped `CAREFULLY` actor's long step is tested at its end only.** It passes when it ends in
    a region the actor may enter, with no wall it may not cross within its half width (plus the
    0.05 clearance) ahead; walls and raised regions in between are jumped. Otherwise it stops 1.05
-   short of the first wall on its way, as a normal step does.
+   short of the first wall on its way, as a normal step does. Revised 2026-11-02 (addendum below): a failed step is tried
+   once more at half its length, and a free-standing wall counts behind the end point too.
 4. **A `BERKELEY` wall runs its `EACH_TICK` while it is visible in the last drawn frame or the
    player is within its `DIST`** (|dx| + |dy| to the nearer vertex, OV-20261019-wall-distance).
    Looking away within `DIST` keeps it running; a wall hidden behind another wall sleeps.
@@ -222,6 +225,9 @@ high for rule 6 on walls and actors (one run; things not tried).
   `Tick_SkipFrames_ZeroMovesUnseenActorsEveryCycle`,
   `Tick_SkipFrames_ActorHiddenBehindAWallInTheConeSkips`,
   `Tick_SkipFrames_LongCarefulStepIsTestedAtItsEndOnly`,
+  `Tick_SkipFrames_LongCarefulStepFailingAtHalfLengthStopsAtTheFirstWall`,
+  `Tick_SkipFrames_LongCarefulStepEndingNearAFreeStandingWallIsRefused`,
+  `Tick_SkipFrames_FirstMoveAfterSkippingCoversTheSkippedCycles`,
   `Tick_ObjectEachTick_BerkeleyWallRunsWhileInViewOrWithinDist`,
   `Tick_ObjectEachTick_BerkeleyWallFollowsTheLastDrawnFrame`.
 - Actor tests whose mover starts behind the player set `SKIP_FRAMES` 0.
@@ -246,3 +252,33 @@ retail level's walls costs 3–13 ms a pass, and no retail script reads them. `R
 object `EACH_TICK` loop. `SKIP_FRAMES` defaults to 5. The
 original prints a cycle's moves one cycle after the `VISIBLE` they followed; OpenVirtue moves
 actors before the global `EACH_TICK` slots, so in OpenVirtue they show in the same cycle.
+
+## Addendum: the end test, round 2 re-read (2026-11-02)
+An oracle-diff replay of round 2 `long-pad` (`OVVAX0.TXT` `f8dea516`) and `long-wall` (`0e1dbfca`)
+showed two moves that rule 3 got wrong, both of the 4.8 walker from y 8 and the 9.6 walker's first
+step in long-pad:
+- **A failed step is tried again at half its length.** In long-pad, 4 → 13.6 (inside the pad)
+  went to 8.799, half the step, and 8 → 12.8 went to 10.399. Only when the half step fails too
+  (8.8 → 18.4 and then 13.6, 10.4 → 15.2 and then 12.8) is the step swept, stopping 1.05 short of
+  the pad (10.951). No quarter step is tried: 8.8 + 2.4 would have passed. Rule 3's table row read
+  these moves from the wrong start point.
+- **A free-standing wall counts in any direction.** In long-wall, 8 → 12.8 ends 0.8 beyond the
+  `IMPASSABLE` wall and went to 10.399 (the half step), while 4 → 13.6 (1.6 beyond it) and
+  23 → 13.4 (1.4 before it) passed. So a wall the actor may not cross whatever its regions
+  (`IMPASSABLE`, or one region on both sides without `PASSABLE`) refuses the step when it lies
+  within the actor's half width (1 here) of the end point, behind it as well as ahead.
+- **Region borders count only ahead, and touching passes.** In long-pad, 10.951 → 20.549 and
+  21.049 → 11.454 end about 0.55 beyond the pad's border and pass. The way walker's step to y 23,
+  exactly its half width from the room's outer wall, passes too (OpenVirtue's half width plus 0.05
+  had refused it, and the half step put the actor at 21.77).
+
+Rule: a skipped `CAREFULLY` step longer than the actor's half width passes when its end lies in a
+region the actor may enter, no free-standing or `IMPASSABLE` wall comes closer than the half width
+to the end point, and no wall the actor may not cross lies closer than the half width ahead of it;
+otherwise the half step is tested the same way; otherwise the step is swept.
+
+Result (`WdlRuntime.TryEndPointCarefulMove`, `MoveActor`): long-pad matches 19 of 67 lines (13
+before), every move but the wall stops (10.949 for 10.951), and 66 of 67 with the wall stop of the
+OV-20261029-actor-events addendum of 2026-11-02; the last line is the run's tail.
+long-wall matches 66 of 67 (19 before) once the room's outline ignores the free-standing wall, a
+separate topology fix; without it the actors there do not move at all.

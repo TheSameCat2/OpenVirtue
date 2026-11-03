@@ -63,7 +63,9 @@ is `round(step·cos θ)` raw units and its Y part `round(step·sin θ)`, where �
 and cos θ and sin θ are themselves cut toward zero to 22.10 (sin 90° is 1023/1024).
 Steps toward a point are a different rule (\|dx\| + \|dy\|, OV-20261029-actor-events). A
 `CAREFULLY` actor whose step has no X (or no Y) part is then moved 4/1024 along that axis, in the
-positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero.
+positive direction, even when a wall stops it. A wall-stopped position is cut to 1/1024 toward zero
+(revised 2026-11-02: it is held 1074/1024 from the wall, and a wall-stopped part under 4/1024
+becomes ±4 too; OV-20261029-actor-events addendum).
 
 ## Addendum: the long step out of view (2026-10-29)
 Bullets skipping frames out of view take six cycles' steps at once. Three of those long steps
@@ -148,3 +150,32 @@ were read again.
 - The harness gained two things for this:
   - it puts printed `TICKS` back on the 1/1024 grid, preferring whole 1/32 ticks;
   - it takes the first sampled cycle's step from a printed `TIME_CORR` column.
+
+## Addendum: the step limit against the player (2026-11-02)
+Round 3 `c-pi` (`OVAST0.TXT` `130f9fb0`) walks a `CAREFULLY` actor −X toward the player at the
+origin, its Y 236–252 raw from the +4 nudges; the contact distance is 1 + `PLAYER_WIDTH` 1.2,
+2252 raw as OpenVirtue holds it. The original's steps from X 2464 are 72, 64, 36, 16 and 8, then
+none (2392, 2328, 2292, 2276, 2268, and 2268 to the end), each a halving of 144 or 128. The rule of
+OV-20261019-actor-contact (the point two steps ahead must clear the contact distance) gives every
+one of them when the distance is the X distance alone: in cycle 63 the 16 is refused (2276 − 32 =
+2244) and the 8 taken (2260); in cycle 64 even the smallest step is refused (2252, and 2250 for a
+step of 144), so a point exactly at the contact distance is refused too. OpenVirtue's circle let the
+16 through (√(2244² + 248²) = 2258) and then crept to 2251 and 2243. A circle of another radius
+does not fit all six steps with a natural constant.
+- The test is not a projection on the step: a follow actor in `OV-20261029-actor-events`
+  `follow-border` (`OVAEV0.TXT` `f667628f`) closes on the player along a 1:2 diagonal and rests at
+  (−1.131, 2.263), more than 2252 raw along Y but 2.53 away in a circle and along its way. The
+  test is the larger of \|dx\| and \|dy\|: a square round the player.
+- After the refusal the original's Y stays at 252. OpenVirtue kept adding 4 a cycle, because it
+  took the nudge from the requested step rather than the step taken.
+
+Rule: a `CAREFULLY` actor's step toward the player passes when max(\|dx\|, \|dy\|) of the point two
+steps ahead exceeds half its width plus `PLAYER_WIDTH`; otherwise it is halved, up to four times.
+The 4/1024 minimum applies to the parts of the step taken, so a refused step gets none.
+
+Implementation: `WdlRuntime.CarefulStepScale`, `MoveActor`; test
+`WdlRuntimeTests.Tick_ActorTargets_CarefulActorTestsThePlayerAlongXOrYAndIsNotNudgedWhenRefused`.
+Result: c-pi matches all 91 lines (65 before), follow-border 111 of 244 (10; its first difference
+is the start-up), and no other carrier changed. A diagonal approach straight at the player, where
+a square and a circle part most, has not been probed.
+

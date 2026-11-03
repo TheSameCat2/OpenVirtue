@@ -120,3 +120,27 @@ The refresh on read after an actor in front moved (see Implementation) is gone. 
 (OV-20261019-clip-contact, trace sha256 `a8c8688c`), an actor's own `EACH_TICK` reads the
 distance from before its move. Its move shows from the next cycle's start, and only when it ends
 within the actor's `CLIP_DIST` border. No carrier of this note changed in the oracle diff.
+
+## Addendum: the push-back distance (2026-11-02)
+The oracle-diff replays of round 2 `bullet` (`OVAEV0.TXT` `75c17977`) and `move-border`
+(`1fc2ce93`) settle the push-back left open above. In raw units (1/1024):
+- bullet, wall at x = 48 (49152): the first `HIT` puts the actor at 48078 (46.951), 1074 from the
+  wall, coming from 48096. From then on it alternates 48082 and 48078 every cycle, whatever
+  `TIME_CORR`: 1070 and 1074 from the wall.
+- move-border, wall at y = −24: the actor stands at −23502 (−22.951), 1074 from the wall, and then
+  alternates −23498 and −23502: 1078 and 1074.
+
+OpenVirtue held 1.05 cut toward zero, 1076 from the wall (46.949, −22.949), and never alternated.
+
+Rule: a wall stops a `CAREFULLY` actor 1074/1024 from it (its half width of 1 plus 50/1024). The
+4/1024 minimum of OV-20261029-actor-step then applies to what is left of a wall-stopped part as
+well: a step held where it stands (a part of 0) moves +4, so into a wall ahead and away from one
+behind, and the next stop pulls it back by 4, which stays (\|−4\| is not under 4). Only half
+width 1 was measured, so whether the 50 is added to the half width, or the stop is one unit nearer
+than the player's rounded clearance, is open.
+
+Implementation: `WdlRuntime.MoveActor` (`ActorWallClearance`, `MinimumCarefulPart`); test
+`WdlActorMotionTests.Tick_CarefulMove_PushingAWallAlternatesBetween1074And1070FromIt`. Result:
+bullet matches all 569 lines (285 before) and move-border all 428 (368). With
+OV-20261019-border-kinds (addendum there) the change flips five carriers to full matches and makes
+no line worse in any carrier.

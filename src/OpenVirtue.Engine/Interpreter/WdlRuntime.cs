@@ -3902,8 +3902,18 @@ public sealed class WdlRuntime :
 
             var start = new Vector2((float)actor.X, (float)actor.Y);
             var step = new Vector2((float)(requestedX * scale), (float)(requestedY * scale));
-            CircleMoveResult result = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion)
-                ? new CircleMoveResult(start + step, endRegion, step, Collided: false, RegionChanged: endRegion != actor.Region)
+            // OV-20261020-view-activity: a skipped long step that fails its end test is tried once
+            // more at half its length before it is swept.
+            Vector2 endStep = step;
+            bool endPointMove = TryEndPointCarefulMove(actor, step.X, step.Y, out int endRegion);
+            if (!endPointMove && _longSkippedStep)
+            {
+                endStep = step / 2;
+                endPointMove = TryEndPointCarefulMove(actor, endStep.X, endStep.Y, out endRegion);
+            }
+
+            CircleMoveResult result = endPointMove
+                ? new CircleMoveResult(start + endStep, endRegion, endStep, Collided: false, RegionChanged: endRegion != actor.Region)
                 : _collisionWorld.Move(
                     start,
                     actor.Region,
@@ -3913,31 +3923,46 @@ public sealed class WdlRuntime :
                     EntityCollisionRadius,
                     static entity => entity["INVISIBLE"] > 0,
                     actor,
-                    wallClearance: Player.WallClearance,
+                    wallClearance: ActorWallClearance,
                     clearanceOnContact: true);
+            double startX = x - requestedX;
+            double startY = y - requestedY;
             actor.X = result.Position.X;
             actor.Y = result.Position.Y;
             UpdateFootHeight(actor);
             if (result.Collided)
             {
-                // OV-20261029-actor-step: where a wall stops the step, the original's position is
-                // the contact point cut to 1/1024 toward zero.
-                actor.X = Math.Truncate(actor.X * 1024) / 1024;
-                actor.Y = Math.Truncate(actor.Y * 1024) / 1024;
+                // OV-20261029-actor-step: where a wall stops the step, the original holds the actor
+                // 1074/1024 from it (OV-20261029-actor-events, bullet and move-border), on the 1/1024 grid.
+                actor.X = Math.Round(actor.X * 1024) / 1024;
+                actor.Y = Math.Round(actor.Y * 1024) / 1024;
             }
 
             // OV-20261029-actor-step: a CAREFULLY step's part under 4/1024 along one axis becomes
             // 4/1024, keeping its sign and positive for none, even when a wall stopped the step:
             // axis-aligned walkers creep 4 units a step, and one drifting back toward its way's line
             // (a part of −1) steps −4 (round 5).
+            // The parts are those of the step taken, after the player shortened it: a step the player
+            // refuses entirely has none and gets no nudge (OV-20261029-actor-step round 3, c-pi).
             const double Nudge = 4.0 / 1024;
-            if (Math.Abs(requestedX) < Nudge - 1e-9 && Math.Abs(requestedY) >= Nudge - 1e-9)
+            double partX = requestedX * scale;
+            double partY = requestedY * scale;
+            if (Math.Abs(partX) < Nudge - 1e-9 && Math.Abs(partY) >= Nudge - 1e-9)
             {
-                actor.X += (requestedX < 0 ? -Nudge : Nudge) - requestedX;
+                actor.X += (partX < 0 ? -Nudge : Nudge) - partX;
             }
-            else if (Math.Abs(requestedY) < Nudge - 1e-9 && Math.Abs(requestedX) >= Nudge - 1e-9)
+            else if (Math.Abs(partY) < Nudge - 1e-9 && Math.Abs(partX) >= Nudge - 1e-9)
             {
-                actor.Y += (requestedY < 0 ? -Nudge : Nudge) - requestedY;
+                actor.Y += (partY < 0 ? -Nudge : Nudge) - partY;
+            }
+
+            // A wall-stopped part takes the same minimum from what is left of it: a step held at the
+            // wall (0) moves 4/1024 into it, and the next stop pulls it back by 4, so the actor
+            // alternates 1074 and 1070 from a wall ahead (1078 behind; OV-20261029-actor-events).
+            if (result.Collided)
+            {
+                actor.X = MinimumCarefulPart(actor.X, startX, partX, Nudge);
+                actor.Y = MinimumCarefulPart(actor.Y, startY, partY, Nudge);
             }
 
             actor.Region = result.Region;
@@ -3984,10 +4009,34 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
+    /// How much further than its half width a wall stops a <c>CAREFULLY</c> actor: 50/1024, which
+    /// holds an actor of half width 1 1074/1024 from the wall (OV-20261029-actor-events, bullet and
+    /// move-border; OV-20261019-border-kinds). Only half width 1 was measured, so whether the 50 is
+    /// added to the half width or the stop is one unit nearer than the player's clearance is open.
+    /// </summary>
+    private const float ActorWallClearance = 50f / 1024;
+
+    /// <summary>
+    /// A <c>CAREFULLY</c> step's part along one axis after a wall stop: a part that was requested at
+    /// 4/1024 or more but came out under it becomes 4/1024 with its sign, positive for none.
+    /// </summary>
+    private static double MinimumCarefulPart(double position, double start, double requested, double minimum)
+    {
+        double part = position - start;
+        if (Math.Abs(requested) < minimum - 1e-9 || Math.Abs(part) >= minimum - 1e-9)
+        {
+            return position;
+        }
+
+        return start + (part < -1e-9 ? -minimum : minimum);
+    }
+
+    /// <summary>
     /// The share of its step a <c>CAREFULLY</c> actor takes toward the player
-    /// (OV-20261019-actor-contact): the position two steps ahead must lie at least the contact
-    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player; otherwise the
-    /// step is halved, up to four times, and with no free step the actor stays.
+    /// (OV-20261019-actor-contact): the position two steps ahead must lie further than the contact
+    /// distance (half the actor's width plus <c>PLAYER_WIDTH</c>) from the player along x or y, a
+    /// square around the player rather than a circle (OV-20261029-actor-step round 3, c-pi);
+    /// otherwise the step is halved, up to four times, and with no free step the actor stays.
     /// </summary>
     private double CarefulStepScale(Actor actor, Player player, double stepX, double stepY)
     {
@@ -3997,7 +4046,7 @@ public sealed class WdlRuntime :
         {
             double dx = actor.X + (2 * scale * stepX) - player.Position.X;
             double dy = actor.Y + (2 * scale * stepY) - player.Position.Z;
-            if ((dx * dx) + (dy * dy) >= contact * contact)
+            if (Math.Max(Math.Abs(dx), Math.Abs(dy)) > contact)
             {
                 return scale;
             }
@@ -4053,10 +4102,11 @@ public sealed class WdlRuntime :
     /// <summary>
     /// A skipped actor's <c>CAREFULLY</c> step (<c>SKIP_FRAMES</c>) longer than its half width is
     /// tested at its end only (OV-20261020-view-activity, long-wall and long-pad): it goes through when the region at its
-    /// end point may be entered (<see cref="ActorCanClimbInto"/>) and no wall the actor may not cross
-    /// lies within its half width and the wall clearance ahead of that point. Walls in between are
-    /// not tested, so the step can jump a wall or a whole raised region. Otherwise the step is swept
-    /// as usual and stops at the first wall. A shorter step is swept: the end test of the step before
+    /// end point may be entered (<see cref="ActorCanClimbInto"/>), no <c>IMPASSABLE</c> or free-standing
+    /// wall comes closer than its half width to that point in any direction, and no wall the actor may
+    /// not cross lies closer than its half width ahead of it (touching passes). Walls in between are
+    /// not tested, so the step can jump a wall or a whole raised region. Otherwise <see cref="MoveActor"/>
+    /// tries the half step, and then sweeps the step as usual, stopping at the first wall. A shorter step is swept: the end test of the step before
     /// covered the walls it can reach. Other things, actors and the player are not tested at the end
     /// either. Steps of actors that are not skipping were not measured and are always swept.
     /// </summary>
@@ -4086,8 +4136,19 @@ public sealed class WdlRuntime :
 
         double endX = actor.X + stepX;
         double endY = actor.Y + stepY;
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((wall["IMPASSABLE"] > 0 || (wall.LeftRegion == wall.RightRegion && wall["PASSABLE"] <= 0)) &&
+                TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by) &&
+                DistanceToSegment(endX, endY, ax, ay, bx, by) < radius)
+            {
+                return false;
+            }
+        }
+
         int current = region;
-        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius + Player.WallClearance))
+        // Touching a wall ahead passes: a way actor's step to a point its half width from a wall goes through.
+        foreach (Wall wall in CrossedWalls(endX, endY, directionX, directionY, radius - 1e-6))
         {
             int other = OtherSide(wall, current);
             if (!ActorCanCross(actor, wall, current, other))
@@ -5328,7 +5389,8 @@ public sealed class WdlRuntime :
     /// <see cref="RefreshEntityDistances"/>) moves only every
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
-    /// (OV-20261019-border-kinds, OV-20261020-view-activity).
+    /// (OV-20261019-border-kinds, OV-20261020-view-activity). The first move after it is lifted
+    /// covers the cycles skipped since the last move too (OV-20261021-distance-refresh).
     /// </summary>
     private int SkipFramesMultiplier(Actor actor)
     {
@@ -5340,8 +5402,10 @@ public sealed class WdlRuntime :
             _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
             IsWithinDist(player, actor))
         {
+            // The first move after skipping covers the cycles skipped since the last one too.
+            int pending = _skippedCycles.GetValueOrDefault(actor);
             _skippedCycles.Remove(actor);
-            return 1;
+            return pending + 1;
         }
 
         int skipped = _skippedCycles.GetValueOrDefault(actor) + 1;

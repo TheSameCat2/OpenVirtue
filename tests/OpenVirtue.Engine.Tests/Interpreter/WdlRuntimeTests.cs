@@ -4070,6 +4070,38 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_ActorTargets_CarefulActorTestsThePlayerAlongXOrYAndIsNotNudgedWhenRefused()
+    {
+        // OV-20261029-actor-step round 3, c-pi: the point two steps ahead must lie more than the
+        // contact distance from the player along x or along y, not in a circle; and a step the
+        // player refuses entirely has no parts, so the 4/1024 nudge stops with it.
+        Level level = LoadWithMap(
+            PushMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 1; IF_NEAR near_push; FLAGS CAREFULLY; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0); // the actor walks from behind the player
+        player.MoveTo(0, 10, 1.5f);
+        Actor pusher = Assert.Single(level.Actors);
+
+        for (int i = 0; i < 30; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        double y = pusher.Y;
+        double x = pusher.X;
+        runtime.Tick(1.0 / 16);
+
+        // 1.5 to the side, a circle would let it come within about 1.6 along x
+        double contact = 1 + player.Width;
+        Assert.InRange(player.Position.X - pusher.X, contact, contact + (2.0 / 16));
+        Assert.Equal(x, pusher.X, 9);
+        Assert.Equal(y, pusher.Y, 9);
+    }
+
+    [Fact]
     public void Apply_PlayerBeamedInsideASolidThing_IsPushedOutRadiallyAndFiresItsNear()
     {
         // OV-20261019-actor-contact, beam-inside: out along the line from the centre, to contact.
