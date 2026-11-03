@@ -169,3 +169,19 @@ Result: turn-refresh matches 171 of 173 lines (83 before), thing-refresh 159 of 
 view-pillar 85 of 87 (57); the rest are the tail of the run and, in thing-refresh, a thing's
 position that the refresh does not explain. clip-contact clip-move-liber gains a line. No other
 carrier changed.
+
+## Addendum: the refresh before the walker's first step (2026-11-03)
+Read from round 2 thing-refresh (`39ce4524`) with the skip-count rule of OV-20261020-view-activity
+(2026-11-03 addendum), no new run. FW gave the standing walker in front its speed at cycle 82; the
+sampler's `RULE` set `SPEED` from cycle 83, every `DISTANCE` refreshed at 84, and the walker first
+stepped at 89 (printed 90). The walker was due (its skip count had run on while it stood) and moved
+in cycle 83: a way actor's first move only arrives at the point it stands on. That move, with no
+displacement, is what refreshed the distances; the step five cycles later refreshed them again. So
+the trigger is an actor's move in front of the player, whether or not it leaves its place; a
+script's `SET` of a position is not a move (thing-move, set-actor). near-hook's two walkers on the
+±Y axes refreshed nothing: on the player's plane, not in front (view-activity addendum).
+
+Implementation: `WdlRuntime.NoteFrontMove` is told of every move, not only a displacement. Test:
+`WdlViewActivityTests.Tick_SkipFrames_AStandingActorsFirstMoveInFrontRefreshesEveryDistance`. Result:
+near-hook and thing-refresh match in full; turn-refresh keeps one `T6` line 1/32 tick off, the
+harness's clock after its last sample.

@@ -448,7 +448,10 @@ First targets:
 ### Status (2026-11-03)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces and saves; 428 of 661 match in full, 421 of the earlier 640 (2026-11-03,
+against the original's traces and saves; 445 of 661 match in full (2026-11-03, after the standing
+actor's skip count, the player's plane and the arrival that refreshes of OV-20261020-view-activity and
+OV-20261021-distance-refresh: 17 more carriers, 1307 more lines, none lost). Before that 428 of 661,
+421 of the earlier 640 (2026-11-03,
 after OV-20261103-contact-clock: one push per step at its end, things' contact term, the seconds
 clock on real time; 21 new carriers over three rounds, 7 of them in full). Before that 419 of 640 (after the walking
 contact, the short push and the (c − 1)² contact term of OV-20261029-overlap and

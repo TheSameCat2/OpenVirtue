@@ -356,3 +356,34 @@ are not measured this finely and stay as they were.
 Implementation: `ViewTest.IntersectsScreen`. Test:
 `ViewTestTests.IsSpriteVisible_AtTheScreensBottomRow_NeedsARowCentre`. With this and the way
 arrival of OV-20261029-actor-events (same day), `way` matches in full (616 lines).
+
+## Addendum: the skip count of a standing actor, and the player's plane (2026-11-03)
+Read from the round 6-9 traces (`walk-in` `57cdd35f`, `walk-out` `6433626e`, `dist-in` `41cdf5b8`,
+`ab-noread` `ae75b7f0`, the `pair-*` runs) against skip-phase (`5b857dfa`) and view-occlude
+(`c83636bc`), no new run. Every round 6-9 actor is declared `SPEED 0` and given 0.1 a cycle by the
+sampler's `RULE` from the trace window's first cycle; the earlier rounds' actors have their speed
+from the start.
+- **A far actor given a speed.** In every such carrier, whatever its start-up cadence, the far
+  actors first stepped in the window's 7th cycle (printed in the 8th: −22 → −21.402, six steps of
+  102 units), then every 6th. An actor with a speed from the start steps at engine cycles 6, 12, …
+  (skip-phase and view-occlude replay only with the standing arrival consuming cycle 6). So a
+  standing actor's skip count runs on but is never consumed: it is due when the speed comes, moves
+  in that cycle (a way actor's first move only arrives at the point it stands on,
+  OV-20261029-actor-step round 5) and skips five more. OpenVirtue had let the zero-speed cycles
+  consume the count, so the phase followed the start-up and the first step came in the 9th cycle
+  (the open question of OV-20261103-startup-clock).
+- **A near actor given a speed.** It arrives in the window's first cycle and steps from the second
+  (walk-out, dist-out, edge-along: first change printed in cycle 3).
+- **The player's plane.** walk-in's walkers on the ±Y axes (x = 0, the player facing +X) refreshed
+  nothing: the one at −19.614 kept skipping. OpenVirtue's player angle is a float, 4.4 × 10⁻⁸
+  radians here, which put the +Y walker a millionth deep and in front. The depth is a 22.10 value:
+  under one unit is on the plane.
+
+Implementation: `WdlRuntime.MoveActorTowardTarget` returns before clearing the count when the actor
+has no `SPEED` or `VSPEED`; `NoteFrontMove` cuts the depth to 1/1024. Tests:
+`WdlViewActivityTests.Tick_SkipFrames_StandingActorWithoutASpeedStaysDueAndMovesOnceGivenOne`,
+`Tick_SkipFrames_AWalkerOnThePlayersPlaneRefreshesNothing`. Result: 31 of this probe's 38 carriers
+match in full (16 before): rounds 7, 8 and 9 entirely, walk-in, walk-out, edge-along-y and
+edge-across. Left: berkeley-near, cone-edge, occlude-edge (one line each at a view edge), the
+range-shape `DIST 40` actor's step, edge-along's eight-actor push-out, and view-occlude and
+view-pillar.
