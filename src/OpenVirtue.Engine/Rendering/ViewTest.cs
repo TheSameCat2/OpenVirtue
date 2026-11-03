@@ -245,6 +245,12 @@ public sealed class ViewTest
     }
 
     /// <summary>Tests a wall, sampled along the part of it inside the cone, between its regions' lowest floor and highest ceiling.</summary>
+    /// <summary>
+    /// How many wall sample points have been tested against the screen so far: the cost of
+    /// <see cref="IsWallVisible"/>, which a caller spreading many walls over frames can budget.
+    /// </summary>
+    public long WallSampleTests { get; private set; }
+
     public bool IsWallVisible(Viewer viewer, Wall wall)
     {
         ArgumentNullException.ThrowIfNull(wall);
@@ -254,6 +260,7 @@ public sealed class ViewTest
             return false;
         }
 
+
         (double bottom, double top) = WallSpan(_level, wall);
         double length = Math.Sqrt(((bx - ax) * (bx - ax)) + ((by - ay) * (by - ay))) * (u1 - u0);
         int samples = Math.Clamp((int)Math.Ceiling(length), 2, MaxWallSamples);
@@ -262,6 +269,7 @@ public sealed class ViewTest
             double u = u0 + ((u1 - u0) * i / (samples - 1));
             double px = ax + ((bx - ax) * u);
             double py = ay + ((by - ay) * u);
+            WallSampleTests++;
             if (Sees(viewer, px, py, bottom, top, wall, -1))
             {
                 return true;

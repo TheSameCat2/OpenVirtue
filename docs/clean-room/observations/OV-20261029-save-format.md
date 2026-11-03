@@ -80,3 +80,20 @@ OpenVirtue adds the distance since the last cycle, cut to 1/1024, at the start o
 content root); a full `LOAD` without an OpenVirtue snapshot imports an original save's `GLOBAL` and
 `PLAYER` skills and so the player's position (`RuntimeHost.ImportOriginalSave`). Full `SAVE`s are
 still OpenVirtue's JSON. `ovtool oracle diff` compares save bodies: the `SAVE_INFO` ones match.
+
+## Addendum (2026-11-03): `SEEN` keeps what every frame showed
+full-1 and full-2 beam the player from the start (0, 0) to (5, 3) and (6, 3) and save two cycles
+later. Their saves hold 0x202 (`SEEN` without `VISIBLE`) for the west wall behind the player, and
+in full-2 for the north wall too: walls the start position showed (the save-body base carrier,
+same room, saves 0x602 for both) and the beamed position no longer does. OpenVirtue tested the
+walls' view only as it saved (or once a script read `SEEN`), so it wrote 0x002. Rule: `SEEN` is set
+in every frame a wall is on the screen and never cleared; `VISIBLE` is the last frame's. The engine
+now tests the walls not yet seen every frame, in map order from where the last frame stopped,
+within a budget of 512 wall sample tests a frame (`WdlRuntime.AccumulateWallsSeen`,
+`ViewTest.WallSampleTests`): a probe level's walls are all tested each frame; a retail level
+(apathy: 5900 walls, 1200 in the cone, 15000 sample tests a frame, 200 ms a frame when all are
+tested) spreads them over frames, so `SEEN` may lag a few frames there. `ovtool level bench`
+times headless frames. With it the two saves' object sections match; their skills still differ by
+one frame (the save a cycle early, as flag-sensitive's is a cycle late: the start-up plan from the
+save's `TOTAL_FRAMES` alone cannot place the carrier's `WAITT 16` end).
+

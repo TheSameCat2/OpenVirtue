@@ -18,6 +18,7 @@ dotnet run --project tools/OpenVirtue.Tools -- save capture <archive.wrs> <file.
 dotnet run --project tools/OpenVirtue.Tools -- save play <archive.wrs> <main.wdl> [--ticks N]     # runs a level headless (0.25 ticks a cycle); its full SAVEs also land beside the archive in the original's format
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
 dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
+dotnet run --project tools/OpenVirtue.Tools -- level bench  <archive.wrs> [frames] [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
@@ -37,6 +38,8 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
 - `wav info` — print a sound's channels/rate/bit-depth and duration.
 - `wdl info` — parse a script and summarize its top-level items by keyword.
 - `level info` — load a whole level (WDL + WMP) and report its geometry, placements, and skills.
+- `level bench` — run a level headless (no window, no sound) for a number of frames at 60 Hz and
+  print the time per frame: a check on the engine's per-frame cost on a retail level.
 - `oracle prepare scheduler-if-start-cycle` — create a local-only DOSBox-X probe
   folder under `_research/oracle-runs/` for measuring `IF_START` versus first
   `EACH_TICK` dispatch. Generated WDL/WMP/WRS/runtime/display-asset files are

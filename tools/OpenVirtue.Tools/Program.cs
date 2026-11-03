@@ -4,6 +4,7 @@
 using System.Text;
 using System.Numerics;
 using OpenVirtue.Engine;
+using OpenVirtue.Host;
 using OpenVirtue.Formats.Pcx;
 using OpenVirtue.Formats.Save;
 using OpenVirtue.Formats.Wav;
@@ -601,6 +602,29 @@ internal static class Cli
 
                 return 0;
 
+            case "bench":
+            {
+                // Runs the level headless for a number of frames at 60 Hz and times them: a check on the
+                // per-frame cost of the engine's models (view tests, distances) on a retail level.
+                int frames = args.Length >= 3 ? int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) : 600;
+                string benchWdl = args.Length >= 4 ? args[3] : Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
+                using RuntimeHost host = RuntimeHost.OpenArchive(
+                    archivePath, benchWdl, new OracleReplay.HeadlessWindow(), new OracleReplay.HeadlessInput(), new NullAudioSink(), new OracleReplay.HeadlessRender(), 1);
+                host.FrameClock = () => 1.0 / 60;
+                host.Boot();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                int ran = 0;
+                while (ran < frames && !host.ExitRequested)
+                {
+                    host.Frame(present: false);
+                    ran++;
+                }
+
+                watch.Stop();
+                Console.WriteLine($"{Path.GetFileName(archivePath)}: {ran} frames in {watch.Elapsed.TotalMilliseconds:F0} ms ({watch.Elapsed.TotalMilliseconds / Math.Max(1, ran):F2} ms/frame)");
+                return 0;
+            }
+
             default:
                 return Usage($"Unknown level subcommand '{verb}'.");
         }
@@ -721,6 +745,7 @@ internal static class Cli
               ovtool wdl info <script.wdl>
               ovtool wdl coverage <archive-or-dir> [main.wdl]
               ovtool level info <archive.wrs> [main.wdl]
+              ovtool level bench <archive.wrs> [frames] [main.wdl]   # time headless frames
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
               ovtool oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
               ovtool oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]

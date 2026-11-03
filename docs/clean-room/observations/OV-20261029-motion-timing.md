@@ -114,3 +114,16 @@ harness cannot recover).
   the line count says nothing about `RANDOM`'s distribution. Outside the replay the runtime still
   draws unseeded. Tests: `WdlRuntimeRandomTests`,
   `RuntimeHostFrameClockTests.OpenArchive_RandomSeed_DrawsTheSameRandomOnEveryRun`.
+
+## Replay notes (2026-11-03, night)
+- **A loop's `EACH_CYCLE` runs with `CYCLE` back at 1.** In round2 anim-delay and anim-delay8
+  (`OVMOT0.TXT`, sha256 `621ee562`, `42efe866`) every `E` line, printed by the thing's `EACH_CYCLE`
+  in the scheduler cycle the last phase ends, reads `MY.CYCLE` 1, while the `A` line of its
+  `EACH_TICK` earlier in the same scheduler cycle still reads the last phase (3, or 2). OpenVirtue ran
+  `EACH_CYCLE` and then wrapped `CYCLE`, so its `E` lines read the last phase. Rule: at the end of a
+  looping run the engine sets `CYCLE` 1 (and queues the first phase's texture sound), then runs
+  `EACH_CYCLE`, then fixes the new loop's step and `RANDOM` factor; a `ONESHOT` still runs its hook
+  with `CYCLE` at the last phase and `PLAY` clear. With it anim-delay and anim-delay8 match in full
+  (158 and 217 lines); anim-random still differs by its `RANDOM` draws. 13 of 14 carriers.
+  `WdlRuntime.AdvanceAnimationTarget`.
+

@@ -992,6 +992,11 @@ internal static class OracleReplay
         private const double Epsilon = 0.0005;
         private readonly double _typical = Median(cycleTicks) ?? fallbackTicks;
 
+        // The shortest sampled cycle: a counter that counts every cycle has frame-long ones somewhere
+        // in the run, even where its rate changed and the median step grew (border-climb ceil-4 ran
+        // at 8 ticks a cycle, then at 60 Hz).
+        private readonly double _shortest = ShortestGap(cycleTicks) ?? fallbackTicks;
+
         // DOSBox-X's rate drifts within a run, so the start-up runs at the first sampled cycles' rate,
         // or at the step the first sample's own TIME_CORR column gives (FirstCycleStep).
         private readonly double _startup = firstStep ?? (cycleTicks.Count >= 3 ? Median([cycleTicks[0], cycleTicks[1], cycleTicks[2]]) : null) ?? Median(cycleTicks) ?? fallbackTicks;
@@ -1071,10 +1076,10 @@ internal static class OracleReplay
             if (_next < cycleTicks.Count)
             {
                 // A gap of more than a few typical steps is a sampler that skipped cycles, unless a
-                // counter placed every sample one frame apart (its typical step a frame's, at most a
+                // counter placed every sample one frame apart (its shortest step a frame's, at most a
                 // tick; a counter of WAITT 8 loops steps 8): then it is one long frame of the original's.
                 double gap = cycleTicks[_next] + Offset - ticks;
-                if (gap <= 4 * _typical || (consecutive && _typical <= 1))
+                if (gap <= 4 * _typical || (consecutive && _shortest <= 1))
                 {
                     step = gap;
                 }
@@ -1113,6 +1118,21 @@ internal static class OracleReplay
             steps = Math.Max(1, steps);
             int step = left / steps; // the first steps take the floor, the last ones the extra unit
             return step * unit;
+        }
+
+        private static double? ShortestGap(IReadOnlyList<double> ticks)
+        {
+            double? shortest = null;
+            for (int i = 1; i < ticks.Count; i++)
+            {
+                double gap = ticks[i] - ticks[i - 1];
+                if (gap > 0 && (shortest is null || gap < shortest))
+                {
+                    shortest = gap;
+                }
+            }
+
+            return shortest;
         }
 
         /// <summary>The median of the last <paramref name="gaps"/> steps between samples.</summary>
