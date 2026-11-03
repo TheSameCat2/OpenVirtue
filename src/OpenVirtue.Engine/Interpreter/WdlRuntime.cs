@@ -3642,11 +3642,19 @@ public sealed class WdlRuntime :
             return;
         }
 
+        // OV-20261020-view-activity rounds 6-9 (re-read 2026-11-03): an actor without a speed makes no
+        // move, so its skip count is not consumed and it stays due. The standing way actors given a
+        // speed in the trace window's first cycle all moved in that cycle (arriving at the point they
+        // stood on) and took their first skipped step in its 7th, whatever the start-up before it.
+        if (actor["SPEED"] <= 0 && actor["VSPEED"] <= 0)
+        {
+            return;
+        }
+
+        _skippedCycles.Remove(actor);
+
         timeCorrection = cycleCorrection * cycles;
         _longSkippedStep = cycles > 1;
-        double startX = actor.X;
-        double startY = actor.Y;
-
         string targetState = followsWay ? $"WAY:{way!.Name}" : target!;
         bool targetChanged = !_actorTargetStates.TryGetValue(actor, out string? previousTarget) ||
                              !previousTarget.Equals(targetState, StringComparison.OrdinalIgnoreCase);
@@ -3664,7 +3672,7 @@ public sealed class WdlRuntime :
             }
 
             _arrivedTargets.Remove(actor);
-            NoteFrontMove(actor, startX, startY);
+            NoteFrontMove(actor);
             return;
         }
 
@@ -3691,7 +3699,7 @@ public sealed class WdlRuntime :
             _arrivedTargets.Remove(actor);
         }
 
-        NoteFrontMove(actor, startX, startY);
+        NoteFrontMove(actor);
     }
 
     private bool AdvanceActorWay(Actor actor, LevelWay way, double timeCorrection)
@@ -5480,17 +5488,22 @@ public sealed class WdlRuntime :
     /// then: in clip-move a FOLLOW actor read 9 in the cycle that took it to 7.406, and a WAY actor's
     /// move that ended 11.563 away, outside the border 10, refreshed nothing (OV-20261019-clip-contact).
     /// </summary>
-    private void NoteFrontMove(Actor actor, double startX, double startY)
+    private void NoteFrontMove(Actor actor)
     {
-        if ((actor.X == startX && actor.Y == startY) || GetObject("player") is not Player player)
+        if (GetObject("player") is not Player player)
         {
             return;
         }
 
+        // The move itself counts, not a displacement: a standing way actor's first move, which only
+        // arrives at its point, refreshed every DISTANCE two cycles before it stepped
+        // (OV-20261021-distance-refresh thing-refresh FW, re-read 2026-11-03). The depth is a 22.10
+        // value, so a walker on the player's own plane (the float angle's 4e-8 radians leave it a
+        // millionth deep) is not in front (OV-20261020-view-activity walk-in, near-hook).
         double angle = GetSkill("PLAYER_ANGLE");
         double dx = actor.X - player.Position.X;
         double dy = actor.Y - player.Position.Z;
-        double depth = (dx * Math.Cos(angle)) + (dy * Math.Sin(angle));
+        double depth = Math.Truncate(((dx * Math.Cos(angle)) + (dy * Math.Sin(angle))) * 1024) / 1024;
         _frontActorMoved |= depth > 0 &&
                             (RegionAt(player.Region) is not { } playerRegion ||
                              Math.Abs(dx) + Math.Abs(dy) < ClipBorder(actor, playerRegion));
@@ -5528,7 +5541,9 @@ public sealed class WdlRuntime :
     /// (<c>SKIP_FRAMES</c> + 1)th cycle, counted from its own last move, by that many times the
     /// cycle's <c>TIME_CORR</c>; <c>FAR</c> (p.71) or <c>SKIP_FRAMES</c> 0 lifts it
     /// (OV-20261019-border-kinds, OV-20261020-view-activity). The first move after it is lifted
-    /// covers the cycles skipped since the last move too (OV-20261021-distance-refresh).
+    /// covers the cycles skipped since the last move too (OV-20261021-distance-refresh). The count
+    /// is cleared by the caller once the actor makes its move (<see cref="MoveActorTowardTarget"/>),
+    /// so an actor due to move but without a speed stays due.
     /// </summary>
     private int SkipFramesMultiplier(Actor actor)
     {
@@ -5541,9 +5556,7 @@ public sealed class WdlRuntime :
             IsWithinDist(player, actor))
         {
             // The first move after skipping covers the cycles skipped since the last one too.
-            int pending = _skippedCycles.GetValueOrDefault(actor);
-            _skippedCycles.Remove(actor);
-            return pending + 1;
+            return _skippedCycles.GetValueOrDefault(actor) + 1;
         }
 
         int skipped = _skippedCycles.GetValueOrDefault(actor) + 1;
@@ -5553,7 +5566,6 @@ public sealed class WdlRuntime :
             return 0;
         }
 
-        _skippedCycles.Remove(actor);
         return skip + 1;
     }
 

@@ -184,7 +184,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `SEEN` once seen.
   Twenty-one DOSBox-X launches (seventeen usable); implemented in `ViewTest` and `WdlRuntime`
   (ADR-0010). The screen's top and bottom are half a row inside its edges: a sprite must cover a
-  row's centre (2026-11-03 addendum, read from actor-events `way`).
+  row's centre (2026-11-03 addendum, read from actor-events `way`). A standing actor's skip count
+  runs on unconsumed, so it moves the moment it gets a speed and skips from there; a walker on the
+  player's own plane (depth under 1/1024) is not in front (2026-11-03 addendum).
 
 ## Distance refresh (2026-10-21 — confirmed and implemented)
 
@@ -193,7 +195,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   view changes (a walk or beam, a turn, a tilt, the eye height, `PLAYER_ARC`) or an actor in front
   of the player walks; a script's `SET` of a thing's or actor's position refreshes nothing, its own
   `DISTANCE` included. A region is `VISIBLE` while some of its floor, ceiling or walls is on the
-  screen, and keeps `SEEN`. Six DOSBox-X runs; implemented in `ViewTest` and `WdlRuntime`.
+  screen, and keeps `SEEN`. Six DOSBox-X runs; implemented in `ViewTest` and `WdlRuntime`. A
+  standing way actor's first move, which only arrives at its point, refreshes like a step
+  (2026-11-03 addendum: thing-refresh's refresh before the first step).
 
 ## Print output (2026-10-29 — confirmed from existing runs and implemented)
 

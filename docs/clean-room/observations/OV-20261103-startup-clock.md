@@ -125,8 +125,10 @@ residual open.
 - **Slow start-ups.** A start-up that renders at about 2 frames a tick cannot be planned from later
   samples.
 - **view-activity `pair-*`.** With the planned start-up, the far actors' first skipped move comes
-  two cycles later than the original's (cycle 10 against 8), where it came three later before. The
-  skip schedule during the start-up is not settled.
+  two cycles later than the original's (cycle 10 against 8), where it came three later before.
+  Answered by OV-20261020-view-activity (2026-11-03 addendum): those actors stand without a speed
+  until the trace window, and a standing actor's skip count is never consumed, so the window's
+  first cycle is its move and the step comes six cycles later whatever the start-up.
 
 ## Tests To Add Or Update
 - `OracleTraceTests.StartupFrames_SixtyHertzSamples_RunTheirCadenceBackToCycleOne` (clock-1 and

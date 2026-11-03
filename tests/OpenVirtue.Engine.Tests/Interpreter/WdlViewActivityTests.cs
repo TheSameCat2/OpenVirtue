@@ -66,6 +66,32 @@ public sealed class WdlViewActivityTests
         Assert.Equal(0, mover["VISIBLE"]);
     }
 
+    // The room of Map with the mover's way leading away from the player.
+    private const string WayMap =
+        "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+        "REGION room 0 16;#0\n" +
+        "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+        "ACTOR mover 0 0 0 0;#4\nWAY path 0 0 -30 0;#5\nPLAYER_START 40 0 0 0;#6";
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(9)]
+    [InlineData(50)]
+    public void Tick_SkipFrames_StandingActorWithoutASpeedStaysDueAndMovesOnceGivenOne(int standingCycles)
+    {
+        // OV-20261020-view-activity rounds 6-9 (dist-in, ab-noread, pair-*): way actors declared SPEED 0
+        // and given a speed in the trace window's first cycle took their first skipped step in its 7th
+        // cycle, whatever the start-up before it: an actor without a speed makes no move, so its skip
+        // count is never consumed; given a speed, it moves at once (arriving at the point it stands on)
+        // and skips from there.
+        (WdlRuntime runtime, Actor mover, _) = Create("ACTOR mover { TEXTURE moverTex; TARGET path; SPEED 0; DIST 1; }", WayMap);
+        Assert.All(Positions(runtime, mover, standingCycles), x => Assert.Equal(0, x));
+
+        mover["SPEED"] = 1;
+
+        Assert.Equal([0, 0, 0, 0, 0, 0, -6, -6, -6, -6, -6, -6, -12], Positions(runtime, mover, 13));
+    }
+
     [Fact]
     public void Tick_SkipFrames_FirstMoveAfterSkippingCoversTheSkippedCycles()
     {
@@ -147,6 +173,56 @@ public sealed class WdlViewActivityTests
         // A move of 3 to -19 at cycle 6, with the pacer's; refreshed, the walker moves every cycle from then on.
         Assert.Equal([-22, -19, -18.5, -18, -17.5], positions[4..]);
     }
+
+    [Fact]
+    public void Tick_SkipFrames_AWalkerOnThePlayersPlaneRefreshesNothing()
+    {
+        // OV-20261020-view-activity round 6, walk-in, and OV-20261021-distance-refresh near-hook: actors
+        // walking in on the player's own plane (x = 0, the player facing +X) never refreshed the
+        // distances; a far walker kept skipping past 20. The depth is a 22.10 value, so the float
+        // angle's few hundred-millionths of a radian leave such a walker on the plane.
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; } ACTOR pacer { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; }",
+            PlaneWalkerMap);
+        runtime.SetSkill("PLAYER_ANGLE", 4.4e-8);
+
+        List<double> positions = Positions(runtime, walker, 18);
+
+        Assert.Equal([-22, -22, -22, -22, -22, -19, -19, -19, -19, -19, -19, -16, -16, -16, -16, -16, -16, -13], positions);
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_AStandingActorsFirstMoveInFrontRefreshesEveryDistance()
+    {
+        // OV-20261021-distance-refresh round 2, thing-refresh FW: the standing way actor in front of the
+        // player was given a speed at cycle 82, every DISTANCE refreshed at 84, and it first stepped at
+        // 90: its move of cycle 83, which only arrived at the point it stood on, counts as a move in
+        // front, like the step itself.
+        (WdlRuntime runtime, Actor walker, Level level) = Create(
+            "ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 0.5; DIST 1; } ACTOR pacer { TEXTURE moverTex; TARGET post; SPEED 0; DIST 1; }",
+            FrontWayMap);
+        Assert.Equal(-19, Positions(runtime, walker, 6)[^1]); // one skipped move of 3; refreshed distance still 22
+
+        level.Actors[1]["SPEED"] = 1;
+
+        // The pacer arrives at its point in the next cycle (no step); the refresh shows in the cycle after,
+        // where the walker, now 19 as refreshed, covers its skipped cycle and then moves every cycle.
+        Assert.Equal([-19, -18, -17.5], Positions(runtime, walker, 3));
+    }
+
+    // WalkerMap with the pacer on the player's plane at (0, 30), walking along -Y toward it.
+    private const string PlaneWalkerMap =
+        "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+        "REGION room 0 16;#0\n" +
+        "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+        "ACTOR walker -22 0 0 0;#4\nACTOR pacer 0 30 270 0;#5\nPLAYER_START 0 0 0 0;#6";
+
+    // WalkerMap with the pacer standing on the first point of a way in front of the player's plane.
+    private const string FrontWayMap =
+        "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+        "REGION room 0 16;#0\n" +
+        "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+        "ACTOR walker -22 0 0 0;#4\nACTOR pacer 10 30 90 0;#5\nWAY post 10 30 10 26;#6\nPLAYER_START 0 0 0 0;#7";
 
     [Fact]
     public void Tick_SkipFrames_APlayerMoveRefreshesEveryDistance()
