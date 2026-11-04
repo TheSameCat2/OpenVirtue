@@ -333,9 +333,17 @@ public sealed class Player : AcknexObject
     /// objects stop the push; the move ignores the pusher, whose contact hook is the caller's.
     /// </summary>
     /// <returns>Whether the player was within the contact distance.</returns>
-    public bool PushAway(MapEntity pusher, float pusherRadius)
+    public bool PushAway(MapEntity pusher, float pusherRadius) => PushAway(pusher, pusherRadius, out _);
+
+    /// <summary>
+    /// As <see cref="PushAway(MapEntity, float)"/>, telling whether a wall refused the push
+    /// (<paramref name="wallStopped"/>): the player then stays where it was before its own motion
+    /// this cycle, as <see cref="Interpreter.WdlPlayerMotion"/> restores it.
+    /// </summary>
+    public bool PushAway(MapEntity pusher, float pusherRadius, out bool wallStopped)
     {
         ArgumentNullException.ThrowIfNull(pusher);
+        wallStopped = false;
         var position = new Vector2(_position.X, _position.Z);
         if (LevelCollisionWorld.PushOutOfEntity(position, pusher, Width, pusherRadius) is not { } target)
         {
@@ -344,7 +352,7 @@ public sealed class Player : AcknexObject
 
         int region = _region;
         int blockingWalls = _blockingWalls.Count;
-        MoveHorizontal(target.X - position.X, target.Y - position.Y, pusher, out bool wallStopped);
+        MoveHorizontal(target.X - position.X, target.Y - position.Y, pusher, out wallStopped);
         if (wallStopped)
         {
             // A push a wall would stop is refused whole: pressed against the back wall the player stayed

@@ -4290,12 +4290,20 @@ public class WdlRuntimeTests
         player.MoveTo(0, 4, 0);
         Actor pusher = Assert.Single(level.Actors);
 
-        runtime.Tick(1.0 / 16); // the actor at 1, 3 from the player: no contact
+        // The push is the player's own motion after the object pass (clip-contact rounds 4–5): the
+        // host runs WdlPlayerMotion.Apply after every Tick.
+        void Cycle()
+        {
+            double timeCorrection = runtime.Tick(1.0 / 16);
+            WdlPlayerMotion.Apply(runtime, player, timeCorrection);
+        }
+
+        Cycle(); // the actor at 1, 3 from the player: no contact
         Assert.Equal(0, runtime.GetSkill("near_count"));
         Assert.Equal(4, player.Position.X, 3);
 
-        runtime.Tick(1.0 / 16);
-        runtime.Tick(1.0 / 16);
+        Cycle();
+        Cycle();
         Assert.True(MapEntitySizing.TryGetSize(level, pusher, out MapEntitySize size));
         Assert.Equal(2, size.Width);
         Assert.Equal(3, pusher.X, 3);
@@ -4306,6 +4314,95 @@ public class WdlRuntimeTests
         Assert.Equal(3 + (2273.0 / 1024), player.Position.X, 4);
         Assert.Equal(8.0 / 1024, player.Position.Z, 4);
         Assert.Equal(2, runtime.GetSkill("near_count"));
+    }
+
+    private const string PushWallMap =
+        "VERTEX 6 -4 0;#0\nVERTEX 6 4 0;#1\nREGION room 0 10;#0\nWALL east 0 1 0 0 0 0;#0\nACTOR pusher 0 0 0 0;#0\nPLAYER_START 4 0 0 0;#1";
+
+    private static void HostCycle(WdlRuntime runtime, Player player)
+    {
+        double timeCorrection = runtime.Tick(1.0 / 16);
+        WdlPlayerMotion.Apply(runtime, player, timeCorrection);
+    }
+
+    [Fact]
+    public void Apply_PlayerStepTowardAnActorInsideIt_IsHeld()
+    {
+        // OV-20261019-clip-contact rounds 4–5 (long-step-into, clip-move-liber): the push is the
+        // player's own motion. An actor's step that ends inside the player pushes nothing in its
+        // turn; a step of the player's toward that actor is then held whole, and the actor's
+        // IF_NEAR fires.
+        Level level = LoadWithMap(
+            PushMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 0; IF_NEAR near_push; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        player.MoveTo(0, 4, 0);
+        Actor pusher = Assert.Single(level.Actors);
+        HostCycle(runtime, player); // the player settles (no start-up push-out later)
+        pusher["SPEED"] = 3.5;
+        runtime.SetSkill("PLAYER_VX", -2); // toward the actor
+
+        HostCycle(runtime, player); // the actor steps 3.5, to 0.5 from the player
+
+        Assert.Equal(3.5, pusher.X, 3);
+        Assert.Equal(4, player.Position.X, 3);
+        Assert.Equal(0, player.Position.Z, 3);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+    }
+
+    [Fact]
+    public void Apply_PlayerStepAwayFromAnActorInsideIt_IsPushedFromWhereTheStepEnds()
+    {
+        // long-step-walk: the player walking away reads the push's position exactly; its own step is
+        // taken first (the push's lateral part then scales the step's 4/1024 nudge aside).
+        Level level = LoadWithMap(
+            PushMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 0; IF_NEAR near_push; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        player.MoveTo(0, 4, 0);
+        Actor pusher = Assert.Single(level.Actors);
+        HostCycle(runtime, player);
+        pusher["SPEED"] = 3.5;
+        runtime.SetSkill("PLAYER_VX", 0.5); // away from the actor
+
+        HostCycle(runtime, player);
+
+        // The push distance from the actor (within a unit, the step's nudge aside tilting the line of centres), not that plus the step.
+        Assert.Equal(3.5 + (2273.0 / 1024), player.Position.X, 2);
+        Assert.True(player.Position.Z > 0);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
+    }
+
+    [Fact]
+    public void Apply_PushAWallRefuses_RestoresTheCyclesStart()
+    {
+        // long-step-into at the east wall: the player's step into the wall (with the wall's 4/1024
+        // nudge) is undone when the actor's push behind it is refused by the wall.
+        Level level = LoadWithMap(
+            PushWallMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 0; IF_NEAR near_push; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        player.MoveTo(0, 4.7f, 0);
+        Actor pusher = Assert.Single(level.Actors);
+        HostCycle(runtime, player);
+        Assert.Equal(4.7, player.Position.X, 3);
+        pusher["SPEED"] = 4.3;
+        runtime.SetSkill("PLAYER_VX", 1); // into the wall at x = 6
+
+        HostCycle(runtime, player); // the actor steps to 4.3, 0.4 behind the player; the push would go through the wall
+
+        Assert.Equal(4.7, player.Position.X, 3);
+        Assert.Equal(0, player.Position.Z, 3);
+        Assert.Equal(1, runtime.GetSkill("near_count"));
     }
 
     [Fact]
