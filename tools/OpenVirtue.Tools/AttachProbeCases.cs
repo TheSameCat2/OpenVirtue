@@ -182,7 +182,29 @@ internal static class AttachProbeCases
             "TEXTURE at_x { BMAPS at_qm; POS_X -2; POS_Y 0; }\n",
             ("clipped", "half a square at the corner"),
             ("whole", "a whole square sticking out")),
+        Raised(
+            "raised-0",
+            "Round 7. The pad island raised to floor 4 with the square attached to its walls at POS_X 8, POS_Y 0, the player turned to it: the pad's edge shows the step from 0 to 4; with the attach's origin at the top of the first 16-step repeat above height 0 (16, OpenVirtue's grid) the square lies above the piece and is cut away; hanging from the piece's own top (4) it shows at the step's top.",
+            "TEXTURE at_x { BMAPS at_qm; POS_X 8; POS_Y 0; }\n",
+            ("the height-0 grid", "no cyan"), ("the piece's top", "cyan 2 steps along the step at its top")),
+        Raised(
+            "raised-48",
+            "Round 7. As raised-0 with POS_Y 48 (12 steps down at 4 px a step): from the grid's 16 the square's top lands on 4, the step's top; from the piece's top it would be 8 steps under the floor.",
+            "TEXTURE at_x { BMAPS at_qm; POS_X 8; POS_Y 48; }\n",
+            ("the height-0 grid", "cyan 2 steps along the step, from its top down to 3"), ("the piece's top", "no cyan")),
     ];
+
+    private static TraceProbeCase Raised(string label, string question, string attachTexture, params (string, string)[] predictions) => new(
+        label,
+        question,
+        "",
+        "    SET PLAYER_ANGLE, 2.03;\n    WAITT 8;\n" + P("RET"),
+        Predict(predictions),
+        Map: new TraceProbeMap(
+            Textures: Bitmaps + attachTexture + "WALL at_w { TEXTURE blu_tex; ATTACH at_x; }\n",
+            PadBody: "",
+            PadFloor: 4,
+            PadWall: "at_w"));
 
     private static TraceProbeCase WallTexture(string label, string question, string attachTexture, string wallFlags, params (string, string)[] predictions) => new(
         label,

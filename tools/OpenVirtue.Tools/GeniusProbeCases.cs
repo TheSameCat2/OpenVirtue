@@ -55,6 +55,18 @@ internal static class GeniusProbeCases
         Lamp("behind-dim", 40, 0, "Round 2. The lamp 8 steps behind the wall with region AMBIENT 0.5 (level 14 alone): a loss of 16 levels gives 30, within the ramp.", ambient: "0.5"),
         Lamp("behind-dim-45", 40, 8, "Round 2. The lamp at (40, 8), 135° from the midpoint, with AMBIENT 0.5: a loss of 11.3 gives level 24 or 25.", ambient: "0.5"),
         Lamp("behind-45", 40, 8, "Round 2. The lamp at (40, 8) with AMBIENT 0.25: level 32 or 33, past the ramp's 30: which index shows?", predictions: [("the INFINITY colour", "index 1"), ("clamped at the ramp's end", "index 47"), ("the next entry", "index 48")]),
+        new TraceProbeCase(
+            "sprite",
+            "Round 3. The lamp at (24, 0) before the wall and a thing of the ramp colour whose texture has ALBEDO 1 at (20, 6), the floor also in the ramp colour: does the lamp light the sprite (a sprite at depth 20 reads 16 without it, OV-20261104-sprite-shade) or the floor (level 22 everywhere with PLAYER_LIGHT 0)?",
+            $"BMAP gn_sm,<{SpriteShadeProbeCases.RampFile}>;\nTEXTURE gn_st {{ SCALE_XY 16, 16; BMAPS gn_sm; ALBEDO 1; }}\nTHING gn_s {{ TEXTURE gn_st; }}\n",
+            "    SET PLAYER_LIGHT, 0;\n    WAITT 8;\n" + P("RET"),
+            Predict(("walls only", "the sprite 24 (22 + 2) and the floor 22"), ("sprites too", "the sprite brighter by 16 · cos"), ("floors too", "the floor brighter near the lamp")),
+            Map: new TraceProbeMap(
+                RoomBody: "AMBIENT 0.25; GENIUS gn_lamp;",
+                PaletteBody: $"RANGE {ProjectionProbeGenerator.ShadeRampStart},{ProjectionProbeGenerator.ShadeRampLength};",
+                Textures: Textures("1", "1"),
+                Walls: [new TraceProbeWall("gn_wall", 32, -8, 32, 8)],
+                Placements: ["THING gn_lamp 24 0 0 0", "THING gn_s 20 6 0 0"])),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

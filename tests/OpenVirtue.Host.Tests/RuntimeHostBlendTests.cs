@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using OpenVirtue.Engine.Rendering;
 using OpenVirtue.Formats.Wrs;
 using OpenVirtue.Host.Tests.TestSupport;
 
@@ -45,6 +46,10 @@ public sealed class RuntimeHostBlendTests : IDisposable
         Assert.Equal(2, sprites.Count);
         Assert.Equal(BatchBlend.Ghost, sprites.Single(batch => batch.Texture == "ghostTex").Blend);
         Assert.Equal(expected, sprites.Single(batch => batch.Texture == "glassTex").Blend);
+
+        // OV-20261104-sprite-shade: sprites are shaded two levels darker than walls.
+        Assert.All(sprites, batch => Assert.Equal(PaletteShading.SpriteBias, batch.ShadeBias));
+        Assert.All(render.LastFrame.Batches.Where(batch => batch.Texture == "wt"), batch => Assert.Equal(0, batch.ShadeBias));
     }
 
     public void Dispose()

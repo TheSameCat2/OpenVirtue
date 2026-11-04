@@ -748,7 +748,7 @@ internal static class ProjectionProbeGenerator
         }
 
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        if (plan.ProbeName is ShadingProbeName or BlendProbeName)
+        if (plan.ProbeName is ShadingProbeName or BlendProbeName or GeniusProbeName)
         {
             WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
         }
@@ -801,7 +801,7 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
         }
 
-        if (plan.ProbeName == SpriteShadeProbeName)
+        if (plan.ProbeName is SpriteShadeProbeName or GeniusProbeName)
         {
             WriteValidated(Path.Combine(workDir, SpriteShadeProbeCases.RampFile), SyntheticPcx.Solid(32, 48, ShadeRampStart, palette));
         }

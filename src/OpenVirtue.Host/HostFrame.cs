@@ -57,6 +57,12 @@ public sealed class DrawBatch
     /// </summary>
     public BatchBlend Blend { get; init; } = BatchBlend.None;
 
+    /// <summary>
+    /// Shade levels added after the even rounding and held within 0…30 (OV-20261104-sprite-shade):
+    /// a sprite is two levels darker than a wall at its depth, a level of 30 staying 30.
+    /// </summary>
+    public int ShadeBias { get; init; }
+
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }
 
