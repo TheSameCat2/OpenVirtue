@@ -109,6 +109,20 @@ internal static class SchedulerOrderProbeCases
             "-w 10 -p 0.5 space space",
             HookToken: "K"),
         new TraceProbeCase(
+            "hook-order",
+            "Round 7. The main action prints M every cycle from a WAIT 1 loop (a resumed action) while IF_ANYKEY prints K and arms WAIT 1 and KR; DOSBox-X presses Space once. In the hook's cycle, does K print before or after M: do the hooks run before or after the resumed waits? And KR against the next M?",
+            Skills + Action("so_y", "    RULE so_n = so_n + 1;\n") +
+            Action("so_h", L("K", "TIME_CORR") + "    WAIT 1;\n" + L("KR", "TIME_CORR")),
+            "    SET EACH_TICK.1, so_y;\n    WAIT 2;\n    SET IF_ANYKEY, so_h;\n" + L("ARM") +
+            "    RULE so_k = 0;\n    WHILE (so_k < 1200) {\n" + Indent(L("M")) + "        RULE so_k = so_k + 1;\n        WAIT 1;\n    }\n" +
+            L("END") + "    SET IF_ANYKEY, NULL;\n    SET EACH_TICK.1, NULL;\n",
+            Predict(
+                ("hooks after the resumed waits", "M then K with one so_n; M then KR in the next"),
+                ("hooks before the resumed waits", "K then M; KR then M"),
+                ("hooks before the cycle's count", "K with the so_n of the M before it")),
+            "-w 10 space",
+            HookToken: "K"),
+        new TraceProbeCase(
             "round5/waitt-small",
             "Round 5. A global slot counts cycles in so_n. The probe arms WAITT 0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.99, 1 and 1.3 one after another, printing A (armed) and R (resumed) with TICKS, so_n and TIME_CORR: in which cycle does each end?",
             Skills + Action("so_y", "    RULE so_n = so_n + 1;\n"),

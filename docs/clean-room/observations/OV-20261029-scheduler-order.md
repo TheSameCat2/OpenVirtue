@@ -230,3 +230,18 @@ twice half a second apart (`AUTOTYPE -w 10 -p 0.5 space space`).
   `WdlRuntimeWaitCountTests.Tick_QueuedKeyHook_RunsInTheCycleWithItsCountAndItsWaitResumesThreeCyclesLater`;
   hook-wait replays 10 of 11 lines (the first `K` reads `TIME_CORR` 0.281 where the replay's
   frame is 0.250: the clock between the sparse samples).
+
+## Round 7: where in the cycle a key hook runs (2026-11-04)
+`round7/hook-order` (`OVSDO0.TXT`, fast launch): the main action prints `M` every cycle from a
+`WAIT 1` loop while `IF_ANYKEY` prints `K`, waits `WAIT 1` and prints `KR`; one Space.
+
+| `TICKS` | `so_n` | Lines in order |
+|---|---|---|
+| 80.813 | 258 | `M`, `K` |
+| 81.094 | 259 | `M`, `KR` |
+
+- **A key hook runs after the cycle's resumed waits**, and the wait it arms resumes after the
+  older waiting action in the next cycle: waits resume in the order they were armed, the hook's
+  last. OpenVirtue's `DispatchQueuedHooks` sits right after `ResumeWaitingActions`, and its
+  waiting list keeps arming order; hook-order replays in full (1205 lines) once the replay
+  presses the key within 1/1024 of the original line's three-decimal `TICKS`.

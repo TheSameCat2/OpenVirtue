@@ -284,9 +284,9 @@ internal static class OracleReplay
             {
                 double ticks = host.Runtime.GetSkill(Timing.TicksSkill);
                 double step = clock.Next(ticks);
-                // The press lands in the cycle that reaches the original line's TICKS (the clock is on the
-                // original's 1/1024 grid once anchored).
-                while (hookPresses.Count > 0 && hookPresses.Peek().Ticks <= ticks + (step * Timing.TicksPerSecond) + (0.5 / 1024))
+                // The press lands in the cycle that reaches the original line's TICKS: printed to three
+                // decimals, so up to 1/1024 off the replay's grid (hook-order's 80.813 for 80.8125).
+                while (hookPresses.Count > 0 && hookPresses.Peek().Ticks <= ticks + (step * Timing.TicksPerSecond) + (1.5 / 1024))
                 {
                     (_, string? hook) = hookPresses.Dequeue();
                     host.Runtime.QueueActionHook("IF_ANYKEY");

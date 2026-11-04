@@ -424,3 +424,15 @@ walls behind the end point. Tests:
 `PlayerTests.PushOutOfObjects_BeamedWithinPlayerWidthOfASolidWall_IsHeldAtTheClearanceWithANudge`,
 `WdlViewActivityTests.Tick_SkipFrames_LongCarefulStepPastAnImpassableBorderPasses`. view-pillar
 matches in full (32 of 38); imp-border gains the step over the pad.
+
+## Addendum: the `DIST 40` actor's steps, re-read (2026-11-04)
+No new run. range-shape's `DIST 40` way actor at (−10, 2), on its way to (−10.4, 2), 32 away from
+the player and moving every cycle, was compared step by step with the `DIST 1` actor on the same
+way from (0, 0), which OpenVirtue reproduces to the unit. From the original's own positions the
+step rule of OV-20261029-actor-step (the 22.10 product of the step and the part left along the
+axis, rounded half up, divided by |dx| + |dy| and cut) gives 30 of its 38 steps; every miss is on
+the leg toward the far point: −98 for −97 at 220 left, −93 for −92 at 122, −93 for −98 at 219,
+−98 for −97 at 126, and −97 for −96 at 127 left in every later round. No rounding of the quotient
+(cut, half up, away from zero) or step size 92–100 fits them all, nor a formula on the absolute
+coordinates, so the far actor's step is not the near actor's with another rounding. Still open;
+the carrier keeps its 35 lines.
