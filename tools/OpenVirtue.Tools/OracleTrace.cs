@@ -563,9 +563,14 @@ internal static class OracleTrace
     {
         ArgumentNullException.ThrowIfNull(cycleTicks);
         ArgumentNullException.ThrowIfNull(anchors);
+        if (cycleTicks.Count == 0 || anchors.Count == 0)
+        {
+            return null;
+        }
+
         List<StartupAnchor> dated = anchors.Where(static a => a.Dated).ToList();
-        if (cycleTicks.Count == 0 || dated.Count == 0 || dated.MinBy(static a => a.Count) is not { Count: 2 } second ||
-            anchors.Any(a => a.CyclesBefore > second.CyclesBefore))
+        StartupAnchor? second = dated.Count > 0 && dated.MinBy(static a => a.Count) is { Count: 2 } s2 ? s2 : null;
+        if (second is { } known && anchors.Any(a => a.CyclesBefore > known.CyclesBefore))
         {
             return null;
         }
@@ -575,6 +580,28 @@ internal static class OracleTrace
             .OrderBy(static p => p.K)
             .ToList();
         points.Add((0, (long)Math.Round(SnapTicks(cycleTicks[0]) * 32)));
+        if (second is null)
+        {
+            // No line dates cycle 2: the cycles before the earliest anchor keep the pace of the earliest
+            // anchored stretch (eye-clamp round 3 vz-rate-c12000: the resumed action's GO at 17.344 two
+            // cycles before the first V sample at 25.75, 4.2 a cycle, so the cycle before GO lies past
+            // 13 and the WAITT 16 ends at GO; the samples after run 4.7 a cycle).
+            long step = (long)Math.Round((points[1].Units - points[0].Units) / (double)(points[1].K - points[0].K));
+            if (step <= 0)
+            {
+                return null;
+            }
+
+            (long k0, long u0) = points[0];
+            while (u0 - step > 0)
+            {
+                k0--;
+                u0 -= step;
+                points.Insert(0, (k0, u0));
+            }
+
+            second = new StartupAnchor(-points[0].K, points[0].Units / 32.0, 2);
+        }
         var positions = new Dictionary<long, long>();
         for (int i = 0; i + 1 < points.Count; i++)
         {
@@ -591,7 +618,7 @@ internal static class OracleTrace
             }
         }
 
-        long cycle2 = -second.CyclesBefore;
+        long cycle2 = -second.Value.CyclesBefore;
         if (positions[cycle2] <= 0)
         {
             return null;
@@ -633,6 +660,13 @@ internal static class OracleTrace
         }
 
         OracleTraceLine first = tokenLines[0];
+        // The pace an anchor must keep to its neighbours: a 60 Hz frame's, or within half to twice
+        // the first sampled step on a slower launch (eye-clamp round 3's fixed-cycles DOSBox runs
+        // step 4.2 to 4.7 ticks a cycle).
+        double firstStep = tokenLines.Count >= 2 && tokenLines[1].Value(timing.Column) is { } secondTicks && secondTicks > firstTicks
+            ? secondTicks - firstTicks
+            : 0.25;
+        bool Paced(double ticksPerCycle) => IsFrameStep(ticksPerCycle) || (ticksPerCycle >= firstStep * 0.5 && ticksPerCycle <= firstStep * 2);
         var candidates = new List<StartupAnchor>();
         List<OracleTraceLine> early = startLines.Where(timing.Matches).ToList();
         int columns = early.Count == 0 ? 0 : Math.Min(first.Fields.Count, early.Min(static l => l.Fields.Count));
@@ -652,7 +686,7 @@ internal static class OracleTrace
                 if (line.Value(column) is not { } count || line.Value(timing.Column) is not { } ticks ||
                     count != Math.Floor(count) || count >= firstCount || ticks <= 0 || ticks >= firstTicks ||
                     (lastCount is { } previousCount && lastTicks is { } previousTicks &&
-                     (count <= previousCount || !IsFrameStep((ticks - previousTicks) / (count - previousCount)))))
+                     (count <= previousCount || !Paced((ticks - previousTicks) / (count - previousCount)))))
                 {
                     counts = false;
                     break;
@@ -663,7 +697,7 @@ internal static class OracleTrace
                 lastTicks = ticks;
             }
 
-            if (counts && lastCount is { } c && lastTicks is { } t && IsFrameStep((firstTicks - t) / (firstCount - c)))
+            if (counts && lastCount is { } c && lastTicks is { } t && Paced((firstTicks - t) / (firstCount - c)))
             {
                 candidates.AddRange(dated);
                 break;
@@ -701,7 +735,7 @@ internal static class OracleTrace
         foreach (StartupAnchor candidate in candidates.OrderBy(static a => a.CyclesBefore).ThenByDescending(static a => a.Dated))
         {
             if (candidate.CyclesBefore > last.Cycles &&
-                IsFrameStep((last.Ticks - candidate.Ticks) / (candidate.CyclesBefore - last.Cycles)))
+                Paced((last.Ticks - candidate.Ticks) / (candidate.CyclesBefore - last.Cycles)))
             {
                 anchors.Add(candidate);
                 last = (candidate.CyclesBefore, candidate.Ticks);
@@ -723,14 +757,18 @@ internal static class OracleTrace
     public static IReadOnlyList<double>? StartupFrames(IReadOnlyList<double> cycleTicks, double? firstStep = null, IReadOnlyList<StartupAnchor>? anchors = null)
     {
         ArgumentNullException.ThrowIfNull(cycleTicks);
-        if (anchors is { Count: > 0 } && StartupFramesFromAnchors(cycleTicks, anchors) is { } dated)
+        // A dated start-up (the start-up file's count-2 line) is planned from its anchors outright; an
+        // undated one keeps the cadence run back where the samples give one, and takes the anchors'
+        // own pace only where they do not (the slow launches of eye-clamp round 3).
+        bool datedAnchors = anchors is not null && anchors.Any(static a => a.Dated && a.Count == 2);
+        if (datedAnchors && StartupFramesFromAnchors(cycleTicks, anchors!) is { } dated)
         {
             return dated;
         }
 
         if (cycleTicks.Count == 0 || FitLeadingCadence(cycleTicks, firstStep) is not { } cadence)
         {
-            return null;
+            return anchors is { Count: > 0 } && cycleTicks.Count > 0 ? StartupFramesFromAnchors(cycleTicks, anchors) : null;
         }
 
         long first = (long)Math.Round(SnapTicks(cycleTicks[0]) * 32);

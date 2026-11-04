@@ -127,3 +127,11 @@ harness cannot recover).
   (158 and 217 lines); anim-random still differs by its `RANDOM` draws. 13 of 14 carriers.
   `WdlRuntime.AdvanceAnimationTarget`.
 
+## Addendum: `RANDOM` is seeded per launch (2026-11-04)
+A second launch of round2 anim-random (`OVMOT0.TXT`, 637 lines; the first launch's trace is kept
+under `work/_stale/20261104T171449Z/`) gave a different sequence of phase lengths from its first
+phase on (607 phase changes in both, 364 of them coinciding by chance of the 2-to-3-tick
+quantisation). The original's generator is seeded from something that differs between launches
+(the clock), so its draws cannot be replayed; `RANDOM`'s distribution can still be measured from
+the phases, its sequence not. The carrier stays a line-count residual.
+
