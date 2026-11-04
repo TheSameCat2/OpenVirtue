@@ -84,7 +84,10 @@ public class WdlRuntimeEachSecTests
         WdlRuntime runtime = Start(
             "SKILL n { VAL 0; } ACTION boot { SET EACH_SEC.1, sec; } ACTION sec { RULE n += 1; } IF_START boot;");
 
+        // A stall counts 8 ticks, half a second (Timing.MaxFrameSeconds).
         runtime.Tick(3.0);
+        Assert.Equal(0, runtime.GetSkill("n"));
+        Ticks(runtime, 8);
         Assert.Equal(1, runtime.GetSkill("n"));
         Ticks(runtime, 15);
         Assert.Equal(1, runtime.GetSkill("n"));

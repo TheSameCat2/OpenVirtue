@@ -290,7 +290,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   - `SLOOP` channels (2) are never taken;
   - inaudible sounds are skipped and leave `CHANNEL` alone;
   - a channel frees at the first world cycle after its sound ends, and not during a flic;
-  - `STOP_SOUND` frees the normal channels two cycles later and leaves loops playing.
+  - `STOP_SOUND` frees the normal channels two cycles later and leaves loops playing. Addendum 2026-11-04: a world frame is capped at 8
+  ticks (`Timing.MaxFrameSeconds` 0.5); flic cycles keep their delay.
 
   Eighteen DOSBox-X runs; implemented in `WdlRuntime`.
 

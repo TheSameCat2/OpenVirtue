@@ -28,18 +28,19 @@ public static class Timing
     public const string SecondsSkill = "SECS";
 
     /// <summary>
-    /// The largest frame delta (seconds) <see cref="TimeCorrection"/> honours. A coarse stability
-    /// guard so a pathological frame — the multi-second gap on level load, a debugger pause, or a
-    /// lag spike — can't produce a giant step that teleports objects or tunnels collision. It only
-    /// triggers below 1 fps, so timing at any playable frame rate is unaffected; the exact threshold
-    /// is subject to oracle calibration.
+    /// The largest frame delta (seconds) <see cref="TimeCorrection"/> honours: half a second, 8 ticks.
+    /// Every DOSBox-X launch that ran slow (2 frames a second, a visible window, cycles=fixed) printed
+    /// <c>TICKS</c> in steps of exactly 8 and <c>TIME_CORR</c> 8, never more (OV-20261029-audio,
+    /// OV-20261103-contact-clock round 2, OV-20261015-clip-detail, OV-20261019-clip-contact): the
+    /// original caps a frame there. It also keeps a stall (level load, a debugger pause) from a giant
+    /// step that teleports objects or tunnels collision.
     /// </summary>
-    public const double MaxFrameSeconds = 1.0;
+    public const double MaxFrameSeconds = 0.5;
 
     /// <summary>
     /// The time-correction factor for a frame lasting <paramref name="deltaSeconds"/>: the
     /// elapsed time expressed in ticks (<paramref name="deltaSeconds"/> * <see cref="TicksPerSecond"/>),
-    /// with the delta capped at <see cref="MaxFrameSeconds"/>. 1.0 at 16 fps, ~0.267 at 60 fps.
+    /// with the delta capped at <see cref="MaxFrameSeconds"/> (8 ticks). 1.0 at 16 fps, ~0.267 at 60 fps.
     /// A non-positive delta yields 0.
     /// </summary>
     public static double TimeCorrection(double deltaSeconds) =>
