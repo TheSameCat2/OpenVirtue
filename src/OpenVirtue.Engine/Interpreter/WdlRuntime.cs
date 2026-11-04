@@ -149,6 +149,16 @@ public sealed class WdlRuntime :
     // declares five and fades to its fourth, saves 4; round 15).
     private int? _savedPalette;
     private readonly List<WdlShakeRequest> _shakeRequests = [];
+
+    // OV-20261104-instructions: a SHIFT, ROTATE or LIFT applies once; the region takes no further one
+    // until a SHAKE of one of its walls, things or actors (shift, shift-shake-wall, shift-shake-thing).
+    private readonly HashSet<int> _unshakenRegions = [];
+
+    // Objects SET_ALL moved: out of the run for good (set-all-near, set-all-shake).
+    private readonly HashSet<AcknexObject> _retiredObjects = [];
+
+    // PLAYER_ANGLE as the cycle began: DROP places along it, not along a SET of the same action (drop).
+    private double _cycleStartAngle;
     private readonly List<WdlFlicRequest> _flicRequests = [];
     private readonly List<WdlScreenshotRequest> _screenshotRequests = [];
     private readonly List<WdlPersistenceRequest> _persistenceRequests = [];
@@ -282,6 +292,10 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        foreach (Wall wall in level.Walls)
+        {
+            wall.Vertices = level.Vertices;
+        }
         _loadFloorHeights = [.. level.Regions.Select(static r => r.FloorHeight)];
         _random = random ?? new Random();
         RandomSeeded = random is not null;
@@ -1640,7 +1654,33 @@ public sealed class WdlRuntime :
         _bounds.TryGetValue(name, out SkillRange range) && GetSkill(name) <= range.Min;
 
     /// <inheritdoc/>
-    public void Shake(AcknexObject target) => RecordGeometryInvalidation(target);
+    public void Shake(AcknexObject target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        switch (target)
+        {
+            case Wall wall:
+                _unshakenRegions.Remove(wall.LeftRegion);
+                _unshakenRegions.Remove(wall.RightRegion);
+                break;
+            case MapEntity entity:
+                // shake-thing: the thing lands on its floor, and its DISTANCE reads the straight-line
+                // distance to the player until the next cycle's refresh (|dx| + |dy| again). Its region
+                // stays whatever it was.
+                _unshakenRegions.Remove(entity.Region);
+                entity.FootZ = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
+                if (GetObject("player") is Player shaker)
+                {
+                    entity[DistanceSkill] = Math.Truncate(Distance(shaker.Position.X, shaker.Position.Z, entity.X, entity.Y) * 1024) / 1024;
+                }
+
+                _distanceStarted.Add(entity);
+                _frontActorMoved = true; // the next cycle refreshes it (|dx| + |dy|) though the player stands
+                break;
+        }
+
+        RecordGeometryInvalidation(target);
+    }
 
     /// <inheritdoc/>
     public bool DropObject(AcknexObject target)
@@ -1653,11 +1693,16 @@ public sealed class WdlRuntime :
         }
 
         double distance = entity["DIST"];
-        double angle = GetSkill("MOUSE_MODE") != 0 ? GetSkill("MOUSE_ANGLE") : GetSkill("PLAYER_ANGLE");
+        // OV-20261104-instructions drop: along the angle the cycle began with (a SET PLAYER_ANGLE in the
+        // same action does not count yet), with the sine and cosine cut to 1/1024 (6 at 0.7 lands at
+        // (4.588, 3.861)); the height is left as it is, and the region is the one the point falls in.
+        double angle = GetSkill("MOUSE_MODE") != 0 ? GetSkill("MOUSE_ANGLE") : _cycleStartAngle;
+        double cos = Math.Truncate(Math.Cos(WdlFixed.Quantize(angle)) * 1024) / 1024;
+        double sin = Math.Truncate(Math.Sin(WdlFixed.Quantize(angle)) * 1024) / 1024;
         Vector3 position = player.Position;
-        entity.X = position.X + (Math.Cos(angle) * distance);
-        entity.Y = position.Z + (Math.Sin(angle) * distance);
-        entity.Region = player.Region;
+        entity.X = WdlFixed.Quantize(position.X + (cos * distance));
+        entity.Y = WdlFixed.Quantize(position.Z + (sin * distance));
+        entity.Region = LevelTopology.LocateRegion(_level, entity.X, entity.Y) ?? player.Region;
         RecordGeometryInvalidation(entity);
         return true;
     }
@@ -1674,6 +1719,15 @@ public sealed class WdlRuntime :
             return false;
         }
 
+        if (!_unshakenRegions.Add(regionIndex))
+        {
+            return false;
+        }
+
+        // The region's vertices, things and actors move; the player standing on it does not
+        // (OV-20261104-instructions shift). Each part is a 22.10 value, so 0.3 moves 307/1024.
+        dx = WdlFixed.Quantize(dx);
+        dy = WdlFixed.Quantize(dy);
         foreach (int vertexIndex in loop.Distinct())
         {
             Vertex vertex = vertices[vertexIndex];
@@ -1686,15 +1740,6 @@ public sealed class WdlRuntime :
             {
                 entity.X += dx;
                 entity.Y += dy;
-            }
-        }
-
-        foreach (Player player in _objects.Values.OfType<Player>().Distinct())
-        {
-            if (player.Region == regionIndex)
-            {
-                Vector3 position = player.Position;
-                player.Position = new Vector3(position.X + (float)dx, position.Y, position.Z + (float)dy);
             }
         }
 
@@ -1714,18 +1759,18 @@ public sealed class WdlRuntime :
             return false;
         }
 
+        if (!_unshakenRegions.Add(regionIndex))
+        {
+            return false;
+        }
+
+        // Only the vertices rise (the walls' Z1/Z2): the region's FLOOR_HGT, its things' and actors' Z
+        // and the player standing on it read as before (OV-20261104-instructions lift).
+        amount = WdlFixed.Quantize(amount);
         foreach (int vertexIndex in loop.Distinct())
         {
             Vertex vertex = vertices[vertexIndex];
             vertices[vertexIndex] = new Vertex(vertex.X, vertex.Y, vertex.Z + (float)amount);
-        }
-
-        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
-        {
-            if (entity.Region == regionIndex)
-            {
-                entity.Z += amount;
-            }
         }
 
         RecordGeometryInvalidation(region);
@@ -1747,8 +1792,16 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        double sin = Math.Sin(radians);
-        double cos = Math.Cos(radians);
+        if (!_unshakenRegions.Add(regionIndex))
+        {
+            return false;
+        }
+
+        // Vertices, things and actors turn about the GENIUS; their ANGLE and the player on the region
+        // do not (OV-20261104-instructions rotate; the arithmetic is RotateMapPoint's).
+        double turned = WdlFixed.Quantize(radians);
+        double sin = Math.Round(Math.Sin(turned) * 65536) / 65536;
+        double cos = Math.Round(Math.Cos(turned) * 65536) / 65536;
         foreach (int vertexIndex in loop.Distinct())
         {
             Vertex vertex = vertices[vertexIndex];
@@ -1761,17 +1814,6 @@ public sealed class WdlRuntime :
             if (entity.Region == regionIndex)
             {
                 (entity.X, entity.Y) = RotateMapPoint(entity.X, entity.Y, centerX, centerY, sin, cos);
-                entity.Angle += radians;
-            }
-        }
-
-        foreach (Player player in _objects.Values.OfType<Player>().Distinct())
-        {
-            if (player.Region == regionIndex)
-            {
-                Vector3 position = player.Position;
-                (double x, double y) = RotateMapPoint(position.X, position.Z, centerX, centerY, sin, cos);
-                player.Position = new Vector3((float)x, position.Y, (float)y);
             }
         }
 
@@ -1827,7 +1869,65 @@ public sealed class WdlRuntime :
     }
 
     /// <inheritdoc/>
-    public void Push(double distance) => ShootFromPlayer(distance, useShootDeviation: false);
+    public void Push(double distance)
+    {
+        // OV-20261104-instructions push, push-low: the nearest object within the distance that the last
+        // frame drew (VISIBLE), whatever the player faces now; HIT_DIST its distance, RESULT
+        // 1 − HIT_DIST / distance; nothing in reach leaves HIT_DIST and HIT_MINDIST at the distance.
+        if (GetObject("player") is not Player player || distance <= 0)
+        {
+            ClearHitResult();
+            SetSkill("HIT_MINDIST", 0);
+            return;
+        }
+
+        AcknexObject? nearest = null;
+        double best = double.PositiveInfinity;
+        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        {
+            if (IsInactiveEntity(entity) || entity["VISIBLE"] <= 0)
+            {
+                continue;
+            }
+
+            double measured = Distance(player.Position.X, player.Position.Z, entity.X, entity.Y);
+            if (measured <= distance && measured < best)
+            {
+                best = measured;
+                nearest = entity;
+            }
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            if (wall["VISIBLE"] <= 0 || !TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by))
+            {
+                continue;
+            }
+
+            double measured = DistanceToSegment(player.Position.X, player.Position.Z, ax, ay, bx, by);
+            if (measured <= distance && measured < best)
+            {
+                best = measured;
+                nearest = wall;
+            }
+        }
+
+        if (nearest is null)
+        {
+            SetSkill("HIT_DIST", distance);
+            SetSkill("RESULT", 0);
+            SetSkill("HIT_X", 0);
+            SetSkill("HIT_Y", 0);
+            SetSkill("HIT_MINDIST", distance);
+            return;
+        }
+
+        SetObjectReference("hit", nearest);
+        SetHitResult(best, distance);
+        SetSkill("HIT_MINDIST", best);
+        TriggerObjectActionHook(nearest, "IF_HIT");
+    }
 
     /// <inheritdoc/>
     public void Explode(AcknexObject source)
@@ -1847,12 +1947,24 @@ public sealed class WdlRuntime :
             return;
         }
 
+        // OV-20261104-instructions explode: the FRAGILE objects of the region, the source left out, from
+        // the last placed to the first, each at the distance from the source's position to its nearest
+        // edge, fire while within SHOOT_RANGE with RESULT 1 − distance / range; HIT_MINDIST keeps the
+        // nearest.
         double nearest = double.PositiveInfinity;
         AcknexObject? nearestTarget = null;
         foreach (AcknexObject target in FragileTargets(entity.Region))
         {
-            if (!TryDistanceFromPoint(entity.X, entity.Y, target, out double distance) ||
-                distance > range)
+            if (ReferenceEquals(target, entity) ||
+                !TryDistanceFromPoint(entity.X, entity.Y, target, out double distance))
+            {
+                continue;
+            }
+
+            // From the source's position to the target's nearest edge: 4-wide things 3, 6 and 12 from
+            // the actor's centre read 1.001, 4.001 and 10.001.
+            distance = Math.Max(0, distance - (target is MapEntity other ? EntityHalfWidth(other) : 0) + (1.0 / 1024));
+            if (distance > range)
             {
                 continue;
             }
@@ -2445,6 +2557,7 @@ public sealed class WdlRuntime :
     {
         _inFirstCycle = !_firstCycleRun;
         _pendingPushers.Clear();
+        _cycleStartAngle = GetSkill("PLAYER_ANGLE");
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
         CountPlayerSteps();
         ReleaseFinishedChannels();
@@ -3517,7 +3630,7 @@ public sealed class WdlRuntime :
         }
     }
 
-    private static bool ShouldTrackProximity(AcknexObject target) =>
+    private bool ShouldTrackProximity(AcknexObject target) =>
         !IsInactiveEntity(target) &&
         (TryGetObjectActionHook(target, "IF_NEAR", out _) ||
          TryGetObjectActionHook(target, "IF_FAR", out _));
@@ -5257,9 +5370,13 @@ public sealed class WdlRuntime :
         double sin,
         double cos)
     {
+        // OV-20261104-instructions rotate: the sine and cosine of the 22.10 angle held in 16.16, each
+        // product floored to 1/1024, then summed: a thing 2 east of the GENIUS turned 0.5 lands 0.958
+        // north, the pad's corners at (−9.593, 10.571) and (−2.572, 14.406).
         double dx = x - centerX;
         double dy = y - centerY;
-        return (centerX + (dx * cos) - (dy * sin), centerY + (dx * sin) + (dy * cos));
+        static double Floor(double value) => Math.Floor(value * 1024) / 1024;
+        return (centerX + Floor(dx * cos) - Floor(dy * sin), centerY + Floor(dx * sin) + Floor(dy * cos));
     }
 
     private void ShootFromPlayer(double range, bool useShootDeviation)
@@ -5773,9 +5890,20 @@ public sealed class WdlRuntime :
 
     private static double Cross(double ax, double ay, double bx, double by) => (ax * by) - (ay * bx);
 
+    private double EntityHalfWidth(MapEntity entity) =>
+        MapEntitySizing.TryGetSize(_level, entity, out MapEntitySize size) ? size.Width * 0.5 : 0.5;
+
     private IEnumerable<AcknexObject> FragileTargets(int region)
     {
-        foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+        for (int i = _level.MapObjects.Count - 1; i >= 0; i--)
+        {
+            if (_level.MapObjects[i] is MapEntity entity && entity.Region == region && entity["FRAGILE"] != 0 && !IsInactiveEntity(entity))
+            {
+                yield return entity;
+            }
+        }
+
+        foreach (MapEntity entity in _level.UnplacedObjects.OfType<MapEntity>())
         {
             if (entity.Region == region && entity["FRAGILE"] != 0 && !IsInactiveEntity(entity))
             {
@@ -5817,7 +5945,8 @@ public sealed class WdlRuntime :
         }
 
         double distance = Distance(x, y, player.Position.X, player.Position.Z);
-        if (distance <= range)
+        // The player at exactly SHOOT_RANGE is not hit (OV-20261104-instructions explode, 20 at range 20).
+        if (distance < range)
         {
             SetHitResult(distance, range);
         }
@@ -6224,8 +6353,21 @@ public sealed class WdlRuntime :
                (target is not MapEntity entity || VerticalOffsetFromCentre(player, entity) < threshold);
     }
 
-    private static bool IsInactiveEntity(AcknexObject? target) =>
-        target is MapEntity entity && entity["INVISIBLE"] > 0;
+    private bool IsInactiveEntity(AcknexObject? target) =>
+        target is MapEntity entity && (entity["INVISIBLE"] > 0 || _retiredObjects.Contains(entity));
+
+    /// <inheritdoc/>
+    public void RetireObjects(IEnumerable<AcknexObject> objects)
+    {
+        ArgumentNullException.ThrowIfNull(objects);
+        foreach (AcknexObject target in objects)
+        {
+            if (target is MapEntity)
+            {
+                _retiredObjects.Add(target);
+            }
+        }
+    }
 
     private static double DistanceToSegment(double px, double py, double ax, double ay, double bx, double by)
     {
@@ -6245,7 +6387,9 @@ public sealed class WdlRuntime :
     private void SetHitResult(double distance, double range, double hitX = 0, double hitY = 0)
     {
         SetSkill("HIT_DIST", distance);
-        SetSkill("RESULT", range > 0 ? Math.Max(0, GetSkill("SHOOT_FAC") * (1 - (distance / range))) : 0);
+        // The share is a 22.10 value cut toward zero: PUSH 18 at 10 reads 0.445, not 0.444, and EXPLODE's
+        // 4.001 at range 20 reads 0.801 (OV-20261104-instructions).
+        SetSkill("RESULT", range > 0 ? Math.Max(0, GetSkill("SHOOT_FAC") * (1 - (Math.Truncate(distance / range * 1024) / 1024))) : 0);
         SetSkill("HIT_X", hitX);
         SetSkill("HIT_Y", hitY);
     }

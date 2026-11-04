@@ -350,7 +350,12 @@ public sealed partial class RuntimeHost
         _runtime.SetSkill("PLAYER_COS", Math.Cos(runtimeAngle));
         double runtimeTilt = Math.Tan(_camera.Pitch);
         _runtime.SetSkill("PLAYER_TILT", runtimeTilt);
-        _runtime.SetSkill("MOUSE_ANGLE", runtimeAngle);
+        // Without the pointer MOUSE_ANGLE is the script's to set and keeps its value: 0 at start, 1
+        // after a SET, while the player turns (OV-20261104-instructions drop).
+        if (_runtime.GetSkill("MOUSE_MODE") > 0)
+        {
+            _runtime.SetSkill("MOUSE_ANGLE", runtimeAngle);
+        }
         RememberPlayerRuntimeSnapshot(position.X, position.Z, position.Y, _player.Region, runtimeAngle, runtimeTilt);
     }
 
