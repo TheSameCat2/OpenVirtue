@@ -138,23 +138,66 @@ public static class SpriteBuilder
         }
         float baseFloor = entity["GROUND"] <= 0 ? regionFloor : 0;
         Vector3 basePosition = RenderSpace.FromMap((float)entity.X, baseFloor + (float)entity.Z, (float)entity.Y);
-        AddTextureLayer(level, entity, entity.Texture, viewerPosition, basePosition, regionFloor, isAttachment: false, billboards);
-        AddTextureLayer(level, entity, entity.AttachTexture, viewerPosition, basePosition, regionFloor, isAttachment: true, billboards);
+        if (ResolveLayer(level, entity, entity.Texture, viewerPosition) is not { } baseLayer)
+        {
+            return;
+        }
+
+        billboards.Add(new SpriteBillboard(
+            baseLayer.RenderTexture,
+            basePosition,
+            baseLayer.Size.Width * 0.5f,
+            baseLayer.Size.Height * 0.5f,
+            entity,
+            baseLayer.Mirror,
+            baseLayer.FrameOffset));
+
+        // OV-20261104-attach: the attach layer is an upright sprite of its own size whose upper left
+        // corner sits POS_X, POS_Y pixels of the base texture (at the base's scale) from the base's
+        // upper left; a SHADOW attach is centred on the region's floor height instead, POS_Y still
+        // shifting it; BEHIND draws it behind the base.
+        if (ResolveLayer(level, entity, entity.AttachTexture, viewerPosition) is not { } attach)
+        {
+            return;
+        }
+
+        float baseLeft = baseLayer.FrameOffset.X - (baseLayer.Size.Width * 0.5f);
+        float baseTop = baseLayer.FrameOffset.Y + baseLayer.Size.Height;
+        float dx = (float)(attach.Texture.PosX / baseLayer.ScaleX);
+        float dy = (float)(attach.Texture.PosY / baseLayer.ScaleY);
+        float centerX = baseLeft + dx + (attach.Size.Width * 0.5f) + attach.FrameOffset.X;
+        float bottom = attach.Texture.IsShadow
+            ? regionFloor - basePosition.Y - (attach.Size.Height * 0.5f) + dy
+            : baseTop - dy - attach.Size.Height;
+        bottom += attach.FrameOffset.Y;
+        billboards.Add(new SpriteBillboard(
+            attach.RenderTexture,
+            basePosition,
+            attach.Size.Width * 0.5f,
+            attach.Size.Height * 0.5f,
+            entity,
+            attach.Mirror,
+            new Vector2(centerX, bottom),
+            SpriteOrientation.Upright,
+            attach.Texture.IsBehind ? 0.01f : -0.01f,
+            IsAttachment: true));
     }
 
-    private static void AddTextureLayer(
-        Level level,
-        MapEntity entity,
-        string? textureName,
-        Vector2? viewerPosition,
-        Vector3 basePosition,
-        float floor,
-        bool isAttachment,
-        List<SpriteBillboard> billboards)
+    /// <summary>A texture layer of an entity as drawn: its frame, size in steps, scale and frame offset.</summary>
+    private readonly record struct ResolvedLayer(
+        LevelTexture Texture,
+        string RenderTexture,
+        MapEntitySize Size,
+        double ScaleX,
+        double ScaleY,
+        bool Mirror,
+        Vector2 FrameOffset);
+
+    private static ResolvedLayer? ResolveLayer(Level level, MapEntity entity, string? textureName, Vector2? viewerPosition)
     {
         if (textureName is null || !level.Textures.TryGetValue(textureName, out LevelTexture texture))
         {
-            return;
+            return null;
         }
 
         int side = viewerPosition is { } viewer ? SideFacingViewer(entity, viewer, texture.Sides) : 0;
@@ -162,33 +205,20 @@ public static class SpriteBuilder
         if (renderTexture is null ||
             !MapEntitySizing.TryGetTextureSize(texture, entity["CYCLE"], side, out MapEntitySize size))
         {
-            return;
+            return null;
         }
 
         (double offsetX, double offsetY) = TextureAnimation.FrameOffset(texture, entity["CYCLE"], side);
         double scaleX = texture.ScaleX > 0 ? texture.ScaleX : 16;
         double scaleY = texture.ScaleY > 0 ? texture.ScaleY : 16;
-        SpriteOrientation orientation = isAttachment && texture.IsShadow
-            ? SpriteOrientation.Ground
-            : SpriteOrientation.Upright;
-        Vector3 layerPosition = orientation == SpriteOrientation.Ground
-            ? new Vector3(basePosition.X, floor + 0.01f, basePosition.Z)
-            : basePosition;
-        float depthOffset = !isAttachment || orientation == SpriteOrientation.Ground
-            ? 0
-            : texture.IsBehind ? 0.01f : -0.01f;
-
-        billboards.Add(new SpriteBillboard(
+        return new ResolvedLayer(
+            texture,
             renderTexture,
-            layerPosition,
-            size.Width * 0.5f,
-            size.Height * 0.5f,
-            entity,
+            size,
+            scaleX,
+            scaleY,
             TextureAnimation.IsMirrored(texture, side),
-            new Vector2((float)(offsetX / scaleX), (float)(-offsetY / scaleY)),
-            orientation,
-            depthOffset,
-            isAttachment));
+            new Vector2((float)(offsetX / scaleX), (float)(-offsetY / scaleY)));
     }
 
     /// <summary>Returns the directional texture side facing a viewer in map coordinates.</summary>

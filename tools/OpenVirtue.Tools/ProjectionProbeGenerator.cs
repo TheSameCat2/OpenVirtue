@@ -69,6 +69,7 @@ internal static class ProjectionProbeGenerator
     public const string StringsProbeName = "strings";
     public const string LevelProbeName = "level";
     public const string FadePalProbeName = "fade-pal";
+    public const string AttachProbeName = "attach";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -119,6 +120,7 @@ internal static class ProjectionProbeGenerator
     private const string StringsProbeId = "OV-20261104-strings";
     private const string LevelProbeId = "OV-20261104-level";
     private const string FadePalProbeId = "OV-20261104-fade-pal";
+    private const string AttachProbeId = "OV-20261104-attach";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -440,6 +442,7 @@ internal static class ProjectionProbeGenerator
         StringsProbeName => StringsProbeId,
         LevelProbeName => LevelProbeId,
         FadePalProbeName => FadePalProbeId,
+        AttachProbeName => AttachProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -589,6 +592,7 @@ internal static class ProjectionProbeGenerator
             case StringsProbeName:
             case LevelProbeName:
             case FadePalProbeName:
+            case AttachProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -648,6 +652,7 @@ internal static class ProjectionProbeGenerator
         StringsProbeName => StringProbeCases.Set,
         LevelProbeName => LevelProbeCases.Set,
         FadePalProbeName => FadePalProbeCases.Set,
+        AttachProbeName => AttachProbeCases.Set,
         _ => null,
     };
 
@@ -755,6 +760,13 @@ internal static class ProjectionProbeGenerator
             {
                 WriteValidated(Path.Combine(workDir, file), SyntheticPcx.Write(width, height, pixel, palette));
             }
+        }
+
+        if (plan.ProbeName == AttachProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
+            WriteValidated(Path.Combine(workDir, AttachProbeCases.StripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Magenta, palette));
+            WriteValidated(Path.Combine(workDir, AttachProbeCases.SquareFile), SyntheticPcx.Solid(16, 16, (byte)Ink.TargetLeft, palette));
         }
 
         if (plan.ProbeName == FadePalProbeName)

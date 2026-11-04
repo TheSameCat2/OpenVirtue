@@ -10,13 +10,21 @@ public sealed class MeshBatch
         string? texture,
         IReadOnlyList<RenderVertex> vertices,
         AcknexObject? animationSource = null,
-        bool alphaTest = false)
+        bool alphaTest = false,
+        bool surface = false)
     {
         Texture = texture;
         Vertices = vertices;
         AnimationSource = animationSource;
         AlphaTest = alphaTest;
+        Surface = surface;
     }
+
+    /// <summary>
+    /// Whether the batch is floors and ceilings rather than walls (OV-20261104-attach): the original
+    /// draws sprites over them, so a host draws them without writing depth.
+    /// </summary>
+    public bool Surface { get; }
 
     /// <summary>The texture name for this batch (resolve via <see cref="Level.Textures"/>), or null for untextured.</summary>
     public string? Texture { get; }

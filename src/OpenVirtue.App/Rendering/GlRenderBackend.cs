@@ -231,7 +231,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             if (batch.DepthTest)
             {
                 _gl.Enable(EnableCap.DepthTest);
-                _gl.DepthMask(true);
+                _gl.DepthMask(batch.DepthWrite);
             }
             else
             {

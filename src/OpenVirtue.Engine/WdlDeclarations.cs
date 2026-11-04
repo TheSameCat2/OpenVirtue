@@ -290,7 +290,7 @@ public sealed class WdlDeclarations
             texture.Mirrors, texture.FrameOffsetsX, texture.FrameOffsetsY,
             texture.SoundDistance, texture.SoundVerticalDistance,
             texture.SoundName, texture.SoundVolume, texture.SoundCycles, texture.IsSoundLoop,
-            texture.RandomDelayFactor, texture.Albedo);
+            texture.RandomDelayFactor, texture.Albedo, texture.PosX, texture.PosY);
     }
 
     private void IndexBitmap(WdlItem item)
@@ -498,7 +498,7 @@ public sealed class WdlDeclarations
             bitmap, bitmaps.ToArray(), scaleX, scaleY, ambient, isSky, isLightmap, isBehind, isShadow,
             sides, cycles, delays, isOneShot,
             mirrors, frameOffsetsX, frameOffsetsY, soundDistance, soundVerticalDistance,
-            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor, albedo);
+            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor, albedo, posX, posY);
     }
 
     private void IndexRegion(WdlItem item)
@@ -895,7 +895,9 @@ public sealed class WdlDeclarations
         IReadOnlyList<bool> SoundCycles,
         bool IsSoundLoop,
         double RandomDelayFactor,
-        double Albedo);
+        double Albedo,
+        double PosX,
+        double PosY);
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
     public readonly record struct WallDef(

@@ -472,3 +472,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   the current palette again; `SCREENSHOT` saves the current palette, never the blend; the
   screenshot is 640x480 whatever `MOTION_BLUR`. Nine screenshot carriers, two grabbed from the
   emulator's own window. Implemented in `PaletteFade`, the host's palette state and the GL shader.
+- `OV-20261104-attach.md` — a sprite is its bitmap over its `SCALE` (16 a step); an `ATTACH`
+  is an upright sprite of its own size with its upper left `POS_X`, `POS_Y` base-texture pixels
+  from the base's upper left, over or `BEHIND` it; a `SHADOW` attach is centred on the floor
+  height, not laid on the floor; a wall's attach lies `POS_X` wall-texture pixels from the u origin
+  at the second vertex and `POS_Y` below the top of the first repeat above the floor, cut to the
+  wall; a wall texture's rows run downward from each repeat's top. 25 carriers. Implemented in
+  `SpriteBuilder` and `MeshBuilder`.

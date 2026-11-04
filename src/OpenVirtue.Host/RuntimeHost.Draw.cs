@@ -189,7 +189,8 @@ public sealed partial class RuntimeHost
                 batch.AlphaTest,
                 depthTest: true,
                 _shading ? ShadeAmbient(batch.Texture) : batch.Ambient,
-                shaded: _shading);
+                shaded: _shading,
+                depthWrite: !batch.Surface);
         }
     }
 
@@ -397,7 +398,8 @@ public sealed partial class RuntimeHost
         float ambient,
         PaletteFadeTint? fade = null,
         TextureImage? dynamic = null,
-        bool shaded = false)
+        bool shaded = false,
+        bool depthWrite = true)
     {
         if (vertices.Length == 0)
         {
@@ -413,6 +415,7 @@ public sealed partial class RuntimeHost
             Viewport = viewport,
             AlphaTest = alphaTest,
             DepthTest = depthTest,
+            DepthWrite = depthWrite,
             Ambient = ambient,
             Fade = fade ?? _fade,
             Vertices = vertices,
