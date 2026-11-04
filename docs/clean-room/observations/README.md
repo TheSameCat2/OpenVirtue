@@ -494,3 +494,6 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   whatever the distance or the lamp's `AMBIENT`, negative behind the wall; a level of 32 or more
   shows the `INFINITY` colour. Seventeen carriers. Implemented in `MeshBuilder.GeniusLight` and
   the GL shader.
+- `OV-20261104-sprite-shade.md` — a sprite is shaded by its depth, one level over the whole
+  sprite, two levels darker than a wall there: the walls' even level plus 2, held within 0…30.
+  Thirteen carriers. Implemented in the host's batch shade bias and the GL shader.

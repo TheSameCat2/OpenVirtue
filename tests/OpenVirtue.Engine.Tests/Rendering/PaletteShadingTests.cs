@@ -100,4 +100,16 @@ public class PaletteShadingTests
 
         Assert.Equal(69, table[(7 * 32) + 2]);
     }
+
+    [Theory]
+    // OV-20261104-sprite-shade: a sprite reads the walls' even level plus two, held within 0…30.
+    [InlineData(20.0, 1, 10, 0, 16)] // 14.8 -> 14 + 2
+    [InlineData(19.0, 1, 10, 0, 16)] // exactly 14 -> 16
+    [InlineData(28.0, 1, 10, 0.25, 12)] // 11.14 -> 10 + 2
+    [InlineData(28.0, 0, 10, 0, 30)] // 30 + 2 held at 30
+    [InlineData(20.0, 1, 10, 0.5, 0)] // -1.2 -> -2 + 2 = 0
+    public void SpriteLevel_IsTheWallsLevelPlusTwoHeldInTheRange(double distance, double light, double lightDistance, double ambient, int expected)
+    {
+        Assert.Equal(expected, PaletteShading.SpriteLevel(distance, light, lightDistance, ambient));
+    }
 }

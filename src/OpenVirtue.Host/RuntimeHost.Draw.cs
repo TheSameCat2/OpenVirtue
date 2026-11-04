@@ -267,7 +267,8 @@ public sealed partial class RuntimeHost
                 depthTest: true,
                 _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
                 shaded: _shading,
-                blend: BatchBlendOf(blend));
+                blend: BatchBlendOf(blend),
+                shadeBias: PaletteShading.SpriteBias);
             start = end;
         }
     }
@@ -413,7 +414,8 @@ public sealed partial class RuntimeHost
         TextureImage? dynamic = null,
         bool shaded = false,
         bool depthWrite = true,
-        BatchBlend blend = BatchBlend.None)
+        BatchBlend blend = BatchBlend.None,
+        int shadeBias = 0)
     {
         if (vertices.Length == 0)
         {
@@ -431,6 +433,7 @@ public sealed partial class RuntimeHost
             DepthTest = depthTest,
             DepthWrite = depthWrite,
             Blend = blend,
+            ShadeBias = shadeBias,
             Ambient = ambient,
             Fade = fade ?? _fade,
             Vertices = vertices,

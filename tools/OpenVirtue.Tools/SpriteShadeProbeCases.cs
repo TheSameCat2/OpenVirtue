@@ -21,13 +21,14 @@ internal static class SpriteShadeProbeCases
     /// <summary>The 32×48 bitmap of the ramp's first index.</summary>
     public const string RampFile = "PRBSHT.PCX";
 
-    private static TraceProbeCase At(string label, double x, double y, string question, string textureBody = "", params (string, string)[] predictions) => new(
+    private static TraceProbeCase At(string label, double x, double y, string question, string textureBody = "", string run = "", string roomBody = "", params (string, string)[] predictions) => new(
         label,
         question,
         $"BMAP ss_bm,<{RampFile}>;\nTEXTURE ss_tex {{ SCALE_XY 16, 16; BMAPS ss_bm; {textureBody}}}\nTHING ss_t {{ TEXTURE ss_tex; }}\n",
-        "    WAITT 8;\n" + P("RET"),
+        run + "    WAITT 8;\n" + P("RET"),
         Predict(predictions.Length > 0 ? predictions : [("the walls' curve on the depth", "level 30 − 304/depth rounded down to even, one level over the sprite"), ("the distance to the sprite", "a level from 30 − 304/distance")]),
         Map: new TraceProbeMap(
+            RoomBody: roomBody,
             PaletteBody: $"RANGE {ProjectionProbeGenerator.ShadeRampStart},{ProjectionProbeGenerator.ShadeRampLength};",
             Placements: [string.Create(CultureInfo.InvariantCulture, $"THING ss_t {x} {y} 0 0")]));
 
@@ -40,6 +41,12 @@ internal static class SpriteShadeProbeCases
         At("d44", 44, 0, "The thing 44 steps ahead (level 22), just before the far wall."),
         At("side", 28, 12, "The thing at depth 28 and 12 steps to the left (distance 30.5): the depth's level 18 or the distance's 20?"),
         At("ambient", 28, 0, "The thing 28 steps ahead with its texture's AMBIENT 0.25: 8 levels brighter (10)?", "AMBIENT 0.25; "),
+        At("d15.2", 15.2, 0, "Round 2. Depth 15.2, where the walls' formula gives exactly 10: does the sprite read 10 (rounded up to an even level) or 12 (two levels darker)?"),
+        At("d19", 19, 0, "Round 2. Depth 19: exactly 14; the sprite 14 or 16?"),
+        At("d30.4", 30.4, 0, "Round 2. Depth 30.4: exactly 20; the sprite 20 or 22?"),
+        At("d38", 38, 0, "Round 2. Depth 38: exactly 22; the sprite 22 or 24?"),
+        At("dark", 28, 0, "Round 3. PLAYER_LIGHT 0 (every wall at 30): the sprite two levels past, 32 (the INFINITY colour), or held at 30?", run: "    SET PLAYER_LIGHT, 0;\n"),
+        At("bright", 20, 0, "Round 3. Region AMBIENT 0.5 at depth 20 (the walls' formula −1.2, held at 0): the sprite 0 or 2?", roomBody: "AMBIENT 0.5;"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

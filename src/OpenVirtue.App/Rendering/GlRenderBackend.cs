@@ -50,6 +50,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform vec4 uFadeCurrent;
         uniform vec4 uFadeTarget;
         uniform int uBlend;
+        uniform int uShadeBias;
         uniform int uHeightParity;
         uniform float uAlphaTest;
         uniform float uShaded;
@@ -74,6 +75,10 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 // Past the range's end (level 32 and up) the texel shows the INFINITY colour, entry 1
                 // (OV-20261104-genius).
                 level = 2.0 * floor(level / 2.0);
+                if (uShadeBias != 0) {
+                    // A sprite: two levels darker, held within the range (OV-20261104-sprite-shade).
+                    level = clamp(level + float(uShadeBias), 0.0, 30.0);
+                }
                 float shaded = level >= 32.0
                     ? 1.0
                     : floor(texelFetch(uShade, ivec2(int(clamp(level, 0.0, 30.0)), int(index)), 0).r * 255.0 + 0.5);
@@ -102,6 +107,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _tintLocation;
     private readonly int _fadeCurrentLocation;
     private readonly int _blendLocation;
+    private readonly int _shadeBiasLocation;
     private readonly int _heightParityLocation;
     private readonly int _fadeTargetLocation;
     private readonly int _alphaTestLocation;
@@ -152,6 +158,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _tintLocation = _gl.GetUniformLocation(_program, "uTintAndLight");
         _fadeCurrentLocation = _gl.GetUniformLocation(_program, "uFadeCurrent");
         _blendLocation = _gl.GetUniformLocation(_program, "uBlend");
+        _shadeBiasLocation = _gl.GetUniformLocation(_program, "uShadeBias");
         _heightParityLocation = _gl.GetUniformLocation(_program, "uHeightParity");
         _fadeTargetLocation = _gl.GetUniformLocation(_program, "uFadeTarget");
         _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
@@ -279,6 +286,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform4(_fadeCurrentLocation, batch.Fade.Current.X, batch.Fade.Current.Y, batch.Fade.Current.Z, batch.Fade.CurrentWeight);
             _gl.Uniform4(_fadeTargetLocation, batch.Fade.Target.X, batch.Fade.Target.Y, batch.Fade.Target.Z, batch.Fade.Factor);
             _gl.Uniform1(_blendLocation, (int)batch.Blend);
+            _gl.Uniform1(_shadeBiasLocation, batch.ShadeBias);
             _gl.Uniform1(_heightParityLocation, (Height - 1) & 1);
             if (batch.Blend == BatchBlend.Diaphanous)
             {
