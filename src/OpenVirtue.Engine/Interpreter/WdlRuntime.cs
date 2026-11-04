@@ -4502,6 +4502,8 @@ public sealed class WdlRuntime :
         int? located = LevelTopology.LocateRegion(_level, actor.X, actor.Y);
         int region = located ?? -1;
         int origin = region;
+        Wall? entered = null;
+        int enteredFrom = region;
         foreach (Wall wall in CrossedWalls(actor.X, actor.Y, directionX, directionY, length))
         {
             if (region < 0)
@@ -4511,10 +4513,19 @@ public sealed class WdlRuntime :
                 continue;
             }
 
+            entered = wall;
+            enteredFrom = region;
             region = OtherSide(wall, region);
         }
 
-        if (region < 0 || region >= _level.Regions.Count || (region != origin && !ActorCanClimbInto(actor, region)))
+        // The end's region must be one the actor may enter, and through the border it enters it by: a
+        // region behind an IMPASSABLE border is refused however low its floor, while a step through such
+        // a region out to its own region again passes (border-kinds imp-border: the walker from 22
+        // toward the pad's IMPASSABLE north border went half the way to the hold, 21.524, as the
+        // careful-stop walkers before a solid wall; its earlier step from 10.955 through the whole pad
+        // to 20.511 was taken; 2026-11-04 re-read).
+        if (region < 0 || region >= _level.Regions.Count ||
+            (region != origin && (!ActorCanClimbInto(actor, region) || (entered is { } border && !ActorCanCross(actor, border, enteredFrom, region)))))
         {
             return CarefulEndTest.Crosses;
         }

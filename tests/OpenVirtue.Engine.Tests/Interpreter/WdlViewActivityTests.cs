@@ -376,6 +376,32 @@ public sealed class WdlViewActivityTests
         Assert.InRange(walker.Y, 20.49, 20.53);
     }
 
+    [Fact]
+    public void Tick_SkipFrames_LongCarefulStepEndingInsideAnImpassablePadGoesHalfWayToTheHold()
+    {
+        // OV-20261019-border-kinds imp-border, re-read 2026-11-04: from 22 the walker's six-cycle step
+        // back toward 4 would end at 12.4, inside the pad it enters through an IMPASSABLE border; the
+        // whole, half and quarter are refused, the eighth (20.8) is too close to the north border, and
+        // the walker goes half the way to the hold before it: 21.524 (974 units to 21.049, half 487).
+        const string map =
+            "VERTEX -50 -50 0;#0\nVERTEX 50 -50 0;#1\nVERTEX 50 50 0;#2\nVERTEX -50 50 0;#3\n" +
+            "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+            "REGION room 0 16;#0\nREGION pad 0 16;#1\n" +
+            "WALL edge 0 1 0 -1 0 0;#0\nWALL edge 1 2 0 -1 0 0;#1\nWALL edge 2 3 0 -1 0 0;#2\nWALL edge 3 0 0 -1 0 0;#3\n" +
+            "WALL border 4 5 1 0 0 0;#4\nWALL border 5 6 1 0 0 0;#5\nWALL border 6 7 1 0 0 0;#6\nWALL border 7 4 1 0 0 0;#7\n" +
+            "ACTOR walker -10.5 22 270 0;#8\nPLAYER_START 40 0 0 0;#9";
+        (WdlRuntime runtime, Actor walker, _) = Create(
+            "WALL border { FLAGS IMPASSABLE; } ACTOR walker { TEXTURE moverTex; TARGET MOVE; SPEED 1.59375; DIST 1; FLAGS CAREFULLY; }",
+            map);
+
+        for (int i = 0; i < 6; i++)
+        {
+            runtime.Tick(Cycle);
+        }
+
+        Assert.Equal(21.524, walker.Y, 3);
+    }
+
     [Theory]
     [InlineData(2.0, 21.524)] // the eighth ends too close to the border: half the way to the hold
     [InlineData(2.272, 21.073)] // the eighth (1.199 along the cut sine) is clear (north-4-45)
