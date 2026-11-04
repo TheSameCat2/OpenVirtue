@@ -75,7 +75,95 @@ public static class MeshBuilder
             {
                 EmitWallSegment(level, accumulator, wall, v1, v2,
                     Floor(region, v1), Ceiling(region, v1), Floor(region, v2), Ceiling(region, v2));
+                EmitWallAttachment(level, accumulator, wall, v1, v2,
+                    Math.Min(Floor(region, v1), Floor(region, v2)), Math.Max(Ceiling(region, v1), Ceiling(region, v2)));
             }
+        }
+    }
+
+    /// <summary>
+    /// The wall's <c>ATTACH</c> texture (OV-20261104-attach): a quad of the attach's own size
+    /// (pixels over its <c>SCALE</c>) whose upper left corner lies <c>POS_X</c> pixels of the wall
+    /// texture (at the wall texture's scale) along the wall from its u origin at the second vertex and
+    /// <c>POS_Y</c> such pixels below the top of the wall texture's first repeat above the floor, cut
+    /// to the wall. The wall is seen from both sides, so the quad is laid a hair off the wall on each.
+    /// </summary>
+    private static void EmitWallAttachment(
+        Level level,
+        Accumulator accumulator,
+        Wall wall,
+        Vertex v1,
+        Vertex v2,
+        float floor,
+        float ceiling)
+    {
+        if (wall.AttachTexture is null ||
+            !level.Textures.TryGetValue(wall.AttachTexture, out LevelTexture attach) ||
+            attach.Width <= 0 ||
+            attach.Height <= 0 ||
+            ceiling <= floor)
+        {
+            return;
+        }
+
+        float dx = v1.X - v2.X;
+        float dz = v1.Y - v2.Y;
+        float length = MathF.Sqrt((dx * dx) + (dz * dz));
+        TextureMapping mapping = TextureMappingFor(level, wall.Texture);
+        if (length <= 0 || mapping.WorldToV <= 0 || mapping.WorldToU <= 0)
+        {
+            return;
+        }
+
+        double wallScaleX = wall.Texture is not null && level.Textures.TryGetValue(wall.Texture, out LevelTexture wallTexture) && wallTexture.ScaleX > 0
+            ? wallTexture.ScaleX
+            : DefaultScale;
+        double wallScaleY = wall.Texture is not null && level.Textures.TryGetValue(wall.Texture, out wallTexture) && wallTexture.ScaleY > 0
+            ? wallTexture.ScaleY
+            : DefaultScale;
+        float width = (float)(attach.Width / (attach.ScaleX > 0 ? attach.ScaleX : DefaultScale));
+        float height = (float)(attach.Height / (attach.ScaleY > 0 ? attach.ScaleY : DefaultScale));
+        float repeatHeight = 1f / mapping.WorldToV;
+        float s0 = (float)(attach.PosX / wallScaleX);
+        float s1 = s0 + width;
+        float top = floor + repeatHeight - (float)(attach.PosY / wallScaleY);
+        float bottom = top - height;
+
+        float cs0 = Math.Max(s0, 0);
+        float cs1 = Math.Min(s1, length);
+        float ct = Math.Min(top, ceiling);
+        float cb = Math.Max(bottom, floor);
+        if (cs1 <= cs0 || ct <= cb)
+        {
+            return;
+        }
+
+        float u0 = (cs0 - s0) / width;
+        float u1 = (cs1 - s0) / width;
+        float vTop = (top - ct) / height;
+        float vBottom = (top - cb) / height;
+        float ambient = WallAmbient(level, wall);
+        List<RenderVertex> target = accumulator.Bucket(wall.AttachTexture, animationSource: null, alphaTest: true);
+        float dirX = dx / length;
+        float dirY = dz / length;
+        const float lift = 0.02f;
+        foreach (float side in (ReadOnlySpan<float>)[lift, -lift])
+        {
+            float nx = -dirY * side;
+            float ny = dirX * side;
+            (float X, float Z) At(float s) => (v2.X + (dirX * s) + nx, RenderSpace.ZFromMapY(v2.Y + (dirY * s) + ny));
+            (float x0, float z0) = At(cs0);
+            (float x1, float z1) = At(cs1);
+            var bottomLeft = new RenderVertex(x0, cb, z0, u0, vBottom, ambient);
+            var bottomRight = new RenderVertex(x1, cb, z1, u1, vBottom, ambient);
+            var topRight = new RenderVertex(x1, ct, z1, u1, vTop, ambient);
+            var topLeft = new RenderVertex(x0, ct, z0, u0, vTop, ambient);
+            target.Add(bottomLeft);
+            target.Add(bottomRight);
+            target.Add(topRight);
+            target.Add(bottomLeft);
+            target.Add(topRight);
+            target.Add(topLeft);
         }
     }
 
@@ -238,11 +326,13 @@ public static class MeshBuilder
         float z1 = RenderSpace.ZFromMapY(v1.Y);
         float z2 = RenderSpace.ZFromMapY(v2.Y);
         // v runs from the piece's lowest point, so a sloped edge cuts the texture rather than stretching it.
+        // OV-20261104-attach (the swatch wall): the bitmap's rows run downward from the top of each
+        // repeat, its bottom row on the floor, so v falls as the height rises.
         float worldToV = mapping.WorldToV;
-        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, v0 + ((floor1 - floor) * worldToV), ambient);
-        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, v0 + ((floor2 - floor) * worldToV), ambient);
-        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, v0 + ((ceiling2 - floor) * worldToV), ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, v0 + ((ceiling1 - floor) * worldToV), ambient);
+        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, v0 - ((floor1 - floor) * worldToV), ambient);
+        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, v0 - ((floor2 - floor) * worldToV), ambient);
+        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, v0 - ((ceiling2 - floor) * worldToV), ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, v0 - ((ceiling1 - floor) * worldToV), ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -323,7 +413,8 @@ public static class MeshBuilder
         TextureMapping mapping = TextureMappingFor(level, texture);
         List<RenderVertex> target = accumulator.Bucket(
             texture,
-            AnimationSourceFor(level, texture, region));
+            AnimationSourceFor(level, texture, region),
+            surface: true);
 
         for (int i = 0; i < triangles.Count; i += 3)
         {
@@ -456,7 +547,8 @@ public static class MeshBuilder
         public List<RenderVertex> Bucket(
             string? texture,
             AcknexObject? animationSource = null,
-            bool alphaTest = false)
+            bool alphaTest = false,
+            bool surface = false)
         {
             if (texture is null)
             {
@@ -477,7 +569,7 @@ public static class MeshBuilder
                     byTexture[texture] = animatedBuckets;
                 }
 
-                return animatedBuckets.For(alphaTest);
+                return animatedBuckets.For(alphaTest, surface);
             }
 
             if (!_byTexture.TryGetValue(texture, out TextureBuckets? buckets))
@@ -486,7 +578,7 @@ public static class MeshBuilder
                 _byTexture[texture] = buckets;
             }
 
-            return buckets.For(alphaTest);
+            return buckets.For(alphaTest, surface);
         }
 
         public LevelMesh ToMesh()
@@ -517,8 +609,10 @@ public static class MeshBuilder
         {
             private readonly List<RenderVertex> _opaque = [];
             private readonly List<RenderVertex> _alphaTested = [];
+            private readonly List<RenderVertex> _surfaces = [];
 
-            public List<RenderVertex> For(bool alphaTest) => alphaTest ? _alphaTested : _opaque;
+            public List<RenderVertex> For(bool alphaTest, bool surface) =>
+                surface ? _surfaces : alphaTest ? _alphaTested : _opaque;
 
             public void AddBatches(List<MeshBatch> batches, string texture, AcknexObject? animationSource)
             {
@@ -530,6 +624,11 @@ public static class MeshBuilder
                 if (_alphaTested.Count > 0)
                 {
                     batches.Add(new MeshBatch(texture, _alphaTested, animationSource, alphaTest: true));
+                }
+
+                if (_surfaces.Count > 0)
+                {
+                    batches.Add(new MeshBatch(texture, _surfaces, animationSource, alphaTest: false, surface: true));
                 }
             }
         }

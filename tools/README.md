@@ -118,6 +118,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   fades, the screenshots' palettes read against the files; the `hold` and `swatch` cases hold
   each fade for hundreds of ticks so the emulator's window can be grabbed from outside, since a
   screenshot saves the current palette and never the blend the screen shows.
+- `attach` (`AttachProbeCases`): a thing of a 32×48 bitmap 24 steps ahead with a strip or a
+  square attached under every combination of `POS_X`/`POS_Y`, `BEHIND`, `SHADOW` and its own
+  `SCALE`, a size family for the sprite scale rule, and a free wall 32 steps ahead with the square
+  attached (`PORTCULLIS`, a non-dividing `SCALE_Y`, overhang); the final screenshot's palette
+  indices give each layer's rectangle.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

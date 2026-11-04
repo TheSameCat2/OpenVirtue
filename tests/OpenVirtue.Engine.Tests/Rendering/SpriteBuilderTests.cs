@@ -79,7 +79,10 @@ public class SpriteBuilderTests
         IReadOnlyList<SpriteBillboard> sprites = SpriteBuilder.Build(level);
 
         Assert.Equal(9, sprites.Single(sprite => !sprite.IsAttachment).BasePosition.Y, 5);
-        Assert.Equal(9.01, sprites.Single(sprite => sprite.IsAttachment).BasePosition.Y, 5);
+        // The shadow is an upright strip centred on the floor: its bottom half a step below it.
+        SpriteBillboard shadow = sprites.Single(sprite => sprite.IsAttachment);
+        Assert.Equal(9, shadow.BasePosition.Y, 5);
+        Assert.Equal(-0.5f, shadow.CenterOffset.Y, 5);
     }
 
     [Fact]
@@ -146,6 +149,32 @@ public class SpriteBuilderTests
     }
 
     [Fact]
+    public void Build_AttachTexture_SitsAtPosFromTheBasesUpperLeftInTheBasesPixels()
+    {
+        // OV-20261104-attach (pos, scale): a 16x32 base (1x2 steps) with a 16 px square attached at
+        // POS_X 8, POS_Y 16 at the base's 16 px a step: the square's upper left half a step right of
+        // the base's left edge and a step below its top; at SCALE 8 the square is 2 steps, placed the same.
+        Level level = Load(
+            "THING plant 2 3 0 0;#1\nPLAYER_START 0 0 0 0;#2",
+            "MAPFILE <m.wmp>; " +
+            "BMAP baseMap,<base.pcx>,0,0,16,32; BMAP sqMap,<sq.pcx>,0,0,16,16; " +
+            "TEXTURE baseTex { BMAPS baseMap; } " +
+            "TEXTURE sqTex { BMAPS sqMap; POS_X 8; POS_Y 16; } " +
+            "TEXTURE bigTex { BMAPS sqMap; SCALE_XY 8, 8; POS_X 8; POS_Y 16; } " +
+            "THING plant { TEXTURE baseTex; ATTACH sqTex; }");
+
+        SpriteBillboard square = Assert.Single(SpriteBuilder.Build(level), sprite => sprite.IsAttachment);
+        Assert.Equal(0.5f, square.HalfWidth);
+        Assert.Equal(new Vector2(-0.5f + 0.5f + 0.5f, 2 - 1 - 1), square.CenterOffset);
+        Assert.Equal(-0.01f, square.CameraDepthOffset);
+
+        level.Things[0].AttachTexture = "bigTex";
+        SpriteBillboard big = Assert.Single(SpriteBuilder.Build(level), sprite => sprite.IsAttachment);
+        Assert.Equal(1f, big.HalfWidth);
+        Assert.Equal(new Vector2(-0.5f + 0.5f + 1f, 2 - 1 - 2), big.CenterOffset);
+    }
+
+    [Fact]
     public void Build_ShadowAttachTexture_LiesOnRegionFloor()
     {
         Level level = Load(
@@ -160,9 +189,12 @@ public class SpriteBuilderTests
             SpriteBuilder.Build(level),
             sprite => sprite.Texture == "shadowTex");
 
-        Assert.Equal(SpriteOrientation.Ground, shadow.Orientation);
-        Assert.Equal(4.01f, shadow.BasePosition.Y);
-        Assert.Equal(0, shadow.CameraDepthOffset);
+        // OV-20261104-attach: an upright strip of its own size, vertically centred on the floor
+        // height (4) whatever the actor's height, its left edge at the base's left edge.
+        Assert.Equal(SpriteOrientation.Upright, shadow.Orientation);
+        Assert.Equal(6f, shadow.BasePosition.Y); // the floor 4 plus the actor's height 2
+        Assert.Equal(new Vector2(-0.5f + 1f, 4 - 6 - 0.5f), shadow.CenterOffset);
+        Assert.Equal(0.01f, shadow.CameraDepthOffset);
         Assert.Equal("actorTex", Assert.Single(
             SpriteBuilder.SelectClickableLayers(SpriteBuilder.Build(level))).Texture);
     }

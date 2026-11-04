@@ -245,8 +245,9 @@ public class MeshBuilderTests
 
         Assert.Equal(0, batch.Vertices.Min(v => v.U));
         Assert.Equal(1, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0, batch.Vertices.Min(v => v.V), 1e-4); // OFFSET_Y starts at 1/1024
-        Assert.Equal(1, batch.Vertices.Max(v => v.V), 1e-4);
+        // OV-20261104-attach: the bitmap's bottom row sits on the floor and v falls with the height.
+        Assert.Equal(-1, batch.Vertices.Min(v => v.V), 1e-4);
+        Assert.Equal(0, batch.Vertices.Max(v => v.V), 1e-4);
     }
 
     [Fact]
@@ -270,8 +271,78 @@ public class MeshBuilderTests
 
         Assert.Equal(0.25f, batch.Vertices.Min(v => v.U));
         Assert.Equal(1.25f, batch.Vertices.Max(v => v.U));
-        Assert.Equal(0.5f, batch.Vertices.Min(v => v.V), 1e-4f);
-        Assert.Equal(1.5f, batch.Vertices.Max(v => v.V), 1e-4f);
+        Assert.Equal(-0.5f, batch.Vertices.Min(v => v.V), 1e-4f);
+        Assert.Equal(0.5f, batch.Vertices.Max(v => v.V), 1e-4f);
+    }
+
+    [Fact]
+    public void BuildWalls_AttachTexture_LiesAtItsPosFromTheWallTexturesUpperLeft()
+    {
+        // OV-20261104-attach (wall-pos): a wall 8 steps long at x 32 from map y −4 to 4, its 64 px
+        // texture at 4 px a step (16 steps a repeat), the 16 px square attached at POS_X 24, POS_Y 16:
+        // the square is 1 step wide at its own default scale, 6 to 7 steps from the u origin at the
+        // second vertex and 4 to 5 steps below the top of the first repeat (12 down to 11).
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 32 -4 0;#0\nVERTEX 32 4 0;#1\nREGION room 0 16;#0\n" +
+                        "WALL w 0 1 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            BMAP q, <q.pcx>, 0, 0, 16, 16;
+            TEXTURE wallTex { SCALE_XY 4, 4; BMAPS m; }
+            TEXTURE square { BMAPS q; POS_X 24; POS_Y 16; }
+            WALL w { TEXTURE wallTex; ATTACH square; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        LevelMesh mesh = MeshBuilder.BuildWalls(level);
+
+        MeshBatch attach = Assert.Single(mesh.Batches, b => b.Texture == "square");
+        Assert.True(attach.AlphaTest);
+        Assert.Equal(12, attach.Vertices.Count); // one quad a hair off each face
+        Assert.Equal(11, attach.Vertices.Min(v => v.Y), 4);
+        Assert.Equal(12, attach.Vertices.Max(v => v.Y), 4);
+        // Map y 4 (the second vertex) is render z −4; 6 to 7 steps toward the first vertex.
+        Assert.Equal(-(4 - 7), attach.Vertices.Max(v => v.Z), 1);
+        Assert.Equal(-(4 - 6), attach.Vertices.Min(v => v.Z), 1);
+        Assert.Equal(0, attach.Vertices.Min(v => v.U));
+        Assert.Equal(1, attach.Vertices.Max(v => v.U));
+        Assert.Equal(0, attach.Vertices.Min(v => v.V));
+        Assert.Equal(1, attach.Vertices.Max(v => v.V));
+    }
+
+    [Fact]
+    public void BuildWalls_AttachTexture_IsCutToTheWall()
+    {
+        // OV-20261104-attach (wall-half, wall-neg): half a step past the u origin shows half the
+        // square; a square wholly beyond the wall is not drawn.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 32 -4 0;#0\nVERTEX 32 4 0;#1\nREGION room 0 16;#0\n" +
+                        "WALL w 0 1 0 0 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string half =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            BMAP q, <q.pcx>, 0, 0, 16, 16;
+            TEXTURE wallTex { SCALE_XY 4, 4; BMAPS m; }
+            TEXTURE square { BMAPS q; POS_X -2; POS_Y 0; }
+            WALL w { TEXTURE wallTex; ATTACH square; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", half, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        MeshBatch attach = Assert.Single(MeshBuilder.BuildWalls(level).Batches, b => b.Texture == "square");
+        Assert.Equal(0.5f, attach.Vertices.Min(v => v.U));
+        Assert.Equal(1, attach.Vertices.Max(v => v.U));
+        Assert.Equal(-4, attach.Vertices.Min(v => v.Z), 1);
+        Assert.Equal(-3.5f, attach.Vertices.Max(v => v.Z), 1);
+
+        Level beyond = LevelLoader.LoadCore("x", half.Replace("POS_X -2; POS_Y 0;", "POS_X -8; POS_Y -8;"), n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        Assert.DoesNotContain(MeshBuilder.BuildWalls(beyond).Batches, b => b.Texture == "square");
     }
 
     [Fact]
@@ -338,12 +409,17 @@ public class MeshBuilderTests
             """;
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
-        MeshBatch batch = Assert.Single(MeshBuilder.Build(level).Batches);
+        // The walls and the surfaces share the texture but are separate batches: the surfaces
+        // are drawn without writing depth (OV-20261104-attach).
+        LevelMesh mesh = MeshBuilder.Build(level);
+        Assert.Equal(2, mesh.Batches.Count);
+        Assert.Single(mesh.Batches, static batch => batch.Surface);
+        List<RenderVertex> vertices = mesh.Batches.SelectMany(static batch => batch.Vertices).ToList();
 
-        Assert.Contains(batch.Vertices, v => v.Y == 7);
-        Assert.Contains(batch.Vertices, v => v.Y == 17);
-        Assert.Contains(batch.Vertices, v => v.Y == 5);
-        Assert.Contains(batch.Vertices, v => v.Y == 15);
+        Assert.Contains(vertices, v => v.Y == 7);
+        Assert.Contains(vertices, v => v.Y == 17);
+        Assert.Contains(vertices, v => v.Y == 5);
+        Assert.Contains(vertices, v => v.Y == 15);
     }
 
     [Fact]

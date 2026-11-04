@@ -743,7 +743,8 @@ public sealed partial class RuntimeHost : IDisposable
                 batch.Vertices.ToArray(),
                 batch.AnimationSource,
                 batch.AlphaTest,
-                TextureAmbient(batch.Texture)));
+                TextureAmbient(batch.Texture),
+                batch.Surface));
         }
     }
 
@@ -837,9 +838,13 @@ public sealed partial class RuntimeHost : IDisposable
         RenderVertex[] vertices,
         AcknexObject? animationSource,
         bool alphaTest,
-        float ambient)
+        float ambient,
+        bool surface = false)
     {
         public string? Texture { get; } = texture;
+
+        /// <summary>Floors and ceilings: drawn without writing depth (OV-20261104-attach).</summary>
+        public bool Surface { get; } = surface;
 
         public RenderVertex[] Vertices { get; } = vertices;
 

@@ -43,6 +43,13 @@ public sealed class DrawBatch
 
     public bool DepthTest { get; init; }
 
+    /// <summary>
+    /// Whether the batch writes depth. Floors and ceilings do not (OV-20261104-attach, pos): the
+    /// original draws sprites over them, only walls hiding a sprite, so an attach reaching below the
+    /// floor line still shows.
+    /// </summary>
+    public bool DepthWrite { get; init; } = true;
+
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }
 
