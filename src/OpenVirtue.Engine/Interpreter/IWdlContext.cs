@@ -85,6 +85,15 @@ public interface IWdlObjectGroupContext
 {
     /// <summary>Returns every loaded object with the given WDL name, or an empty sequence.</summary>
     IEnumerable<AcknexObject> GetObjectsByName(string name);
+
+    /// <summary>
+    /// Takes the objects out of the run for good: <c>SET_ALL</c> on a position (<c>X</c>, <c>Y</c>,
+    /// <c>Z</c>) left the original's things without their <c>EACH_TICK</c> ever after
+    /// (OV-20261104-instructions set-all-near, set-all-shake).
+    /// </summary>
+    void RetireObjects(IEnumerable<AcknexObject> objects)
+    {
+    }
 }
 
 /// <summary>Optional aggregate execution diagnostics used by clean-room runtime probes.</summary>

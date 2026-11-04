@@ -20,6 +20,9 @@ public sealed class Wall : AcknexObject
 
     public Wall(string name) : base(name) { }
 
+    /// <summary>The level's vertices, for the <c>X1</c>…<c>Z2</c> skills (set by the runtime).</summary>
+    public IReadOnlyList<Vertex>? Vertices { get; set; }
+
     public int Vertex1 { get; set; }
     public int Vertex2 { get; set; }
     public int LeftRegion { get; set; }
@@ -137,9 +140,19 @@ public sealed class Wall : AcknexObject
             case "offset_x": value = OffsetX; return true;
             case "offsy": value = OffsetY; return true;
             case "offset_y": value = OffsetY; return true;
+            // The wall's ends as the region instructions move them (OV-20261104-instructions).
+            case "x1": value = VertexAt(Vertex1).X; return true;
+            case "y1": value = VertexAt(Vertex1).Y; return true;
+            case "z1": value = VertexAt(Vertex1).Z; return true;
+            case "x2": value = VertexAt(Vertex2).X; return true;
+            case "y2": value = VertexAt(Vertex2).Y; return true;
+            case "z2": value = VertexAt(Vertex2).Z; return true;
             default: value = 0; return false;
         }
     }
+
+    private Vertex VertexAt(int index) =>
+        Vertices is { } vertices && index >= 0 && index < vertices.Count ? vertices[index] : default;
 
     protected override bool TrySetTyped(string name, double value)
     {

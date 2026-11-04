@@ -1875,9 +1875,15 @@ public sealed class WdlInterpreter(IWdlContext context)
         int comma = IndexOfKind(item.Header, WdlTokenKind.Comma);
         if (comma < 0 ||
             context is not IWdlObjectGroupContext groups ||
-            !TryMemberTarget(item.Header, 0, comma, out string objectName, out string property) ||
-            IsSetAllPositionProperty(property))
+            !TryMemberTarget(item.Header, 0, comma, out string objectName, out string property))
         {
+            return;
+        }
+
+        if (IsSetAllPositionProperty(property))
+        {
+            // Not a move: the original's objects never ran again (OV-20261104-instructions).
+            groups.RetireObjects(groups.GetObjectsByName(objectName).ToList());
             return;
         }
 

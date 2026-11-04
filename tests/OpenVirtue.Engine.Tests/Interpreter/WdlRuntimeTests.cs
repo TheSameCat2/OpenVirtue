@@ -2426,7 +2426,7 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_DropInstruction_PlacesEntityAlongPlayerSightLine()
+    public void Runtime_DropInstruction_PlacesEntityAlongTheCyclesStartAngle()
     {
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
@@ -2444,8 +2444,10 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("dropIt"));
 
-        Assert.Equal(5, pickup.X, 2); // the angle literal is held as 1.5703 (OV-20261029-numeric-edge)
-        Assert.Equal(9, pickup.Y, 2);
+        // DROP goes along the angle the cycle began with, 0 here: a SET PLAYER_ANGLE in the same
+        // action does not count yet (OV-20261104-instructions drop).
+        Assert.Equal(9, pickup.X, 2);
+        Assert.Equal(5, pickup.Y, 2);
         Assert.Equal(0, pickup.Region);
         Assert.Equal("pickup", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
@@ -2471,7 +2473,7 @@ public class WdlRuntimeTests
         Assert.True(runtime.RunAction("fire"));
 
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(0.6, runtime.GetSkill("RESULT"), 6);
+        Assert.Equal(1 - (409.0 / 1024), runtime.GetSkill("RESULT"), 6); // 1 − the share cut to 1/1024
         Assert.Equal(1, runtime.GetSkill("hit_seen"));
         Assert.Same(target, runtime.GetObject("HIT"));
     }
@@ -2658,7 +2660,7 @@ public class WdlRuntimeTests
         // along the line of sight, not the 45.6-step ray length (here 4, not 4.45).
         Assert.Same(Assert.Single(level.Things), runtime.GetObject("hit"));
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(1 - (4.0 / 20.0), runtime.GetSkill("RESULT"), 6);
+        Assert.Equal(1 - (204.0 / 1024), runtime.GetSkill("RESULT"), 6); // 1 − the share cut to 1/1024
     }
 
     [Fact]
@@ -2774,7 +2776,7 @@ public class WdlRuntimeTests
         Assert.True(runtime.RunAction("checkSight"));
 
         Assert.Equal(4, runtime.GetSkill("HIT_DIST"), 6);
-        Assert.Equal(0.6, runtime.GetSkill("RESULT"), 6);
+        Assert.Equal(1 - (409.0 / 1024), runtime.GetSkill("RESULT"), 6); // 1 − the share cut to 1/1024
         Assert.Equal(0, runtime.GetSkill("SHOOT_ANGLE"), 6);
     }
 
@@ -2865,22 +2867,25 @@ public class WdlRuntimeTests
 
         Assert.True(runtime.RunAction("boom"));
 
-        Assert.Equal(0.5, runtime.GetSkill("crate_hit"), 6);
+        // The crate's nearest edge (its half width 0.5 without a texture, a unit over) is 1.501 from
+        // the barrel; RESULT is 1 − the share cut to 1/1024 (OV-20261104-instructions explode).
+        Assert.Equal(0.625, runtime.GetSkill("crate_hit"), 6);
         Assert.Equal(0, runtime.GetSkill("stone_hit"));
-        Assert.Equal(2, runtime.GetSkill("HIT_MINDIST"), 6);
+        Assert.Equal(1.5 + (1.0 / 1024), runtime.GetSkill("HIT_MINDIST"), 6);
         Assert.Equal(3, runtime.GetSkill("HIT_DIST"), 6);
         Assert.Equal(0.25, runtime.GetSkill("RESULT"), 6);
         Assert.Same(crate, runtime.GetObject("HIT"));
     }
 
     [Fact]
-    public void Runtime_ShiftInstruction_MovesRegionVerticesObjectsAndPlayer()
+    public void Runtime_ShiftInstruction_MovesRegionVerticesAndObjectsOnceUntilAShake()
     {
-        Level level = LoadWithMap(TwoRoomMap, "MAPFILE <m.wmp>; ACTION moveLeft { SHIFT left, 2, -1; }");
+        Level level = LoadWithMap(TwoRoomMap, "MAPFILE <m.wmp>; ACTION moveLeft { SHIFT left, 2, -1; } ACTION shakeIt { SHAKE pickup; }");
         Thing pickup = Assert.Single(level.Things);
         var runtime = new WdlRuntime(level);
         var player = new Player(level);
         runtime.RegisterObject("player", player);
+        Vector3 standing = player.Position;
 
         Assert.True(runtime.RunAction("moveLeft"));
 
@@ -2890,13 +2895,23 @@ public class WdlRuntimeTests
         Assert.Equal(-1, level.Vertices[1].Y);
         Assert.Equal(7, pickup.X);
         Assert.Equal(4, pickup.Y);
-        Assert.Equal(7f, player.Position.X);
-        Assert.Equal(4f, player.Position.Z);
+        // The player on the region stays, and the region takes no second SHIFT until one of its
+        // walls, things or actors is SHAKEn (OV-20261104-instructions shift, shift-shake-*).
+        Assert.Equal(standing, player.Position);
         Assert.Equal("left", Assert.Single(runtime.ShakeRequests).ObjectName);
+
+        Assert.True(runtime.RunAction("moveLeft"));
+        Assert.Equal(7, pickup.X);
+        Assert.Equal(2, level.Vertices[0].X);
+
+        Assert.True(runtime.RunAction("shakeIt"));
+        Assert.True(runtime.RunAction("moveLeft"));
+        Assert.Equal(9, pickup.X);
+        Assert.Equal(4, level.Vertices[0].X);
     }
 
     [Fact]
-    public void Runtime_LiftInstruction_MovesRegionVerticesAndContainedObjectsVertically()
+    public void Runtime_LiftInstruction_MovesRegionVerticesOnly()
     {
         Level level = LoadWithMap(TwoRoomMap, "MAPFILE <m.wmp>; ACTION liftLeft { LIFT left, 3; }");
         Thing pickup = Assert.Single(level.Things);
@@ -2907,12 +2922,13 @@ public class WdlRuntimeTests
         Assert.Equal(3, level.Vertices[0].Z);
         Assert.Equal(3, level.Vertices[1].Z);
         Assert.Equal(0, level.Vertices[4].Z);
-        Assert.Equal(3, pickup.Z);
+        // The things on the region keep their Z (OV-20261104-instructions lift).
+        Assert.Equal(0, pickup.Z);
         Assert.Equal("left", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
 
     [Fact]
-    public void Runtime_RotateInstruction_RotatesRegionVerticesObjectsAndPlayerAroundGenius()
+    public void Runtime_RotateInstruction_RotatesRegionVerticesAndObjectsAroundGenius()
     {
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
@@ -2927,6 +2943,7 @@ public class WdlRuntimeTests
         var runtime = new WdlRuntime(level);
         var player = new Player(level);
         runtime.RegisterObject("player", player);
+        Vector3 standing = player.Position;
 
         Assert.True(runtime.RunAction("turn"));
 
@@ -2938,9 +2955,9 @@ public class WdlRuntimeTests
         Assert.Equal(10, level.Vertices[1].Y, 2);
         Assert.Equal(5, pickup.X, 2);
         Assert.Equal(7, pickup.Y, 2);
-        Assert.Equal(1.5707963267948966, pickup.Angle, 2);
-        Assert.Equal(5f, player.Position.X, 2);
-        Assert.Equal(7f, player.Position.Z, 2);
+        // The thing's ANGLE and the player on the region stay (OV-20261104-instructions rotate).
+        Assert.Equal(0, pickup.Angle, 2);
+        Assert.Equal(standing, player.Position);
         Assert.Equal("room", Assert.Single(runtime.ShakeRequests).ObjectName);
     }
 

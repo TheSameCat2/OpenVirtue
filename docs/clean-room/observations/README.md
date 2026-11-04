@@ -441,3 +441,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
     at 40 and 20 lost at 0.521 and 0.543), as the measured bottom row.
 
   A wall end's column rounding and unit residuals of the view's value are left as read.
+- `OV-20261104-instructions.md` — eighteen carriers on the instructions no earlier probe
+  measured: `SHIFT`, `ROTATE` and `LIFT` move a region's vertices, things and actors (not the
+  player on it) once, and the region takes no other until one of its walls or objects is
+  `SHAKE`n; `LIFT` raises only the vertices; `ROTATE` leaves `ANGLE`s (16.16 trig, floored
+  products); `SHAKE` puts a thing on its floor and refreshes its `DISTANCE`; `DROP` goes along
+  the cycle's starting angle with 1/1024 sines into the region of its point; `SET_ALL` reaches
+  every placement and `SET` the first, and `SET_ALL` on a position retires the objects; an
+  `INVISIBLE` thing runs no `EACH_TICK`; `PUSH n` fires the nearest object the last frame drew
+  within `n`; `EXPLODE` fires the region's `FRAGILE` objects from the last placed by the distance
+  to their nearest edge; `RESULT` is 1 − the share cut to 1/1024. Implemented.
