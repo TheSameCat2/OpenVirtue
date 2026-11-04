@@ -107,13 +107,15 @@ public sealed partial class RuntimeHost
             return;
         }
 
-        // The hooks run inside the coming cycle, after its TICKS and the global slots (WdlRuntime.QueueActionHook).
-        _runtime.QueueActionHook("IF_ANYKEY");
+        // The hooks run inside the coming cycle, after its resumed waits (WdlRuntime.QueueActionHook):
+        // the key's own hook first, IF_ANYKEY after it (OV-20261029-scheduler-order round 8).
         string? hookName = KeyHookName(key);
         if (hookName is not null)
         {
             _runtime.QueueActionHook(hookName);
         }
+
+        _runtime.QueueActionHook("IF_ANYKEY");
     }
 
     private static string? KeyHookName(HostKey key)

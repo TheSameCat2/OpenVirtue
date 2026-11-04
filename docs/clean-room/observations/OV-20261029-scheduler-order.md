@@ -245,3 +245,24 @@ twice half a second apart (`AUTOTYPE -w 10 -p 0.5 space space`).
   last. OpenVirtue's `DispatchQueuedHooks` sits right after `ResumeWaitingActions`, and its
   waiting list keeps arming order; hook-order replays in full (1205 lines) once the replay
   presses the key within 1/1024 of the original line's three-decimal `TICKS`.
+
+## Round 8: `IF_SPACE` and `IF_ANYKEY` together, and the key skills (2026-11-04)
+`round8/hook-both` (`OVSDO0.TXT`, fast launch): `IF_ANYKEY` prints `A` and `IF_SPACE` prints `S`,
+each with `KEY_SPACE` and `KEY_ANY`; the main loop prints `M` with the same skills in every
+cycle where `KEY_ANY` reads 1; one Space.
+
+| `TICKS` | `so_n` | Lines | `KEY_SPACE`, `KEY_ANY` |
+|---|---|---|---|
+| 81.844 | 261 | `M`, `S`, `A` | 1, 1 |
+| 82.094 | 262 | `M` | 1, 1 |
+| 82.344 | 263 | `M` | 1, 1 |
+
+- **Both hooks fire, the key's own first.** `S` then `A`, after the cycle's resumed wait (`M`), as
+  round 7 found. OpenVirtue queued `IF_ANYKEY` first; it now queues the key's hook and then
+  `IF_ANYKEY`.
+- **The key skills read 1 from the hooks' cycle on, as long as the key is down**: three
+  0.25-tick cycles here, DOSBox-X's `AUTOTYPE` press. The replay holds a scripted key for that
+  long (`KEY_SPACE` and `KEY_ANY` 1 in the press's cycle and the two after). hook-both then
+  replays line for line but for its cycle count, one high from the press on (a sparse trace: the
+  clock between its samples).
+- Test `RuntimeHostInputTests.Frame_SpacePressed_RunsTheKeysOwnHookThenIfAnykeyInTheNextCycle`.
