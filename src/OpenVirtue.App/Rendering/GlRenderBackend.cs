@@ -92,7 +92,11 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             vec3 lit = clamp(color.rgb * light, 0.0, 1.0);
             // OV-20261104-fade-pal: toward the current palette's colour when it is uniform, then toward the target.
             vec3 faded = mix(mix(lit, uFadeCurrent.rgb, uFadeCurrent.a), uFadeTarget.rgb, uFadeTarget.a);
-            fragColor = vec4(uBlend == 3 ? vec3(0.0) : clamp(faded, 0.0, 1.0), uBlend == 2 ? 0.5 : 1.0);
+            // The DAC shows 6 bits a channel, widened as an emulator shows them (OV-20261104-retail-frames:
+            // the title's gray 50 reads 48).
+            vec3 dac = floor(clamp(faded, 0.0, 1.0) * 63.75 + 0.0001);
+            faded = (dac * 4.0 + floor(dac / 16.0)) / 255.0;
+            fragColor = vec4(uBlend == 3 ? vec3(0.0) : faded, uBlend == 2 ? 0.5 : 1.0);
         }
         """;
 

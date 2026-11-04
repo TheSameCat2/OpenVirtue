@@ -77,6 +77,25 @@ public sealed class RuntimeHostPaletteFadeTests : IDisposable
         Assert.Equal(PaletteFadeTint.None, render.LastFrame!.Batches[0].Fade);
     }
 
+    [Fact]
+    public void Frame_ClearsToThePalettesFrameColorEntry()
+    {
+        // OV-20261104-retail-frames: the border around the 3-D window is palette entry FRAME_COLOR of
+        // the shown palette; the level palette's entry 32 is 120 (30 on the DAC, widened to 121).
+        using RuntimeHost host = Open(out FakeRender render);
+        host.Boot();
+        host.Runtime.RunAction("to_level");
+        host.Runtime.SetSkill("FRAME_COLOR", 32);
+        host.Frame(present: false);
+
+        Assert.Equal(121 / 255f, render.LastFrame!.ClearColor.X, 4);
+        Assert.Equal(121 / 255f, render.LastFrame.ClearColor.Z, 4);
+
+        host.Runtime.RunAction("half_black");
+        host.Frame(present: false);
+        Assert.Equal(60 / 255f, render.LastFrame!.ClearColor.X, 4);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

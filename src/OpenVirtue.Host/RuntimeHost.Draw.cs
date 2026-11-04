@@ -511,8 +511,20 @@ public sealed partial class RuntimeHost
         return DefaultClearColor;
     }
 
+    /// <summary>
+    /// The colour the screen is cleared to: palette entry <c>FRAME_COLOR</c> of the palette the
+    /// screen shows (OV-20261104-retail-frames: the original's border around a 3-D window smaller
+    /// than the screen is that entry, black under the title's gray fade), or, without a palette, the
+    /// level's sky average under the fade.
+    /// </summary>
     private Vector4 TintedClearColor()
     {
+        if (ShownPalette is { } palette)
+        {
+            int index = Math.Clamp((int)_runtime.GetSkill("FRAME_COLOR"), 0, 255);
+            return new Vector4(palette[index * 3] / 255f, palette[(index * 3) + 1] / 255f, palette[(index * 3) + 2] / 255f, 1f);
+        }
+
         Vector3 faded = _fade.Apply(new Vector3(_clearColor.X, _clearColor.Y, _clearColor.Z));
         return new Vector4(Math.Clamp(faded.X, 0, 1), Math.Clamp(faded.Y, 0, 1), Math.Clamp(faded.Z, 0, 1), _clearColor.W);
     }

@@ -499,3 +499,7 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   levels darker than a wall where the light reaches it, the walls' level where it does not; a
   lamp and `ALBEDO` do nothing to it. Fifteen carriers. Implemented in the host's batch shade
   bias and the GL shader.
+- `OV-20261104-retail-frames.md` — the retail title's splash comes out of OpenVirtue pixel for
+  pixel; its menu differed only in the border around the 3-D window (palette entry
+  `FRAME_COLOR`, not a clear colour of OpenVirtue's own) and in RGB-drawn grays missing the DAC's
+  6-bit rounding. Implemented in the host's clear colour and the GL shader.
