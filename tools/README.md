@@ -166,7 +166,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   action's `TK` at 13.531, five cycles before the first sample); the cycles between are spread
   evenly. A launch whose first frame is not the cadence's (clip-contact round 2's fast launches:
   5/32 where the cadence run back gives 13/32) then replays its start-up exactly; one whose
-  start-up kept the cadence plans as before. Where no column prints the first cycle's
+  start-up kept the cadence plans as before. Where no line dates cycle 2 and no 60 Hz cadence fits
+  the first samples (eye-clamp round 3's fixed-cycles launches at 4 to 5 ticks a cycle), the
+  resumed action's lines before the first sample still anchor the start-up, and the cycles before
+  the earliest of them keep its pace to the first sample, so a `WAITT 16` ends where the
+  original's did. Where no column prints the first cycle's
   `TIME_CORR` and the template's stamp lies one frame (8/32 to 10/32 of a tick) before the first
   sample, that gap is the step into it: the probe action starts a frame ahead of the first sample
   in most carriers, and the first cycles' rate cannot tell 8/32 from 9/32 there (below-beam's five

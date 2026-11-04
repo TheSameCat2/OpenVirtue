@@ -285,8 +285,27 @@ public sealed class OracleTraceTests
         Assert.Equal(433 / 32.0, frames.Skip(1).Take(52).Sum(), 9); // cycle 53, the TK line
         Assert.Equal(474 / 32.0, frames.Skip(1).Sum(), 9); // cycle 58
         Assert.All(frames.Skip(2), static f => Assert.True(f is 0.25 or 0.28125 or 0.3125));
-        Assert.Null(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(8, 407 / 32.0, 50)])); // no count-2 anchor
-        Assert.Null(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(5, 433 / 32.0, 1, Dated: false)])); // no dated anchor at all
+        // Without a count-2 anchor the cycles before the earliest keep its pace instead (the undated plan).
+        Assert.NotNull(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(8, 407 / 32.0, 50)]));
+        Assert.NotNull(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(5, 433 / 32.0, 1, Dated: false)]));
+    }
+
+    [Fact]
+    public void StartupFramesFromAnchors_UndatedAnchorsKeepTheirPaceBeforeThem()
+    {
+        // eye-clamp round 3 vz-rate-c12000: V samples 4.6875 ticks apart from 25.75, the resumed
+        // action's GO at 17.344 two cycles before; nothing dates cycle 2. The cycles before GO keep
+        // GO's pace to the first sample (269 units over 2 cycles), so the one before it lies past 13.
+        List<double> ticks = [.. Enumerable.Range(0, 12).Select(static i => 25.75 + (i * 4.6875))];
+        OracleTrace.StartupAnchor[] anchors = [new(2, 17.344, 1, Dated: false)];
+
+        IReadOnlyList<double>? frames = OracleTrace.StartupFramesFromAnchors(ticks, anchors);
+
+        Assert.NotNull(frames);
+        Assert.Equal(8, frames.Count); // cycles 1 to 8, the first sample cycle 8 and GO cycle 6
+        Assert.Equal(555 / 32.0, frames.Skip(1).Take(5).Sum(), 9); // cycle 6 at 17.344
+        Assert.True(frames.Skip(1).Take(4).Sum() > 13); // cycle 5 past 13: the WAITT 16 ends at GO
+        Assert.Equal(25.75, frames.Skip(1).Sum(), 9);
     }
 
     [Fact]
