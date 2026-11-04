@@ -130,6 +130,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   moves nothing restores the cycle's start, and the player walks freely from the actor's centre;
   a push a wall stops lands half way to the wall's line (refused whole within the actor's radius
   of it, a guessed bound). Open: the lateral nudge after a step aside, actor-push's wall edge.
+  Rounds 6–10 (ten carriers): the far sentinel is the unstarted state again, ended by a refresh
+  within 1.5 × the border; a beam into or out of a follower's contact circle un-starts the far
+  objects, a drawn sprite, a pushing actor or a stacked spot does not. Not implemented (the walk
+  case stays unexplained).
 
 ## Region-border climb and headroom (2026-10-19 — confirmed and implemented)
 - `OV-20261019-border-climb.md` — a `PASSABLE` wall lets the player through whatever the

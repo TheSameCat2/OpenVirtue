@@ -458,3 +458,46 @@ Oracle diff: seven of the eight carriers match in full, long-step-walk 7 of 54 (
 residual from its first push); clip-move-liber 140 of 159 (was 93; the rest the far sentinel),
 near-actor 17 of 24 (was 13); actor-contact, contact-clock and overlap unchanged.
 
+
+## Rounds 6 to 10: the far sentinel is the unstarted state again (2026-11-04)
+Rounds 2 and 3 left the far sentinel of clip-move-liber's moved actors open: 65535.999 at 39 or
+more while the follower stood within about 9 in front of the player, real at 29–37 and after
+later beams. Ten carriers under `round6/` to `round10/` (cases `far-drawn-*`, `far-plain-way`,
+`far-front-*`; fast launches, about 0.26 ticks a cycle) in the `CLIP_DIST 10` room, each with
+`LIBER` objects at (36, 12) — a half-step way actor `A`, a standing actor `S`, a thing `T` — started
+by a stand at P3 (31, 6), 11 away, then beamed to a stand 36 away and to the origin (48):
+
+| Carrier | What stands near the player | Reading of the far objects |
+|------|---------|---------|
+| far-drawn-stand, far-drawn-actor (`round6/`, `round7/`) | a thing, or a standing actor, 3 to 9 in front, drawn | real at 37 … 48 through every stand |
+| far-drawn-way, far-plain-way (`round6/`) | the same with the far object a way actor, or nothing drawn | real throughout |
+| far-front-mover (`round8/`) | a `FOLLOW` actor of `SPEED 0.1` at (26, −12); the player beamed to (24.2, −12), 1.8 from it, inside its contact circle, and pushed west and south about 0.04 a cycle for 48 ticks | `A`, `S`, `T` 65535.999 from the first line after the beam (35.8 away) and still at the origin (48); the follower real while pushing (3.73 → 2.70), 65535.999 at the origin (38) |
+| far-front-spread (`round9/`) | the same with the far objects three apart | the same: not the stacking |
+| far-front-nof (`round9/`) | the same beams with no follower | real: 35.8 and 36.1 at the stand, 48 at the origin |
+| far-front-approach (`round9/`) | the player beamed to (31, −12), 9.15 from the follower, which never stepped | real: 29.3 and 48.2; the follower 38.4 real at the origin |
+| far-front-step (`round10/`) | the player beamed to (29, −12), 7.17 from the follower, which stood 40 ticks and then took a catch-up step to 3.11 and pushed the player east and south every cycle | real throughout: 31.0 … 30.7 while pushed, 48 at the origin; the follower 39.96 real at the origin |
+| far-front-restart (`round10/`) | far-front-mover's run, then P3 (31, 6) again and the origin once more | 65535.999 through the stand and the origin, then `T` 11.000 at P3 and 48.000 at the second origin; the follower 65535.999 at the first origin (38), 26.48 at P3 (standing), 32.68 at the second origin |
+
+- **The sentinel is the unstarted state again.** A far object that reads 65535.999 restarts
+  exactly as at launch: a refresh within 1.5 × its border (`T` 11 at P3) and then its distance at
+  any range (48 at the second origin). The follower, which had moved, restarted at 26.48 in the
+  cycle after the beam with no step of its own, as the moved actors of rounds 2 and 3 did.
+- **It is not a drawn sprite, a pushing actor or a stacked spot.** A thing or a standing actor
+  drawn 3 to 9 in front left the far objects real (far-drawn-*); a follower stepping to the player
+  and pushing it every cycle left them real (far-front-step, 31 away); three objects on one spot
+  read as three apart.
+- **What un-starts them: a beam that lands inside a follower's contact circle, and a beam out of
+  it.** far-front-mover's beam to 1.8 from the follower un-started everything 36 away at once
+  (the follower itself, 1.8 away, stayed started), where the same beam without the follower, to
+  9.15 or to 7.17 from it changed nothing; the beam from contact to the origin un-started the
+  follower (38) where the beam from 9.15 or 7.17 left it real at 38.4 and 39.96. clip-move-liber's
+  beam from contact to W1 un-started its follower (39.3) the same way, and its way actor, 11.6
+  away, restarted at once. clip-move-liber's way actor going to the sentinel at 39–41 (45.6 in
+  the `NEXUS 60` rerun) while the player walked away from its follower stepping 4–6 behind, with no
+  beam, is the one reading these carriers do not reach.
+- Not implemented: the beam-with-contact rule would fit far-front-mover, -spread and -restart and
+  clip-move-liber's follower after W1, and nothing shows what it would do to liber-far-contact's
+  beams between contact and far stands. The sentinel lines stay as they are; everything else in
+  the ten carriers replays, up to the follower's launch-time step (24.039 … 24.053 against 24.046,
+  the clock family) — far-drawn-* 547 of 548 (a timing line), far-front-nof 183 of 202 (the way
+  actor's 48.201 against 48.164), far-front-approach 198 of 263, far-front-step 177 of 296.

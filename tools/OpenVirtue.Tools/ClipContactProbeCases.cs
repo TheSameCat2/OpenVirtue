@@ -378,6 +378,99 @@ internal static class ClipContactProbeCases
         L("S1", "PLAYER_X", "PLAYER_Y", "ls_x", "ls_y") +
         "    RULE pe_vx = 0;\n    WAITT 2;\n    SET EACH_TICK.1, NULL;\n";
 
+    // ---- the far sentinel while a sprite is drawn ---------------------------------------------
+
+    /// <summary>
+    /// <c>CLIP_DIST 10</c>. A <c>LIBER</c> actor (<c>A</c>: standing, or a half-step way actor when
+    /// <paramref name="way"/>) and a <c>LIBER</c> thing (<c>T</c>) at (36, 12), and when
+    /// <paramref name="drawn"/> a plain 2-wide thing <c>D</c> at (26, −12) that the stands at
+    /// (23, −12) to (17, −12) look at from 3 to 9 ahead, within the border. clip-move-liber's
+    /// moved actors read the sentinel beyond about 39 only while another sprite stood drawn near
+    /// the player; liber-far-beam's standing objects, with nothing drawn, read 48.
+    /// </summary>
+    private static string FarDrawnDeclarations(bool way, bool drawn, string drawnKind = "THING") =>
+        Skills + SmallTexture +
+        "SKILL lm_ax { VAL 0; }\nSKILL lm_ay { VAL 0; }\n" +
+        "SYNONYM lm_as { TYPE ACTOR; }\n" +
+        (way ? "WAY lm_wa;\n" : "") +
+        CountingTick("lf_at", "A", "fa") + CountingTick("lf_tt", "T", "ft") +
+        (way
+            ? "ACTOR lf_a { TEXTURE cx_stex; TARGET lm_wa; SPEED 0.2; EACH_TICK lf_at; FLAGS LIBER; }\n"
+            : "ACTOR lf_a { TEXTURE cx_stex; EACH_TICK lf_at; FLAGS LIBER; }\n") +
+        "THING lf_t { TEXTURE cx_stex; EACH_TICK lf_tt; FLAGS LIBER; }\n" +
+        (drawn ? drawnKind + " lf_d { TEXTURE cx_stex; }\n" : "") +
+        Sampler("    RULE lm_ax = lm_as.X;\n    RULE lm_ay = lm_as.Y;\n", "lm_ax", "lm_ay");
+
+    private static TraceProbeMap FarDrawnMap(bool way, bool drawn, string drawnKind = "THING")
+    {
+        var placements = new List<string> { "ACTOR lf_a 36 12 0 0", "THING lf_t 36 12 0 0" };
+        if (drawn)
+        {
+            placements.Add(drawnKind + " lf_d 26 -12 0 0");
+        }
+
+        if (way)
+        {
+            placements.Add("WAY lm_wa 36 12 36.5 12");
+        }
+
+        return new TraceProbeMap(RoomBody: "CLIP_DIST 10;", Placements: placements);
+    }
+
+    /// <summary>
+    /// S0 the origin; P3 (31, 6) starts A and T (11); then stands at (23, −12), (22, −12), (21, −12),
+    /// (20, −12), (19, −12), (17, −12) (A/T 37, 38, 39, 40, 41, 43; D 3 to 9 ahead) and (15, −12)
+    /// (45; D 11 ahead, beyond the border), then (31, 6) and (0, 0) again (48).
+    /// </summary>
+    private static readonly string FarDrawnRun =
+        "    SET lm_as, lf_a;\n" + ArmSampler + Wait(32, "S0") +
+        Stand(31, 6, "P3", 48) + Stand(23, -12, "D37", 48) + Stand(22, -12, "D38", 48) + Stand(21, -12, "D39", 48) +
+        Stand(20, -12, "D40", 48) + Stand(19, -12, "D41", 48) + Stand(17, -12, "D43", 48) + Stand(15, -12, "D45", 48) +
+        Stand(31, 6, "P3B", 48) + Stand(0, 0, "O", 48) + ClearSampler;
+
+    /// <summary>
+    /// The far objects of far-drawn (a half-step way actor <c>A</c>, a standing actor <c>S</c> and a
+    /// thing <c>T</c> at (36, 12), all <c>LIBER</c>) with a slow 2-wide <c>LIBER</c> <c>FOLLOW</c>
+    /// actor <c>F</c> (0.1 a tick) placed at (26, −12): beamed to 1.8 from it, the player is pushed
+    /// west about 0.026 a cycle, the follower stepping within the border ahead in every cycle, and
+    /// the far objects' distance grows from 36.2 through clip-move-liber's 37.4 (real) to 39 (the
+    /// sentinel).
+    /// </summary>
+    private static string FarFrontMoverDeclarations(bool follower = true) =>
+        Skills + SmallTexture +
+        "SKILL lm_ax { VAL 0; }\nSKILL lm_ay { VAL 0; }\n" +
+        "SYNONYM lm_as { TYPE ACTOR; }\n" +
+        "WAY lm_wa;\n" +
+        CountingTick("lf_at", "A", "fa") + CountingTick("lf_st", "S", "fs") + CountingTick("lf_tt", "T", "ft") + CountingTick("lf_ft", "F", "ff") +
+        "ACTOR lf_a { TEXTURE cx_stex; TARGET lm_wa; SPEED 0.2; EACH_TICK lf_at; FLAGS LIBER; }\n" +
+        "ACTOR lf_s { TEXTURE cx_stex; EACH_TICK lf_st; FLAGS LIBER; }\n" +
+        "THING lf_t { TEXTURE cx_stex; EACH_TICK lf_tt; FLAGS LIBER; }\n" +
+        (follower ? "ACTOR lf_f { TEXTURE cx_stex; TARGET FOLLOW; SPEED 0.1; EACH_TICK lf_ft; FLAGS LIBER; }\n" : "") +
+        Sampler("    RULE lm_ax = lm_as.X;\n    RULE lm_ay = lm_as.Y;\n", "lm_ax", "lm_ay");
+
+    private static TraceProbeMap FarFrontMoverMap(bool follower = true, bool spread = false)
+    {
+        var placements = new List<string>
+        {
+            "ACTOR lf_a 36 12 0 0",
+            spread ? "ACTOR lf_s 36 15 0 0" : "ACTOR lf_s 36 12 0 0",
+            spread ? "THING lf_t 36 9 0 0" : "THING lf_t 36 12 0 0",
+        };
+        if (follower)
+        {
+            placements.Add("ACTOR lf_f 26 -12 180 0");
+        }
+
+        placements.Add("WAY lm_wa 36 12 36.5 12");
+        return new TraceProbeMap(RoomBody: "CLIP_DIST 10;", Placements: placements);
+    }
+
+    /// <summary>S0; P3 (31, 6) starts the far objects (11); F1 beamed to (<paramref name="x"/>, −12) near the follower, <paramref name="ticks"/> ticks; O the origin; with <paramref name="restart"/>, P3 again and then the origin once more.</summary>
+    private static string FarFrontMoverRun(bool follower = true, double x = 24.2, int ticks = 48, bool restart = false) =>
+        (follower ? "    SET lm_as, lf_f;\n" : "    SET lm_as, lf_a;\n") + ArmSampler + Wait(16, "S0") +
+        Stand(31, 6, "P3", 32) + Stand(x, -12, "F1", ticks) + Stand(0, 0, "O", 32) +
+        (restart ? Stand(31, 6, "P3B", 32) + Stand(0, 0, "OB", 32) : "") + ClearSampler;
+
     // ---- contact -----------------------------------------------------------------------------
 
     /// <summary>
@@ -676,6 +769,98 @@ internal static class ClipContactProbeCases
                 ("the player's step is lost and it is not pushed", "PLAYER_X repeats in the cycle of the long step"),
                 ("the push wins", "the player at 2.2 behind the actor")),
             Map: LongStepMap(14)),
+        new TraceProbeCase(
+            "far-drawn-stand",
+            "clip-move-liber's moved LIBER actors read the sentinel at 39 to 56 only while another sprite stood drawn within the border in front of the player; liber-far-beam's standing objects, with nothing drawn, read 48. A started standing LIBER actor and thing at 37 to 45 with a plain thing drawn 3 to 9 ahead: does the drawn sprite bring the sentinel, and from what distance?",
+            FarDrawnDeclarations(way: false, drawn: true),
+            FarDrawnRun,
+            Predict(
+                ("a drawn sprite and a far object give the sentinel", "A, T 65535.999 from D39 or D41 on while D is within the border, 45 at D45 (D beyond it), 48 at O"),
+                ("standing objects never fall back", "A, T real throughout")),
+            Map: FarDrawnMap(way: false, drawn: true)),
+        new TraceProbeCase(
+            "far-drawn-way",
+            "The same with the actor patrolling half a step in place: is the moved actor what falls back?",
+            FarDrawnDeclarations(way: true, drawn: true),
+            FarDrawnRun,
+            Predict(
+                ("the moved actor falls back, the thing not", "A 65535.999 from D39 or D41 on, T real"),
+                ("both fall back", "A and T 65535.999")),
+            Map: FarDrawnMap(way: true, drawn: true)),
+        new TraceProbeCase(
+            "far-plain-way",
+            "The patrolling actor with nothing drawn: the control (liber-far-way read 41 to 48 real).",
+            FarDrawnDeclarations(way: true, drawn: false),
+            FarDrawnRun,
+            Predict(("real throughout", "A, T 37 … 45, 48")),
+            Map: FarDrawnMap(way: true, drawn: false)),
+        new TraceProbeCase(
+            "far-drawn-actor",
+            "far-drawn-stand's drawn thing left the far objects real. clip-move-liber's sentinels came while a drawn *actor* stood or moved within the border in front of the player (its follower 6 to 9 ahead, its way actor 11.6 away): the same stands with a plain standing actor drawn 3 to 9 ahead instead of the thing.",
+            FarDrawnDeclarations(way: true, drawn: true, drawnKind: "ACTOR"),
+            FarDrawnRun,
+            Predict(
+                ("a drawn actor brings the far sentinel", "A, T 65535.999 from D39 or D41 on while D is within the border, real at D45 and O"),
+                ("no", "real throughout")),
+            Map: FarDrawnMap(way: true, drawn: true, drawnKind: "ACTOR")),
+        new TraceProbeCase(
+            "far-front-mover",
+            "far-drawn-stand, -way and -actor left the far objects real at 37 to 48 behind a drawn thing or standing actor; clip-move-liber's sentinels all came in cycles in which its follower stepped within the border ahead of the player. A slow follower pushing the player while the far objects' distance grows from 36.2 to 41: from what distance do the way actor, the standing actor and the thing read the sentinel, if at all?",
+            FarFrontMoverDeclarations(),
+            FarFrontMoverRun(),
+            Predict(
+                ("a far object reads the sentinel at a refresh an actor's front move brings, from about 38 to 39", "A, S, T 65535.999 once the distance passes 38 to 39, real again at O (48, a beam)"),
+                ("only moved actors", "A 65535.999, S and T real"),
+                ("no sentinel", "all real throughout")),
+            Map: FarFrontMoverMap()),
+        new TraceProbeCase(
+            "far-front-restart",
+            "far-front-mover's far objects stayed at the sentinel after the beam to the origin (48), where far-front-nof read 48 and far-front-approach 48.2: is the sentinel the unstarted state again, ended by a refresh within 1.5 × the border (P3B, 11) and then real at any range (OB, 48)?",
+            FarFrontMoverDeclarations(),
+            FarFrontMoverRun(restart: true),
+            Predict(
+                ("unstarted again", "A, S, T 11 at P3B and 48 at OB; F real at P3B if it moves, else 65535.999"),
+                ("a lasting state", "65535.999 at P3B too"),
+                ("real at any range once the follower stands", "real at P3B and OB, and already at O")),
+            Map: FarFrontMoverMap()),
+        new TraceProbeCase(
+            "far-front-step",
+            "far-front-approach's follower, 9.15 from the player at (31, −12), never stepped and the far objects stayed real. The player at (29, −12), about 7 from it: the follower steps toward the player for some 60 cycles before contact. Does the sentinel come with its first step, or with contact?",
+            FarFrontMoverDeclarations(),
+            FarFrontMoverRun(x: 29, ticks: 64),
+            Predict(
+                ("with the first step", "A, S, T 65535.999 from the first F line that reads less than at F1"),
+                ("with contact", "65535.999 only once F holds near 2.7"),
+                ("neither", "real throughout, as far-front-approach")),
+            Map: FarFrontMoverMap()),
+        new TraceProbeCase(
+            "far-front-nof",
+            "far-front-mover read the sentinel for all three far objects from the beam to (24.2, −12) on, at 36.2, and still at the origin (48), where far-drawn-stand read 37 and 48. The same without the follower: is it the follower, or the three objects on one spot?",
+            FarFrontMoverDeclarations(follower: false),
+            FarFrontMoverRun(follower: false),
+            Predict(
+                ("the follower", "A, S, T 36.2 at F1 and 48 at O"),
+                ("the stacked objects", "65535.999 as in far-front-mover")),
+            Map: FarFrontMoverMap(follower: false)),
+        new TraceProbeCase(
+            "far-front-spread",
+            "far-front-mover with the three far objects three steps apart ((36, 12), (36, 15), (36, 9)).",
+            FarFrontMoverDeclarations(),
+            FarFrontMoverRun(),
+            Predict(
+                ("the follower", "65535.999 as in far-front-mover"),
+                ("the stacked objects", "real")),
+            Map: FarFrontMoverMap(spread: true)),
+        new TraceProbeCase(
+            "far-front-approach",
+            "far-front-mover with the player beamed to (31, −12), 5 from the follower, which then closes in at 0.026 a cycle and reaches contact after about 100 cycles: does the sentinel come with the beam, with the follower's first step within the border, or with contact?",
+            FarFrontMoverDeclarations(),
+            FarFrontMoverRun(x: 31),
+            Predict(
+                ("with the beam", "65535.999 from F1 on"),
+                ("with the follower's steps ahead within the border", "65535.999 from the first F line after F1"),
+                ("with contact", "65535.999 only once F reads about 2.2")),
+            Map: FarFrontMoverMap()),
         new TraceProbeCase(
             "contact-thing",
             "Pushing against a solid THING with DIST 0, 2 (below the contact distance) and 8: does contact fire IF_NEAR in every cycle while outside DIST, and does IF_FAR follow?",
