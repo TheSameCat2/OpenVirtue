@@ -70,15 +70,13 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 if (uAlphaTest > 0.5 && index < 0.5) {
                     discard;
                 }
-                float level = 30.0 - 32.0 * (uTintAndLight.a + vAmbient)
-                    - 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
+                // A sprite's light term is two levels less, not below 0 (OV-20261104-sprite-shade).
+                float lightTerm = 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
+                lightTerm = max(lightTerm - float(uShadeBias), 0.0);
+                float level = 30.0 - 32.0 * (uTintAndLight.a + vAmbient) - lightTerm;
                 // Past the range's end (level 32 and up) the texel shows the INFINITY colour, entry 1
                 // (OV-20261104-genius).
                 level = 2.0 * floor(level / 2.0);
-                if (uShadeBias != 0) {
-                    // A sprite: two levels darker, held within the range (OV-20261104-sprite-shade).
-                    level = clamp(level + float(uShadeBias), 0.0, 30.0);
-                }
                 float shaded = level >= 32.0
                     ? 1.0
                     : floor(texelFetch(uShade, ivec2(int(clamp(level, 0.0, 30.0)), int(index)), 0).r * 255.0 + 0.5);

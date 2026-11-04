@@ -27,17 +27,18 @@ public static class PaletteShading
     public const int Levels = 32;
 
     /// <summary>
-    /// The levels a sprite is darker than a wall at its depth (OV-20261104-sprite-shade): added
-    /// after the even rounding and held within 0…30.
+    /// The levels taken off the player's light term for a sprite (OV-20261104-sprite-shade): a
+    /// sprite is two levels darker than a wall at its depth wherever the player's light reaches
+    /// it, and the walls' level where it does not (the term is held at 0).
     /// </summary>
     public const int SpriteBias = 2;
 
-    /// <summary>A sprite's shade level at <paramref name="distance"/>: <see cref="Level"/> plus <see cref="SpriteBias"/>, held within 0…30.</summary>
+    /// <summary>A sprite's shade level at <paramref name="distance"/>: <see cref="Level"/> with the light term less <see cref="SpriteBias"/>, not below 0.</summary>
     public static int SpriteLevel(double distance, double playerLight, double lightDistance, double ambient)
     {
         double light = 30.4 * Math.Max(0, playerLight) * Math.Max(0, lightDistance) / Math.Max(distance, 0.001);
-        double level = 30 - (32 * ambient) - light;
-        return Math.Clamp((2 * (int)Math.Floor(level / 2)) + SpriteBias, 0, DarkestLevel);
+        double level = 30 - (32 * ambient) - Math.Max(light - SpriteBias, 0);
+        return Math.Clamp(2 * (int)Math.Floor(level / 2), 0, InfinityLevel);
     }
 
     /// <summary>The shade level at <paramref name="distance"/> from the eye.</summary>

@@ -47,6 +47,8 @@ internal static class SpriteShadeProbeCases
         At("d38", 38, 0, "Round 2. Depth 38: exactly 22; the sprite 22 or 24?"),
         At("dark", 28, 0, "Round 3. PLAYER_LIGHT 0 (every wall at 30): the sprite two levels past, 32 (the INFINITY colour), or held at 30?", run: "    SET PLAYER_LIGHT, 0;\n"),
         At("bright", 20, 0, "Round 3. Region AMBIENT 0.5 at depth 20 (the walls' formula −1.2, held at 0): the sprite 0 or 2?", roomBody: "AMBIENT 0.5;"),
+        At("dim", 28, 0, "Round 4. PLAYER_LIGHT 0 with region AMBIENT 0.25 (walls at 22): the sprite 24 (two levels darker whatever the light) or 22 (the two levels taken off the light term, which is 0)?", run: "    SET PLAYER_LIGHT, 0;\n", roomBody: "AMBIENT 0.25;"),
+        At("faint", 20, 0, "Round 4. PLAYER_LIGHT 0.1 with region AMBIENT 0.25: the light term 1.52 (walls 20.48 → 20): the sprite 22 (the term held at 0 after taking 2 off) or 20?", run: "    SET PLAYER_LIGHT, 0.1;\n", roomBody: "AMBIENT 0.25;"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

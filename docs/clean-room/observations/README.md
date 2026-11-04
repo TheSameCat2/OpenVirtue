@@ -495,5 +495,7 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   shows the `INFINITY` colour. Seventeen carriers. Implemented in `MeshBuilder.GeniusLight` and
   the GL shader.
 - `OV-20261104-sprite-shade.md` — a sprite is shaded by its depth, one level over the whole
-  sprite, two levels darker than a wall there: the walls' even level plus 2, held within 0…30.
-  Thirteen carriers. Implemented in the host's batch shade bias and the GL shader.
+  sprite, by the walls' formula with the player's light term two levels less, not below 0: two
+  levels darker than a wall where the light reaches it, the walls' level where it does not; a
+  lamp and `ALBEDO` do nothing to it. Fifteen carriers. Implemented in the host's batch shade
+  bias and the GL shader.
