@@ -253,13 +253,18 @@ internal static class OracleReplay
         // A carrier whose keys fire IF_* hooks (hook_token in case.json: the token the hook's action
         // prints first) gets each press queued in the cycle whose TICKS the original's line shows.
         var hookPresses = new Queue<(double Ticks, string? Hook)>();
+        var input = new HeadlessInput();
         if (carrierCase.Autotype is { } typed && carrierCase.HookToken is { } hookToken)
         {
             double[] hookTicks = timingSource.Where(l => l.Token == hookToken).Select(static l => l.Value(0)).OfType<double>().ToArray();
-            string?[] hooks = HeadlessWindow.ParseAutotypeHooks(typed).ToArray();
+            (string? Hook, HostKey? Key)[] hooks = HeadlessWindow.ParseAutotypeHooks(typed).ToArray();
             for (int i = 0; i < hookTicks.Length && i < hooks.Length; i++)
             {
-                hookPresses.Enqueue((hookTicks[i], hooks[i]));
+                hookPresses.Enqueue((hookTicks[i], hooks[i].Hook));
+                if (hooks[i].Key is { } held)
+                {
+                    input.Presses.Add((held, hookTicks[i]));
+                }
             }
         }
         else if (carrierCase.Autotype is { } typedKeys)
@@ -278,8 +283,9 @@ internal static class OracleReplay
         int frames = 0;
         double ticks;
         var audio = new TimedAudioSink();
-        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender(), RandomSeed))
+        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, input, audio, new HeadlessRender(), RandomSeed))
         {
+            input.Ticks = () => host.Runtime.GetSkill(Timing.TicksSkill);
             host.FrameClock = () =>
             {
                 double ticks = host.Runtime.GetSkill(Timing.TicksSkill);
@@ -288,12 +294,14 @@ internal static class OracleReplay
                 // decimals, so up to 1/1024 off the replay's grid (hook-order's 80.813 for 80.8125).
                 while (hookPresses.Count > 0 && hookPresses.Peek().Ticks <= ticks + (step * Timing.TicksPerSecond) + (1.5 / 1024))
                 {
+                    // The key's own hook, then IF_ANYKEY, as the host queues them (scheduler-order round 8).
                     (_, string? hook) = hookPresses.Dequeue();
-                    host.Runtime.QueueActionHook("IF_ANYKEY");
                     if (hook is not null)
                     {
                         host.Runtime.QueueActionHook(hook);
                     }
+
+                    host.Runtime.QueueActionHook("IF_ANYKEY");
                 }
 
                 return step;
@@ -1335,8 +1343,8 @@ internal static class OracleReplay
         /// INKEY keys: single characters, <c>space</c>, <c>enter</c>, <c>esc</c>, <c>bspace</c>, <c>up</c>,
         /// <c>down</c>, <c>left</c>, <c>right</c>, <c>pageup</c>, <c>pagedown</c>.
         /// </summary>
-        /// <summary>The <c>IF_*</c> hook each typed key fires besides <c>IF_ANYKEY</c>, in order; <c>null</c> for a key without one here.</summary>
-        public static IEnumerable<string?> ParseAutotypeHooks(string autotype)
+        /// <summary>The <c>IF_*</c> hook each typed key fires besides <c>IF_ANYKEY</c> and the host key held, in order; <c>null</c> where unknown here.</summary>
+        public static IEnumerable<(string? Hook, HostKey? Key)> ParseAutotypeHooks(string autotype)
         {
             string[] words = autotype.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < words.Length; i++)
@@ -1350,13 +1358,16 @@ internal static class OracleReplay
 
                 yield return word.ToLowerInvariant() switch
                 {
-                    "space" => "IF_SPACE",
-                    "enter" => "IF_ENTER",
-                    "esc" => "IF_ESC",
-                    "bspace" => "IF_BKSP",
-                    "tab" => "IF_TAB",
-                    { Length: 1 } single when char.IsAsciiLetterOrDigit(single[0]) => "IF_" + char.ToUpperInvariant(single[0]),
-                    _ => null,
+                    "space" => ("IF_SPACE", HostKey.Space),
+                    "enter" => ("IF_ENTER", HostKey.Enter),
+                    "esc" => ("IF_ESC", HostKey.Escape),
+                    "bspace" => ("IF_BKSP", HostKey.Backspace),
+                    "tab" => ("IF_TAB", HostKey.Tab),
+                    { Length: 1 } single when char.IsAsciiLetter(single[0]) =>
+                        ("IF_" + char.ToUpperInvariant(single[0]), (HostKey)((int)HostKey.A + char.ToUpperInvariant(single[0]) - 'A')),
+                    { Length: 1 } single when char.IsAsciiDigit(single[0]) =>
+                        ("IF_" + single[0], (HostKey)((int)HostKey.D0 + single[0] - '0')),
+                    _ => (null, null),
                 };
             }
         }
@@ -1399,11 +1410,32 @@ internal static class OracleReplay
 
     internal sealed class HeadlessInput : IInputSource
     {
+        // A scripted press's key reads down (KEY_SPACE, KEY_ANY) in the press's cycle and the two
+        // after it, as DOSBox-X's AUTOTYPE held it (hook-both: 1 in three 0.25-tick cycles). The
+        // host refreshes the key skills before the cycle's TICKS moves on, so the window below is
+        // against the cycle before.
+        public List<(HostKey Key, double Ticks)> Presses { get; } = [];
+
+        public Func<double> Ticks { get; set; } = static () => 0;
+
         public IReadOnlyCollection<HostKey> Pressed => [];
 
         public Vector2 PointerPosition => Vector2.Zero;
 
-        public bool IsDown(HostKey key) => false;
+        public bool IsDown(HostKey key)
+        {
+            double ticks = Ticks();
+            foreach ((HostKey held, double at) in Presses)
+            {
+                // The press's TICKS is a three-decimal print, up to 1/1024 above the replay's grid.
+                if (held == key && ticks >= at - 0.3 && ticks < at + 0.5 - (1.5 / 1024))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public bool IsDown(MouseButton button) => false;
 

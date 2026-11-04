@@ -123,6 +123,21 @@ internal static class SchedulerOrderProbeCases
             "-w 10 space",
             HookToken: "K"),
         new TraceProbeCase(
+            "hook-both",
+            "Round 8. IF_ANYKEY prints A and IF_SPACE prints S, each with KEY_SPACE and KEY_ANY; the main loop prints M with the same skills in every cycle where KEY_ANY reads 1; DOSBox-X presses Space once. Do both hooks fire, in which order, and how long do the key skills read 1?",
+            Skills + Action("so_y", "    RULE so_n = so_n + 1;\n") +
+            Action("so_a", L("A", "KEY_SPACE", "KEY_ANY")) + Action("so_s", L("S", "KEY_SPACE", "KEY_ANY")),
+            "    SET EACH_TICK.1, so_y;\n    WAIT 2;\n    SET IF_ANYKEY, so_a;\n    SET IF_SPACE, so_s;\n" + L("ARM") +
+            "    RULE so_k = 0;\n    WHILE (so_k < 1200) {\n        IF (KEY_ANY > 0) {\n" + Indent(Indent(L("M", "KEY_SPACE", "KEY_ANY"))) + "        }\n        RULE so_k = so_k + 1;\n        WAIT 1;\n    }\n" +
+            L("END") + "    SET IF_ANYKEY, NULL;\n    SET IF_SPACE, NULL;\n    SET EACH_TICK.1, NULL;\n",
+            Predict(
+                ("both fire, IF_ANYKEY first", "A then S with one so_n"),
+                ("both fire, the key's own hook first", "S then A"),
+                ("only one fires", "A alone, or S alone"),
+                ("the key skills read 1 while the key is down", "KEY_SPACE 1 and KEY_ANY 1 in A, S and the M lines of the press's cycles, M lines stop when it is released")),
+            "-w 10 space",
+            HookToken: "A"),
+        new TraceProbeCase(
             "round5/waitt-small",
             "Round 5. A global slot counts cycles in so_n. The probe arms WAITT 0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.99, 1 and 1.3 one after another, printing A (armed) and R (resumed) with TICKS, so_n and TIME_CORR: in which cycle does each end?",
             Skills + Action("so_y", "    RULE so_n = so_n + 1;\n"),
