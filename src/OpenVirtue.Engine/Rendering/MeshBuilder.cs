@@ -343,6 +343,21 @@ public static class MeshBuilder
 
     private static void AddSurfaces(Level level, Accumulator accumulator)
     {
+        // OV-20261104-attach: a plain floor or ceiling hides no sprite (the batch is a Surface the host
+        // draws without writing depth); the slabs of a BELOW stack do, since a sight line never leaves
+        // its storey within the stack's footprint (OV-20261029-below-view), so those regions' surfaces
+        // stay ordinary batches.
+        var stacked = new HashSet<int>();
+        for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
+        {
+            int below = level.Regions[regionIndex].BelowRegion;
+            if (below >= 0)
+            {
+                stacked.Add(regionIndex);
+                stacked.Add(below);
+            }
+        }
+
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
             List<int>? loop = LevelTopology.TraceRegionLoop(level, regionIndex);
@@ -376,7 +391,8 @@ public static class MeshBuilder
                 region,
                 (float)region.FloorOffsetX,
                 (float)region.FloorOffsetY,
-                flip: false);
+                flip: false,
+                stacked: stacked.Contains(regionIndex));
             EmitSurface(
                 level,
                 accumulator,
@@ -388,7 +404,8 @@ public static class MeshBuilder
                 region,
                 (float)region.CeilOffsetX,
                 (float)region.CeilOffsetY,
-                flip: true);
+                flip: true,
+                stacked: stacked.Contains(regionIndex));
         }
     }
 
@@ -403,7 +420,8 @@ public static class MeshBuilder
         Region region,
         float offsetX,
         float offsetY,
-        bool flip)
+        bool flip,
+        bool stacked = false)
     {
         if (IsSkyTexture(level, texture))
         {
@@ -414,7 +432,7 @@ public static class MeshBuilder
         List<RenderVertex> target = accumulator.Bucket(
             texture,
             AnimationSourceFor(level, texture, region),
-            surface: true);
+            surface: !stacked);
 
         for (int i = 0; i < triangles.Count; i += 3)
         {
@@ -433,12 +451,13 @@ public static class MeshBuilder
         // A surface follows its vertices' heights only with a slope flag (OV-20261029-slope).
         Vertex vertex = level.Vertices[vertexIndex];
         // OV-20261104-texmap (floor-cell, ceil-cell): the texture's columns run along −x and its rows
-        // along +y from the origin, at SCALE pixels a step. The region offsets' sense is unprobed.
+        // along +y from the origin, at SCALE pixels a step; OV-20261104-blend (floor-offs, ceil-offs):
+        // the region's OFFS_X comes off the column and its OFFS_Y adds to the row.
         return new RenderVertex(
             vertex.X,
             height + (slopeSign * vertex.Z),
             RenderSpace.ZFromMapY(vertex.Y),
-            (-vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
+            (-vertex.X * mapping.WorldToU) - (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
             ambient);
     }

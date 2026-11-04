@@ -261,4 +261,4 @@ public sealed class Level
 }
 
 /// <summary>A palette's shading declarations: its <c>RANGE start, length</c> pairs and its <c>AUTORANGE</c> and <c>HARD</c> flags.</summary>
-public sealed record LevelPaletteShading(IReadOnlyList<(int Start, int Length)> Ranges, bool AutoRange, bool Hard);
+public sealed record LevelPaletteShading(IReadOnlyList<(int Start, int Length)> Ranges, bool AutoRange, bool Hard, bool Blur = false);

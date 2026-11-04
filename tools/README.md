@@ -127,6 +127,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   with and without map offsets and on the pad island's walls raised to 4 or sunk to −4 (the
   player turned to them), and a 64×64 bitmap of 4×4-pixel index cells as the room's floor and
   ceiling; each screenshot pixel's index names the texel under it.
+- `blend` (`BlendProbeCases`): a black strip attached as a `SHADOW` to a thing on the gray-ramp
+  floor, plain, `DIAPHANOUS` with and without a `BLUR` palette and `GHOST`, read against the
+  floor beside it; and the cell swatch on the floor and ceiling with region offsets.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

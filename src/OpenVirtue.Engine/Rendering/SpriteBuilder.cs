@@ -14,6 +14,19 @@ public enum SpriteOrientation
 }
 
 /// <summary>
+/// How a sprite layer mixes with what is behind it (OV-20261104-blend): <c>GHOST</c> draws its texels
+/// only where the screen pixel's x + y is odd (a checkerboard); <c>DIAPHANOUS</c> draws the palette
+/// colour nearest the mean of texel and background with a <c>BLUR</c> palette, and palette entry 0
+/// without one.
+/// </summary>
+public enum SpriteBlend
+{
+    None,
+    Ghost,
+    Diaphanous,
+}
+
+/// <summary>
 /// A camera-facing static sprite billboard resolved from a placed THING/ACTOR.
 /// <see cref="BasePosition"/> is in render space (<see cref="RenderSpace"/>: map y → −z).
 /// </summary>
@@ -27,7 +40,8 @@ public readonly record struct SpriteBillboard(
     Vector2 CenterOffset = default,
     SpriteOrientation Orientation = SpriteOrientation.Upright,
     float CameraDepthOffset = 0,
-    bool IsAttachment = false);
+    bool IsAttachment = false,
+    SpriteBlend Blend = SpriteBlend.None);
 
 /// <summary>
 /// Builds static billboard sprites from the level's placed THINGs/ACTORs. This is the
@@ -150,7 +164,8 @@ public static class SpriteBuilder
             baseLayer.Size.Height * 0.5f,
             entity,
             baseLayer.Mirror,
-            baseLayer.FrameOffset));
+            baseLayer.FrameOffset,
+            Blend: BlendOf(baseLayer.Texture)));
 
         // OV-20261104-attach: the attach layer is an upright sprite of its own size whose upper left
         // corner sits POS_X, POS_Y pixels of the base texture (at the base's scale) from the base's
@@ -180,8 +195,12 @@ public static class SpriteBuilder
             new Vector2(centerX, bottom),
             SpriteOrientation.Upright,
             attach.Texture.IsBehind ? 0.01f : -0.01f,
-            IsAttachment: true));
+            IsAttachment: true,
+            Blend: BlendOf(attach.Texture)));
     }
+
+    private static SpriteBlend BlendOf(LevelTexture texture) =>
+        texture.IsDiaphanous ? SpriteBlend.Diaphanous : texture.IsGhost ? SpriteBlend.Ghost : SpriteBlend.None;
 
     /// <summary>A texture layer of an entity as drawn: its frame, size in steps, scale and frame offset.</summary>
     private readonly record struct ResolvedLayer(

@@ -894,6 +894,7 @@ public static class LevelLoader
             var ranges = new List<(int, int)>();
             bool autoRange = false;
             bool hard = false;
+            bool blur = false;
             foreach (WdlItem property in body.Items)
             {
                 if (property.Keyword.Equals("RANGE", StringComparison.OrdinalIgnoreCase))
@@ -911,10 +912,11 @@ public static class LevelLoader
                 {
                     autoRange |= property.Header.Any(static t => t.Text.Equals("AUTORANGE", StringComparison.OrdinalIgnoreCase));
                     hard |= property.Header.Any(static t => t.Text.Equals("HARD", StringComparison.OrdinalIgnoreCase));
+                    blur |= property.Header.Any(static t => t.Text.Equals("BLUR", StringComparison.OrdinalIgnoreCase));
                 }
             }
 
-            shading[item.Header[0].Text] = new LevelPaletteShading(ranges, autoRange, hard);
+            shading[item.Header[0].Text] = new LevelPaletteShading(ranges, autoRange, hard, blur);
         }
 
         return shading;

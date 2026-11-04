@@ -206,6 +206,28 @@ public class BelowRegionTests
     }
 
     [Fact]
+    public void MeshBuilder_StackedRegionSurfaces_KeepWritingDepth()
+    {
+        // OV-20261104-attach: a plain floor hides no sprite, so the street's surfaces are Surface
+        // batches; the bridge and the storey under it are a stack whose slab hides what lies beyond
+        // (OV-20261029-below-view), so their surfaces stay ordinary batches.
+        string main = Main.Replace(
+            "TEXTURE wallTex { BMAPS m; }",
+            "TEXTURE wallTex { BMAPS m; } TEXTURE streetTex { BMAPS m; } TEXTURE bridgeTex { BMAPS m; }",
+            StringComparison.Ordinal)
+            .Replace("REGION under { FLOOR_HGT 0; CEIL_HGT 8; }", "REGION under { FLOOR_HGT 0; CEIL_HGT 8; FLOOR_TEX bridgeTex; CEIL_TEX bridgeTex; }", StringComparison.Ordinal)
+            .Replace("REGION bridge { BELOW under; }", "REGION bridge { BELOW under; FLOOR_TEX bridgeTex; CEIL_TEX bridgeTex; } REGION street { FLOOR_TEX streetTex; CEIL_TEX streetTex; }", StringComparison.Ordinal);
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = Map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        LevelMesh mesh = MeshBuilder.Build(level);
+
+        Assert.All(mesh.Batches.Where(b => b.Texture == "streetTex"), b => Assert.True(b.Surface));
+        Assert.All(mesh.Batches.Where(b => b.Texture == "bridgeTex"), b => Assert.False(b.Surface));
+        Assert.Contains(mesh.Batches, b => b.Texture == "bridgeTex");
+    }
+
+    [Fact]
     public void MeshBuilder_LowerStoreyWallPieces_ShowTheTexturesNextFourSides()
     {
         // Manual p.38: of a wall texture with more than four sides, "the first four sides are assigned

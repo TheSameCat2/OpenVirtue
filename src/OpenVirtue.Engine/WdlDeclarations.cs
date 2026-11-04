@@ -290,7 +290,7 @@ public sealed class WdlDeclarations
             texture.Mirrors, texture.FrameOffsetsX, texture.FrameOffsetsY,
             texture.SoundDistance, texture.SoundVerticalDistance,
             texture.SoundName, texture.SoundVolume, texture.SoundCycles, texture.IsSoundLoop,
-            texture.RandomDelayFactor, texture.Albedo, texture.PosX, texture.PosY);
+            texture.RandomDelayFactor, texture.Albedo, texture.PosX, texture.PosY, texture.IsGhost, texture.IsDiaphanous);
     }
 
     private void IndexBitmap(WdlItem item)
@@ -343,6 +343,7 @@ public sealed class WdlDeclarations
         bool isLightmap = false;
         bool isBehind = false;
         bool isShadow = false;
+        bool isGhost = false, isDiaphanous = false;
         bool isOneShot = false;
         bool isSoundLoop = false;
         bool isSave = false;
@@ -474,6 +475,8 @@ public sealed class WdlDeclarations
                 isLightmap |= property.Header.Any(static t => t.Text.Equals("LIGHTMAP", StringComparison.OrdinalIgnoreCase));
                 isBehind |= property.Header.Any(static t => t.Text.Equals("BEHIND", StringComparison.OrdinalIgnoreCase));
                 isShadow |= property.Header.Any(static t => t.Text.Equals("SHADOW", StringComparison.OrdinalIgnoreCase));
+                isGhost |= property.Header.Any(static t => t.Text.Equals("GHOST", StringComparison.OrdinalIgnoreCase));
+                isDiaphanous |= property.Header.Any(static t => t.Text.Equals("DIAPHANOUS", StringComparison.OrdinalIgnoreCase));
                 isOneShot |= property.Header.Any(static t => t.Text.Equals("ONESHOT", StringComparison.OrdinalIgnoreCase));
                 isSoundLoop |= property.Header.Any(static t => t.Text.Equals("SLOOP", StringComparison.OrdinalIgnoreCase));
                 isSave |= property.Header.Any(static t => t.Text.Equals("SAVE", StringComparison.OrdinalIgnoreCase));
@@ -498,7 +501,7 @@ public sealed class WdlDeclarations
             bitmap, bitmaps.ToArray(), scaleX, scaleY, ambient, isSky, isLightmap, isBehind, isShadow,
             sides, cycles, delays, isOneShot,
             mirrors, frameOffsetsX, frameOffsetsY, soundDistance, soundVerticalDistance,
-            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor, albedo, posX, posY);
+            soundName, soundVolume, soundCycles, isSoundLoop, randomDelayFactor, albedo, posX, posY, isGhost, isDiaphanous);
     }
 
     private void IndexRegion(WdlItem item)
@@ -897,7 +900,9 @@ public sealed class WdlDeclarations
         double RandomDelayFactor,
         double Albedo,
         double PosX,
-        double PosY);
+        double PosY,
+        bool IsGhost,
+        bool IsDiaphanous);
 
     /// <summary>The texture name and optional WDL pixel offsets declared for a wall type.</summary>
     public readonly record struct WallDef(

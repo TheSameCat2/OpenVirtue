@@ -175,6 +175,24 @@ public class SpriteBuilderTests
     }
 
     [Fact]
+    public void Build_GhostAndDiaphanousTextures_CarryTheirBlend()
+    {
+        // OV-20261104-blend: GHOST is a checkerboard, DIAPHANOUS a half blend (DIAPHANOUS wins when both).
+        Level level = Load(
+            "THING plant 2 3 0 0;#1\nPLAYER_START 0 0 0 0;#2",
+            "MAPFILE <m.wmp>; " +
+            "BMAP baseMap,<base.pcx>,0,0,16,32; BMAP sqMap,<sq.pcx>,0,0,16,16; " +
+            "TEXTURE baseTex { BMAPS baseMap; FLAGS GHOST; } " +
+            "TEXTURE sqTex { BMAPS sqMap; FLAGS DIAPHANOUS, BEHIND, SHADOW; } " +
+            "THING plant { TEXTURE baseTex; ATTACH sqTex; }");
+
+        IReadOnlyList<SpriteBillboard> sprites = SpriteBuilder.Build(level);
+
+        Assert.Equal(SpriteBlend.Ghost, sprites.Single(sprite => !sprite.IsAttachment).Blend);
+        Assert.Equal(SpriteBlend.Diaphanous, sprites.Single(sprite => sprite.IsAttachment).Blend);
+    }
+
+    [Fact]
     public void Build_ShadowAttachTexture_LiesOnRegionFloor()
     {
         Level level = Load(

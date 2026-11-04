@@ -208,8 +208,9 @@ public sealed partial class RuntimeHost
         for (int start = 0; start < sorted.Count;)
         {
             string texture = sorted[start].Texture;
+            SpriteBlend blend = sorted[start].Blend;
             int end = start + 1;
-            while (end < sorted.Count && sorted[end].Texture.Equals(texture, StringComparison.OrdinalIgnoreCase))
+            while (end < sorted.Count && sorted[end].Texture.Equals(texture, StringComparison.OrdinalIgnoreCase) && sorted[end].Blend == blend)
             {
                 end++;
             }
@@ -265,10 +266,22 @@ public sealed partial class RuntimeHost
                 alphaTest: true,
                 depthTest: true,
                 _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
-                shaded: _shading);
+                shaded: _shading,
+                blend: BatchBlendOf(blend));
             start = end;
         }
     }
+
+    /// <summary>
+    /// OV-20261104-blend: a DIAPHANOUS texture blends only with a BLUR palette's table; without one the
+    /// original draws palette entry 0.
+    /// </summary>
+    private BatchBlend BatchBlendOf(SpriteBlend blend) => blend switch
+    {
+        SpriteBlend.Ghost => BatchBlend.Ghost,
+        SpriteBlend.Diaphanous => _level.PaletteShading.Values.Any(static palette => palette.Blur) ? BatchBlend.Diaphanous : BatchBlend.Black,
+        _ => BatchBlend.None,
+    };
 
     private void AddUiOverlays(HostFrame frame, VirtualDisplayLayout display, Matrix4x4 projection, PixelRect viewport)
     {
@@ -399,7 +412,8 @@ public sealed partial class RuntimeHost
         PaletteFadeTint? fade = null,
         TextureImage? dynamic = null,
         bool shaded = false,
-        bool depthWrite = true)
+        bool depthWrite = true,
+        BatchBlend blend = BatchBlend.None)
     {
         if (vertices.Length == 0)
         {
@@ -416,6 +430,7 @@ public sealed partial class RuntimeHost
             AlphaTest = alphaTest,
             DepthTest = depthTest,
             DepthWrite = depthWrite,
+            Blend = blend,
             Ambient = ambient,
             Fade = fade ?? _fade,
             Vertices = vertices,
