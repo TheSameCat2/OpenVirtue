@@ -451,3 +451,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `INVISIBLE` thing runs no `EACH_TICK`; `PUSH n` fires the nearest object the last frame drew
   within `n`; `EXPLODE` fires the region's `FRAGILE` objects from the last placed by the distance
   to their nearest edge; `RESULT` is 1 − the share cut to 1/1024. Implemented.
+- `OV-20261104-move-mode.md` — `MOVE_MODE` 0.5 takes the regions, actors, things and walls out of
+  the cycle (their `EACH_TICK`s, the actors' steps) from the cycle that sets it; 0 stops the
+  player's movement and the object and region events too; −0.5 stops everything but `TICKS` and
+  the key hooks (no resumed wait, no global slot, no `EACH_SEC`, its clock frozen). Four
+  carriers; implemented.

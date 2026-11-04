@@ -471,8 +471,13 @@ public sealed partial class RuntimeHost : IDisposable
             ReferenceEquals(_player, tickPlayer) &&
             _activeFlic is null)
         {
-            WdlPlayerMotion.Apply(_runtime, _player, _lastTimeCorrection);
-            _runtime.DispatchContactEvents();
+            // MOVE_MODE 0 and below stops the player's movement and the object events (OV-20261104-move-mode).
+            if (_runtime.GetSkill("MOVE_MODE") > 0)
+            {
+                WdlPlayerMotion.Apply(_runtime, _player, _lastTimeCorrection);
+                _runtime.DispatchContactEvents();
+            }
+
             UpdateTextureSounds();
             HandleRuntimeHostRequests();
             if (ReferenceEquals(_runtime, tickRuntime))

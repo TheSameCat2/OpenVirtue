@@ -2559,6 +2559,19 @@ public sealed class WdlRuntime :
         _pendingPushers.Clear();
         _cycleStartAngle = GetSkill("PLAYER_ANGLE");
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
+        // OV-20261104-move-mode: below 0 (−0.5) only TICKS and the key hooks go on — no resumed wait,
+        // no global slot, no EACH_SEC (its clock stands still), no object, no count-down; the host
+        // leaves the player too. At 0 and 0.5 the regions, actors, things and walls stay out of the
+        // cycle (their EACH_TICKs, the actors' steps), live from the cycle that sets it; at 0 the
+        // player's move and the region and object events stop as well.
+        double moveMode = GetSkill("MOVE_MODE");
+        if (moveMode < 0)
+        {
+            DispatchQueuedHooks();
+            _inFirstCycle = false;
+            return timeCorrection;
+        }
+
         CountPlayerSteps();
         ReleaseFinishedChannels();
         RefreshView();
@@ -2573,9 +2586,17 @@ public sealed class WdlRuntime :
         }
 
         DispatchGlobalEachTickActions();
-        DispatchPlayerRegionEvents();
-        DispatchProximityEvents();
-        RunObjectPass(timeCorrection);
+        if (GetSkill("MOVE_MODE") > 0)
+        {
+            DispatchPlayerRegionEvents();
+            DispatchProximityEvents();
+        }
+
+        if (GetSkill("MOVE_MODE") >= 1)
+        {
+            RunObjectPass(timeCorrection);
+        }
+
         CountDownWaitingActions(timeCorrection);
         _inFirstCycle = false;
         return timeCorrection;

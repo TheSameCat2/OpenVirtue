@@ -1262,6 +1262,58 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_MoveMode_FreezesObjectsAtAHalfAndEverythingButTicksAndHooksBelowZero()
+    {
+        // OV-20261104-move-mode: 0.5 stops the objects' EACH_TICKs (and the actors' steps) from the
+        // cycle that sets it, the global slots and waits go on; −0.5 stops the global slots, the
+        // waits and EACH_SEC too, TICKS still count and a key hook still runs.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\n" +
+            "THING actor 0 0 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL globalTicks { VAL 0; } SKILL objectTicks { VAL 0; } SKILL woke { VAL 0; } SKILL keyed { VAL 0; } " +
+            "EACH_TICK globalTick; THING actor { EACH_TICK objectTick; } " +
+            "ACTION globalTick { RULE globalTicks += 1; } ACTION objectTick { RULE objectTicks += 1; } " +
+            "ACTION sleeper { WAIT 1; RULE woke += 1; } ACTION key { RULE keyed += 1; } " +
+            "ACTION arm { SET IF_ANYKEY, key; }");
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", new Player(level));
+        runtime.Tick(1.0 / 64);
+        runtime.Tick(1.0 / 64);
+        Assert.Equal(2, runtime.GetSkill("globalTicks"));
+        Assert.Equal(2, runtime.GetSkill("objectTicks"));
+
+        runtime.SetSkill("MOVE_MODE", 0.5);
+        Assert.True(runtime.RunAction("sleeper")); // a WAIT 1 armed outside a cycle resumes in the second
+        runtime.Tick(1.0 / 64);
+        runtime.Tick(1.0 / 64);
+        Assert.Equal(4, runtime.GetSkill("globalTicks"));
+        Assert.Equal(2, runtime.GetSkill("objectTicks"));
+        Assert.Equal(1, runtime.GetSkill("woke"));
+
+        runtime.SetSkill("MOVE_MODE", -0.5);
+        Assert.True(runtime.RunAction("sleeper"));
+        Assert.True(runtime.RunAction("arm"));
+        double ticks = runtime.GetSkill("TICKS");
+        runtime.QueueActionHook("IF_ANYKEY");
+        runtime.Tick(1.0 / 64);
+        runtime.Tick(1.0 / 64);
+        runtime.Tick(1.0 / 64);
+        Assert.Equal(4, runtime.GetSkill("globalTicks"));
+        Assert.Equal(1, runtime.GetSkill("woke"));
+        Assert.Equal(1, runtime.GetSkill("keyed"));
+        Assert.Equal(ticks + 0.75, runtime.GetSkill("TICKS"), 6);
+
+        runtime.SetSkill("MOVE_MODE", 1);
+        runtime.Tick(1.0 / 64);
+        runtime.Tick(1.0 / 64);
+        Assert.Equal(6, runtime.GetSkill("globalTicks"));
+        Assert.Equal(4, runtime.GetSkill("objectTicks"));
+        Assert.Equal(2, runtime.GetSkill("woke"));
+    }
+
+    [Fact]
     public void TickFlic_ResumesWaitingActions()
     {
         // A WAITT started before PLAY_FLICFILE resumes while the flic plays
