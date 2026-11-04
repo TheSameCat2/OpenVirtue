@@ -123,10 +123,12 @@ public static class MeshBuilder
             : DefaultScale;
         float width = (float)(attach.Width / (attach.ScaleX > 0 ? attach.ScaleX : DefaultScale));
         float height = (float)(attach.Height / (attach.ScaleY > 0 ? attach.ScaleY : DefaultScale));
+        // The repeats stack from height 0 (texmap), so the first repeat's top above the floor lies on
+        // that grid; the probe's walls stood on height 0.
         float repeatHeight = 1f / mapping.WorldToV;
         float s0 = (float)(attach.PosX / wallScaleX);
         float s1 = s0 + width;
-        float top = floor + repeatHeight - (float)(attach.PosY / wallScaleY);
+        float top = ((MathF.Floor(floor / repeatHeight) + 1) * repeatHeight) - (float)(attach.PosY / wallScaleY);
         float bottom = top - height;
 
         float cs0 = Math.Max(s0, 0);
@@ -303,9 +305,6 @@ public static class MeshBuilder
             return;
         }
 
-        float floor = Math.Min(floor1, floor2);
-        float ceiling = Math.Max(ceiling1, ceiling2);
-
         float dx = v2.X - v1.X;
         float dz = v2.Y - v1.Y;
         float length = MathF.Sqrt((dx * dx) + (dz * dz));
@@ -325,14 +324,15 @@ public static class MeshBuilder
         // Render depth is −map y (RenderSpace, ADR-0009); u follows the vertex order unchanged.
         float z1 = RenderSpace.ZFromMapY(v1.Y);
         float z2 = RenderSpace.ZFromMapY(v2.Y);
-        // v runs from the piece's lowest point, so a sloped edge cuts the texture rather than stretching it.
-        // OV-20261104-attach (the swatch wall): the bitmap's rows run downward from the top of each
-        // repeat, its bottom row on the floor, so v falls as the height rises.
+        // OV-20261104-texmap: the bitmap's rows run downward from the top of each repeat, the repeats
+        // stacked from height 0 whatever the regions' floors (raised, pit), so v is −height at the
+        // texture's scale; OFFSET_Y slides the texture down (wall-offset), so it is taken off v. A
+        // sloped edge thus cuts the texture rather than stretching it.
         float worldToV = mapping.WorldToV;
-        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, v0 - ((floor1 - floor) * worldToV), ambient);
-        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, v0 - ((floor2 - floor) * worldToV), ambient);
-        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, v0 - ((ceiling2 - floor) * worldToV), ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, v0 - ((ceiling1 - floor) * worldToV), ambient);
+        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, -v0 - (floor1 * worldToV), ambient);
+        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, -v0 - (floor2 * worldToV), ambient);
+        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, -v0 - (ceiling2 * worldToV), ambient);
+        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, -v0 - (ceiling1 * worldToV), ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -432,11 +432,13 @@ public static class MeshBuilder
     {
         // A surface follows its vertices' heights only with a slope flag (OV-20261029-slope).
         Vertex vertex = level.Vertices[vertexIndex];
+        // OV-20261104-texmap (floor-cell, ceil-cell): the texture's columns run along −x and its rows
+        // along +y from the origin, at SCALE pixels a step. The region offsets' sense is unprobed.
         return new RenderVertex(
             vertex.X,
             height + (slopeSign * vertex.Z),
             RenderSpace.ZFromMapY(vertex.Y),
-            (vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
+            (-vertex.X * mapping.WorldToU) + (offsetX * mapping.OffsetToU),
             (vertex.Y * mapping.WorldToV) + (offsetY * mapping.OffsetToV),
             ambient);
     }

@@ -139,7 +139,8 @@ public sealed class WorldHandednessTests
     [Fact]
     public void FloorSurface_KeepsMapTextureAxes_WhileDepthIsNegatedMapY()
     {
-        // No deliberate texture flip: v still follows map y; only the position's z is negated.
+        // OV-20261104-texmap: a surface's columns run along −x and its rows along +y, whatever the
+        // render space's negated z.
         Level level = LoadWithMap(
             "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
             "REGION room 0 10;#0\n" +
@@ -152,8 +153,8 @@ public sealed class WorldHandednessTests
 
         MeshBatch floor = Assert.Single(mesh.Batches, batch => batch.Vertices.All(v => v.Y == 0));
         RenderVertex farCorner = Assert.Single(floor.Vertices.Distinct(), v => v.X == 4 && v.Z == -4);
-        Assert.Equal(0.25f, farCorner.U, 1e-6f); // 4 steps × (SCALE 4 / 64 px) of a repeat along map x
-        Assert.Equal(0.25f, farCorner.V, 1e-6f); // and the same positive amount along map y (v is not negated)
+        Assert.Equal(-0.25f, farCorner.U, 1e-6f); // 4 steps × (SCALE 4 / 64 px) of a repeat along −x
+        Assert.Equal(0.25f, farCorner.V, 1e-6f); // and the same positive amount along map y
         Assert.DoesNotContain(floor.Vertices, v => v.Z > 0);
     }
 

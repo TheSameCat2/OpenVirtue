@@ -123,6 +123,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   `SCALE`, a size family for the sprite scale rule, and a free wall 32 steps ahead with the square
   attached (`PORTCULLIS`, a non-dividing `SCALE_Y`, overhang); the final screenshot's palette
   indices give each layer's rectangle.
+- `texmap` (`TexmapProbeCases`): the level palette's 16×16 swatch at `SCALE` 2 on a free wall
+  with and without map offsets and on the pad island's walls raised to 4 or sunk to −4 (the
+  player turned to them), and a 64×64 bitmap of 4×4-pixel index cells as the room's floor and
+  ceiling; each screenshot pixel's index names the texel under it.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

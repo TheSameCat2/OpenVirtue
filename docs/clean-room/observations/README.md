@@ -479,3 +479,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   at the second vertex and `POS_Y` below the top of the first repeat above the floor, cut to the
   wall; a wall texture's rows run downward from each repeat's top. 25 carriers. Implemented in
   `SpriteBuilder` and `MeshBuilder`.
+- `OV-20261104-texmap.md` — a floor's or ceiling's texture columns run along −x and its rows
+  along +y from the origin at `SCALE` pixels a step (and must be 64×64 squares); a wall's column
+  is the distance from the second vertex plus `OFFSET_X`, its row −height less `OFFSET_Y`, the
+  repeats stacked from height 0 whatever the regions' floors. Eight carriers. Implemented in
+  `MeshBuilder`.

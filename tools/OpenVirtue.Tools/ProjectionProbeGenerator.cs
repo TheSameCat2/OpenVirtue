@@ -70,6 +70,7 @@ internal static class ProjectionProbeGenerator
     public const string LevelProbeName = "level";
     public const string FadePalProbeName = "fade-pal";
     public const string AttachProbeName = "attach";
+    public const string TexmapProbeName = "texmap";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -121,6 +122,7 @@ internal static class ProjectionProbeGenerator
     private const string LevelProbeId = "OV-20261104-level";
     private const string FadePalProbeId = "OV-20261104-fade-pal";
     private const string AttachProbeId = "OV-20261104-attach";
+    private const string TexmapProbeId = "OV-20261104-texmap";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -443,6 +445,7 @@ internal static class ProjectionProbeGenerator
         LevelProbeName => LevelProbeId,
         FadePalProbeName => FadePalProbeId,
         AttachProbeName => AttachProbeId,
+        TexmapProbeName => TexmapProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -593,6 +596,7 @@ internal static class ProjectionProbeGenerator
             case LevelProbeName:
             case FadePalProbeName:
             case AttachProbeName:
+            case TexmapProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -653,6 +657,7 @@ internal static class ProjectionProbeGenerator
         LevelProbeName => LevelProbeCases.Set,
         FadePalProbeName => FadePalProbeCases.Set,
         AttachProbeName => AttachProbeCases.Set,
+        TexmapProbeName => TexmapProbeCases.Set,
         _ => null,
     };
 
@@ -767,6 +772,11 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
             WriteValidated(Path.Combine(workDir, AttachProbeCases.StripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Magenta, palette));
             WriteValidated(Path.Combine(workDir, AttachProbeCases.SquareFile), SyntheticPcx.Solid(16, 16, (byte)Ink.TargetLeft, palette));
+        }
+
+        if (plan.ProbeName == TexmapProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
         }
 
         if (plan.ProbeName == FadePalProbeName)
@@ -931,7 +941,7 @@ internal static class ProjectionProbeGenerator
             {
                 FLOOR_HGT 0;
                 CEIL_HGT {{variant.Room.CeilingHeight}};
-                FLOOR_TEX flr_tex;
+                FLOOR_TEX {{variant.Trace?.Map?.RoomFloor ?? "flr_tex"}};
                 CEIL_TEX {{variant.Trace?.Map?.RoomCeiling ?? "cel_tex"}};
                 {{variant.Trace?.Map?.RoomBody ?? ""}}
             }
@@ -1209,7 +1219,7 @@ internal static class ProjectionProbeGenerator
 
         foreach (TraceProbeWall extra in map?.Walls ?? [])
         {
-            sb.Append(CultureInfo.InvariantCulture, $"WALL {extra.Keyword} {extraFirst} {extraFirst + 1} 0 0 0 0;#{wall++}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"WALL {extra.Keyword} {extraFirst} {extraFirst + 1} 0 0 {extra.OffsetX} {extra.OffsetY};#{wall++}\r\n");
             extraFirst += 2;
         }
 
