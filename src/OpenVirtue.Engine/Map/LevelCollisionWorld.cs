@@ -321,13 +321,13 @@ public sealed class LevelCollisionWorld
     /// centre to the start-up push-out's distance (<see cref="PushTargetSquared"/>: (c − 1)²/1024 + 102,
     /// c the summed radii), in the 22.10 arithmetic of
     /// <see cref="PushOutOfEntities(Vector2, int, float, Func{MapEntity, float}, Func{MapEntity, bool}, out bool, ICollection{AcknexObject}?)"/>,
-    /// with the 4/1024 nudge along an axis the offset has no part on. A 4-wide actor stepping 1.594
-    /// a cycle along x into a 1.2-wide player left it 3289 then 3290 units ahead of its centre and 4
-    /// aside, then 8 (OV-20261019-actor-contact actor-push); a small one walking a player along x
-    /// at an angle left it 17, 38 and 60 aside after 3, 6 and 9 pushes (OV-20261019-proximity-events
-    /// near-actor), which the lateral part scaled with the rest gives exactly (replayed 2026-11-03).
-    /// <c>null</c> when the circle is not within the contact distance; the circle's own position when
-    /// it is on the centre.
+    /// and then the move's 4/1024 minimum: a part of the circle's displacement under 4/1024 becomes
+    /// 4/1024, with its sign and positive for none (OV-20261029-actor-step). A 4-wide actor stepping
+    /// along x into a 1.2-wide player left it 3289 to 3291 units ahead and 4 further aside each push
+    /// (actor-contact actor-push at 8 ticks a cycle, round 8 push-wall at 60 Hz); one approaching 27°
+    /// off the axis pushed along the line of centres, both parts scaled and none nudged (round 8
+    /// push-angle, 2026-11-04). <c>null</c> when the circle is not within the contact distance; the
+    /// circle's own position when it is on the centre.
     /// </summary>
     public static Vector2? PushOutOfEntity(Vector2 position, MapEntity entity, float radius, float entityRadius)
     {
@@ -365,16 +365,8 @@ public sealed class LevelCollisionWorld
             ey = py + Math.Floor((step * dy / length) + 0.5);
         }
 
-        if (dx == 0)
-        {
-            ex += 4;
-        }
-        else if (dy == 0)
-        {
-            ey += 4;
-        }
-
-        return new Vector2((float)(ex / 1024), (float)(ey / 1024));
+        static double AtLeastFour(double part) => Math.Abs(part) < 4 ? (part < 0 ? -4 : 4) : part;
+        return new Vector2((float)((px + AtLeastFour(ex - px)) / 1024), (float)((py + AtLeastFour(ey - py)) / 1024));
     }
 
     private static (double X, double Y)? ScaleToContact(long dx, long dy, long lengthSquared, long contactSquared)

@@ -1309,6 +1309,7 @@ internal static class OracleReplay
                     "right" => (InkeyKey.Right, '\0'),
                     "pageup" => (InkeyKey.PageUp, '\0'),
                     "pagedown" => (InkeyKey.PageDown, '\0'),
+                    "delete" => (InkeyKey.Delete, '\0'),
                     { Length: 1 } single => (InkeyKey.Character, single[0]),
                     _ => null,
                 };

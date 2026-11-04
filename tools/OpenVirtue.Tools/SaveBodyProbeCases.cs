@@ -112,6 +112,17 @@ internal static class SaveBodyProbeCases
         ["FLOOR_ASCEND", "CEIL_ASCEND", "FLOOR_DESCEND", "CEIL_DESCEND", "SEEN", "BASE", "STICKY", "PLAY",
          "FLAG1", "FLAG2", "FLAG3", "FLAG4", "FLAG5", "FLAG6", "FLAG7", "FLAG8"];
 
+    /// <summary>Round 21: the room sloped (FLOOR_ASCEND), the player beamed to (5, 3), WDIST_* printed when <paramref name="print"/>.</summary>
+    private static TraceProbeCase WdistSave(string label, string question, bool print) => new(
+        label,
+        question,
+        Declarations,
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    SET PLAYER_X, 5;\n    SET PLAYER_Y, 3;\n    WAIT 2;\n" +
+        (print ? V("D", "PLAYER_X", "PLAYER_Y", "WDIST_MINX", "WDIST_MAXX", "WDIST_MINY", "WDIST_MAXY") : "") +
+        "    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        Predict(("coordinates", "-16, 30, -24, 24 in the save"), ("distances from the player", "-21, 25, -27, 21")),
+        Map: World with { RoomBody = "FLAGS SAVE, FLOOR_ASCEND;" });
+
     /// <summary>Round 15: the room declared with <paramref name="body"/>.</summary>
     private static TraceProbeCase RegionDeclared(string label, string question, string body) => new(
         label,
@@ -122,12 +133,12 @@ internal static class SaveBodyProbeCases
         Map: World with { RoomBody = body });
 
     /// <summary>Round 15b: SAVE textures declared after <see cref="Declarations"/>, none of them shown.</summary>
-    private static TraceProbeCase TextureSave(string label, string question, string textures) => new(
+    private static TraceProbeCase TextureSave(string label, string question, string textures, string change = "") => new(
         label,
         question,
         EventActions + "SOUND sb_snd,<" + AudioProbeCases.Quarter + ">;\n" + $"FONT sb_font,<{UiLayoutProbeCases.FontFile}>,8,8;\n" +
         "STRING sb_str, \"t\";\n" + Declarations + textures,
-        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
+        "    SET sb_ts, sb_t;\n    SET sb_as, sb_a;\n    SET sb_ws, sb_w;\n" + change + "    WAIT 2;\n    SAVE \"ovsav\", 2;\n" + P("SAVED"),
         Predict(("one record per SAVE texture", "the second section holds a 68-byte record for each")),
         Map: World);
 
@@ -291,6 +302,21 @@ internal static class SaveBodyProbeCases
             "region-flag-" + f.ToLowerInvariant(),
             $"Round 15. The SAVE room declared FLAGS SAVE, {f}: which bits of its record's flag words change?",
             "FLAGS SAVE, " + f + ";")),
+        WdistSave(
+            "wdist-beam",
+            "Round 21. The SAVE room declared FLAGS SAVE, FLOOR_ASCEND and the player beamed to (5, 3) before the SAVE: do " +
+            "WDIST_MINX/MAXX/MINY/MAXY hold the axis lines' wall crossings as coordinates (-16, 30, -24, 24) or as distances from the player (-21, 25, -27, 21)?",
+            print: false),
+        WdistSave(
+            "wdist-print",
+            "Round 21. As wdist-beam, printing WDIST_MINX/MAXX/MINY/MAXY each cycle (if the compiler takes them): when are they set?",
+            print: true),
+        TextureSave(
+            "texture-anim-actor",
+            "Round 21. A SAVE texture of three cycles, DELAY 1 each, set on the placed actor at run time (SET sb_as.TEXTURE): " +
+            "which record's +106 holds 1.0, the actor's or the first record's?",
+            "TEXTURE sb_x2 { CYCLES 3; BMAPS grn_map, mag_map, yel_map; DELAY 1, 1, 1; FLAGS SAVE; }\n",
+            "    SET sb_as.TEXTURE, sb_x2;\n"),
         Declared(
             "events",
             "Round 13. Every event a wall takes, and every event a thing or actor takes but IF_KLICK, each naming its own action: " +

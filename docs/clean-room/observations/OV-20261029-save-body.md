@@ -740,3 +740,17 @@ are set within the cycle. With it the four carriers match in full: 89 of 107.
   actor's texture is still. What puts the actor's +106 at 1.0 is open.
 - Result: 90 of 107 save-body carriers match in full.
 
+## Round 21: `WDIST_*` as distances, a run-time texture's record (2026-11-04)
+Three carriers (`round21/`): wdist-beam and wdist-print beam the player to (5, 3) in the room
+declared `FLAGS SAVE, FLOOR_ASCEND` before the save, wdist-print printing
+`WDIST_MINX/MAXX/MINY/MAXY` each cycle; texture-anim-actor sets a three-cycle `SAVE` texture of
+`DELAY 1` on the placed actor at run time (`SET sb_as.TEXTURE, sb_x2`).
+- **`WDIST_*` are distances from the player**, not coordinates: wdist-print reads −21, 25, −27, 21
+  at (5, 3) (the crossings at −16, 30, −24, 24), already in the first cycle after the beam, and
+  both saves hold the same. `WdlRuntime.UpdateSlopeExtents` now subtracts the player's position;
+  both carriers match in full.
+- **The actor with a run-time animated texture** saves +102 1.0 (its `CYCLE`), +106 1.555 and +26
+  4 (every other record's +26 is 5, and the actor's +106 was 1.0 in round 15b with the texture on
+  an unplaced wall). So +106 is not the frame's `DELAY` as read then; what it counts, and what +26
+  is, stay open (OpenVirtue writes the `DELAY` at +106 and 5 at +26: the save differs at +26).
+

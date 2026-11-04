@@ -4299,12 +4299,12 @@ public class WdlRuntimeTests
         Assert.True(MapEntitySizing.TryGetSize(level, pusher, out MapEntitySize size));
         Assert.Equal(2, size.Width);
         Assert.Equal(3, pusher.X, 3);
-        // The original's 22.10 push (actor-push, replayed 2026-11-03): the player is put at the
-        // start-up push-out's distance from the actor's centre, here 2273/1024 for a 2-wide actor and
-        // the 1.2-wide player 1248/1024 away; the first push on the actor's line is nudged 4/1024
-        // aside, the second scales that offset with the rest (7/1024).
+        // The original's 22.10 push (actor-push, push-wall, push-angle; 2026-11-04): the player is put
+        // at the start-up push-out's distance from the actor's centre, here 2273/1024 for a 2-wide
+        // actor and the 1.2-wide player 1248/1024 away, and a part of its displacement under 4/1024
+        // becomes 4/1024: 4 aside after the first push, 8 after the second.
         Assert.Equal(3 + (2273.0 / 1024), player.Position.X, 4);
-        Assert.Equal(7.0 / 1024, player.Position.Z, 4);
+        Assert.Equal(8.0 / 1024, player.Position.Z, 4);
         Assert.Equal(2, runtime.GetSkill("near_count"));
     }
 

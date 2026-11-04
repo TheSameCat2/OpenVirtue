@@ -150,6 +150,22 @@ internal static class ActorContactProbeCases
 
     private static readonly TraceProbeMap ActorPushMap = new(Placements: ["ACTOR ap_k 30 0 180 0"]);
 
+    /// <summary>Round 8: the actor approaches from (30, 15), off the x axis, and pushes for 200 ticks.</summary>
+    private static readonly string ActorPushAngleRun =
+        "    SET ac_s, ap_k;\n" + ArmSampler + Line("GO") +
+        "    RULE ac_p = 1;\n    WAITT 200;\n" + Line("PUSHED") +
+        "    RULE ac_p = 0;\n" + Line("RET") + ClearSampler;
+
+    private static readonly TraceProbeMap ActorPushAngleMap = new(Placements: ["ACTOR ap_k 30 15 206 0"]);
+
+    /// <summary>Round 8: the player beamed 4 from the west wall (−12, 0) before the actor from (10, 0) reaches it.</summary>
+    private static readonly string ActorPushWallRun =
+        "    SET ac_s, ap_k;\n    SET PLAYER_X, -12;\n    SET PLAYER_Y, 0;\n" + ArmSampler + Line("GO") +
+        "    RULE ac_p = 1;\n    WAITT 120;\n" + Line("PUSHED") +
+        "    RULE ac_p = 0;\n" + Line("RET") + ClearSampler;
+
+    private static readonly TraceProbeMap ActorPushWallMap = new(Placements: ["ACTOR ap_k 10 0 180 0"]);
+
     // ---- beamed inside a thing ---------------------------------------------------------------
 
     /// <summary>
@@ -432,6 +448,26 @@ internal static class ActorContactProbeCases
                 ("contact by the actor fires IF_NEAR every cycle", "N in every pushing cycle, none after HALT"),
                 ("the actor stops at contact", "the player stays at the origin; the actor stops at x ≈ 3.2")),
             Map: ActorPushMap),
+        new TraceProbeCase(
+            "push-angle",
+            "Round 8. The 4-wide FOLLOW actor approaches from (30, 15), 27 degrees off the x axis, and pushes the player at the origin: " +
+            "is the push along the line of centres (both parts scaled, OV-20261019-actor-contact 2026-11-03 addendum) or along one axis with a 4/1024 nudge on the other?",
+            ActorPushDeclarations(""),
+            ActorPushAngleRun,
+            Predict(
+                ("along the line of centres", "the player's y grows with its x in the ratio of the offset, no 4-unit steps"),
+                ("along one axis", "the player's y grows 4/1024 a push")),
+            Map: ActorPushAngleMap),
+        new TraceProbeCase(
+            "push-wall",
+            "Round 8. The player beamed to (-12, 0), 4 from the west wall, the 4-wide FOLLOW actor from (10, 0): what are the pushes as the player meets the wall " +
+            "(actor-push's cycles 25 and 26 moved it 318 then 735 raw and left it 1793 from the wall), and does a push the wall would stop move it at all?",
+            ActorPushDeclarations(""),
+            ActorPushWallRun,
+            Predict(
+                ("refused whole", "the player stays once a push would cross the wall's clearance"),
+                ("stopped at the clearance", "the player ends 1279 raw from the wall")),
+            Map: ActorPushWallMap),
         new TraceProbeCase(
             "actor-push-careful",
             "The same actor with CAREFULLY (p.73: it avoids walls, things and other actors): does it still push the player?",

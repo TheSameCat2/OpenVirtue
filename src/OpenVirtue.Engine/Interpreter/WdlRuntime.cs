@@ -1247,9 +1247,10 @@ public sealed class WdlRuntime :
 
         string nextValue = resultCode == 0 ? (value ?? string.Empty).TrimEnd() : request.InitialValue;
         SetString(request.StringName, nextValue);
-        TryGetString(request.StringName, out string current);
         SetSkill("RESULT", resultCode);
-        SetSkill("STR_LEN", current.Length);
+        // STR_LEN is the text's length without the pad the string keeps to its declared length: hello
+        // with [Del] gave ello and 4 (OV-20261029-inkey round 3 delete2, 2026-11-04).
+        SetSkill("STR_LEN", nextValue.TrimEnd().Length);
 
         if (_inputActions.Remove(requestId, out ActiveInputAction? action))
         {
@@ -4728,7 +4729,10 @@ public sealed class WdlRuntime :
 
         foreach (AcknexObject target in order)
         {
-            if (target is Actor actor)
+            // In the cycle an EXIT runs, the objects' EACH_TICK still run (clip-contact's END files hold
+            // their lines) but no actor moves: actor-contact round 8 push-angle's pushing actor fired no
+            // IF_NEAR after the probe's END (2026-11-04).
+            if (target is Actor actor && !ExitRequested)
             {
                 AdvanceActorTarget(actor, timeCorrection);
             }
@@ -5479,8 +5483,8 @@ public sealed class WdlRuntime :
     /// −16, 30, −24, 24: the room's west edge, the free-standing wall at x = 30 before the east edge
     /// at 48, and the south and north edges (OV-20261029-save-body round 15, 2026-11-03 re-read).
     /// The skills are not in the manual; a flat region leaves them as they are (the sentinels at
-    /// start). Whether they hold coordinates or distances from the player is not told apart at the
-    /// origin; coordinates are kept.
+    /// start). They hold distances from the player: beamed to (5, 3) the probe read -21, 25, -27, 21
+    /// (round 21 wdist-print).
     /// </summary>
     internal void UpdateSlopeExtents(Player player)
     {
@@ -5530,10 +5534,12 @@ public sealed class WdlRuntime :
             }
         }
 
-        if (west is { } w) { SetSkill("WDIST_MINX", w); }
-        if (east is { } e) { SetSkill("WDIST_MAXX", e); }
-        if (south is { } so) { SetSkill("WDIST_MINY", so); }
-        if (north is { } n) { SetSkill("WDIST_MAXY", n); }
+        // Distances from the player, not coordinates: beamed to (5, 3) in the same room the skills read
+        // -21, 25, -27 and 21 (save-body round 21 wdist-print, 2026-11-04).
+        if (west is { } w) { SetSkill("WDIST_MINX", w - px); }
+        if (east is { } e) { SetSkill("WDIST_MAXX", e - px); }
+        if (south is { } so) { SetSkill("WDIST_MINY", so - py); }
+        if (north is { } n) { SetSkill("WDIST_MAXY", n - py); }
     }
 
     private bool TryGetWallSegment(Wall wall, out double ax, out double ay, out double bx, out double by)

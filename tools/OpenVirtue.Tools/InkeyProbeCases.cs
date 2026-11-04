@@ -46,6 +46,8 @@ internal static class InkeyProbeCases
         Keys("right", "hello", "right right z enter", "Round 2. Old content hello, cursor right twice, z, Return: hezlo (the cursor moves over the old text)?"),
         Keys("delete", "hello", "del enter", "Round 2. Old content hello, Del, Return: ello?"),
         Keys("type-bspace", "hello", "a b bspace c enter", "Round 2. Old content hello, a b, Backspace, c, Return: acllo?"),
+        Keys("delete2", "hello", "delete enter", "Round 3 (the mapper name is delete, not del). Old content hello, Del, Return: ello (the character at the cursor goes)?"),
+        Keys("left", "hello", "right right left z enter", "Round 3. Old content hello, Right twice, Left, z, Return: hzello (the cursor moves back over the text)?"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

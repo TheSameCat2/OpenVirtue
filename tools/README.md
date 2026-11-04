@@ -214,7 +214,8 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
     cycle. Ten more
     carriers match in full (start-wait, turn-refresh, climb-1, climb-2, clip-wall, solid-dist0,
     clip-regions-order, clip-regions-walk, audio reuse, flic-scheduler-detail round2 near-control)
-    and 880 more lines over all. `--dump-clock` prints the sampled cycles the replay's clock follows.
+    and 880 more lines over all. `--dump-clock` prints the sampled cycles the replay's clock follows and the
+    start-up steps it takes before the anchor.
   - **Counted gaps.** A counted sampler's gaps are filled along one cadence through every sample and
     through the step into it that the sampler's `TIME_CORR` column prints (a column of whole 1/32
     ticks between 0.1 and 2 that equals the step wherever two samples are a cycle apart), for as
