@@ -477,8 +477,10 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Runtime_LevelInstruction_RequestsLevelChangeAndTerminatesAction()
+    public void Runtime_LevelInstruction_RequestsLevelChangeAndTheActionGoesOn()
     {
+        // OV-20261104-level: the action goes on past LEVEL to the cycle's end (the original printed
+        // right after it); the new world then starts with no waiting action.
         Level level = Load(
             "MAPFILE <m.wmp>; SKILL reached { VAL 0; } ACTION change { LEVEL <NEXT.WDL>,\"NEXT.WRS\"; SET reached, 1; }");
         var runtime = new WdlRuntime(level);
@@ -487,7 +489,7 @@ public class WdlRuntimeTests
 
         Assert.Equal("NEXT.WDL", runtime.RequestedLevelName);
         Assert.Equal("NEXT.WRS", runtime.RequestedLevelResource);
-        Assert.Equal(0, runtime.GetSkill("reached"));
+        Assert.Equal(1, runtime.GetSkill("reached"));
     }
 
     [Fact]

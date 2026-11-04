@@ -67,6 +67,7 @@ internal static class ProjectionProbeGenerator
     public const string InstructionsProbeName = "instructions";
     public const string MoveModeProbeName = "move-mode";
     public const string StringsProbeName = "strings";
+    public const string LevelProbeName = "level";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -115,6 +116,7 @@ internal static class ProjectionProbeGenerator
     private const string InstructionsProbeId = "OV-20261104-instructions";
     private const string MoveModeProbeId = "OV-20261104-move-mode";
     private const string StringsProbeId = "OV-20261104-strings";
+    private const string LevelProbeId = "OV-20261104-level";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -434,6 +436,7 @@ internal static class ProjectionProbeGenerator
         InstructionsProbeName => InstructionsProbeId,
         MoveModeProbeName => MoveModeProbeId,
         StringsProbeName => StringsProbeId,
+        LevelProbeName => LevelProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -581,6 +584,7 @@ internal static class ProjectionProbeGenerator
             case InstructionsProbeName:
             case MoveModeProbeName:
             case StringsProbeName:
+            case LevelProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -638,6 +642,7 @@ internal static class ProjectionProbeGenerator
         InstructionsProbeName => InstructionProbeCases.Set,
         MoveModeProbeName => MoveModeProbeCases.Set,
         StringsProbeName => StringProbeCases.Set,
+        LevelProbeName => LevelProbeCases.Set,
         _ => null,
     };
 

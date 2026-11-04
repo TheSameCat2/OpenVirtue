@@ -110,6 +110,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
 - `strings` (`StringProbeCases`): `TO_STRING` of a range of values, `SET_STRING`/`ADD_STRING`
   against strings of several lengths, and `SET_SKILL` from texts that are not quite numbers;
   each line prints the string up to a `|` so its length shows.
+- `level` (`LevelProbeCases`): `LEVEL "TITLE.WDL"` reloading the probe's own world, a `GLOBAL`
+  skill counting the passes so the second one ends the run; the trace file and `OVSTA0.TXT` are
+  appended to across the change.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of
