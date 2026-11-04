@@ -102,13 +102,15 @@ public class PaletteShadingTests
     }
 
     [Theory]
-    // OV-20261104-sprite-shade: a sprite reads the walls' even level plus two, held within 0…30.
-    [InlineData(20.0, 1, 10, 0, 16)] // 14.8 -> 14 + 2
-    [InlineData(19.0, 1, 10, 0, 16)] // exactly 14 -> 16
-    [InlineData(28.0, 1, 10, 0.25, 12)] // 11.14 -> 10 + 2
-    [InlineData(28.0, 0, 10, 0, 30)] // 30 + 2 held at 30
-    [InlineData(20.0, 1, 10, 0.5, 0)] // -1.2 -> -2 + 2 = 0
-    public void SpriteLevel_IsTheWallsLevelPlusTwoHeldInTheRange(double distance, double light, double lightDistance, double ambient, int expected)
+    // OV-20261104-sprite-shade: a sprite's light term is two levels less, not below 0.
+    [InlineData(20.0, 1, 10, 0, 16)] // light 15.2 - 2: 16.8 -> 16
+    [InlineData(19.0, 1, 10, 0, 16)] // light 16 - 2: exactly 16
+    [InlineData(28.0, 1, 10, 0.25, 12)] // 22 - 8.86: 13.14 -> 12
+    [InlineData(28.0, 0, 10, 0, 30)] // no light: 30
+    [InlineData(28.0, 0, 10, 0.25, 22)] // no light: the walls' 22, not 24 (dim)
+    [InlineData(20.0, 0.1, 10, 0.25, 22)] // light 1.52 - 2 held at 0 (faint)
+    [InlineData(20.0, 1, 10, 0.5, 0)] // 14 - 13.2: 0.8 -> 0
+    public void SpriteLevel_TakesTwoOffTheLightTerm(double distance, double light, double lightDistance, double ambient, int expected)
     {
         Assert.Equal(expected, PaletteShading.SpriteLevel(distance, light, lightDistance, ambient));
     }

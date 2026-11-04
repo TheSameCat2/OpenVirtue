@@ -67,6 +67,18 @@ internal static class GeniusProbeCases
                 Textures: Textures("1", "1"),
                 Walls: [new TraceProbeWall("gn_wall", 32, -8, 32, 8)],
                 Placements: ["THING gn_lamp 24 0 0 0", "THING gn_s 20 6 0 0"])),
+        new TraceProbeCase(
+            "sprite-plain",
+            "Round 3. As sprite with the thing's texture without ALBEDO: the same level (the lamp and ALBEDO play no part for sprites)?",
+            $"BMAP gn_sm,<{SpriteShadeProbeCases.RampFile}>;\nTEXTURE gn_st {{ SCALE_XY 16, 16; BMAPS gn_sm; }}\nTHING gn_s {{ TEXTURE gn_st; }}\n",
+            "    SET PLAYER_LIGHT, 0;\n    WAITT 8;\n" + P("RET"),
+            Predict(("the same", "22"), ("ALBEDO lit the sprite", "a different level")),
+            Map: new TraceProbeMap(
+                RoomBody: "AMBIENT 0.25; GENIUS gn_lamp;",
+                PaletteBody: $"RANGE {ProjectionProbeGenerator.ShadeRampStart},{ProjectionProbeGenerator.ShadeRampLength};",
+                Textures: Textures("1", "1"),
+                Walls: [new TraceProbeWall("gn_wall", 32, -8, 32, 8)],
+                Placements: ["THING gn_lamp 24 0 0 0", "THING gn_s 20 6 0 0"])),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
