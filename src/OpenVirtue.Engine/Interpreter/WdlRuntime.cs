@@ -5464,7 +5464,11 @@ public sealed class WdlRuntime :
             new ShotPixel(column, ((long)halfWidth << 20) / Math.Max(1, (long)Math.Truncate(projection.HorizontalHalfTangent * 1024))));
         if (hit is null)
         {
-            ClearHitResult();
+            // A miss clears HIT_DIST, HIT_X and HIT_Y but leaves RESULT as the last hit set it (0.956
+            // after a SHOOT_RANGE 10 miss; OV-20261104-instructions round 4 shoot-wall). A PUSH miss zeroes it.
+            SetSkill("HIT_DIST", 0);
+            SetSkill("HIT_X", 0);
+            SetSkill("HIT_Y", 0);
             return;
         }
 
