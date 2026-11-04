@@ -2185,18 +2185,25 @@ public class WdlRuntimeTests
     {
         Level level = Load(
             "MAPFILE <m.wmp>; " +
-            "STRING source,\"abcdef\"; STRING target,\".....\"; STRING cat,\".....\"; STRING number,\"....\"; " +
-            "SKILL value { VAL 12.5; } SKILL parsed { VAL 0; } " +
-            "ACTION editStrings { SET_STRING target,source; SET_STRING cat,\"ab\"; ADD_STRING cat,\"cdef\"; " +
-            "TO_STRING number,value; SET_SKILL parsed,number; }");
+            "STRING source,\"abcdefg\"; STRING target,\".....\"; STRING cat,\".....\"; STRING number,\"....\"; STRING whole,\"....\"; " +
+            "STRING junk,\"12abc\"; STRING word,\"abc\"; " +
+            "SKILL value { VAL 12.5; } SKILL parsed { VAL 0; } SKILL seven { VAL 7; } SKILL p2 { VAL 99; } SKILL p3 { VAL 99; } " +
+            "ACTION editStrings { SET_STRING target,source; SET_STRING cat,\"ab\"; ADD_STRING cat,\"cdefg\"; " +
+            "TO_STRING number,value; SET_SKILL parsed,number; TO_STRING whole,seven; SET_SKILL p2,junk; SET_SKILL p3,word; }");
         var runtime = new WdlRuntime(level);
 
         Assert.True(runtime.RunAction("editStrings"));
 
-        Assert.Equal("abcde", runtime.Strings["target"].Value);
-        Assert.Equal("abcde", runtime.Strings["cat"].Value);
-        Assert.Equal("12.5", runtime.Strings["number"].Value);
+        // OV-20261104-strings: a copy takes one character more than the declared length; TO_STRING
+        // prints a whole value without decimals and any other with three; SET_SKILL reads the
+        // number the text starts with and 0 for none.
+        Assert.Equal("abcdef", runtime.Strings["target"].Value);
+        Assert.Equal("abcdef", runtime.Strings["cat"].Value);
+        Assert.Equal("12.50", runtime.Strings["number"].Value);
         Assert.Equal(12.5, runtime.GetSkill("parsed"));
+        Assert.Equal("7", runtime.Strings["whole"].Value);
+        Assert.Equal(12, runtime.GetSkill("p2"));
+        Assert.Equal(0, runtime.GetSkill("p3"));
     }
 
     [Fact]

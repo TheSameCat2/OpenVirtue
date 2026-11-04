@@ -1230,7 +1230,7 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        _strings[resolvedName] = text.WithValue(value);
+        _strings[resolvedName] = text.WithCopiedValue(value);
         return true;
     }
 

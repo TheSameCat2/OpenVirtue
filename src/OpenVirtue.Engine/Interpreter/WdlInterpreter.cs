@@ -1168,21 +1168,104 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
-        double value = Evaluate(item.Header, comma + 1, item.Header.Count);
-        strings.SetString(target, value.ToString("G15", CultureInfo.InvariantCulture));
+        // OV-20261104-strings format: a whole 22.10 value prints without decimals (0, 12, 100000, -1),
+        // any other with three, rounded as PRINT_VALUE prints it (1234.5678 → 1234.567, 3.14159 → 3.141).
+        double value = WdlFixed.Quantize(Evaluate(item.Header, comma + 1, item.Header.Count));
+        strings.SetString(
+            target,
+            value == Math.Truncate(value)
+                ? value.ToString("F0", CultureInfo.InvariantCulture)
+                : WdlRuntime.FormatPrintValue(value));
+    }
+
+    /// <summary>The number a text starts with, as C's <c>atof</c> reads it, or 0.</summary>
+    internal static double LeadingNumber(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        int start = 0;
+        while (start < text.Length && char.IsWhiteSpace(text[start]))
+        {
+            start++;
+        }
+
+        int end = start;
+        if (end < text.Length && (text[end] == '+' || text[end] == '-'))
+        {
+            end++;
+        }
+
+        int digits = 0;
+        while (end < text.Length && char.IsAsciiDigit(text[end]))
+        {
+            end++;
+            digits++;
+        }
+
+        if (end < text.Length && text[end] == '.')
+        {
+            int fraction = end + 1;
+            while (fraction < text.Length && char.IsAsciiDigit(text[fraction]))
+            {
+                fraction++;
+                digits++;
+            }
+
+            if (digits > 0)
+            {
+                end = fraction;
+            }
+        }
+
+        if (digits == 0)
+        {
+            return 0;
+        }
+
+        if (end < text.Length && (text[end] == 'e' || text[end] == 'E'))
+        {
+            int exponent = end + 1;
+            if (exponent < text.Length && (text[exponent] == '+' || text[exponent] == '-'))
+            {
+                exponent++;
+            }
+
+            int exponentDigits = exponent;
+            while (exponentDigits < text.Length && char.IsAsciiDigit(text[exponentDigits]))
+            {
+                exponentDigits++;
+            }
+
+            if (exponentDigits > exponent)
+            {
+                end = exponentDigits;
+            }
+        }
+
+        string number = text[start..end];
+        if (number.EndsWith('.'))
+        {
+            number = number[..^1];
+        }
+
+        // The value is cut to 22.10: "3.14159265" reads 3.140625 (printed 3.141), not 3217/1024.
+        return double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
+            ? Math.Truncate(parsed * 1024) / 1024
+            : 0;
     }
 
     private void ExecuteSetSkill(WdlItem item)
     {
         if (context is not IWdlStringContext ||
             !TryStringInstruction(item.Header, out string target, out int comma) ||
-            !TryEvaluateString(item.Header, comma + 1, item.Header.Count, out string value) ||
-            !double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed))
+            !TryEvaluateString(item.Header, comma + 1, item.Header.Count, out string value))
         {
             return;
         }
 
-        context.SetSkill(target, parsed);
+        // OV-20261104-strings parse: the longest number the text starts with after any blanks, sign,
+        // decimals and exponent included ("12abc" 12, " 7" 7, "1e3" 1000, ".5" 0.5, "1,5" 1), and 0 for
+        // none ("abc", "0x10", "-", an empty text); 65536 is kept as read.
+        context.SetSkill(target, LeadingNumber(value));
     }
 
     private void ExecutePrintFile(WdlItem item)

@@ -456,3 +456,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   player's movement and the object and region events too; −0.5 stops everything but `TICKS` and
   the key hooks (no resumed wait, no global slot, no `EACH_SEC`, its clock frozen). Four
   carriers; implemented.
+- `OV-20261104-strings.md` — `TO_STRING` writes a whole 22.10 value without decimals and any
+  other with three, rounded as `PRINT_VALUE`; a `SET_STRING`, `ADD_STRING` or `TO_STRING` copy
+  takes one character more than the string's declared length (`INKEY` stops at the length);
+  `SET_SKILL` reads the number a text starts with (blanks, sign, decimals, exponent), cut to
+  22.10, and 0 for none. Three carriers; implemented.
