@@ -249,3 +249,24 @@ Re-read of `actor-push` (`OVACX0.TXT`, sha256 `7ac82f97…`) against the replay,
   `LevelCollisionWorld.PushOutOfEntity`, `Player.PushAway`, `WdlRuntime.MoveActor`; test
   `Tick_ActorTargets_PlainActorPushesThePlayerAndFiresNearEveryPushingCycle`.
 
+## Round 8: the push off the axis, and against the wall (2026-11-04)
+Two carriers (`round8/`), at 60 frames a second (steps of 0.05): push-angle's 4-wide `FOLLOW`
+actor comes from (30, 15), 27° off the x axis, to the player at the origin; push-wall's from
+(10, 0) to the player beamed to (−12, 0), 4 from the west wall.
+- **Off the axis the push is along the line of centres.** push-angle's player goes (−37, −18),
+  (−77, −38), (−108, −54) … raw: both parts scaled, 3289 from the actor's centre every push, no
+  4-unit steps. The circle push with the start-up slack (T² = (c − 1)²/1024 + 102) gives every one
+  of its 36 pushes (812 lines line for line).
+- **On the axis the nudge is on the displacement.** push-wall's player goes 4, 8, 12 … aside while
+  the actor's y stays 0: the circle target leaves y where it is, and the 4/1024 minimum then applies
+  to the part of the player's displacement, not to its offset from the actor (OV-20261029-actor-step's
+  rule for steps). actor-push's cycle 16, where the actor had crept 1 aside, follows too (its
+  3-unit part becomes 4). `LevelCollisionWorld.PushOutOfEntity`.
+- **At the wall** (push-wall from cycle 400 on) the player stops 1229 raw from the wall, its own
+  width, not the walking clearance 1279, and the pushes go on printing `N` while the actor closes
+  to 0.92, then stop at 0.87 though the actor walks on into the player. OpenVirtue holds the player
+  at 1229 too but keeps firing `IF_NEAR` (531 of 612 lines). Open: what ends the hook there.
+- **The `EXIT` cycle moves no actor.** push-angle's actor, pushing every cycle, printed no `N` in
+  the cycle of the probe's `END`/`EXIT`, while objects' `EACH_TICK` lines do print in that cycle
+  (clip-contact's `END` files). `WdlRuntime.RunObjectPass` skips actor moves once `EXIT` ran.
+

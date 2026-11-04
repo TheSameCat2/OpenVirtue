@@ -171,7 +171,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `DIST` test is gated by the border like a thing's. A wall's border is the player's region's
   `CLIP_DIST` alone, even between two regions. `INVISIBLE` walls run no `EACH_TICK`. Five
   DOSBox-X runs (one more failed to compile); implemented in `WdlRuntime`. Addendum 2026-11-04: a `CAREFULLY` long step may not end in a region
-  entered through a border it may not cross; through it and out again passes.
+  entered through a border it may not cross; through it and out again passes. Round 8 (2026-11-04): off the axis the push is along the line
+  of centres; on it the 4/1024 minimum applies to the player's displacement; the `EXIT` cycle moves
+  no actor.
 
 ## View activity (2026-10-20 — confirmed and implemented)
 
@@ -317,7 +319,7 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   178-byte wall records in reverse map order, with fixed offsets for position, angle, speeds, `DIST`,
   `CYCLE`, targets, offsets and skills; regions are not saved; the 672-byte section holds the action
   slots. Original saves now load object state too. Addendum 2026-11-03: in a sloped region
-  `WDIST_MINX/MAXX/MINY/MAXY` are the axis lines' nearest wall crossings through the player (89 of 107).
+  `WDIST_MINX/MAXX/MINY/MAXY` are the axis lines' nearest wall crossings through the player (89 of 107). Round 21: `WDIST_*` are distances from the player.
 
 ## BELOW stacks in the view test (2026-10-29 — confirmed and implemented)
 
@@ -339,7 +341,7 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   and cutting to the declared length (the last character is replaced at the end); BackSpace deletes
   before the cursor; the world keeps running. Eleven DOSBox-X runs with scripted keys. Addendum
   2026-11-03: a completed `INKEY` resumes its action in the next cycle's resume slot, like a
-  `WAIT`; the carriers replay (10 of 13, the rest failed runs).
+  `WAIT`; the carriers replay (10 of 13, the rest failed runs). Round 3: [Del] and [Left] as modelled; `STR_LEN` without the pad (12 of 15).
 
 ## DIGITS and TEXT layout (2026-10-29 — confirmed and implemented)
 
