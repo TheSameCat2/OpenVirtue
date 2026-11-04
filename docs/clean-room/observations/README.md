@@ -449,8 +449,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   the cycle's starting angle with 1/1024 sines into the region of its point; `SET_ALL` reaches
   every placement and `SET` the first, and `SET_ALL` on a position retires the objects; an
   `INVISIBLE` thing runs no `EACH_TICK`; `PUSH n` fires the nearest object the last frame drew
-  within `n`; `EXPLODE` fires the region's `FRAGILE` objects from the last placed by the distance
-  to their nearest edge; `RESULT` is 1 − the share cut to 1/1024. Implemented.
+  within `n`, a wall at its `DISTANCE`; `EXPLODE` fires the region's `FRAGILE` objects from the
+  last placed by the distance to their nearest edge; `RESULT` is 1 − the share cut to 1/1024; a
+  free-standing solid wall stops a `SHOOT`, whose `HIT_X` on a wall is the texel from its left end
+  as seen, a unit under (round 4; oblique wall hits are a little off, open). Implemented.
 - `OV-20261104-move-mode.md` — `MOVE_MODE` 0.5 takes the regions, actors, things and walls out of
   the cycle (their `EACH_TICK`s, the actors' steps) from the cycle that sets it; 0 stops the
   player's movement and the object and region events too; −0.5 stops everything but `TICKS` and

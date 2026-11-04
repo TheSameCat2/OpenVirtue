@@ -104,6 +104,22 @@ they do to the skills a script can read — positions, the walls' ends, `DISTANC
   `SHOOT_RANGE`; `RESULT` 1 − the share cut to 1/1024; `HIT_MINDIST` the nearest. The player 20
   from the source with `SHOOT_RANGE` 20 was not hit.
 
+### Round 4: walls under PUSH and SHOOT
+| Carrier | Reading |
+|---|---|
+| push-wall (`a8738789`) | a solid wall with `IF_HIT` from (22, −4) to (22, 4), a thing behind it at 26 (not drawn) and one 8 to the left; from the origin facing +X: `PUSH` 25 nothing (`HIT_DIST` 25), `PUSH` 30 the wall with `HIT_DIST` 26.000 and `RESULT` 0.134 (1 − 26/30); facing +Y or −X two cycles later, nothing (the left thing, 2 high 8 away, is below the screen with the eye at 8); from x 10, `PUSH` 15 and 11 nothing |
+| shoot-wall (`e258e55c`) | `SHOOT` at the wall from the origin: `HIT_DIST` 22, `RESULT` 0.956, `HIT_X` 15.999, `HIT_Y` 32.000 (the hit 4 along from the end at (22, 4), the eye at 8, 4 texels a step); from x 10: 12, 0.977, the same texels; facing 0.2: 12.227, `HIT_X` 6.398; facing −0.3: 12.570, 31.090; from y 2: 12, `HIT_X` 7.999; facing +Y from (10, 2): the room's north wall at 21.979, `HIT_X` 103.999 (26 along from its left end as seen); `SHOOT_RANGE` 10 from 12 away: nothing, `HIT_DIST` 0 and `RESULT` 0 |
+
+- **`PUSH` takes a wall at its `DISTANCE`** (|dx| + |dy| to its nearer end, OV-20261019-wall-distance:
+  26 for the wall 22 ahead reaching 4 aside, so `PUSH 25` misses it), and only while drawn.
+- **A free-standing solid wall stops a `SHOOT`** (OpenVirtue went on to the room's wall behind it).
+  A wall's `HIT_X` is the distance from its left end as seen, in texels, a unit under the
+  product (15.999, 103.999); `HIT_Y` 32 with the eye at 8 on a 16-high wall of 4 texels a step.
+- Open: the oblique shots. Facing 0.2 and −0.3 the hits read `HIT_DIST` 12.227 and 12.570 and
+  `HIT_X` 6.398 and 31.090 where the ray through the 22.10 angle gives 12.242, 12.561, 6.308 and
+  30.837: the hit lies as if the angle were 0.1974 and −0.3045. Facing +Y the north wall read
+  21.979 for 22. Not modelled.
+
 ## Open
 - `NEXT_THERE`: `THERE` is a region synonym in V3.963 — `SET THERE, in_m` on a thing and
   `SET in_th, THERE` on a `THING` synonym are type errors (66: `REGION` against `ACTOR/THING`) —
@@ -125,7 +141,9 @@ products), `Shake` (the floor and the distance), `DropObject` (`_cycleStartAngle
 the region of the point), `Push`, `Explode`, `FragileTargets` (reverse map order), `SetHitResult`
 (the cut share), `RetireObjects` and `IsInactiveEntity`; `Wall` exposes `X1`…`Z2` from the
 level's vertices; `WdlInterpreter.ExecuteSetAll` retires on a position; `RuntimeHost` leaves
-`MOUSE_ANGLE` alone without the pointer. Tests
+`MOUSE_ANGLE` alone without the pointer. Round 4: `TryTraverseShotPortal` stops at a free-standing
+wall unless `PASSABLE`, `CreateWallHitCandidate` keeps the texel's fraction a unit under the
+product, and `Push` takes walls at their `DISTANCE` after `TestWallView`. Tests
 `WdlRuntimeTests.Runtime_ShiftInstruction_MovesRegionVerticesAndObjectsOnceUntilAShake`,
 `Runtime_RotateInstruction_RotatesRegionVerticesAndObjectsAroundGenius`,
 `Runtime_LiftInstruction_MovesRegionVerticesOnly`,

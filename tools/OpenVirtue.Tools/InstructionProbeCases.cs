@@ -219,8 +219,59 @@ internal static class InstructionProbeCases
         "    SET in_m.X, 14;\n    WAIT 2;\n" + P("D") + "    SHAKE in_m;\n    WAIT 2;\n" + P("E") +
         "    RULE in_n = 0;\n" + P("RET");
 
+    // ---- round 4: walls under PUSH and SHOOT --------------------------------------------------
+
+    private static readonly string WallHitDeclarations =
+        Skills + HitHook + PadWallDeclaration +
+        "WALL in_hw { TEXTURE red_tex; IF_HIT in_hit; SKILL1 8; }\n" + Thing("in_t7", 7) + Thing("in_t3", 3);
+
+    private static readonly TraceProbeMap WallHitMap = new(
+        PadBody: "SKILL1 2;", PadWall: "in_pw", Walls: [new TraceProbeWall("in_hw", 22, -4, 22, 4)],
+        Placements: ["THING in_t7 26 0 0 0", "THING in_t3 0 8 0 0"]);
+
+    private static readonly string PushWallRun =
+        L("S0", "PLAYER_X", "PLAYER_Y", "PLAYER_ANGLE") +
+        Push("5", "P5") + Push("25", "P25") + Push("30", "P30") +
+        "    SET PLAYER_ANGLE, 1.5708;\n    WAIT 2;\n" + Push("30", "Q30") +
+        "    SET PLAYER_ANGLE, 3.1416;\n    WAIT 2;\n" + Push("30", "R30") +
+        "    SET PLAYER_ANGLE, 0;\n    SET PLAYER_X, 10;\n    WAIT 2;\n" + Push("15", "P15") + Push("11", "P11") + P("RET");
+
+    private static string Shoot(string token) =>
+        "    SHOOT;\n" + L(token, "HIT_DIST", "RESULT", "HIT_X", "HIT_Y", "PLAYER_X", "PLAYER_Y", "PLAYER_ANGLE");
+
+    private static readonly string ShootWallRun =
+        L("S0", "SHOOT_RANGE", "PLAYER_X", "PLAYER_Y", "PLAYER_ANGLE") +
+        Shoot("A0") +
+        "    SET PLAYER_X, 10;\n    WAIT 2;\n" + Shoot("A10") +
+        "    SET PLAYER_ANGLE, 0.2;\n    WAIT 2;\n" + Shoot("A02") +
+        "    SET PLAYER_ANGLE, -0.3;\n    WAIT 2;\n" + Shoot("A03") +
+        "    SET PLAYER_Y, 2;\n    SET PLAYER_ANGLE, 0;\n    WAIT 2;\n" + Shoot("AY2") +
+        "    SET PLAYER_ANGLE, 1.5708;\n    WAIT 2;\n" + Shoot("AN") +
+        "    SET SHOOT_RANGE, 10;\n    SET PLAYER_ANGLE, 0;\n    WAIT 2;\n" + Shoot("AR10") + P("RET");
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        new TraceProbeCase(
+            "push-wall",
+            "Round 4. A solid wall with IF_HIT (SKILL1 8) at x 22 across the view, a thing behind it at 26 and one to the left at 8: does PUSH fire the wall (the retail opens doors with PUSH 18), at which HIT_DIST, is the thing behind it (not drawn) ever hit, and the one to the left when facing it?",
+            WallHitDeclarations,
+            PushWallRun,
+            Predict(
+                ("a visible wall is an object for PUSH: the nearest within n fires", "P25: H 8 at about 22; P30: H 8; Q30: H 3 at 8; R30: none; P15: H 8 at 12; P11: none"),
+                ("walls never fire under PUSH", "P25, P30: none"),
+                ("the thing behind the wall counts though not drawn", "P30: H 7 or H 8")),
+            Map: WallHitMap),
+        new TraceProbeCase(
+            "shoot-wall",
+            "Round 4. SHOOT at the same solid wall from the origin and from 12 away, straight on and 0.2 and −0.3 rad off, from y 2, facing away, and with SHOOT_RANGE 10 from 12 away: HIT_DIST (the depth along the sight line or the ray), HIT_X/HIT_Y on a wall (no wall hit was probed in OV-20261009-shoot-mapping), and the miss.",
+            WallHitDeclarations,
+            ShootWallRun,
+            Predict(
+                ("HIT_DIST is the depth along the sight line, HIT_X/HIT_Y the texel", "A0 22, A10 12, A02 12 (ray 12.24), A03 12 (ray 12.57); AN 0; AR10 0"),
+                ("HIT_DIST is the ray's length", "A02 12.245, A03 12.574"),
+                ("HIT_X/HIT_Y are the hit's map position", "A0 HIT_X 22 HIT_Y 0")),
+            Map: WallHitMap),
+
         new TraceProbeCase(
             "shift-shake-wall",
             "Round 3. shift-shake shook the pad's wall, thing and actor after every SHIFT and every one applied. Here only the wall is shaken (SHAKE in_pw): enough?",
