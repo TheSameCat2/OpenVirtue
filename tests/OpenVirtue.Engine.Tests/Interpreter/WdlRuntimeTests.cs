@@ -4967,14 +4967,18 @@ public class WdlRuntimeTests
         runtime.RegisterObject("player", player);
         player.Position = new System.Numerics.Vector3(0, 8, 0);
 
+        // The first cycle, before any frame is drawn, runs it once (clip-contact rerun berkeley-front,
+        // 2026-11-04: one EACH_TICK at TICKS 0 from 10 away); from then on only within DIST.
         runtime.Tick(1.0 / 16);
-        Assert.Equal(0, runtime.GetSkill("runs"));
+        Assert.Equal(1, runtime.GetSkill("runs"));
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("runs"));
         player.Position = new System.Numerics.Vector3(7, 8, 0);
         runtime.Tick(1.0 / 16);
-        Assert.Equal(1, runtime.GetSkill("runs"));
+        Assert.Equal(2, runtime.GetSkill("runs"));
         player.Position = new System.Numerics.Vector3(0, 8, 0);
         runtime.Tick(1.0 / 16);
-        Assert.Equal(1, runtime.GetSkill("runs"));
+        Assert.Equal(2, runtime.GetSkill("runs"));
         Assert.Equal(0, runtime.GetSkill("near_count"));
         Assert.Equal(0, runtime.GetSkill("far_count"));
     }

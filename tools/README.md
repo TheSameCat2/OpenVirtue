@@ -203,8 +203,15 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
     after or before the sampler), so it is placed in whichever of the two the sampler-only fill,
     continued past its end at its own cadence, predicts nearer, when its value keeps the samples'
     order and its step from the sampled cycle before is a cycle's; the fill is then done again with
-    it, when the value lies within two typical steps of the prediction (a line printed after the
-    probe switched the counter off carries a stale count and lies cycles past it). Ten more
+    it, when the value lies within two typical steps of the prediction; where the run's rate is
+    changing and neither cycle is predicted (wall-distance wall-clip's 2 fps start speeding up to
+    60), the count itself is the cycle. Each line is tested against the samples taken before it:
+    its step from the sample before must be a cycle's (a 60 Hz frame to 8 ticks) and no more than
+    two and a half times the step into that sample (a line printed after the probe switched the
+    counter off carries a stale count and a step cycles long). Where the sampler leads (a probe
+    line shares a `TICKS` with a sampler line counting one more), the trace's closing line (the
+    probe's `RET` or `W16`) counts a cycle behind too; an event line in the middle counts its own
+    cycle. Ten more
     carriers match in full (start-wait, turn-refresh, climb-1, climb-2, clip-wall, solid-dist0,
     clip-regions-order, clip-regions-walk, audio reuse, flic-scheduler-detail round2 near-control)
     and 880 more lines over all. `--dump-clock` prints the sampled cycles the replay's clock follows.

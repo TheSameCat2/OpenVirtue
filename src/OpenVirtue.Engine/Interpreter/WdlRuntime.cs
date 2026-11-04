@@ -240,6 +240,9 @@ public sealed class WdlRuntime :
     /// <summary>Whether the actor moving now makes a skipped actor's long step (see <see cref="TestCarefulEndPoint"/>).</summary>
     private bool _longSkippedStep;
 
+    // True while the first scheduler cycle runs (no frame drawn yet): a BERKELEY object in the view runs once.
+    private bool _inFirstCycle;
+
     // The wall hold a CAREFULLY actor is put at in place of its step's part along the wall's normal, for
     // the move of this cycle (see MoveActorTowardTarget and MoveActor).
     private (Actor Actor, Vector2 At)? _carefulHold;
@@ -2380,6 +2383,7 @@ public sealed class WdlRuntime :
     /// <returns>The frame's time-correction factor.</returns>
     public double Tick(double deltaSeconds)
     {
+        _inFirstCycle = !_firstCycleRun;
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
         CountPlayerSteps();
         ReleaseFinishedChannels();
@@ -2398,6 +2402,7 @@ public sealed class WdlRuntime :
         DispatchProximityEvents();
         RunObjectPass(timeCorrection);
         CountDownWaitingActions(timeCorrection);
+        _inFirstCycle = false;
         return timeCorrection;
     }
 
@@ -3620,12 +3625,33 @@ public sealed class WdlRuntime :
             return true;
         }
 
-        if (target is MapEntity && target["BERKELEY"] > 0 && distance > target["DIST"])
+        // In the first cycle, before any frame was drawn, a BERKELEY thing in the view runs once outside
+        // its DIST: berkeley-front's thing 10 ahead with DIST 4 ran its EACH_TICK at TICKS 0, its print
+        // gated off, where round 1's thing 10 behind did not (2026-11-04 re-read).
+        if (target is MapEntity ahead && ahead["BERKELEY"] > 0 && distance > ahead["DIST"] &&
+            !(_inFirstCycle && IsWithinViewCone(player, ahead)))
         {
             return false;
         }
 
         return target["LIBER"] > 0 || distance < ClipBorder(target, region);
+    }
+
+    /// <summary>
+    /// Whether an entity lies ahead of the player within the view's horizontal arc (<c>PLAYER_ARC</c>
+    /// radians about <c>PLAYER_ANGLE</c>): the first cycle's geometric view, no frame drawn yet.
+    /// </summary>
+    private bool IsWithinViewCone(Player player, MapEntity entity)
+    {
+        double dx = entity.X - player.Position.X;
+        double dy = entity.Y - player.Position.Z;
+        if (dx == 0 && dy == 0)
+        {
+            return true;
+        }
+
+        double bearing = NormalizeSignedAngle(Math.Atan2(dy, dx) - GetSkill("PLAYER_ANGLE"));
+        return Math.Abs(bearing) <= GetSkill("PLAYER_ARC") / 2;
     }
 
     /// <summary>

@@ -935,17 +935,19 @@ internal static class OracleTrace
             return baseline[^1] + (tail is { } cadence ? cadence.Units(k) / 32.0 : k * tailStep);
         }
 
-        foreach (OracleTraceLine line in lines)
-        {
-            if (timing.Matches(line) ||
-                line.Value(timing.Column) is not { } ticks ||
-                line.Value(counterColumn) is not { } n || n != Math.Floor(n) || n < 0)
-            {
-                continue;
-            }
+        // Where the sampler leads (another token's line shares a TICKS with a sampler line counting one
+        // more: the probe action prints before the sampler counts), the probe action's other lines count
+        // a cycle behind too, as the every-line rule reads them (audio steal's RET, count 67 in cycle 68).
+        bool behind = LeadingSampler(lines, timing.Column, counterColumn) == timing.Token;
+        OracleTraceLine? closing = lines.LastOrDefault(l => l.Value(timing.Column) is not null && l.Value(counterColumn) is not null);
 
-            double value = SnapTicks(ticks);
-            long count = (long)n;
+        // In count order, each line against the samples so far (the sampler's and those taken before it).
+        foreach (OracleTraceLine line in lines
+            .Where(l => !timing.Matches(l) && l.Value(timing.Column) is not null && l.Value(counterColumn) is { } c && c == Math.Floor(c) && c >= 0)
+            .OrderBy(l => l.Value(counterColumn)!.Value))
+        {
+            double value = SnapTicks(line.Value(timing.Column)!.Value);
+            long count = (long)line.Value(counterColumn)!.Value;
             if (samples.TryGetValue(count, out double at) && Math.Abs(at - value) < 1e-6)
             {
                 continue; // the sampler's own cycle, printed again
@@ -954,14 +956,16 @@ internal static class OracleTrace
             long? best = null;
             double bestError = double.PositiveInfinity;
             double otherError = double.PositiveInfinity;
+            bool anyFits = false;
             foreach (long candidate in new[] { count, count + 1 })
             {
-                if (samples.ContainsKey(candidate) || Predict(candidate) is not { } predicted)
+                if (samples.ContainsKey(candidate) || !Fits(candidate, value))
                 {
                     continue;
                 }
 
-                double error = Math.Abs(value - predicted);
+                anyFits = true;
+                double error = Predict(candidate) is { } predicted ? Math.Abs(value - predicted) : double.PositiveInfinity;
                 if (error < bestError)
                 {
                     otherError = bestError;
@@ -974,20 +978,22 @@ internal static class OracleTrace
                 }
             }
 
-            if (best is not { } cycle || bestError >= otherError || bestError > bound)
+            if (!anyFits)
             {
                 continue;
             }
 
-            KeyValuePair<long, double>[] before = [.. samples.Where(s => s.Key < cycle)];
-            KeyValuePair<long, double>[] after = [.. samples.Where(s => s.Key > cycle)];
-            if (before.Length == 0 || value <= before[^1].Value || (after.Length > 0 && value >= after[0].Value))
-            {
-                continue;
-            }
-
-            double step = (value - before[^1].Value) / (cycle - before[^1].Key);
-            if (step < 0.25 - 1e-9 || step > 8 + 1e-9)
+            // The nearer prediction decides when it is within the bound; a run whose rate is changing
+            // (wall-distance wall-clip's 2 fps start speeding up to 60) predicts neither, and the count
+            // itself is the cycle then (an event line prints after the sampler counts).
+            // Only the trace's closing line is taken for the probe action's (its RET or W16 after the last
+            // wait): an event line in the middle counts the cycle it prints in (clip-contact's B and T
+            // lines, border-climb's and proximity-events' N).
+            long cycle = behind && ReferenceEquals(line, closing) && !samples.ContainsKey(count + 1) && Fits(count + 1, value) ? count + 1
+                : best is { } b && bestError <= bound && bestError < otherError ? b
+                : !samples.ContainsKey(count) && Fits(count, value) ? count
+                : best ?? count + 1;
+            if (samples.ContainsKey(cycle) || !Fits(cycle, value))
             {
                 continue;
             }
@@ -998,6 +1004,37 @@ internal static class OracleTrace
         }
 
         return added;
+
+        // Whether a sample at `cycle` with `value` keeps the samples' order, steps from the sample before
+        // it at a cycle's rate (a 60 Hz frame to 8 ticks), and no faster than two and a half times the
+        // step into that sample (a line printed after the probe switched the counter off carries a stale
+        // count and a step cycles long).
+        bool Fits(long cycle, double value)
+        {
+            KeyValuePair<long, double>[] before = [.. samples.Where(s => s.Key < cycle)];
+            KeyValuePair<long, double>[] after = [.. samples.Where(s => s.Key > cycle)];
+            if (before.Length == 0 || value <= before[^1].Value || (after.Length > 0 && value >= after[0].Value))
+            {
+                return false;
+            }
+
+            double step = (value - before[^1].Value) / (cycle - before[^1].Key);
+            if (step < 0.25 - 1e-9 || step > 8 + 1e-9)
+            {
+                return false;
+            }
+
+            if (before.Length >= 2)
+            {
+                double previous = (before[^1].Value - before[^2].Value) / (before[^1].Key - before[^2].Key);
+                if (step > 2.5 * previous + 1e-9)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     private static double Median(List<double> values)
