@@ -146,6 +146,38 @@ public class WdlRuntimeWaitCountTests
         Assert.Equal(2, runtime.FlicRequests.Count);
     }
 
+    [Fact]
+    public void Tick_QueuedKeyHook_RunsInTheCycleWithItsCountAndItsWaitResumesThreeCyclesLater()
+    {
+        // OV-20261029-scheduler-order round 6 (hook-wait): a key hook's lines print the cycle's TICKS
+        // and the global slot's count as the resumed actions' do (the slot counts after both, so they
+        // read the cycle before), its WAIT 3 resumes three cycles later like any other, and a second
+        // press while its action waits starts a second instance.
+        WdlRuntime runtime = Runtime(
+            "SKILL n { VAL 0; } SKILL hk { VAL 0; } SKILL ht { VAL 0; } SKILL runs { VAL 0; } " +
+            "ACTION c { RULE n = n + 1; } " +
+            "ACTION h { RULE hk = n; RULE ht = TICKS; WAIT 3; RULE runs = runs + 1; RULE done = n; } " +
+            "ACTION arm { SET EACH_TICK.1, c; SET IF_ANYKEY, h; }");
+        Assert.True(runtime.RunAction("arm"));
+        Ticks(runtime, 2, QuarterTick);
+
+        runtime.QueueActionHook("IF_ANYKEY");
+        Ticks(runtime, 1, QuarterTick);
+        double armedAt = runtime.GetSkill("n");
+        Assert.Equal(armedAt - 1, runtime.GetSkill("hk"));
+        Assert.Equal(runtime.GetSkill("TICKS"), runtime.GetSkill("ht"));
+
+        runtime.QueueActionHook("IF_ANYKEY");
+        Ticks(runtime, 2, QuarterTick);
+        Assert.Equal(0, runtime.GetSkill("done"));
+        Ticks(runtime, 1, QuarterTick);
+        Assert.Equal(armedAt + 3, runtime.GetSkill("n"));
+        Assert.Equal(armedAt + 2, runtime.GetSkill("done"));
+        Assert.Equal(1, runtime.GetSkill("runs"));
+        Ticks(runtime, 1, QuarterTick);
+        Assert.Equal(2, runtime.GetSkill("runs"));
+    }
+
     private static WdlRuntime Runtime(string declarations)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };

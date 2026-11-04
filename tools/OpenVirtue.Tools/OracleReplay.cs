@@ -191,7 +191,7 @@ internal static class OracleReplay
         // A launch that ran at 8 ticks a frame throughout is replayed with frames of 8 ticks.
         double? slowFrames = !asked && OracleTrace.RanAtSlowFrames(timingSource, stamp) ? OracleTrace.SlowFrameTicks : null;
         OracleTimingColumn? timing = options.Timing ?? carrierCase.Timing ??
-            (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) ?? (carrierCase.Autotype is not null ? OracleTrace.AutotypeTiming(timingSource) : null) : null);
+            (!asked && slowFrames is null ? OracleTrace.DetectTimingColumn(timingSource) ?? (carrierCase.Autotype is not null && carrierCase.HookToken is null ? OracleTrace.AutotypeTiming(timingSource) : null) : null);
         bool counted = false;
         IReadOnlyList<double> cycleTicks = timing is { } t ? OracleTrace.CycleTicks(timingSource, t, out counted) : [];
         if (options.DumpClock)
@@ -250,9 +250,21 @@ internal static class OracleReplay
             ? Math.Max(cycleTicks[^1], Math.Min(LastTicks(originalFiles.Values), options.MaxTicks)) + options.ExtraTicks
             : options.MaxTicks;
         var window = new HeadlessWindow();
-        if (carrierCase.Autotype is { } typed)
+        // A carrier whose keys fire IF_* hooks (hook_token in case.json: the token the hook's action
+        // prints first) gets each press queued in the cycle whose TICKS the original's line shows.
+        var hookPresses = new Queue<(double Ticks, string? Hook)>();
+        if (carrierCase.Autotype is { } typed && carrierCase.HookToken is { } hookToken)
         {
-            foreach ((InkeyKey, char) key in HeadlessWindow.ParseAutotype(typed))
+            double[] hookTicks = timingSource.Where(l => l.Token == hookToken).Select(static l => l.Value(0)).OfType<double>().ToArray();
+            string?[] hooks = HeadlessWindow.ParseAutotypeHooks(typed).ToArray();
+            for (int i = 0; i < hookTicks.Length && i < hooks.Length; i++)
+            {
+                hookPresses.Enqueue((hookTicks[i], hooks[i]));
+            }
+        }
+        else if (carrierCase.Autotype is { } typedKeys)
+        {
+            foreach ((InkeyKey, char) key in HeadlessWindow.ParseAutotype(typedKeys))
             {
                 window.TypedKeys.Enqueue(key);
             }
@@ -268,7 +280,24 @@ internal static class OracleReplay
         var audio = new TimedAudioSink();
         using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, new HeadlessInput(), audio, new HeadlessRender(), RandomSeed))
         {
-            host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
+            host.FrameClock = () =>
+            {
+                double ticks = host.Runtime.GetSkill(Timing.TicksSkill);
+                double step = clock.Next(ticks);
+                // The press lands in the cycle that reaches the original line's TICKS (the clock is on the
+                // original's 1/1024 grid once anchored).
+                while (hookPresses.Count > 0 && hookPresses.Peek().Ticks <= ticks + (step * Timing.TicksPerSecond) + (0.5 / 1024))
+                {
+                    (_, string? hook) = hookPresses.Dequeue();
+                    host.Runtime.QueueActionHook("IF_ANYKEY");
+                    if (hook is not null)
+                    {
+                        host.Runtime.QueueActionHook(hook);
+                    }
+                }
+
+                return step;
+            };
             host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
             host.FatalErrors = true; // a division by zero shuts the original down (OV-20261029-numeric-edge)
 
@@ -612,7 +641,11 @@ internal static class OracleReplay
         {
             sb.Append(", the replay never printed the timing token");
         }
-        if (result.Case.Autotype is not null)
+        if (result.Case.Autotype is not null && result.Case.HookToken is { } hookToken)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $", AUTOTYPE keys pressed as hooks in the cycles of the original's {hookToken} lines");
+        }
+        else if (result.Case.Autotype is not null)
         {
             sb.Append(", AUTOTYPE keys typed into INKEY, delivered in the original's R cycle (other key hooks not replayed)");
         }
@@ -951,7 +984,7 @@ internal static class OracleReplay
     /// </summary>
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
-        double? TimeCorrection = null, double? SecondsOffset = null)
+        double? TimeCorrection = null, double? SecondsOffset = null, string? HookToken = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -981,7 +1014,8 @@ internal static class OracleReplay
             double? secondsOffset = root.TryGetProperty("seconds_offset", out JsonElement so) && so.ValueKind == JsonValueKind.Number
                 ? so.GetDouble()
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset);
+            string? hookToken = root.TryGetProperty("hook_token", out JsonElement hk) && hk.ValueKind == JsonValueKind.String ? hk.GetString() : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken);
         }
     }
 
@@ -1301,6 +1335,32 @@ internal static class OracleReplay
         /// INKEY keys: single characters, <c>space</c>, <c>enter</c>, <c>esc</c>, <c>bspace</c>, <c>up</c>,
         /// <c>down</c>, <c>left</c>, <c>right</c>, <c>pageup</c>, <c>pagedown</c>.
         /// </summary>
+        /// <summary>The <c>IF_*</c> hook each typed key fires besides <c>IF_ANYKEY</c>, in order; <c>null</c> for a key without one here.</summary>
+        public static IEnumerable<string?> ParseAutotypeHooks(string autotype)
+        {
+            string[] words = autotype.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < words.Length; i++)
+            {
+                string word = words[i];
+                if (word.StartsWith('-'))
+                {
+                    i++;
+                    continue;
+                }
+
+                yield return word.ToLowerInvariant() switch
+                {
+                    "space" => "IF_SPACE",
+                    "enter" => "IF_ENTER",
+                    "esc" => "IF_ESC",
+                    "bspace" => "IF_BKSP",
+                    "tab" => "IF_TAB",
+                    { Length: 1 } single when char.IsAsciiLetterOrDigit(single[0]) => "IF_" + char.ToUpperInvariant(single[0]),
+                    _ => null,
+                };
+            }
+        }
+
         public static IEnumerable<(InkeyKey Key, char Character)> ParseAutotype(string autotype)
         {
             string[] words = autotype.Split(' ', StringSplitOptions.RemoveEmptyEntries);

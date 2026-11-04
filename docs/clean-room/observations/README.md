@@ -237,7 +237,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `EACH_SEC` slots, the global slots in slot order, then regions, actors, things and walls, each
   kind from the last placed to the first, each object's `EACH_TICK` before its animation step and
   `EACH_CYCLE`. A `SET EACH_TICK` counts in the same cycle. Regions too run from the last placed
-  (round 2). Six DOSBox-X runs; implemented in `WdlRuntime`.
+  (round 2). Six DOSBox-X runs; implemented in `WdlRuntime`. Round 6: a key hook runs in the
+  cycle with its `TICKS` and count, a wait it arms counts that cycle like any other, and a second
+  press while its action waits starts a second instance (hooks queued into the cycle).
 
 ## Number format (2026-10-29 — confirmed and implemented)
 

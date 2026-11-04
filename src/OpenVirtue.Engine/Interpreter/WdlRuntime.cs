@@ -2347,6 +2347,27 @@ public sealed class WdlRuntime :
         actionName is not null &&
         Run(actionName);
 
+    // Key and mouse hooks run early in the cycle, after TICKS has moved on and the global slot has
+    // counted: a hook's lines print the cycle's TICKS and count as the resumed actions' do, and a wait
+    // it arms counts that cycle like any other (OV-20261015-flic-scheduler-detail, OV-20261029-
+    // scheduler-order round 6). The host queues a press here and the next Tick dispatches it.
+    private readonly Queue<string> _queuedHooks = new();
+
+    /// <summary>Queues a global <c>IF_*</c> hook for the next cycle, where it runs after the resumed actions.</summary>
+    public void QueueActionHook(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        _queuedHooks.Enqueue(name);
+    }
+
+    private void DispatchQueuedHooks()
+    {
+        while (_queuedHooks.Count > 0)
+        {
+            TriggerActionHook(_queuedHooks.Dequeue());
+        }
+    }
+
     /// <summary>
     /// Triggers an object-level <c>IF_*</c> hook on a placed world object.
     /// Event detectors remain responsible for checking the documented distance, movement, or hit conditions.
@@ -2399,6 +2420,7 @@ public sealed class WdlRuntime :
         RefreshWallDistances();
         UpdateHere();
         ResumeWaitingActions();
+        DispatchQueuedHooks();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(elapsedSeconds))
         {
@@ -2427,6 +2449,7 @@ public sealed class WdlRuntime :
     {
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds, flic: true);
         ResumeWaitingActions();
+        DispatchQueuedHooks();
         ResetGlobalSchedulerDiagnostics();
         if (AdvanceSecond(elapsedSeconds))
         {

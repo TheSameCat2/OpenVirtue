@@ -199,7 +199,8 @@ speeds). medium for rule 6 during a flic, because the trace after the fault was 
 - A fractional `WAIT` (`WAIT 1.5`): answered by OV-20261029-scheduler-order round 3. It resumes once
   the count is below 1, and a `WAIT` below 1 does not wait.
 - Whether a wait armed by a key or mouse hook counts that cycle: the hooks run early in the cycle
-  (`LEFT` printed the same `fd_n` as resumed actions), so OpenVirtue counts it.
+  (`LEFT` printed the same `fd_n` as resumed actions), so OpenVirtue counts it. Confirmed by
+  OV-20261029-scheduler-order round 6 (a `WAIT 3` from `IF_ANYKEY` resumes three cycles later).
 - Whether `IF_NEAR` repeating every cycle within `DIST` matches OpenVirtue's proximity dispatch:
   answered by OV-20261019-proximity-events (it does not repeat; the repeat here was contact).
 

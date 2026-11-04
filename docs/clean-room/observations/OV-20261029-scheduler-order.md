@@ -198,3 +198,35 @@ differ only there.
 
 A probe that times `EACH_SEC` against a DOS clock it can read (for example `SET` at a flic boundary,
 or a long `WAITT` cadence) would settle it.
+
+## Round 6: a wait armed by a key hook, and a second press (2026-11-04)
+`round6/hook-wait` (`OVSDO0.TXT`, fast launch): the global slot counts cycles in `so_n`; the probe
+arms `WAIT 3` from its own action (`A` at 2, `R` at 5), sets `IF_ANYKEY` to an action that prints
+`K`, waits `WAIT 3`, prints `KR`, waits `WAITT 16` and prints `KT`, and DOSBox-X presses Space
+twice half a second apart (`AUTOTYPE -w 10 -p 0.5 space space`).
+
+| Line | `TICKS` | `so_n` | Entry |
+|---|---|---|---|
+| `K` | 81.844 | 261 | 1 |
+| `KR` | 82.625 | 264 | 1 |
+| `K` | 90.500 | 294 | 2 |
+| `KR` | 91.281 | 297 | 2 |
+| `KT` | 97.844 | 322 | (entry 1, 15.2 ticks after its `KR`) |
+| `KT` | 106.469 | 355 | (entry 2, 15.2 ticks after its `KR`) |
+
+- **A wait armed from a key hook counts like any other.** `KR` came three cycles after `K`, as
+  `R` after `A`: the hook's cycle counts, and the hook prints that cycle's `TICKS` and the count a
+  resumed action prints in it (the global slot counts after both). This closes
+  OV-20261015-flic-scheduler-detail's open question.
+- **A second press while the hook's action waits starts a second instance.** The second `K`
+  came 33 cycles after the first, while entry 1 was in its `WAITT 16`; both entries then printed
+  their `KR` and `KT` on their own clocks (`so_c` is one global counter, so the first `KT` reads 2).
+  Nothing was restarted or dropped: a key hook is an action start, as `EACH_SEC` is
+  (OV-20261015-each-sec-cadence).
+- Implemented: `RuntimeHost` queues key and mouse hooks (`WdlRuntime.QueueActionHook`) and the
+  next cycle runs them after the resumed waits, so their lines read the cycle's `TICKS` and the
+  wait they arm counts it. The replay presses a carrier's `AUTOTYPE` keys in the cycles of the
+  original's hook lines (`TraceProbeCase.HookToken`, `hook_token` in `case.json`). Test
+  `WdlRuntimeWaitCountTests.Tick_QueuedKeyHook_RunsInTheCycleWithItsCountAndItsWaitResumesThreeCyclesLater`;
+  hook-wait replays 10 of 11 lines (the first `K` reads `TIME_CORR` 0.281 where the replay's
+  frame is 0.250: the clock between the sparse samples).

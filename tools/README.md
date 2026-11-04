@@ -90,7 +90,10 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   instruction, whether `WAITT`, `EACH_TICK` and `EACH_SEC` run during the flic, and whether a
   key fires `IF_ANYKEY` and `STOP_FLIC` ends the flic. The key cases press Space through a
   DOSBox-X `AUTOTYPE` line in the autoexec (`TraceProbeCase.Autotype`); `key-control` checks
-  that the scripted key reaches the runtime at all. Every line in `OVFLC0.TXT` is a token
+  that the scripted key reaches the runtime at all. A case whose keys fire `IF_*` hooks names the
+  token its hook action prints first (`TraceProbeCase.HookToken`, `hook_token` in `case.json`):
+  the replay then presses each key, as `IF_ANYKEY` and the key's own hook, in the cycle whose
+  `TICKS` the original's line of that token shows (scheduler-order round 6 `hook-wait`). Every line in `OVFLC0.TXT` is a token
   followed by `FLIC_FRAME` and `TICKS`.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the

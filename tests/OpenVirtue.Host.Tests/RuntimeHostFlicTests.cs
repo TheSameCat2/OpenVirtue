@@ -70,6 +70,9 @@ public sealed class RuntimeHostFlicTests : IDisposable
         host.Frame(present: false);
         Assert.True(DrewFlic(render));
 
+        // The key hook runs in the next scheduler cycle, here the flic's second frame
+        // (OV-20261029-scheduler-order round 6): let the frame clock bring it due.
+        host.FrameClock = static () => 10;
         input.PressedKeys.Add(HostKey.Space);
         host.Frame(present: false);
         input.PressedKeys.Clear();
@@ -152,12 +155,14 @@ public sealed class RuntimeHostFlicTests : IDisposable
         host.Boot();
         host.Frame(present: false);
 
+        // The hook runs in the flic's second cycle (scheduler-order round 6).
+        host.FrameClock = static () => 10;
         input.PressedKeys.Add(HostKey.Space);
         host.Frame(present: false);
         input.PressedKeys.Clear();
 
-        Assert.Equal(1, host.Runtime.GetSkill("seen"));
-        Assert.Equal(1, host.Runtime.GetSkill("FLIC_FRAME"));
+        Assert.Equal(2, host.Runtime.GetSkill("seen"));
+        Assert.Equal(2, host.Runtime.GetSkill("FLIC_FRAME"));
         Assert.True(DrewFlic(render));
     }
 

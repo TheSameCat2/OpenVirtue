@@ -107,15 +107,13 @@ public sealed partial class RuntimeHost
             return;
         }
 
-        SyncPlayerRuntimeState();
-        _runtime.TriggerActionHook("IF_ANYKEY");
+        // The hooks run inside the coming cycle, after its TICKS and the global slots (WdlRuntime.QueueActionHook).
+        _runtime.QueueActionHook("IF_ANYKEY");
         string? hookName = KeyHookName(key);
         if (hookName is not null)
         {
-            _runtime.TriggerActionHook(hookName);
+            _runtime.QueueActionHook(hookName);
         }
-
-        HandleRuntimeHostRequests();
     }
 
     private static string? KeyHookName(HostKey key)
@@ -183,9 +181,7 @@ public sealed partial class RuntimeHost
             return;
         }
 
-        SyncPlayerRuntimeState();
-        _runtime.TriggerActionHook(hookName);
-        HandleRuntimeHostRequests();
+        _runtime.QueueActionHook(hookName);
     }
 
     private bool TryTriggerUiKlick(Vector2 point)
