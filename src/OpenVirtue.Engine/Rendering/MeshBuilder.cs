@@ -489,11 +489,12 @@ public static class MeshBuilder
         : 0) + (float)GeniusLight(level, wall);
 
     /// <summary>
-    /// The light a region's <c>GENIUS</c> object gives a wall of it: a thing or actor whose texture has
-    /// <c>AMBIENT</c> &gt; 0 brightens the face it stands in front of by 16 shade levels per 1.0 of the
-    /// wall texture's <c>ALBEDO</c> — half what an <c>AMBIENT</c> gives (32 a 1.0, <see cref="PaletteShading"/>) —
-    /// as a facing wall gains in OV-20261029-shading rounds 4 and 5. A wall seen at a grazing angle
-    /// gains less there; that is not modelled.
+    /// The light a region's <c>GENIUS</c> object gives a wall of it (OV-20261104-genius): a thing or
+    /// actor whose texture has <c>AMBIENT</c> &gt; 0 brightens the whole wall by 16 shade levels per 1.0
+    /// of the wall texture's <c>ALBEDO</c> — half what an <c>AMBIENT</c> gives (32 a 1.0,
+    /// <see cref="PaletteShading"/>) — times the cosine of the angle at the wall's midpoint between
+    /// the wall's left normal and the lamp, whatever the distance or the lamp's <c>AMBIENT</c>: one
+    /// value a wall, negative (darkening) with the lamp behind the wall.
     /// </summary>
     private static double GeniusLight(Level level, Wall wall)
     {
@@ -513,8 +514,18 @@ public static class MeshBuilder
 
         Vertex a = level.Vertices[wall.Vertex1];
         Vertex b = level.Vertices[wall.Vertex2];
-        double side = ((b.X - a.X) * (lamp.Y - a.Y)) - ((b.Y - a.Y) * (lamp.X - a.X));
-        return side > 0 ? texture.Albedo * 0.5 : 0;
+        double normalX = -(b.Y - a.Y);
+        double normalY = b.X - a.X;
+        double toLampX = lamp.X - ((a.X + b.X) * 0.5);
+        double toLampY = lamp.Y - ((a.Y + b.Y) * 0.5);
+        double lengths = Math.Sqrt((normalX * normalX) + (normalY * normalY)) * Math.Sqrt((toLampX * toLampX) + (toLampY * toLampY));
+        if (lengths <= 0)
+        {
+            return 0;
+        }
+
+        double cosine = ((normalX * toLampX) + (normalY * toLampY)) / lengths;
+        return texture.Albedo * 0.5 * cosine;
     }
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)

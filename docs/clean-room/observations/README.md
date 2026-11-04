@@ -489,3 +489,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   palette and palette entry 0 without one; a region's `FLOOR_OFFS_X`/`CEIL_OFFS_X` come off the
   texture column, the Y offsets add to the row. Six carriers. Implemented in `SpriteBuilder`, the
   host's batch blend and the GL shader, and `MeshBuilder`.
+- `OV-20261104-genius.md` — a region's `GENIUS` lamp gives a wall one shade gain along its
+  length, 16 · `ALBEDO` · cos of the angle at the wall's midpoint between its normal and the lamp,
+  whatever the distance or the lamp's `AMBIENT`, negative behind the wall; a level of 32 or more
+  shows the `INFINITY` colour. Seventeen carriers. Implemented in `MeshBuilder.GeniusLight` and
+  the GL shader.

@@ -121,8 +121,10 @@ show in the screenshots. Shade levels, where region `AMBIENT` 0.5 alone gives 14
 - Answered by OV-20261029-autorange: the `AUTORANGE` table (a 6-bit fade toward the `INFINITY` colour,
   then the nearest colour) and sorted ranges of other lengths (`⌊(n + 1 − i)·L/32⌋` places).
 - Answered in round 3: d is the depth, texture `AMBIENT` adds, negative ambients darken.
-- `GENIUS` light (round 4: `ALBEDO` alone does nothing, `LIGHT_ANGLE` is unknown), `HARD` on an
-  unsorted palette, and a wall seen from its right region.
+- `GENIUS` light at grazing angles: answered by OV-20261104-genius (one value a wall, 16 · `ALBEDO`
+  · cos of the midpoint angle, negative behind). Still open: `ALBEDO` alone does nothing and
+  `LIGHT_ANGLE` is unknown (round 4), `HARD` on an unsorted palette, and a wall seen from its right
+  region.
 
 ## Implementation
 `OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`), the palette `RANGE`/`FLAGS`
