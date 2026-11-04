@@ -14,8 +14,14 @@ namespace OpenVirtue.Engine.Rendering;
 /// </summary>
 public static class PaletteShading
 {
-    /// <summary>The darkest level used.</summary>
+    /// <summary>The darkest level of a range.</summary>
     public const int DarkestLevel = 30;
+
+    /// <summary>
+    /// The level past the range: a texel this dark shows the <c>INFINITY</c> colour, palette entry 1
+    /// (OV-20261104-genius: a wall darkened past 30 by a lamp behind it).
+    /// </summary>
+    public const int InfinityLevel = 32;
 
     /// <summary>The number of levels a shade table holds per colour (0…31).</summary>
     public const int Levels = 32;
@@ -29,7 +35,7 @@ public static class PaletteShading
     {
         double light = 30.4 * Math.Max(0, playerLight) * Math.Max(0, lightDistance) / Math.Max(distance, 0.001);
         double level = 30 - (32 * ambient) - light;
-        return Math.Clamp(2 * (int)Math.Floor(level / 2), 0, DarkestLevel);
+        return Math.Clamp(2 * (int)Math.Floor(level / 2), 0, InfinityLevel);
     }
 
     /// <summary>

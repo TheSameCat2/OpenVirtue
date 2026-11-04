@@ -72,11 +72,15 @@ public class MeshBuilderTests
     }
 
     [Theory]
-    [InlineData(2, 1, 0.5f)] // the lamp on the room's side: ALBEDO 1 adds 16 levels (0.5 of ambient)
-    [InlineData(2, -1, 0f)] // behind the wall: nothing
-    public void BuildWalls_GeniusLamp_BrightensTheFaceItStandsBefore(int lampX, int lampY, float expected)
+    [InlineData(2, 1, 0.5f)] // the lamp before the wall's middle: ALBEDO 1 adds 16 levels (0.5 of ambient)
+    [InlineData(2, 9, 0.5f)] // nine times as far: the same
+    [InlineData(3, 1, 0.35355338f)] // 45° from the midpoint: cos 45°
+    [InlineData(6, 0, 0f)] // on the wall's own line: nothing
+    [InlineData(2, -1, -0.5f)] // behind the wall: 16 levels darker
+    public void BuildWalls_GeniusLamp_LightsTheWallByTheMidpointCosine(int lampX, int lampY, float expected)
     {
-        // OV-20261029-shading rounds 4 and 5: a region's GENIUS with an AMBIENT texture lights ALBEDO walls.
+        // OV-20261104-genius: a region's GENIUS with an AMBIENT texture lights an ALBEDO wall by one
+        // value, 16 · ALBEDO · cos of the angle at the wall's midpoint, whatever the distance.
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 0 10;#0\nREGION solid 10 10;#1\n" +
@@ -98,7 +102,7 @@ public class MeshBuilderTests
 
         Assert.All(
             MeshBuilder.BuildWalls(level).Batches.SelectMany(static batch => batch.Vertices),
-            vertex => Assert.Equal(expected, vertex.Ambient));
+            vertex => Assert.Equal(expected, vertex.Ambient, 1e-5f));
     }
 
     [Fact]

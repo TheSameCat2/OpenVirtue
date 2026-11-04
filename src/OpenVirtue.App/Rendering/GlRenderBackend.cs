@@ -71,8 +71,12 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 }
                 float level = 30.0 - 32.0 * (uTintAndLight.a + vAmbient)
                     - 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
-                level = clamp(2.0 * floor(level / 2.0), 0.0, 30.0);
-                float shaded = floor(texelFetch(uShade, ivec2(int(level), int(index)), 0).r * 255.0 + 0.5);
+                // Past the range's end (level 32 and up) the texel shows the INFINITY colour, entry 1
+                // (OV-20261104-genius).
+                level = 2.0 * floor(level / 2.0);
+                float shaded = level >= 32.0
+                    ? 1.0
+                    : floor(texelFetch(uShade, ivec2(int(clamp(level, 0.0, 30.0)), int(index)), 0).r * 255.0 + 0.5);
                 // The palette already shows the fade (OV-20261104-fade-pal).
                 fragColor = vec4(uBlend == 3 ? vec3(0.0) : texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb, uBlend == 2 ? 0.5 : 1.0);
                 return;

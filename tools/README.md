@@ -130,6 +130,9 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
 - `blend` (`BlendProbeCases`): a black strip attached as a `SHADOW` to a thing on the gray-ramp
   floor, plain, `DIAPHANOUS` with and without a `BLUR` palette and `GHOST`, read against the
   floor beside it; and the cell swatch on the floor and ceiling with region offsets.
+- `genius` (`GeniusProbeCases`): a free wall in the gray ramp's first colour with `ALBEDO`, the
+  room's `GENIUS` lamp moved around it at many angles and distances, before and behind, with
+  `PLAYER_LIGHT` 0; the index along the eye-line row is the wall's shade level.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

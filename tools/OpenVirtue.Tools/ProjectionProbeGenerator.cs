@@ -72,6 +72,8 @@ internal static class ProjectionProbeGenerator
     public const string AttachProbeName = "attach";
     public const string TexmapProbeName = "texmap";
     public const string BlendProbeName = "blend";
+    public const string GeniusProbeName = "genius";
+    public const string SpriteShadeProbeName = "sprite-shade";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -125,6 +127,8 @@ internal static class ProjectionProbeGenerator
     private const string AttachProbeId = "OV-20261104-attach";
     private const string TexmapProbeId = "OV-20261104-texmap";
     private const string BlendProbeId = "OV-20261104-blend";
+    private const string GeniusProbeId = "OV-20261104-genius";
+    private const string SpriteShadeProbeId = "OV-20261104-sprite-shade";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -449,6 +453,8 @@ internal static class ProjectionProbeGenerator
         AttachProbeName => AttachProbeId,
         TexmapProbeName => TexmapProbeId,
         BlendProbeName => BlendProbeId,
+        GeniusProbeName => GeniusProbeId,
+        SpriteShadeProbeName => SpriteShadeProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -601,6 +607,8 @@ internal static class ProjectionProbeGenerator
             case AttachProbeName:
             case TexmapProbeName:
             case BlendProbeName:
+            case GeniusProbeName:
+            case SpriteShadeProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -663,6 +671,8 @@ internal static class ProjectionProbeGenerator
         AttachProbeName => AttachProbeCases.Set,
         TexmapProbeName => TexmapProbeCases.Set,
         BlendProbeName => BlendProbeCases.Set,
+        GeniusProbeName => GeniusProbeCases.Set,
+        SpriteShadeProbeName => SpriteShadeProbeCases.Set,
         _ => null,
     };
 
@@ -727,7 +737,7 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
         }
 
-        if (plan.ProbeName == ShadingProbeName)
+        if (plan.ProbeName is ShadingProbeName or GeniusProbeName)
         {
             // The side walls and the floor in the ramp's brightest colour, which shading darkens.
             WriteValidated(Path.Combine(workDir, "PRBBLU.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
@@ -789,6 +799,11 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
             WriteValidated(Path.Combine(workDir, BlendProbeCases.BlackStripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Infinity, palette));
             WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
+        }
+
+        if (plan.ProbeName == SpriteShadeProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, SpriteShadeProbeCases.RampFile), SyntheticPcx.Solid(32, 48, ShadeRampStart, palette));
         }
 
         if (plan.ProbeName == FadePalProbeName)
