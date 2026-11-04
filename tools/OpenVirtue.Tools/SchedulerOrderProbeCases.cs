@@ -95,6 +95,20 @@ internal static class SchedulerOrderProbeCases
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
         new TraceProbeCase(
+            "hook-wait",
+            "Round 6. A global slot counts cycles in so_n. The probe arms WAIT 3 from its own action (A, R), then sets IF_ANYKEY to an action that prints K, waits WAIT 3, prints KR, waits WAITT 16 and prints KT; DOSBox-X presses Space twice half a second apart. Does a wait armed from a key hook count the hook's cycle (KR two cycles after K where R is three after A)? Does the second press, while the hook's action waits, restart it?",
+            Skills + Action("so_y", "    RULE so_n = so_n + 1;\n") +
+            Action("so_h", "    RULE so_c = so_c + 1;\n" + L("K", "so_c", "TIME_CORR") + "    WAIT 3;\n" + L("KR", "so_c", "TIME_CORR") + "    WAITT 16;\n" + L("KT", "so_c", "TIME_CORR")),
+            "    SET EACH_TICK.1, so_y;\n    WAIT 2;\n" + L("A", "TIME_CORR") + "    WAIT 3;\n" + L("R", "TIME_CORR") +
+            "    SET IF_ANYKEY, so_h;\n" + L("ARM") + "    WAITT 400;\n" + L("END") + "    SET IF_ANYKEY, NULL;\n    SET EACH_TICK.1, NULL;\n",
+            Predict(
+                ("the hook's cycle counts", "KR two cycles after K (so_n + 2), R three after A"),
+                ("it does not count", "KR three after K, as R after A"),
+                ("a second press restarts the waiting hook action", "K 2 before KT 1, then KR 2 and KT 2 only"),
+                ("a second press is ignored while it waits", "K 1, KR 1, KT 1 and no K 2, or K 2 after KT 1")),
+            "-w 10 -p 0.5 space space",
+            HookToken: "K"),
+        new TraceProbeCase(
             "round5/waitt-small",
             "Round 5. A global slot counts cycles in so_n. The probe arms WAITT 0, 0.1, 0.25, 0.3, 0.5, 0.75, 0.99, 1 and 1.3 one after another, printing A (armed) and R (resumed) with TICKS, so_n and TIME_CORR: in which cycle does each end?",
             Skills + Action("so_y", "    RULE so_n = so_n + 1;\n"),
