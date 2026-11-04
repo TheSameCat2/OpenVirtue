@@ -237,6 +237,59 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void StartupAnchors_DateTheStartFilesCyclesByTheCountingColumn()
+    {
+        // clip-contact round 2 liber-far-walk: the counting EACH_TICK's second run in cycle 2 at
+        // 0.156, then every 8th, 56 cycles before the trace's first U line; the sampler's own count
+        // (the second column) is 0 before it is armed, so it cannot be the counter.
+        IReadOnlyList<OracleTraceLine> start = OracleTrace.Parse(
+            "START\nU 0.156 0.000 2.000 65535.999 0.000 0.000\nU 2.250 0.000 10.000 65535.999 0.000 0.000\n" +
+            "U 4.344 0.000 18.000 65535.999 0.000 0.000\nU 12.719 0.000 50.000 65535.999 0.000 0.000\n");
+        IReadOnlyList<OracleTraceLine> trace = OracleTrace.Parse(
+            "BEGIN\nTK 13.531 1.000 0.000 0.000\nU 14.813 6.000 58.000 65535.999 0.000 0.000\nU 16.938 14.000 66.000 65535.999 0.000 0.000\n");
+
+        IReadOnlyList<OracleTrace.StartupAnchor> anchors = OracleTrace.StartupAnchors(start, trace, new OracleTimingColumn("U", 0));
+
+        // The TK line before the first U line is dated by the sampler's count (1 against the U line's 6).
+        Assert.Equal(5, anchors.Count);
+        Assert.Equal(new OracleTrace.StartupAnchor(5, 13.531, 1, Dated: false), anchors[0]);
+        Assert.Equal(new OracleTrace.StartupAnchor(8, 12.719, 50), anchors[1]);
+        Assert.Equal(new OracleTrace.StartupAnchor(56, 0.156, 2), anchors[^1]);
+        Assert.Empty(OracleTrace.StartupAnchors(start, trace, new OracleTimingColumn("TK", 0)));
+    }
+
+    [Fact]
+    public void StartupFramesFromAnchors_PassThroughEveryAnchor()
+    {
+        // liber-far-walk: cycle 58 at 14.8125 with 8/9-unit frames after it; cycle 2 at 5/32 and
+        // cycle 50 at 407/32 where the cadence run back alone would give 13/32 and 408/32.
+        int[] steps = [9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9, 8, 8, 9, 8, 9, 8, 8, 9];
+        List<double> ticks = [474 / 32.0];
+        foreach (int step in steps)
+        {
+            ticks.Add(ticks[^1] + (step / 32.0));
+        }
+
+        OracleTrace.StartupAnchor[] anchors =
+        [
+            new(56, 5 / 32.0, 2), new(48, 72 / 32.0, 10), new(40, 139 / 32.0, 18), new(32, 206 / 32.0, 26),
+            new(24, 273 / 32.0, 34), new(16, 340 / 32.0, 42), new(8, 407 / 32.0, 50), new(5, 433 / 32.0, 1, Dated: false),
+        ];
+
+        IReadOnlyList<double>? frames = OracleTrace.StartupFramesFromAnchors(ticks, anchors);
+
+        Assert.NotNull(frames);
+        Assert.Equal(58, frames.Count); // cycles 1 to 58
+        Assert.Equal(5 / 32.0, frames[1]);
+        Assert.Equal(407 / 32.0, frames.Skip(1).Take(49).Sum(), 9); // cycle 50
+        Assert.Equal(433 / 32.0, frames.Skip(1).Take(52).Sum(), 9); // cycle 53, the TK line
+        Assert.Equal(474 / 32.0, frames.Skip(1).Sum(), 9); // cycle 58
+        Assert.All(frames.Skip(2), static f => Assert.True(f is 0.25 or 0.28125 or 0.3125));
+        Assert.Null(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(8, 407 / 32.0, 50)])); // no count-2 anchor
+        Assert.Null(OracleTrace.StartupFramesFromAnchors(ticks, [new OracleTrace.StartupAnchor(5, 433 / 32.0, 1, Dated: false)])); // no dated anchor at all
+    }
+
+    [Fact]
     public void StartupFrames_SlowSamplesOrFirstCycleSampled_PlanNothing()
     {
         Assert.Null(OracleTrace.StartupFrames([24, 32, 40, 48, 56, 64, 72, 80, 88, 96]));

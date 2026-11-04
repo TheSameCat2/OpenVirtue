@@ -51,4 +51,33 @@ public class WdlSchedulerOrderTests
             [1.0, 2, 3, 4, 5, 6, 7, 8, 9],
             Enumerable.Range(1, 9).Select(i => runtime.GetSkill("o" + i)));
     }
+
+    [Fact]
+    public void Tick_RunsPlacedThingsAndActorsTogetherFromTheLastPlaced()
+    {
+        // OV-20261019-clip-contact round 2 liber-far-beam: placed actor, thing, actor, thing, the
+        // original ran thing, actor, thing, actor: one reverse map order for both kinds, not the
+        // actors first.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
+            "REGION room 0 10;#0\n" +
+            "ACTOR aa 8 8 0 0;#0\nTHING ta 2 8 0 0;#1\nACTOR ab 8 2 0 0;#2\nTHING tb 2 2 0 0;#3\n" +
+            "PLAYER_START 5 5 0 0;#4";
+        const string main =
+            "MAPFILE <m.wmp>; SKILL n { VAL 0; } " +
+            "SKILL o1 { VAL 0; } SKILL o2 { VAL 0; } SKILL o3 { VAL 0; } SKILL o4 { VAL 0; } " +
+            "ACTION xaa { RULE n += 1; RULE o4 = n; } ACTION xab { RULE n += 1; RULE o2 = n; } " +
+            "ACTION xta { RULE n += 1; RULE o3 = n; } ACTION xtb { RULE n += 1; RULE o1 = n; } " +
+            "THING ta { EACH_TICK xta; } THING tb { EACH_TICK xtb; } " +
+            "ACTOR aa { EACH_TICK xaa; } ACTOR ab { EACH_TICK xab; }";
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        var runtime = new WdlRuntime(level);
+        runtime.RunStartup();
+
+        runtime.Tick(1.0 / 64);
+
+        // tb, ab, ta, aa.
+        Assert.Equal([1.0, 2, 3, 4], Enumerable.Range(1, 4).Select(i => runtime.GetSkill("o" + i)));
+    }
 }

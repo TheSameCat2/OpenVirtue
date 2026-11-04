@@ -160,6 +160,12 @@ public sealed class WdlRuntime :
     private readonly HashSet<string> _ambiguousObjectNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Region> _regions = [];
     private readonly List<AcknexObject> _levelObjects = [];
+
+    private HashSet<AcknexObject>? _unplacedObjectSet;
+
+    /// <summary>The walls, things and actors the map does not place (<see cref="Level.UnplacedObjects"/>).</summary>
+    private HashSet<AcknexObject> _unplacedObjects =>
+        _unplacedObjectSet ??= new HashSet<AcknexObject>(_level.UnplacedObjects, ReferenceEqualityComparer.Instance);
     private readonly string?[] _eachTickActions = new string?[EachTickSlotCount];
     private readonly string?[] _eachSecActions = new string?[EachSecSlotCount];
 
@@ -3931,8 +3937,12 @@ public sealed class WdlRuntime :
             return false;
         }
 
-        double targetX = player.Position.X;
-        double targetY = player.Position.Z;
+        // The player as the skills read it, where a beam in this cycle put it (SET PLAYER_X/PLAYER_Y act
+        // at once, the host moves the player after the cycle): clip-contact clip-move-liber's LIBER
+        // follower, skipped out of view, took its six-cycle step toward the beamed player in the very
+        // cycle of the beam, from (17.9, -5.4) to (24.3, -8.6) toward (31, -12) (2026-11-04 re-read).
+        double targetX = GetSkill("PLAYER_X");
+        double targetY = GetSkill("PLAYER_Y");
         actor["TARGET_X"] = targetX;
         actor["TARGET_Y"] = targetY;
         if (repel)
@@ -4706,19 +4716,32 @@ public sealed class WdlRuntime :
             order.Add(_regions[i]);
         }
 
+        // Things and actors run together from the last placed to the first, whatever their kind:
+        // clip-contact round 2 liber-far-beam placed actor, thing, actor, thing and ran them as
+        // thing, actor, thing, actor (2026-11-04). scheduler-order's actors ran before its things
+        // because they were placed after them (OV-20261029-scheduler-order). The unplaced ones,
+        // which the map does not order, keep running first, actors before things.
         for (int i = _levelObjects.Count - 1; i >= 0; i--)
         {
-            if (_levelObjects[i] is Actor)
+            if (_levelObjects[i] is Actor actor && _unplacedObjects.Contains(actor))
             {
-                order.Add(_levelObjects[i]);
+                order.Add(actor);
             }
         }
 
         for (int i = _levelObjects.Count - 1; i >= 0; i--)
         {
-            if (_levelObjects[i] is MapEntity and not Actor)
+            if (_levelObjects[i] is MapEntity and not Actor && _unplacedObjects.Contains(_levelObjects[i]))
             {
                 order.Add(_levelObjects[i]);
+            }
+        }
+
+        for (int i = _level.MapObjects.Count - 1; i >= 0; i--)
+        {
+            if (_level.MapObjects[i] is MapEntity placed)
+            {
+                order.Add(placed);
             }
         }
 
@@ -5917,6 +5940,12 @@ public sealed class WdlRuntime :
     /// </summary>
     private void NoteFrontMove(Actor actor)
     {
+        // An actor that has moved reads its DISTANCE from the next refresh at any range, where a
+        // standing thing or actor keeps the sentinel until it is first refreshed within 1.5 × its
+        // border: clip-contact round 3 liber-far-way's half-step way actors read 29.3 and 44.7 at
+        // the first beam while the things beside them stayed at 65535.999, and liber-far-follow's
+        // SPEED 0 followers kept it like the things (2026-11-04).
+        _distanceStarted.Add(actor);
         if (GetObject("player") is not Player player)
         {
             return;
@@ -5979,7 +6008,7 @@ public sealed class WdlRuntime :
             actor["FAR"] > 0 ||
             GetObject("player") is not Player player ||
             (_inView.Contains(actor) && !IsBeyondClipBorder(player, actor)) ||
-            _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z)) <= SkipFramesNearRange ||
+            IsWithinSkipFramesNearRange(player, actor) ||
             IsWithinDist(player, actor))
         {
             // The first move after skipping covers the cycles skipped since the last one too.
@@ -5994,6 +6023,19 @@ public sealed class WdlRuntime :
         }
 
         return skip + 1;
+    }
+
+    /// <summary>
+    /// Whether an unseen actor is within the <see cref="SkipFramesNearRange"/>, as last refreshed,
+    /// and within its <c>CLIP_DIST</c> border: in clip-contact clip-move-liber (<c>CLIP_DIST</c> 10)
+    /// the FOLLOW actor refreshed to 10.123 took no step until the next refresh read 6.119, and
+    /// clip-move's way actor at a <c>DISTANCE</c> of 9.969 still stepped (2026-11-04).
+    /// </summary>
+    private bool IsWithinSkipFramesNearRange(Player player, Actor actor)
+    {
+        double distance = _entityDistances.GetValueOrDefault(actor, Math.Abs(actor.X - player.Position.X) + Math.Abs(actor.Y - player.Position.Z));
+        return distance <= SkipFramesNearRange &&
+               (RegionAt(player.Region) is not { } region || distance < ClipBorder(actor, region));
     }
 
     /// <summary>

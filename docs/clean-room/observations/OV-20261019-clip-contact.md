@@ -328,3 +328,74 @@ engine's first cycle, before any frame was drawn, when the object stood in the p
   carriers. `WdlRuntime.IsWithinClipDistance`, `IsWithinViewCone`, `_inFirstCycle`; test
   `Tick_ObjectEachTick_BerkeleyThingRunsOnlyWithinDistAndAnEyeHighAboveItFiresNoHooks`.
 
+## Rounds 2 and 3: the far `DISTANCE` of `LIBER` objects, the object order, the near range (2026-11-04)
+clip-move-liber's `LIBER` way actor read a `DISTANCE` of 29.438 in the cycle after the first beam,
+three times its border 10 and twice the 1.5 × border at which a thing starts (clip-near), then the
+sentinel 65535.999 again at 39–41 while the player walked away, 11.563 after the next beam, and
+46.844 real after the last; its `FOLLOW` actor read the sentinel at 39.3 after one beam and 40.719
+real after another. Seven new carriers under `round2/` and `round3/` (fixture generator
+`ClipContactProbeCases`, cases `liber-far-*`; all ran fast, about 0.26 ticks a cycle, with
+`SDL_VIDEODRIVER=dummy`), each in the `CLIP_DIST 10` room with `LIBER` objects at (36, 12) and
+(10, 12) and the player beamed to thirteen stands (|depth| + |lateral| from the first pair, then the
+second: the origin 48, 22; P1 (31, −12) 29, 45; P2 (31, 0) 17, 33; P3 (31, 6) 11, 27; P4 (19, −12)
+41, 33; P5 (23, −12) 37, 37; P6 (15, −12) 45, 29; P7 (30, −8) 26, 40 behind; P8 (36, −2) 14, 40
+behind; P9 (12, 8) 28, 6; P10 and P11 as P7 and P8; P12 the origin; P13 as P4), then walks:
+
+| Carrier (`OVCCX0.TXT` sha256) | Objects | Reading |
+|------|---------|---------|
+| liber-far-beam (`round2/`) | a standing actor and a thing at each spot | all four 65535.999 through P2; the first pair 11 from P3 on and then 41, 37, 45, 26, 14, 28, 26, 14, 48, 41 — real at every later stand, 48 included; the second pair 65535.999 through P8 (40 behind at P7 and P8 included), 6 from P9 and then 40, 40, 22, 33 |
+| liber-far-walk (`round2/`) | the same | started at 11, then 29 after the beam to (31, −12) and 29.5 … 47.7 a cycle as the player walked off to x = 11.5, back down to 27.8; the second pair 40 and 40.9 … 47.3 walking away, 31.2 walking back |
+| liber-far-follow (`round3/`) | `FOLLOW` actors of `SPEED 0` in place of the standing actors | identical to the standing actors in every stand and the walk |
+| liber-far-way (`round3/`) | way actors patrolling half a step in place ((36, 12) ↔ (36.5, 12)) | 29.3 and 44.7 at P1, the first refresh after the first beam, where the things beside them stayed at 65535.999; real at every later stand (41.2, 45.2, 48.2, 40 behind) and through the walks |
+| liber-far-contact (`round3/`) | two `FOLLOW` actors at 0.2 a tick from (40, ±12), the player beamed between contact and far stands | the one 12.6 away started at the first beam, the other at 26.6; in contact both push the player diagonally about 0.25 a cycle (the second stand drifted (31, −12) → (46, −22)) |
+| clip-move-liber-nexus60 (`round3/`) | round 1's clip-move-liber with `NEXUS 60` in place of 14 | the way actor's sentinel returns at 45.6 while the follower is 4.3 in front, as with `NEXUS 14` at 41.4: not the nexus |
+
+- **A standing thing or actor starts its `DISTANCE` only when first refreshed within 1.5 × its
+  border, and then keeps reading its distance at any range** (48 at P12 after a start at 11; 40
+  behind at P10 after a start at 6). A `FOLLOW` actor that cannot move (`SPEED 0`) counts as
+  standing. This is rule 2's start (OV-20261019-actor-contact) confirmed at every range and
+  behind the player.
+- **An actor that has moved reads its distance from the next refresh however far it is.** The
+  half-step way actors read 29.3 and 44.7 at the very first refresh; clip-move-liber's follower
+  started at 26.6. A move is enough, a beam is not: the standing pair beside them stayed at the
+  sentinel through the same beams.
+- **The far sentinel of a moved actor is open.** Only clip-move-liber (and its `NEXUS 60` rerun)
+  shows it, always while the other actor stands within about 9 in front of the player (drawn), with
+  the far one at 39 or more; the in-place way actors, with nothing drawn, never fell back, and
+  liber-far-contact's far follower stayed real at 17 while the near one was drawn 3 in front. Not
+  a function of the far one's position alone (41.4 sentinel and 46.8 real from the same room), not
+  the nexus. Not implemented; the two carriers keep their lines.
+- **Things and actors run from the last placed to the first whatever their kind.** liber-far-beam
+  placed actor, thing, actor, thing and ran thing, actor, thing, actor (`U B T A`) from its first
+  cycle. scheduler-order's actors ran before its things because its map placed them after
+  (OV-20261029-scheduler-order order and order-wmp both do).
+- **The `SKIP_FRAMES` near range stops at the border.** clip-move-liber's follower, refreshed to
+  10.123 after the beam (border 10), took no step until the next refresh read 6.119 and then
+  covered the three cycles since its last move; clip-move's way actor at a `DISTANCE` of 9.969
+  still stepped. So an unseen actor moves every cycle while its refreshed distance is both within
+  20 (OV-20261020-view-activity, measured in rooms of the default `CLIP_DIST`) and within its
+  `CLIP_DIST × ACTOR_DIST` border.
+- **A `FOLLOW` actor's target is the player as the skills read it.** In the cycle of the first beam
+  clip-move-liber's follower, skipped out of view, took its six-cycle step from (17.9, −5.4) to
+  (24.3, −8.6), toward the beamed (31, −12) that `PLAYER_X`/`PLAYER_Y` already held, not toward the
+  origin where the player's body still stood.
+- **A long step into the player does not push.** In clip-move-liber the follower's three-cycle step
+  at the walk's second cycle ended 0.95 from the player's centre and moved the player nothing; the
+  player's own step that cycle was lost (27.000 printed twice) and the next went on. OpenVirtue
+  pushes the player out by the contact rule (OV-20261019-actor-contact) and the player walks on.
+  Open with push-wall's pw05-k2 (the step beyond the contact distance).
+
+Implemented: `WdlRuntime.NoteFrontMove` starts a moved actor's distance (`_distanceStarted`),
+`RunObjectPass` orders the placed things and actors by `Level.MapObjects` reversed (the unplaced
+ones first, actors before things, as before), `IsWithinSkipFramesNearRange` adds the border, and
+`AdvanceActorRelativeToPlayer` reads `PLAYER_X`/`PLAYER_Y`. Tests
+`Tick_PlayerProximity_AMovedActorStartsItsDistanceAtAnyRange`,
+`Tick_SkipFrames_TheNearRangeStopsAtTheClipBorder`,
+`WdlSchedulerOrderTests.Tick_RunsPlacedThingsAndActorsTogetherFromTheLastPlaced`. Oracle diff:
+liber-far-beam, liber-far-way and liber-far-follow match in full, liber-far-walk 764 of 770 (the
+actors' start-up positions), clip-move-liber 93 of 159 (was 61; the rest the far sentinel and the
+long step's push), liber-far-contact 226 of 1096 (the pushes of two followers in contact; open).
+The replay harness dates the start-up from the start-up file and the resumed start action's first
+lines (tools/README): these fast launches began with a 5/32 first frame where the cadence run back
+put 13/32.
+

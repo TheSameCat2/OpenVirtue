@@ -223,12 +223,23 @@ internal static class OracleReplay
         // start-up is planned as that many frames of whole 1/32 ticks spread evenly (the save-body
         // carriers: 44 frames to 13.875, about 10/32 each, where the replay ran 56 of 8/32).
         (IReadOnlyList<double> Frames, double Rate, string Note)? savePlan = !asked && cycleTicks.Count == 0 && slowFrames is null ? SaveClockPlan(work) : null;
+        // The start-up file's cycles date the frames before the first sample (liber-far-beam's cycle 2
+        // at 0.156, not the 0.406 the cadence run back alone gives).
+        IReadOnlyList<OracleTrace.StartupAnchor>? anchors = timing is { } anchorTiming && primary != "OVSTA0.TXT" && originalFiles.TryGetValue("OVSTA0.TXT", out string? startPath)
+            ? OracleTrace.StartupAnchors(OracleTrace.Parse(File.ReadAllText(startPath, Encoding.Latin1)), timingSource, anchorTiming)
+            : null;
+        if (options.DumpClock && anchors is { Count: > 0 })
+        {
+            Console.Error.WriteLine("clock start-up anchors: " + string.Join(' ', anchors.Select(static a => $"{a.CyclesBefore}:{a.Ticks:F4}/{a.Count}")));
+        }
+
         var clock = new ReplayClock(
             cycleTicks,
             options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? slowFrames ?? savePlan?.Rate ?? 0.25,
             firstStep,
             counted,
-            savePlan?.Frames)
+            savePlan?.Frames,
+            anchors)
         {
             Trace = options.DumpClock ? line => Console.Error.WriteLine("clock " + line) : null,
         };
@@ -1042,7 +1053,7 @@ internal static class OracleReplay
     /// the following frames land <c>TICKS</c> on the original's sampled values, whatever the start-up
     /// took. With no samples every frame lasts <c>fallbackTicks</c>.
     /// </summary>
-    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null, bool consecutive = false, IReadOnlyList<double>? plannedStartup = null)
+    internal sealed class ReplayClock(IReadOnlyList<double> cycleTicks, double fallbackTicks, double? firstStep = null, bool consecutive = false, IReadOnlyList<double>? plannedStartup = null, IReadOnlyList<OracleTrace.StartupAnchor>? anchors = null)
     {
         private const double Epsilon = 0.0005;
         private readonly double _typical = Median(cycleTicks) ?? fallbackTicks;
@@ -1063,7 +1074,7 @@ internal static class OracleReplay
 
         // Before the first sample the frames run the first samples' cadence backward, cycle 1 the
         // earliest of it past TICKS 0 (OV-20261103-startup-clock).
-        private readonly IReadOnlyList<double>? _startupFrames = plannedStartup ?? OracleTrace.StartupFrames(cycleTicks, firstStep);
+        private readonly IReadOnlyList<double>? _startupFrames = plannedStartup ?? OracleTrace.StartupFrames(cycleTicks, firstStep, anchors);
         private int _startupFrame;
         private int _tailFrames;
         private int _next;
@@ -1095,6 +1106,11 @@ internal static class OracleReplay
         /// <summary>The next frame's duration in seconds, given the replay's current <c>TICKS</c>.</summary>
         public double Next(double ticks)
         {
+            if (Trace is { } plan && !Anchored && _startupFrame == 0 && _startupFrames is { } frames)
+            {
+                plan("start-up plan: " + string.Join(' ', frames.Select(static f => f.ToString("F4", CultureInfo.InvariantCulture))));
+            }
+
             double step = NextStep(ticks);
             if (Trace is { } trace && !Anchored)
             {

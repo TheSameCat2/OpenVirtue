@@ -545,6 +545,172 @@ internal static class OracleTrace
         return fitter.Fit();
     }
 
+    /// <summary>A cycle the start-up file dates: how many cycles before the first sampled one, and its <c>TICKS</c>.</summary>
+    public readonly record struct StartupAnchor(long CyclesBefore, double Ticks, long Count, bool Dated = true);
+
+    /// <summary>
+    /// The start-up frames from the dated cycles (<see cref="StartupAnchors"/>): a counting
+    /// <c>EACH_TICK</c> that ran from cycle 1 prints its second run in cycle 2, so a dated anchor of
+    /// count 2 fixes cycle 2 outright. The cycles between anchors, and up to the first sample, are
+    /// spread evenly in whole 1/32 ticks: the first samples' cadence run back (<see cref="StartupFrames"/>)
+    /// is no surer of which frame took 9/32 that far back, and the resumed start action's own line
+    /// (<c>WAITT 16</c> ends in the cycle after <c>TICKS</c> first passes 13) anchors the cycle that
+    /// matters. clip-contact round 2 liber-far-walk's first frame was 5/32 where the cadence run back
+    /// put 13/32. <c>null</c> without a dated count-2 anchor, or when the anchors do not rise.
+    /// Frame 1's duration is the runtime's to ignore, as in <see cref="StartupFrames"/>.
+    /// </summary>
+    public static IReadOnlyList<double>? StartupFramesFromAnchors(IReadOnlyList<double> cycleTicks, IReadOnlyList<StartupAnchor> anchors)
+    {
+        ArgumentNullException.ThrowIfNull(cycleTicks);
+        ArgumentNullException.ThrowIfNull(anchors);
+        List<StartupAnchor> dated = anchors.Where(static a => a.Dated).ToList();
+        if (cycleTicks.Count == 0 || dated.Count == 0 || dated.MinBy(static a => a.Count) is not { Count: 2 } second ||
+            anchors.Any(a => a.CyclesBefore > second.CyclesBefore))
+        {
+            return null;
+        }
+
+        List<(long K, long Units)> points = anchors
+            .Select(a => (K: -a.CyclesBefore, Units: (long)Math.Round(SnapTicks(a.Ticks) * 32)))
+            .OrderBy(static p => p.K)
+            .ToList();
+        points.Add((0, (long)Math.Round(SnapTicks(cycleTicks[0]) * 32)));
+        var positions = new Dictionary<long, long>();
+        for (int i = 0; i + 1 < points.Count; i++)
+        {
+            (long ka, long ua) = points[i];
+            (long kb, long ub) = points[i + 1];
+            if (kb <= ka || ub <= ua)
+            {
+                return null;
+            }
+
+            for (long k = ka; k <= kb; k++)
+            {
+                positions[k] = ua + (long)Math.Round((k - ka) * (double)(ub - ua) / (kb - ka));
+            }
+        }
+
+        long cycle2 = -second.CyclesBefore;
+        if (positions[cycle2] <= 0)
+        {
+            return null;
+        }
+
+        // Frame 1 (cycle 1, which reads TICKS 0 whatever its length), then cycle 2's TICKS, then the steps.
+        var frames = new List<double> { positions[cycle2] / 32.0, positions[cycle2] / 32.0 };
+        for (long k = cycle2 + 1; k <= 0; k++)
+        {
+            if (positions[k] <= positions[k - 1])
+            {
+                return null;
+            }
+
+            frames.Add((positions[k] - positions[k - 1]) / 32.0);
+        }
+
+        return frames;
+    }
+
+    /// <summary>
+    /// The cycles dated before the trace's first sample. From the start-up file (<c>OVSTA0.TXT</c>):
+    /// its lines of the sampler's token, counted by a column that rises by whole numbers from line
+    /// to line and on to the trace's first line at a 60 Hz frame's pace (a counting <c>EACH_TICK</c>'s
+    /// run count; the global sampler's count stays 0 before it is armed), whose counts are cycle
+    /// numbers (<see cref="StartupAnchor.Dated"/>). From the trace itself: the lines of any token
+    /// before the first sample, placed by the sampler's counter column (the resumed start action's
+    /// first lines; clip-contact's <c>TK</c> at 13.531 five cycles before its first <c>U</c> line).
+    /// Nearest first, each must lie a frame's pace from the next one accepted, else it is dropped.
+    /// </summary>
+    public static IReadOnlyList<StartupAnchor> StartupAnchors(IReadOnlyList<OracleTraceLine> startLines, IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn timing)
+    {
+        ArgumentNullException.ThrowIfNull(startLines);
+        ArgumentNullException.ThrowIfNull(lines);
+        List<OracleTraceLine> tokenLines = lines.Where(timing.Matches).ToList();
+        if (tokenLines.Count == 0 || tokenLines[0].Value(timing.Column) is not { } firstTicks)
+        {
+            return [];
+        }
+
+        OracleTraceLine first = tokenLines[0];
+        var candidates = new List<StartupAnchor>();
+        List<OracleTraceLine> early = startLines.Where(timing.Matches).ToList();
+        int columns = early.Count == 0 ? 0 : Math.Min(first.Fields.Count, early.Min(static l => l.Fields.Count));
+        for (int column = 0; column < columns; column++)
+        {
+            if (column == timing.Column || first.Value(column) is not { } firstCount)
+            {
+                continue;
+            }
+
+            var dated = new List<StartupAnchor>();
+            double? lastCount = null;
+            double? lastTicks = null;
+            bool counts = true;
+            foreach (OracleTraceLine line in early)
+            {
+                if (line.Value(column) is not { } count || line.Value(timing.Column) is not { } ticks ||
+                    count != Math.Floor(count) || count >= firstCount || ticks <= 0 || ticks >= firstTicks ||
+                    (lastCount is { } previousCount && lastTicks is { } previousTicks &&
+                     (count <= previousCount || !IsFrameStep((ticks - previousTicks) / (count - previousCount)))))
+                {
+                    counts = false;
+                    break;
+                }
+
+                dated.Add(new StartupAnchor((long)(firstCount - count), ticks, (long)count));
+                lastCount = count;
+                lastTicks = ticks;
+            }
+
+            if (counts && lastCount is { } c && lastTicks is { } t && IsFrameStep((firstTicks - t) / (firstCount - c)))
+            {
+                candidates.AddRange(dated);
+                break;
+            }
+        }
+
+        // A line of another token before the first sample is dated by any column that counts the
+        // sampler's cycles between its first two lines as its counter column does (the probes' global
+        // sampler count, which every line prints after TICKS, beside the token's own run count).
+        if (tokenLines.Count >= 2 && CounterColumn(tokenLines, timing.Column) is { } counter &&
+            tokenLines[1].Value(counter) is { } secondCount && tokenLines[0].Value(counter) is { } firstCount0)
+        {
+            double cycles = secondCount - firstCount0;
+            for (int column = 0; column < Math.Min(tokenLines[0].Fields.Count, tokenLines[1].Fields.Count); column++)
+            {
+                if (column == timing.Column || tokenLines[0].Value(column) is not { } a || tokenLines[1].Value(column) is not { } b ||
+                    a != Math.Floor(a) || b - a != cycles)
+                {
+                    continue;
+                }
+
+                foreach (OracleTraceLine line in lines.TakeWhile(l => !ReferenceEquals(l, first)))
+                {
+                    if (line.Value(column) is { } count && line.Value(timing.Column) is { } ticks &&
+                        count == Math.Floor(count) && count < a && ticks > 0 && ticks < firstTicks)
+                    {
+                        candidates.Add(new StartupAnchor((long)(a - count), ticks, (long)count, Dated: false));
+                    }
+                }
+            }
+        }
+
+        var anchors = new List<StartupAnchor>();
+        (long Cycles, double Ticks) last = (0, firstTicks);
+        foreach (StartupAnchor candidate in candidates.OrderBy(static a => a.CyclesBefore).ThenByDescending(static a => a.Dated))
+        {
+            if (candidate.CyclesBefore > last.Cycles &&
+                IsFrameStep((last.Ticks - candidate.Ticks) / (candidate.CyclesBefore - last.Cycles)))
+            {
+                anchors.Add(candidate);
+                last = (candidate.CyclesBefore, candidate.Ticks);
+            }
+        }
+
+        return anchors;
+    }
+
     /// <summary>
     /// The start-up frames before the first sample, in ticks, frame 1 first, from the cadence the first
     /// samples keep (<see cref="FitLeadingCadence"/>) run backward. Every launch of the startup probe
@@ -554,9 +720,14 @@ internal static class OracleTrace
     /// Frame 1's duration is the runtime's to ignore. <c>null</c> when no cadence fits, or when the
     /// first sample is cycle 1's.
     /// </summary>
-    public static IReadOnlyList<double>? StartupFrames(IReadOnlyList<double> cycleTicks, double? firstStep = null)
+    public static IReadOnlyList<double>? StartupFrames(IReadOnlyList<double> cycleTicks, double? firstStep = null, IReadOnlyList<StartupAnchor>? anchors = null)
     {
         ArgumentNullException.ThrowIfNull(cycleTicks);
+        if (anchors is { Count: > 0 } && StartupFramesFromAnchors(cycleTicks, anchors) is { } dated)
+        {
+            return dated;
+        }
+
         if (cycleTicks.Count == 0 || FitLeadingCadence(cycleTicks, firstStep) is not { } cadence)
         {
             return null;
