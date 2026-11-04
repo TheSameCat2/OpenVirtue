@@ -8,7 +8,8 @@ namespace OpenVirtue.Engine.Tests;
 public class TimingTests
 {
     [Theory]
-    [InlineData(1.0, 16.0)]          // one second is 16 ticks
+    [InlineData(0.5, 8.0)]           // half a second is 8 ticks, the cap
+    [InlineData(1.0, 8.0)]           // a second is capped at 8 ticks (every slow DOSBox-X run printed 8)
     [InlineData(1.0 / 16, 1.0)]      // a 16 fps frame => TIME_CORR 1
     [InlineData(1.0 / 60, 16.0 / 60)] // a 60 fps frame
     [InlineData(0, 0)]
@@ -37,7 +38,7 @@ public class TimingTests
     [Fact]
     public void TimeCorrection_CapsPathologicalFrames()
     {
-        // A multi-second gap (level load, lag spike, debugger pause) is capped at MaxFrameSeconds
+        // A long gap (level load, lag spike, debugger pause) is capped at MaxFrameSeconds, 8 ticks
         // so the simulation can't take a giant step.
         double expected = Timing.MaxFrameSeconds * Timing.TicksPerSecond;
         Assert.Equal(expected, Timing.TimeCorrection(10.0), 9);

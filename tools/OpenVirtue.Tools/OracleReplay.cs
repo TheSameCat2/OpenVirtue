@@ -228,7 +228,10 @@ internal static class OracleReplay
             options.FixedTimeCorrection ?? carrierCase.TimeCorrection ?? slowFrames ?? savePlan?.Rate ?? 0.25,
             firstStep,
             counted,
-            savePlan?.Frames);
+            savePlan?.Frames)
+        {
+            Trace = options.DumpClock ? line => Console.Error.WriteLine("clock " + line) : null,
+        };
         // Run on past the last sample to the last TICKS any original file printed: a sampler switched
         // off before the probe's last lines (wall-pass-clip clip-wall, border-climb climb-4) would
         // otherwise stop the replay before them and before OVEND.
@@ -1068,6 +1071,9 @@ internal static class OracleReplay
         /// <summary>True once <see cref="Anchor"/> has run.</summary>
         public bool Anchored { get; private set; }
 
+        /// <summary>Where <c>--dump-clock</c> sends the steps taken before the anchor (<c>null</c> otherwise).</summary>
+        public Action<string>? Trace { get; set; }
+
         /// <summary>How far the replay's ticks run ahead of the original's (0 before the anchor).</summary>
         public double Offset { get; private set; }
 
@@ -1088,6 +1094,17 @@ internal static class OracleReplay
 
         /// <summary>The next frame's duration in seconds, given the replay's current <c>TICKS</c>.</summary>
         public double Next(double ticks)
+        {
+            double step = NextStep(ticks);
+            if (Trace is { } trace && !Anchored)
+            {
+                trace($"start-up step at TICKS {ticks:F4}: {step * Timing.TicksPerSecond:F4} ticks (planned {_startupFrames?.Count.ToString(CultureInfo.InvariantCulture) ?? "none"}, start-up rate {_startup:F4}, typical {_typical:F4})");
+            }
+
+            return step;
+        }
+
+        private double NextStep(double ticks)
         {
             if (!Anchored && _startupFrames is { } planned && _startupFrame < planned.Count)
             {

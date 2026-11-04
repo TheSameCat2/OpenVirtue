@@ -2456,9 +2456,11 @@ public sealed class WdlRuntime :
         }
 
         elapsedSeconds = deltaSeconds;
-        double timeCorrection = Timing.TimeCorrection(deltaSeconds);
+        // A flic cycle's TIME_CORR is its frame delay in 64 ms units, whatever its length; a world frame
+        // is capped at 8 ticks (Timing.MaxFrameSeconds).
+        double timeCorrection = flic ? deltaSeconds * Timing.TicksPerSecond : Timing.TimeCorrection(deltaSeconds);
         _skills[Timing.TimeCorrectionSkill] = timeCorrection;
-        _skills[Timing.TimeFactorSkill] = Timing.TimeFactor(deltaSeconds);
+        _skills[Timing.TimeFactorSkill] = flic && timeCorrection > 0 ? 1 / timeCorrection : Timing.TimeFactor(deltaSeconds);
         _skills[Timing.TicksSkill] = GetSkill(Timing.TicksSkill) + timeCorrection;
         _skills["TOTAL_TIME"] = _skills[Timing.TicksSkill]; // reads as TICKS (scheduler-order round 4)
         _skills["TOTAL_FRAMES"] = GetSkill("TOTAL_FRAMES") + 1;
@@ -2548,7 +2550,7 @@ public sealed class WdlRuntime :
     /// <c>TICKS</c>, so one second is 16 ticks. When the second completes, <c>SECS</c> goes up by
     /// one: the original keeps it a whole number of seconds and raises it after the frame's resumed
     /// <c>WAIT</c> actions, right before the <c>EACH_SEC</c> slots (OV-20261015-each-sec-cadence).
-    /// A frame counts at most one second (<see cref="Timing.MaxFrameSeconds"/>), so a stall never
+    /// A frame counts at most half a second, 8 ticks (<see cref="Timing.MaxFrameSeconds"/>), so a stall never
     /// causes a burst of catch-up seconds.
     /// </summary>
     /// <returns><c>true</c> if a second completed during this frame.</returns>
