@@ -154,3 +154,19 @@ round 2 `climb-player-05` (`5e1c2322`), round 2 `climb-skip0` (`998248b0`) and r
 `climb-tall` (`62f2a404`) match in full. `actor-climb-2`, `actor-climb-2d` (33 of 37 lines each, 6
 before) and `imp-border` (24 of 37, 6) now differ first at the actor's position; `invisible` and
 `invisible-border` still differ from the start-up clock.
+
+## Addendum: the long step that would end inside the IMPASSABLE pad (2026-11-04)
+Re-read of `imp-border` (`OVBKX0.TXT`) against the replay, no new run. The `CAREFULLY` walker,
+skipped out of view, takes six-cycle steps of 9.56. From 10.955, the hold before the pad's
+`IMPASSABLE` south border, its step through the whole pad to 20.511 (the room again) was taken.
+From 22, its way's end, the step back toward 4 would end at 12.4, inside the pad: the original put
+it at 21.524, half the way to the hold before the north border (974 units to 21.049, half 487),
+as OV-20261103-careful-stop's walkers before a solid wall, so the whole, half and quarter steps
+(ends 12.4, 17.2 and 19.6, all inside the pad) were refused and the eighth (20.8, within the half
+width before the border) was too close. OpenVirtue's end test took the pad for enterable (its
+floor is the room's) and sent the walker to the hold.
+- **Rule.** A `CAREFULLY` long step may not end in a region it enters through a border it may not
+  cross (`IMPASSABLE`, or a rise it cannot climb); a step through such a region out to its own
+  region again passes. `WdlRuntime.TestCarefulEndPoint`.
+- Result: imp-border matches all 37 lines; 12 of 15 carriers.
+

@@ -170,7 +170,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   OV-20261020-view-activity). A wall's
   `DIST` test is gated by the border like a thing's. A wall's border is the player's region's
   `CLIP_DIST` alone, even between two regions. `INVISIBLE` walls run no `EACH_TICK`. Five
-  DOSBox-X runs (one more failed to compile); implemented in `WdlRuntime`.
+  DOSBox-X runs (one more failed to compile); implemented in `WdlRuntime`. Addendum 2026-11-04: a `CAREFULLY` long step may not end in a region
+  entered through a border it may not cross; through it and out again passes.
 
 ## View activity (2026-10-20 — confirmed and implemented)
 
