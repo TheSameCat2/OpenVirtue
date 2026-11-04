@@ -54,12 +54,14 @@ public static class WdlPlayerMotion
             stepY += nudgeY;
         }
 
+        // An actor that stepped into the player this cycle holds a step toward it, and otherwise
+        // pushes the player out from where its step ends (WdlRuntime.ResolveActorPushes).
+        bool held = timeCorrection > 0 && runtime.IsHeldByActorPush(player, new Vector2((float)stepX, (float)stepY));
         bool wallStopped = false;
-        Vector2 displacement = timeCorrection > 0
+        Vector2 displacement = timeCorrection > 0 && !held
             ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
             : Vector2.Zero;
-
-        if (timeCorrection > 0)
+        if (timeCorrection > 0 && !held)
         {
             // As for a CAREFULLY actor (OV-20261029-actor-events), a part a wall stopped takes the
             // same minimum from what is left of it: a step held at the wall (0) moves 4/1024 into it,
@@ -74,10 +76,12 @@ public static class WdlPlayerMotion
             }
         }
 
+        bool pushed = runtime.ResolveActorPushes(player, held, start);
+
         // Neither the minimum's addition nor an object's push-back counts toward the speed the player moved.
-        displacement -= player.LastObjectPush;
-        double actualVelocityX = timeCorrection > 0 ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
-        double actualVelocityY = timeCorrection > 0 ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
+        displacement -= held ? Vector2.Zero : player.LastObjectPush;
+        double actualVelocityX = timeCorrection > 0 && !pushed && !held ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
+        double actualVelocityY = timeCorrection > 0 && !pushed && !held ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
         runtime.SetSkill("PLAYER_VY", actualVelocityY);
         runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + actualVelocityX - requestedVelocityX);

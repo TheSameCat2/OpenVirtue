@@ -344,6 +344,40 @@ internal static class ClipContactProbeCases
         RoomBody: "CLIP_DIST 10;",
         Placements: ["ACTOR lf_a 40 -12 180 0", "ACTOR lf_b 40 12 180 0"]);
 
+    // ---- a follower's long step into the player ----------------------------------------------
+
+    /// <summary>
+    /// <c>CLIP_DIST 10</c>. A 2-wide <c>LIBER</c> <c>FOLLOW</c> actor (<c>ls_f</c>) stands beyond the
+    /// border, east of the player at the origin, at <c>SPEED 0</c>; the probe gives it <c>SPEED 6</c>,
+    /// and its first move, a skipped one, covers the cycles since its last (about six at 0.26 ticks
+    /// a cycle: 9 or so steps). A per-cycle sampler (<c>P</c>) prints the player's position, the
+    /// actor's position through a synonym and its <c>DISTANCE</c> every cycle, and sets the
+    /// player's velocity from <c>pe_vx</c>/<c>pe_vy</c>.
+    /// </summary>
+    private static readonly string LongStepDeclarations =
+        Skills + SmallTexture +
+        "SKILL ls_x { VAL 0; }\nSKILL ls_y { VAL 0; }\nSKILL ls_d { VAL 0; }\n" +
+        "SYNONYM ls_s { TYPE ACTOR; }\n" +
+        "ACTOR ls_f { TEXTURE cx_stex; TARGET FOLLOW; SPEED 0; FLAGS LIBER; }\n" +
+        Action(
+            "ls_tick",
+            "    RULE pe_n = pe_n + 1;\n    RULE ls_x = ls_s.X;\n    RULE ls_y = ls_s.Y;\n    RULE ls_d = ls_s.DISTANCE;\n" +
+            "    SET PLAYER_VX, pe_vx;\n    SET PLAYER_VY, pe_vy;\n" +
+            L("P", "PLAYER_X", "PLAYER_Y", "ls_x", "ls_y", "ls_d"));
+
+    private static TraceProbeMap LongStepMap(double x) => new(
+        RoomBody: "CLIP_DIST 10;",
+        Placements: [FormattableString.Invariant($"ACTOR ls_f {x} 0 180 0")]);
+
+    /// <summary>Arms the per-cycle sampler, stands 2 ticks, sets the follower's speed (and the player's walk when <paramref name="walk"/> is set), runs 12 ticks.</summary>
+    private static string LongStepRun(double walk = 0) =>
+        "    SET ls_s, ls_f;\n    SET EACH_TICK.1, ls_tick;\n    WAITT 2;\n" +
+        L("GO", "PLAYER_X", "PLAYER_Y", "ls_x", "ls_y") +
+        (walk != 0 ? FormattableString.Invariant($"    RULE pe_vx = {walk};\n") : "") +
+        "    SET ls_s.SPEED, 6;\n    WAITT 12;\n" +
+        L("S1", "PLAYER_X", "PLAYER_Y", "ls_x", "ls_y") +
+        "    RULE pe_vx = 0;\n    WAITT 2;\n    SET EACH_TICK.1, NULL;\n";
+
     // ---- contact -----------------------------------------------------------------------------
 
     /// <summary>
@@ -575,6 +609,73 @@ internal static class ClipContactProbeCases
                 ("a follower that was in contact reads the sentinel after any beam away", "65535.999 in B2, B4, B6, B8"),
                 ("always real once started", "no 65535.999 after B1")),
             Map: LiberFarFollowMap),
+        new TraceProbeCase(
+            "long-step-stand",
+            "clip-move-liber's follower, lifted from skipping, took a three-cycle step that ended 0.95 from the player's centre and moved the player nothing; the player's own step that cycle was lost. A follower at 10.5 given SPEED 6 (its first move about 9 steps): where does it end, is the standing player pushed, and what do the next cycles do?",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(
+                ("a long step into the player pushes it like any other", "the player at about −1.1 (2.2 from the actor) in the cycle after the step"),
+                ("a long step into the player does not push; the actor stays inside", "the player at 0 while the actor reads about 1.1; later cycles push or not")),
+            Map: LongStepMap(10.5)),
+        new TraceProbeCase(
+            "long-step-walk",
+            "The same with the player walking −X at 0.5 a tick from the cycle the speed is set: does the long step into the player cost the player a step, as in clip-move-liber?",
+            LongStepDeclarations,
+            LongStepRun(-0.5),
+            Predict(
+                ("the player's step that cycle is lost, then it walks on", "PLAYER_X repeats once around the long step"),
+                ("the walk goes on and the player is pushed", "PLAYER_X falls every cycle, with a push")),
+            Map: LongStepMap(10.5)),
+        new TraceProbeCase(
+            "long-step-shallow",
+            "The follower at 12.5, so its long step ends about 3 from the player, outside contact, and the single steps after it come into contact one step deep: the control for the push rule.",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(
+                ("single steps push as in actor-push", "the player pushed to 2.2 from the actor from the first contact step on")),
+            Map: LongStepMap(12.5)),
+        new TraceProbeCase(
+            "long-step-edge",
+            "The follower at 11.7, so its long step ends just inside contact (about 2.0 from the player): is a shallow long step a push?",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(
+                ("any step into contact pushes", "the player at about −0.2 in the cycle after"),
+                ("a skipped step never pushes", "the player at 0 until the next single step")),
+            Map: LongStepMap(11.7)),
+        new TraceProbeCase(
+            "long-step-deep-101",
+            "long-step-stand's follower from 10.1: its first step of 9 or 10.125 (six cycles of 0.25 or 0.28125 at SPEED 6) ends 1.1 from the player or 0.025 past it. Is a step that ends within the actor's own radius (1) of the player's centre, or past it, still a push?",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(
+                ("pushed whatever the depth", "the player at 2.2 from the actor in the cycle after"),
+                ("no push from within the actor's radius", "the player at 0 while the actor reads under 1")),
+            Map: LongStepMap(10.1)),
+        new TraceProbeCase(
+            "long-step-deep-104",
+            "The same from 10.4 (ending 1.4 or 0.275 from the player).",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(("as long-step-deep-101", "")),
+            Map: LongStepMap(10.4)),
+        new TraceProbeCase(
+            "long-step-deep-110",
+            "The same from 11 (ending 2.0 or 0.875 from the player; clip-move-liber's step ended 0.95 from it and pushed nothing).",
+            LongStepDeclarations,
+            LongStepRun(),
+            Predict(("as long-step-deep-101", "")),
+            Map: LongStepMap(11.0)),
+        new TraceProbeCase(
+            "long-step-into",
+            "The player walking +X at 15 a tick (about 3.9 a cycle) into the follower from 14 while its first step (9 or 10.125) comes the other way, as clip-move-liber's player walked into its follower's three-cycle step: is the player's own step lost, and is it pushed?",
+            LongStepDeclarations,
+            LongStepRun(15),
+            Predict(
+                ("the player's step is lost and it is not pushed", "PLAYER_X repeats in the cycle of the long step"),
+                ("the push wins", "the player at 2.2 behind the actor")),
+            Map: LongStepMap(14)),
         new TraceProbeCase(
             "contact-thing",
             "Pushing against a solid THING with DIST 0, 2 (below the contact distance) and 8: does contact fire IF_NEAR in every cycle while outside DIST, and does IF_FAR follow?",

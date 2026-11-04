@@ -101,6 +101,46 @@ public sealed class LevelCollisionWorld
             wallContact += 0.5f / 1024;
         }
 
+        // A move that starts inside a thing's or actor's contact circle (an actor stepped into the
+        // player) is held whole when it heads toward the object, and otherwise ignores it: the player
+        // neither walks on into the actor nor is put back while walking out through it, and walks
+        // freely from its centre. clip-contact round 5 long-step-into's player, 0.54 from the follower
+        // that had stepped into it, kept its place walking toward it and walked 3.75 straight through
+        // once the follower stood on its centre; clip-move-liber's lost a 4-step walk at 0.95 from
+        // its follower and took the next (2026-11-04).
+        HashSet<MapEntity>? insideAtStart = null;
+        if (rawContact)
+        {
+            foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
+            {
+                if (ReferenceEquals(entity, ignoredEntity) || entity.Region != startRegion || canCrossEntity(entity))
+                {
+                    continue;
+                }
+
+                long contact = Raw(radius) + Raw(Math.Max(0, entityRadius(entity)));
+                long dx = (long)Math.Round(start.X * 1024.0) - Raw(entity.X);
+                long dy = (long)Math.Round(start.Y * 1024.0) - Raw(entity.Y);
+                long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
+                if (lengthSquared >= ContactTestSquared(contact))
+                {
+                    continue;
+                }
+
+                if (lengthSquared > 0 && (requested.X * -dx) + (requested.Y * -dy) > 0)
+                {
+                    if (touched is not null && !touched.Contains(entity))
+                    {
+                        touched.Add(entity);
+                    }
+
+                    return new CircleMoveResult(start, startRegion, Vector2.Zero, true, false);
+                }
+
+                (insideAtStart ??= new HashSet<MapEntity>(ReferenceEqualityComparer.Instance)).Add(entity);
+            }
+        }
+
         Vector2 position = start;
         int region = startRegion;
         Vector2 objectPush = Vector2.Zero;
@@ -129,7 +169,7 @@ public sealed class LevelCollisionWorld
                 if (!endOnly || i == stepCount - 1)
                 {
                     adjusted |= ResolveEntities(
-                        endOnly ? start : from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, touched, ref desired, ref objectPush);
+                        endOnly ? start : from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, insideAtStart, touched, ref desired, ref objectPush);
                 }
                 collided |= adjusted;
                 if (!adjusted)
@@ -526,6 +566,7 @@ public sealed class LevelCollisionWorld
         Func<MapEntity, float> entityRadius,
         Func<MapEntity, bool> canCrossEntity,
         MapEntity? ignoredEntity,
+        HashSet<MapEntity>? ignoredEntities,
         ICollection<AcknexObject>? touched,
         ref Vector2 desired,
         ref Vector2 objectPush)
@@ -534,6 +575,7 @@ public sealed class LevelCollisionWorld
         foreach (MapEntity entity in _level.Things.Cast<MapEntity>().Concat(_level.Actors))
         {
             if (ReferenceEquals(entity, ignoredEntity) ||
+                (ignoredEntities is not null && ignoredEntities.Contains(entity)) ||
                 entity.Region != region ||
                 canCrossEntity(entity))
             {

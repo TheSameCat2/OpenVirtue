@@ -2391,6 +2391,7 @@ public sealed class WdlRuntime :
     public double Tick(double deltaSeconds)
     {
         _inFirstCycle = !_firstCycleRun;
+        _pendingPushers.Clear();
         double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds);
         CountPlayerSteps();
         ReleaseFinishedChannels();
@@ -4298,15 +4299,14 @@ public sealed class WdlRuntime :
             actor.X = x;
             actor.Y = y;
             UpdateActorRegion(actor);
-            // OV-20261019-actor-contact: an actor without CAREFULLY pushes the player ahead of it. The
-            // push is a move of the player's, not a beam: the player's own motion later in the cycle
-            // pushes out of nothing and so fires no second IF_NEAR, and PLAYER_X/PLAYER_Y already read
-            // the pushed position in the hook (actor-push: one N a cycle, with the pushed position).
-            if (blocked is not null && blocked.PushAway(actor, ActorCollisionRadius(actor)))
+            // OV-20261019-actor-contact: an actor without CAREFULLY that steps into the player pushes
+            // it ahead. The push is the player's own motion later in the cycle (ResolveActorPushes):
+            // a step of the player's toward the actor is held there, any other is taken and the
+            // player then pushed out from where it ends; its IF_NEAR fires after that with the pushed
+            // position (actor-push: one N a cycle; clip-contact rounds 4 and 5, 2026-11-04).
+            if (blocked is not null && LevelCollisionWorld.PushOutOfEntity(new Vector2(blocked.Position.X, blocked.Position.Z), actor, blocked.Width, ActorCollisionRadius(actor)) is not null)
             {
-                blocked.Settle();
-                WdlPlayerMotion.Synchronize(this, blocked);
-                FireActorContact(actor);
+                _pendingPushers.Add(actor);
             }
         }
 
@@ -4372,6 +4372,100 @@ public sealed class WdlRuntime :
     /// <c>IF_NEAR</c> in that cycle while the player is outside its <c>DIST</c>
     /// (OV-20261019-actor-contact), as the player's contact does (OV-20261019-clip-contact).
     /// </summary>
+    /// <summary>The actors whose steps ended within contact of the player this cycle, in their order (<see cref="ResolveActorPushes"/>).</summary>
+    private readonly List<Actor> _pendingPushers = [];
+
+    /// <summary>
+    /// Whether the player's step heads toward an actor that stepped into it this cycle, in which
+    /// case the player keeps its place (clip-contact round 5 long-step-into: the player walking into
+    /// the follower 0.54 away moved nothing; clip-move-liber: the 4-step walk toward the follower
+    /// 0.95 away was lost), unless the actor stands on its centre, where it walks freely.
+    /// </summary>
+    internal bool IsHeldByActorPush(Player player, Vector2 step)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (step == Vector2.Zero)
+        {
+            return false;
+        }
+
+        foreach (Actor actor in _pendingPushers)
+        {
+            var toActor = new Vector2((float)(actor.X - player.Position.X), (float)(actor.Y - player.Position.Z));
+            if (toActor != Vector2.Zero && Vector2.Dot(step, toActor) > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Pushes the player out of each actor that stepped into it this cycle (<see cref="Player.PushAway(MapEntity, float, out bool)"/>,
+    /// from where the player's own step ended: a walk away from the follower with a 4/1024 lateral
+    /// nudge read 0.005 aside after the push, the standing player 0.004; round 4 long-step-walk),
+    /// and fires each one's <c>IF_NEAR</c> after it, pushed or held (push-wall's actor pressed the
+    /// player against the wall and kept firing). A held player (<paramref name="held"/>,
+    /// <see cref="IsHeldByActorPush"/>) is not pushed. Returns whether a push moved the player.
+    /// </summary>
+    internal bool ResolveActorPushes(Player player, bool held, Vector2 start)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        bool pushed = false;
+        foreach (Actor actor in _pendingPushers)
+        {
+            System.Numerics.Vector3 before = player.Position;
+            if (!held && player.PushAway(actor, ActorCollisionRadius(actor), out bool wallStopped))
+            {
+                // A push a wall refuses, or one that moves nothing (the player on the actor's centre
+                // within the 22.10 root's reach), leaves the player where the cycle found it, its own
+                // step undone: long-step-into's player, walking into the east wall with the follower
+                // stepping into it from behind, stopped alternating 46.751/46.755 and drifting aside
+                // the cycle the follower reached it, and stayed so once the follower stood on it
+                // (clip-contact round 5, 2026-11-04).
+                if (wallStopped || player.Position == before)
+                {
+                    player.Position = new System.Numerics.Vector3(start.X, player.Position.Y, start.Y);
+                }
+
+                pushed = true;
+                player.Settle();
+                WdlPlayerMotion.Synchronize(this, player);
+            }
+        }
+
+        foreach (Actor actor in _pendingPushers)
+        {
+            FireActorContact(actor);
+        }
+
+        _pendingPushers.Clear();
+
+        // A step that ends on a solid actor's centre (within the 22.10 root's reach) is undone: there
+        // is no way out there (OV-20261029-overlap), and long-step-into's player, walking into the
+        // east wall with its follower at rest on it, stayed at 46.751 without the wall's 4/1024
+        // alternation or its drift aside (cycles 38 on, 2026-11-04).
+        if (!pushed && !held)
+        {
+            var position = new Vector2(player.Position.X, player.Position.Z);
+            foreach (Actor actor in _level.Actors)
+            {
+                if (actor["PASSABLE"] <= 0 && actor["INVISIBLE"] <= 0 && actor.Region == player.Region &&
+                    position != start &&
+                    LevelCollisionWorld.PushOutOfEntity(position, actor, player.Width, ActorCollisionRadius(actor)) == position)
+                {
+                    player.Position = new System.Numerics.Vector3(start.X, player.Position.Y, start.Y);
+                    player.Settle();
+                    WdlPlayerMotion.Synchronize(this, player);
+                    return true;
+                }
+            }
+        }
+
+        return pushed;
+    }
+
     private void FireActorContact(Actor actor)
     {
         if (_proximityStates.TryGetValue(actor, out bool near) && near)

@@ -399,3 +399,54 @@ The replay harness dates the start-up from the start-up file and the resumed sta
 lines (tools/README): these fast launches began with a 5/32 first frame where the cadence run back
 put 13/32.
 
+## Rounds 4 and 5: a follower's long step into the player (2026-11-04)
+clip-move-liber's follower, lifted from skipping, took a three-cycle step that ended 0.95 from
+the player's centre and moved the player nothing; the player's own 4-step walk that cycle was
+lost. Eight carriers under `round4/` and `round5/` (cases `long-step-*`, fast launches): a 2-wide
+`LIBER` `FOLLOW` actor east of the player at the origin, beyond the border at `SPEED 0`, given
+`SPEED 6` by the probe so that its first move covers the cycles since its last (9 or 10.125 at
+0.25 or 0.28125 a cycle); a per-cycle sampler (`P`) prints the player, the actor and its
+`DISTANCE`.
+
+| Carrier | Reading |
+|------|---------|
+| long-step-stand (10.5), -deep-101, -deep-104, -deep-110 (11) | the long step ends 1.5, 1.1, 1.4, 2.0 from the standing player and pushes it to 2.22 from the actor; the single steps after push it on, 2.22 ahead each cycle, the actor stepping to 0.54 from it before each push; at the west wall the push is cut (see below) |
+| long-step-shallow (12.5) | the long step ends 2.375 away, outside contact: no push; the single steps push as actor-push |
+| long-step-edge (11.7) | the long step ends 1.575 away, just inside: pushed to 2.22 |
+| long-step-walk | the player walking −X at 0.5 a tick (0.13 a cycle) away from the actor reads the push's position exactly in every cycle (−0.720, −2.406 …): its own step is overridden, and the push's lateral part is 0.005 where the standing player's is 0.004 — the push is taken from where the step (with its 4/1024 nudge aside) ended |
+| long-step-into | the player walking +X at 15 a tick (3.75 a cycle) into the actor from 14: cycle 5 the long step to 5.0 and the walk stopped at contact (2.779); cycle 6 the actor steps to 0.54 from the player, which moves nothing; cycle 7 the actor steps onto the player's centre and the player walks 3.75 straight through; then the actor follows 2.22 behind; at the east wall the player stops alternating 46.751/46.755 and drifting aside the cycle the actor steps into it from behind, and stays so with the actor at rest on its centre |
+
+- **The push is the player's own motion.** An actor's step into the player pushes nothing in the
+  actor's turn: in the player's motion phase a step of the player's toward the actor is held
+  whole (clip-move-liber cycle 24, long-step-into cycle 6), any other step is taken and the player
+  is then pushed out to the push distance from where it ended (long-step-walk's 0.005 aside), and
+  the actor's `IF_NEAR` fires after that. A push a wall refuses, or one that moves nothing (the
+  player on the actor's centre within the 22.10 root's reach), puts the player back where the
+  cycle found it, its own step and the wall's 4/1024 nudge undone (long-step-into at the east wall).
+- **From the actor's centre the player walks freely** (long-step-into cycle 7, clip-move-liber
+  cycle 25), but a step that ends on a solid actor's centre is undone (long-step-into cycles 38 on).
+- **A long step is no different**: it pushes from 1.1 as from 2.0 (deep-101, -110) and the next
+  single step pushes from 0.54 (every stand), so the depth of the step does not matter; what lost
+  clip-move-liber's push was the player's walk toward its follower.
+- **Open: the push at a wall.** With the player 2.76, 2.36 and 2.66 from the west wall and the
+  actor's step ending 0.54 behind it, the original moved the player 0.756, 0.556 and 0.706 toward
+  the wall (to 2.005, 1.806 and 1.956 from it, 1.300, 1.100 and 1.250 from the actor), neither the
+  whole push nor the player's clearance (1.279) nor none; OpenVirtue refuses the push whole
+  (actor-push's rule, measured with the player already at 2.78). Open with actor-push's wall edge.
+- **Open: the lateral nudge after a step aside.** long-step-walk's player, 4/1024 aside from its
+  step's nudge, reads 5 after the push (the lateral part scaled to the push distance, 5.4) where
+  the 4/1024 minimum on a part under 4 (OV-20261029-actor-step, actor-push) gives 8; a minimum on a
+  part that rounds to 0 fits this but breaks deep-110 and the standing pushes. Left at 3 units.
+
+Implemented: `WdlRuntime.MoveActor` records the actors that stepped into the player
+(`_pendingPushers`); `WdlPlayerMotion.Apply` asks `IsHeldByActorPush` before the step and
+`ResolveActorPushes` after it (the push from the stepped position, the wall-refused or nil push
+restoring the cycle's start, the step ending on a centre undone, `IF_NEAR` after);
+`LevelCollisionWorld.Move` holds a move that starts inside an actor's contact circle and heads
+toward it, and ignores that actor otherwise. Tests `Apply_PlayerStepTowardAnActorInsideIt_IsHeld`,
+`Apply_PlayerStepAwayFromAnActorInsideIt_IsPushedFromWhereTheStepEnds`,
+`Apply_PushAWallRefuses_RestoresTheCyclesStart`. Oracle diff: long-step-edge, -shallow, -deep-110
+and -into match in full, clip-move-liber 140 of 159 (was 93; the rest the far sentinel), the
+three wall cases 16 of 54, long-step-walk 7 of 54 (the lateral residual from its first push);
+the contact carriers of actor-contact, contact-clock, overlap and proximity-events unchanged.
+
