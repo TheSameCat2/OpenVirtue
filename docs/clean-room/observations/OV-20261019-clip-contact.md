@@ -307,3 +307,24 @@ carriers and no file got worse. Tests: `Tick_PlayerProximity_DistEdgeFiresInTheO
   clip-regions matches in full (43/43, was 27), with OV-20261019-clip-detail wall-regions. The
   rerun clip-regions-order (`74b97e4c`) lost its first `TK` line (13.500) to a different start-up
   step; that line comes 31 ticks before the first `T` sample, where no sample records the frames.
+
+## Addendum: a BERKELEY object's one run in the first cycle (2026-11-04)
+Re-read of rerun berkeley-front (`OVCCX0.TXT`) against round 1's berkeley, no new run. Both put a
+`BERKELEY` thing (`DIST 4`, `EACH_TICK` counting its runs, printing every two ticks) 10 from the
+player at the origin: berkeley-front's ahead at (10, 0), round 1's behind at (−10, 0). Both beam
+the player to within 3 of it late in the run, and from then both count a run every cycle. The
+counts differ by one: berkeley-front's thing has run once before the beam, round 1's not at all,
+and berkeley-front's trace has no `B` line for that run. Its `EACH_TICK` prints only while
+`TICKS > kb_t`, with `kb_t` 0 at first, so a run at `TICKS` 0 prints nothing: the run was in the
+engine's first cycle, before any frame was drawn, when the object stood in the player's view.
+- **Rule.** In the first cycle a `BERKELEY` thing or actor ahead of the player within the view's
+  arc runs its `EACH_TICK` once, outside its `DIST` as well; from the second cycle on only within
+  `DIST`, as before. The view is geometric there (no frame yet): the bearing within
+  `PLAYER_ARC`/2 of `PLAYER_ANGLE`.
+- **What it is not.** The gate in the cycle of the beam itself still reads the distance kept from
+  the cycle's start (the thing did not run in the beam cycle: no third run), as the `LOCATE`
+  addendum found for `CLIP_DIST`.
+- Result: berkeley-front matches in full (115 lines) and round 1's berkeley still does; 11 of 16
+  carriers. `WdlRuntime.IsWithinClipDistance`, `IsWithinViewCone`, `_inFirstCycle`; test
+  `Tick_ObjectEachTick_BerkeleyThingRunsOnlyWithinDistAndAnEyeHighAboveItFiresNoHooks`.
+

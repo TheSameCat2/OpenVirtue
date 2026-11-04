@@ -118,7 +118,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `BERKELEY` object is active only while the player is within its `DIST`, even in view, and fired
   no `IF_NEAR`/`IF_FAR`. A `TARGET` naming a way makes the actor patrol it. The player walked onto
   floors 14 and 16 steps higher, so contact with an unenterable region border is still open.
-  Seventeen DOSBox-X runs; implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`.
+  Seventeen DOSBox-X runs; implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`. Addendum 2026-11-04: in the first cycle a
+  `BERKELEY` object ahead within the view's arc runs its `EACH_TICK` once outside `DIST`.
 
 ## Region-border climb and headroom (2026-10-19 — confirmed and implemented)
 
