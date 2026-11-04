@@ -124,8 +124,15 @@ public static class WdlPlayerMotion
         runtime.SetSkill("PLAYER_Y", player.Position.Z);
         runtime.SetSkill("PLAYER_Z", player.Position.Y);
         runtime.SetSkill("PLAYER_REGION", player.Region);
-        runtime.SetSkill("FLOOR_HGT", player.FloorHeight);
-        runtime.SetSkill("CEIL_HGT", player.CeilingHeight);
+        // While a flic shows, the view's heights are not refreshed: CEIL_HGT stayed 0 from PLAY_FLICFILE
+        // through a SET PLAYER_Z and twelve flic cycles (OV-20261015-flic-play-blocking round 2;
+        // FLOOR_HGT read 0 either way there and is taken to follow).
+        if (runtime.GetSkill(WdlRuntime.FlicFrameSkill) <= 0)
+        {
+            runtime.SetSkill("FLOOR_HGT", player.FloorHeight);
+            runtime.SetSkill("CEIL_HGT", player.CeilingHeight);
+        }
+
         runtime.UpdateSlopeExtents(player);
         Vector2 slope = player.FloorSlope;
         double angle = runtime.GetSkill("PLAYER_ANGLE");

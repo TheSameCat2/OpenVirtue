@@ -178,11 +178,14 @@ anything else, with the global slot printing `Y` (`FLIC_FRAME`, `TICKS`, `TIME_C
   then on 1.094 a cycle and `FLIC_FRAME` one up each cycle. So `TIME_CORR` during a flic is the
   grid step, or the host frame's time when that is longer, and the next cycle makes it up.
 - **`CEIL_HGT` reads 0 after `PLAY_FLICFILE`** in the probe's start-up stamp (`OVPRB0.TXT`
-  `CEIL=0.000`), where the world's start-up reads the room's 16; `FLOOR_HGT` was 0 either way.
+  `CEIL=0.000`, printed after a `SET PLAYER_Z` and the settling `WAITT 16`), where the world's
+  start-up reads the room's 16: the flic takes the view, and a beam during it refreshes no
+  height. `FLOOR_HGT` was 0 either way and is taken to follow.
 - Implemented: `WdlRuntime.TickFlic` runs the start-up cycle first (`FirstCycleRun`),
   `RuntimeHost.RunFlicCycles` keeps the flic's host time in ticks (`RealTicks`) and its request
   `TICKS` (`StartTicks`), runs the IF_START cycle under a flic, and gives each flic cycle the grid
-  step or the longer host frame; `BeginFlicFile` zeroes `CEIL_HGT`. Tests
+  step or the longer host frame; `BeginFlicFile` zeroes `CEIL_HGT` and
+  `WdlPlayerMotion.Synchronize` leaves the heights while `FLIC_FRAME` is set. Tests
   `RuntimeHostFlicTests.Frame_FlicStartedInIfStart_KeepsTheStartupCycleAndPutsTheFlicsCyclesOnItsGrid`,
   `WdlRuntimeTests.TickFlic_RunsGlobalSchedulerButPausesWorldAndObjectTicks`. start-flic matches
   in full; the other flic carriers are unchanged.
