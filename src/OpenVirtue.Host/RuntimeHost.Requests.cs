@@ -659,8 +659,12 @@ public sealed partial class RuntimeHost
     private void EndUnplayableFlic() =>
         _runtime.SetSkill(WdlRuntime.FlicFrameSkill, _activeFlic is { } playing ? playing.FrameIndex + 1 : 0);
 
-    /// <summary>The most flic cycles one host frame catches up on; the rest of a stall is dropped.</summary>
-    private const int MaxFlicCyclesPerFrame = 4;
+    /// <summary>
+    /// The fewest flic cycles one host frame may catch up on; a long frame runs as many as fit it
+    /// (the slow flic carriers' 8-tick frames hold seven 70 ms cycles), and the rest of a stall
+    /// beyond a second is dropped.
+    /// </summary>
+    private const int MinFlicCyclesPerFrame = 4;
 
     /// <summary>
     /// Runs the scheduler cycles of the flic frames that are due. The original runs one cycle per
@@ -673,7 +677,7 @@ public sealed partial class RuntimeHost
     private bool RunFlicCycles(WdlRuntime tickRuntime, FlicPlayback playback)
     {
         double cycleTicks = Timing.FlicCycleSeconds(playback.Animation.FrameDelay.TotalMilliseconds) * Timing.TicksPerSecond;
-        double frameTicks = Timing.TimeCorrection(_lastFrameSeconds);
+        double frameTicks = Math.Max(0, _lastFrameSeconds) * Timing.TicksPerSecond;
         if (!tickRuntime.FirstCycleRun)
         {
             // PLAY_FLICFILE in IF_START: the IF_START cycle is still the start-up cycle, with the flic's
@@ -686,11 +690,14 @@ public sealed partial class RuntimeHost
 
         // Host time since the flic was requested, in ticks. The flic's cycle k is due k frame delays
         // after PLAY_FLICFILE (the first one in the next host frame whatever the time), and TICKS sits
-        // on that grid unless the host frame ran past it: the IF_START frame that loaded start-flic's
-        // 70 ms flic put its first cycle at 1.375 (TIME_CORR 1.375) and the second came 0.813 later,
-        // back on the grid at 2.188, then 1.094 a cycle (OV-20261015-flic-play-blocking round 2).
+        // on that grid. A host frame that ran past the grid by less than a delay is taken whole: the
+        // IF_START frame that loaded start-flic's 70 ms flic put its first cycle at 1.375 (TIME_CORR
+        // 1.375) and the second came 0.813 later, back on the grid at 2.188, then 1.094 a cycle. A
+        // longer frame is a stall: the cycles catch up on the grid (the slow flic carriers' 8-tick
+        // world frames hold seven cycles each; OV-20261015-flic-play-blocking round 2).
         playback.RealTicks += frameTicks;
-        for (int ran = 0; ran < MaxFlicCyclesPerFrame; ran++)
+        int maxCycles = Math.Max(MinFlicCyclesPerFrame, (int)Math.Ceiling(Math.Min(frameTicks, Timing.TicksPerSecond) / Math.Max(cycleTicks, 1.0 / 64)) + 1);
+        for (int ran = 0; ran < maxCycles; ran++)
         {
             if (playback.CyclesRun > 0 && playback.RealTicks + (1.0 / 4096) < (playback.CyclesRun + 1) * cycleTicks)
             {
@@ -710,7 +717,12 @@ public sealed partial class RuntimeHost
             _lastPresentationStatus = $"flic {playback.FileName} {playback.FrameIndex + 1}/{playback.Animation.Frames.Count}";
             double previous = tickRuntime.GetSkill(Timing.TicksSkill);
             double due = playback.StartTicks + (playback.CyclesRun * cycleTicks);
-            double step = Math.Max(due - previous, ran == 0 ? frameTicks : 0);
+            double step = due - previous;
+            if (ran == 0 && frameTicks > step && frameTicks - step < cycleTicks)
+            {
+                step = frameTicks;
+            }
+
             if (step <= 0)
             {
                 step = cycleTicks;
