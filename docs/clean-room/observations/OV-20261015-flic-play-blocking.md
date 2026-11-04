@@ -153,3 +153,36 @@ OV-20261015-flic-scheduler-detail, which measured one scheduler cycle per flic f
 `WAITT` count. It used to read: OpenVirtue runs the global slots once per host frame during a
 flic, not once per flic frame. `WAITT` counts `TICKS` during a flic, because the faster rate
 seen here rests on a single sample.
+
+## Round 2: a flic started in `IF_START` (2026-11-04)
+`round2/start-flic` (`OVFLC0.TXT`, fast launch): `PLAY_FLICFILE` at the top of `IF_START`, before
+anything else, with the global slot printing `Y` (`FLIC_FRAME`, `TICKS`, `TIME_CORR`,
+`TOTAL_FRAMES`) in each of the first 40 cycles, then `WAITT 64` and `STOP_FLIC`.
+
+| Line | `FLIC_FRAME` | `TICKS` | `TIME_CORR` | `TOTAL_FRAMES` |
+|---|---|---|---|---|
+| `S0` (before `PLAY_FLICFILE`) | 0 | 0 | 1 | |
+| `S1` (after it) | 1 | 0 | 1 | |
+| `Y` (the `IF_START` cycle) | 1 | 0 | 1 | 0 |
+| `Y` | 1 | 1.375 | 1.375 | 1 |
+| `Y` | 2 | 2.188 | 0.813 | 2 |
+| `Y` | 3 … 39 | 3.281 … 42.656 | 1.094 | 3 … 39 |
+| `RET` | 71 | 77.656 | 1.094 | 71 |
+
+- **The `IF_START` cycle stays the start-up cycle** (`TIME_CORR` 1, `TICKS` 0, `TOTAL_FRAMES` 0,
+  OV-20261029-scheduler-order), with the flic's first frame on screen from `PLAY_FLICFILE` on
+  (`S1`). The slot set in `IF_START` runs in that cycle, as in the world.
+- **The flic's cycles sit on a `TICKS` grid, a frame delay apart from `PLAY_FLICFILE`** (35/32 for
+  70 ms), unless a host frame ran past it: the first flic cycle, after the `IF_START` frame that
+  loaded the flic, read 1.375, and the second came 0.813 later, back on the grid at 2.188; from
+  then on 1.094 a cycle and `FLIC_FRAME` one up each cycle. So `TIME_CORR` during a flic is the
+  grid step, or the host frame's time when that is longer, and the next cycle makes it up.
+- **`CEIL_HGT` reads 0 after `PLAY_FLICFILE`** in the probe's start-up stamp (`OVPRB0.TXT`
+  `CEIL=0.000`), where the world's start-up reads the room's 16; `FLOOR_HGT` was 0 either way.
+- Implemented: `WdlRuntime.TickFlic` runs the start-up cycle first (`FirstCycleRun`),
+  `RuntimeHost.RunFlicCycles` keeps the flic's host time in ticks (`RealTicks`) and its request
+  `TICKS` (`StartTicks`), runs the IF_START cycle under a flic, and gives each flic cycle the grid
+  step or the longer host frame; `BeginFlicFile` zeroes `CEIL_HGT`. Tests
+  `RuntimeHostFlicTests.Frame_FlicStartedInIfStart_KeepsTheStartupCycleAndPutsTheFlicsCyclesOnItsGrid`,
+  `WdlRuntimeTests.TickFlic_RunsGlobalSchedulerButPausesWorldAndObjectTicks`. start-flic matches
+  in full; the other flic carriers are unchanged.

@@ -66,7 +66,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   actions keep running, and key hooks fire. `STOP_FLIC` from a hook ends the flic by the next
   frame. `FLIC_FRAME` is the 1-based frame on screen and 0 when no flic plays. The scripted Space
   came from DOSBox-X `AUTOTYPE`. Six DOSBox-X runs on a synthetic FLC; implemented in
-  `WdlInterpreter`, `WdlRuntime` and `RuntimeHost`.
+  `WdlInterpreter`, `WdlRuntime` and `RuntimeHost`. Round 2: a flic started in `IF_START` leaves
+  that cycle the start-up cycle; the flic's cycles sit a frame delay apart on the `TICKS` grid
+  from `PLAY_FLICFILE`, a longer host frame taken whole and made up by the next; `CEIL_HGT` reads
+  0 after `PLAY_FLICFILE`.
 - `OV-20261015-flic-scheduler-detail.md` — the flic runs one scheduler cycle per flic frame, with
   `TIME_CORR` the frame delay over 64 ms (1.09375 at 70 ms). `WAIT n` resumes n cycles after its
   arming cycle. `WAITT n` counts its arming cycle's `TIME_CORR` too and resumes once more than

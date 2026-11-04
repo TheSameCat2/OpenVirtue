@@ -1897,6 +1897,9 @@ public sealed class WdlRuntime :
         if (FlicFileExists?.Invoke(fileName) ?? true)
         {
             SetSkill(FlicFrameSkill, 1);
+            // The flic takes the view: CEIL_HGT read 0 right after PLAY_FLICFILE in IF_START where the
+            // world's start-up reads 16 (OV-20261015-flic-play-blocking round 2; FLOOR_HGT was 0 either way).
+            SetSkill("CEIL_HGT", 0);
         }
     }
 
@@ -2445,9 +2448,14 @@ public sealed class WdlRuntime :
     /// slots (once per second) and <c>EACH_TICK</c> slots run, in the same order as
     /// <see cref="Tick"/> (OV-20261015-flic-play-blocking), and the waits count the cycle down.
     /// </summary>
+    /// <summary>Whether the first cycle (the start-up cycle of <c>TIME_CORR</c> 1 and <c>TICKS</c> 0) has run.</summary>
+    public bool FirstCycleRun => _firstCycleRun;
+
     public double TickFlic(double deltaSeconds)
     {
-        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds, flic: true);
+        // A flic started in IF_START leaves the IF_START cycle a start-up cycle (OV-20261015-flic-play-blocking
+        // round 2): TIME_CORR 1, TICKS 0 and TOTAL_FRAMES 0 with the flic's first frame on screen.
+        double timeCorrection = UpdateTimingSkills(deltaSeconds, out double elapsedSeconds, flic: _firstCycleRun);
         ResumeWaitingActions();
         DispatchQueuedHooks();
         ResetGlobalSchedulerDiagnostics();

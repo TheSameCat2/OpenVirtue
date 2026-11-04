@@ -639,7 +639,7 @@ public sealed partial class RuntimeHost
             }
 
             // A new flic replaces one that is still playing.
-            _activeFlic = new FlicPlayback(request, fileName, animation);
+            _activeFlic = new FlicPlayback(request, fileName, animation, _runtime.GetSkill(Timing.TicksSkill));
             _runtime.SetSkill(WdlRuntime.FlicFrameSkill, 1);
             _lastPresentationStatus = $"flic {fileName} 1/{animation.Frames.Count}";
         }
@@ -672,19 +672,29 @@ public sealed partial class RuntimeHost
     /// <returns><c>true</c> if the flic ran out in this host frame, so the world frame runs now.</returns>
     private bool RunFlicCycles(WdlRuntime tickRuntime, FlicPlayback playback)
     {
-        double frameSeconds = Math.Max(0.001, playback.Animation.FrameDelay.TotalSeconds);
-        double cycleSeconds = Timing.FlicCycleSeconds(playback.Animation.FrameDelay.TotalMilliseconds);
-        playback.ElapsedSeconds += Math.Max(0, _lastFrameSeconds);
+        double cycleTicks = Timing.FlicCycleSeconds(playback.Animation.FrameDelay.TotalMilliseconds) * Timing.TicksPerSecond;
+        double frameTicks = Timing.TimeCorrection(_lastFrameSeconds);
+        if (!tickRuntime.FirstCycleRun)
+        {
+            // PLAY_FLICFILE in IF_START: the IF_START cycle is still the start-up cycle, with the flic's
+            // first frame on screen; the flic's own cycles follow from the next host frame
+            // (OV-20261015-flic-play-blocking round 2, start-flic).
+            _lastTimeCorrection = tickRuntime.TickFlic(0);
+            HandleRuntimeHostRequests();
+            return false;
+        }
+
+        // Host time since the flic was requested, in ticks. The flic's cycle k is due k frame delays
+        // after PLAY_FLICFILE (the first one in the next host frame whatever the time), and TICKS sits
+        // on that grid unless the host frame ran past it: the IF_START frame that loaded start-flic's
+        // 70 ms flic put its first cycle at 1.375 (TIME_CORR 1.375) and the second came 0.813 later,
+        // back on the grid at 2.188, then 1.094 a cycle (OV-20261015-flic-play-blocking round 2).
+        playback.RealTicks += frameTicks;
         for (int ran = 0; ran < MaxFlicCyclesPerFrame; ran++)
         {
-            if (playback.CyclesRun > 0)
+            if (playback.CyclesRun > 0 && playback.RealTicks + (1.0 / 4096) < (playback.CyclesRun + 1) * cycleTicks)
             {
-                if (playback.ElapsedSeconds < frameSeconds)
-                {
-                    return false;
-                }
-
-                playback.ElapsedSeconds -= frameSeconds;
+                return false;
             }
 
             if (playback.CyclesRun >= playback.Animation.Frames.Count)
@@ -698,7 +708,15 @@ public sealed partial class RuntimeHost
             playback.FrameIndex = playback.CyclesRun++;
             tickRuntime.SetSkill(WdlRuntime.FlicFrameSkill, playback.FrameIndex + 1);
             _lastPresentationStatus = $"flic {playback.FileName} {playback.FrameIndex + 1}/{playback.Animation.Frames.Count}";
-            _lastTimeCorrection = tickRuntime.TickFlic(cycleSeconds);
+            double previous = tickRuntime.GetSkill(Timing.TicksSkill);
+            double due = playback.StartTicks + (playback.CyclesRun * cycleTicks);
+            double step = Math.Max(due - previous, ran == 0 ? frameTicks : 0);
+            if (step <= 0)
+            {
+                step = cycleTicks;
+            }
+
+            _lastTimeCorrection = tickRuntime.TickFlic(step / Timing.TicksPerSecond);
             HandleRuntimeHostRequests();
             if (!ReferenceEquals(_runtime, tickRuntime) || !ReferenceEquals(_activeFlic, playback))
             {
@@ -707,7 +725,8 @@ public sealed partial class RuntimeHost
             }
         }
 
-        playback.ElapsedSeconds = Math.Min(playback.ElapsedSeconds, frameSeconds);
+        // The rest of a stall is dropped: the cycles run so far stand for the time passed.
+        playback.RealTicks = Math.Min(playback.RealTicks, playback.CyclesRun * cycleTicks);
         return false;
     }
 
@@ -1004,9 +1023,15 @@ public sealed partial class RuntimeHost
         return new string(value.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
     }
 
-    private sealed class FlicPlayback(WdlFlicRequest request, string fileName, FlicAnimation animation)
+    private sealed class FlicPlayback(WdlFlicRequest request, string fileName, FlicAnimation animation, double startTicks)
     {
         public WdlFlicRequest Request { get; } = request;
+
+        /// <summary>
+        /// <c>TICKS</c> when the flic was requested: its cycles sit a frame delay apart from here
+        /// (OV-20261015-flic-play-blocking round 2).
+        /// </summary>
+        public double StartTicks { get; } = startTicks;
 
         public string FileName { get; } = fileName;
 
@@ -1019,6 +1044,7 @@ public sealed partial class RuntimeHost
         public int CyclesRun { get; set; }
 
         /// <summary>Host time since the last cycle.</summary>
-        public double ElapsedSeconds { get; set; }
+        /// <summary>Host time since the request, in ticks, against which the cycles fall due.</summary>
+        public double RealTicks { get; set; }
     }
 }

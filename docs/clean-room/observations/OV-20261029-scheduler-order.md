@@ -154,8 +154,8 @@ OpenVirtue now starts with these. The oracle summary lost no match.
   a cycle for any positive `WAITT`; it now goes straight on below 1.
 
 ## Open Questions
-- Whether a flic started in `IF_START` makes its first cycle a start-up cycle (the implementation
-  keeps the flic's delay-based `TIME_CORR`).
+- Whether a flic started in `IF_START` makes its first cycle a start-up cycle: it does
+  (OV-20261015-flic-play-blocking round 2).
 - Texture animation phase lengths (see OV-20261029-motion-timing, and round 4: the texture clock
   is not `TICKS`).
 
