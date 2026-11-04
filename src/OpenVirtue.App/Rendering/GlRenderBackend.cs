@@ -49,11 +49,19 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform vec4 uTintAndLight;
         uniform vec4 uFadeCurrent;
         uniform vec4 uFadeTarget;
+        uniform int uBlend;
+        uniform int uHeightParity;
         uniform float uAlphaTest;
         uniform float uShaded;
         uniform vec2 uLight;
         out vec4 fragColor;
         void main() {
+            // OV-20261104-blend: GHOST shows its texels where the screen pixel's x + y (from the top
+            // left) is odd; gl_FragCoord counts rows from the bottom, so the sum's parity flips with the
+            // height's. uBlend 3 draws palette entry 0 (black) for DIAPHANOUS without a BLUR palette.
+            if (uBlend == 1 && ((int(gl_FragCoord.x) + int(gl_FragCoord.y) + uHeightParity) & 1) == 0) {
+                discard;
+            }
             if (uShaded > 0.5) {
                 // OV-20261029-shading: level = 30 - 32*AMBIENT - 30.4*PLAYER_LIGHT*LIGHT_DIST/d,
                 // down to an even level, 0..30; then index -> shaded index -> colour.
@@ -66,7 +74,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 level = clamp(2.0 * floor(level / 2.0), 0.0, 30.0);
                 float shaded = floor(texelFetch(uShade, ivec2(int(level), int(index)), 0).r * 255.0 + 0.5);
                 // The palette already shows the fade (OV-20261104-fade-pal).
-                fragColor = vec4(texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb, 1.0);
+                fragColor = vec4(uBlend == 3 ? vec3(0.0) : texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb, uBlend == 2 ? 0.5 : 1.0);
                 return;
             }
             vec4 color = texture(uTexture, vUv);
@@ -77,7 +85,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             vec3 lit = clamp(color.rgb * light, 0.0, 1.0);
             // OV-20261104-fade-pal: toward the current palette's colour when it is uniform, then toward the target.
             vec3 faded = mix(mix(lit, uFadeCurrent.rgb, uFadeCurrent.a), uFadeTarget.rgb, uFadeTarget.a);
-            fragColor = vec4(clamp(faded, 0.0, 1.0), 1.0);
+            fragColor = vec4(uBlend == 3 ? vec3(0.0) : clamp(faded, 0.0, 1.0), uBlend == 2 ? 0.5 : 1.0);
         }
         """;
 
@@ -89,6 +97,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _viewProjectionLocation;
     private readonly int _tintLocation;
     private readonly int _fadeCurrentLocation;
+    private readonly int _blendLocation;
+    private readonly int _heightParityLocation;
     private readonly int _fadeTargetLocation;
     private readonly int _alphaTestLocation;
     private readonly int _shadedLocation;
@@ -137,6 +147,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
         _tintLocation = _gl.GetUniformLocation(_program, "uTintAndLight");
         _fadeCurrentLocation = _gl.GetUniformLocation(_program, "uFadeCurrent");
+        _blendLocation = _gl.GetUniformLocation(_program, "uBlend");
+        _heightParityLocation = _gl.GetUniformLocation(_program, "uHeightParity");
         _fadeTargetLocation = _gl.GetUniformLocation(_program, "uFadeTarget");
         _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
         _shadedLocation = _gl.GetUniformLocation(_program, "uShaded");
@@ -262,6 +274,17 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform4(_tintLocation, 1f, 1f, 1f, batch.Ambient);
             _gl.Uniform4(_fadeCurrentLocation, batch.Fade.Current.X, batch.Fade.Current.Y, batch.Fade.Current.Z, batch.Fade.CurrentWeight);
             _gl.Uniform4(_fadeTargetLocation, batch.Fade.Target.X, batch.Fade.Target.Y, batch.Fade.Target.Z, batch.Fade.Factor);
+            _gl.Uniform1(_blendLocation, (int)batch.Blend);
+            _gl.Uniform1(_heightParityLocation, (Height - 1) & 1);
+            if (batch.Blend == BatchBlend.Diaphanous)
+            {
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            }
+            else
+            {
+                _gl.Disable(EnableCap.Blend);
+            }
             _gl.Uniform1(_alphaTestLocation, batch.AlphaTest ? 1f : 0f);
             _gl.BufferData(BufferTargetARB.ArrayBuffer, batch.Vertices.AsSpan(), BufferUsageARB.DynamicDraw);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)batch.Vertices.Length);

@@ -481,15 +481,16 @@ public class MeshBuilderTests
         LevelMesh mesh = MeshBuilder.Build(level);
 
         MeshBatch floor = mesh.Batches.Single(b => b.Texture == "floorTex");
-        // OV-20261104-texmap: a surface's columns run along −x and its rows along +y.
-        Assert.Equal(-0.75f, floor.Vertices.Min(v => v.U));
-        Assert.Equal(0.25f, floor.Vertices.Max(v => v.U));
+        // OV-20261104-texmap: a surface's columns run along −x and its rows along +y; OV-20261104-blend:
+        // FLOOR_OFFS_X 16 of 64 comes off the column, FLOOR_OFFS_Y 32 adds to the row.
+        Assert.Equal(-1.25f, floor.Vertices.Min(v => v.U));
+        Assert.Equal(-0.25f, floor.Vertices.Max(v => v.U));
         Assert.Equal(0.5f, floor.Vertices.Min(v => v.V));
         Assert.Equal(1.5f, floor.Vertices.Max(v => v.V));
 
         MeshBatch ceiling = mesh.Batches.Single(b => b.Texture == "ceilTex");
-        Assert.Equal(-0.875f, ceiling.Vertices.Min(v => v.U));
-        Assert.Equal(0.125f, ceiling.Vertices.Max(v => v.U));
+        Assert.Equal(-1.125f, ceiling.Vertices.Min(v => v.U));
+        Assert.Equal(-0.125f, ceiling.Vertices.Max(v => v.U));
         Assert.Equal(0.375f, ceiling.Vertices.Min(v => v.V));
         Assert.Equal(1.375f, ceiling.Vertices.Max(v => v.V));
     }

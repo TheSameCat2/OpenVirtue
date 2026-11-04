@@ -484,3 +484,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   is the distance from the second vertex plus `OFFSET_X`, its row −height less `OFFSET_Y`, the
   repeats stacked from height 0 whatever the regions' floors. Eight carriers. Implemented in
   `MeshBuilder`.
+- `OV-20261104-blend.md` — `GHOST` draws a texture on the screen pixels whose x + y is odd;
+  `DIAPHANOUS` draws the palette colour nearest the mean of texel and background with a `BLUR`
+  palette and palette entry 0 without one; a region's `FLOOR_OFFS_X`/`CEIL_OFFS_X` come off the
+  texture column, the Y offsets add to the row. Six carriers. Implemented in `SpriteBuilder`, the
+  host's batch blend and the GL shader, and `MeshBuilder`.

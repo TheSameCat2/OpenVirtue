@@ -71,6 +71,7 @@ internal static class ProjectionProbeGenerator
     public const string FadePalProbeName = "fade-pal";
     public const string AttachProbeName = "attach";
     public const string TexmapProbeName = "texmap";
+    public const string BlendProbeName = "blend";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -123,6 +124,7 @@ internal static class ProjectionProbeGenerator
     private const string FadePalProbeId = "OV-20261104-fade-pal";
     private const string AttachProbeId = "OV-20261104-attach";
     private const string TexmapProbeId = "OV-20261104-texmap";
+    private const string BlendProbeId = "OV-20261104-blend";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -446,6 +448,7 @@ internal static class ProjectionProbeGenerator
         FadePalProbeName => FadePalProbeId,
         AttachProbeName => AttachProbeId,
         TexmapProbeName => TexmapProbeId,
+        BlendProbeName => BlendProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -597,6 +600,7 @@ internal static class ProjectionProbeGenerator
             case FadePalProbeName:
             case AttachProbeName:
             case TexmapProbeName:
+            case BlendProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -658,6 +662,7 @@ internal static class ProjectionProbeGenerator
         FadePalProbeName => FadePalProbeCases.Set,
         AttachProbeName => AttachProbeCases.Set,
         TexmapProbeName => TexmapProbeCases.Set,
+        BlendProbeName => BlendProbeCases.Set,
         _ => null,
     };
 
@@ -733,7 +738,7 @@ internal static class ProjectionProbeGenerator
         }
 
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        if (plan.ProbeName == ShadingProbeName)
+        if (plan.ProbeName is ShadingProbeName or BlendProbeName)
         {
             WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
         }
@@ -776,6 +781,13 @@ internal static class ProjectionProbeGenerator
 
         if (plan.ProbeName == TexmapProbeName)
         {
+            WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
+        }
+
+        if (plan.ProbeName == BlendProbeName)
+        {
+            WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
+            WriteValidated(Path.Combine(workDir, BlendProbeCases.BlackStripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Infinity, palette));
             WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
         }
 

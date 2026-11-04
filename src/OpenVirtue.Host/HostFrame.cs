@@ -50,6 +50,13 @@ public sealed class DrawBatch
     /// </summary>
     public bool DepthWrite { get; init; } = true;
 
+    /// <summary>
+    /// How the batch mixes with what is behind it (OV-20261104-blend): a <c>GHOST</c> checkerboard, a
+    /// <c>DIAPHANOUS</c> half blend, or palette entry 0 (black) for a <c>DIAPHANOUS</c> texture on a
+    /// level without a <c>BLUR</c> palette.
+    /// </summary>
+    public BatchBlend Blend { get; init; } = BatchBlend.None;
+
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }
 
@@ -117,4 +124,13 @@ public readonly record struct PaletteFadeTint(Vector3 Current, float CurrentWeig
 
     /// <summary>The fade applied to a colour.</summary>
     public Vector3 Apply(Vector3 color) => Vector3.Lerp(Vector3.Lerp(color, Current, CurrentWeight), Target, Factor);
+}
+
+/// <summary>A batch's mixing with the pixels behind it (see <see cref="DrawBatch.Blend"/>).</summary>
+public enum BatchBlend
+{
+    None,
+    Ghost,
+    Diaphanous,
+    Black,
 }

@@ -40,7 +40,9 @@ public readonly record struct LevelTexture(
     double RandomDelayFactor,
     double Albedo = 0,
     double PosX = 0,
-    double PosY = 0);
+    double PosY = 0,
+    bool IsGhost = false,
+    bool IsDiaphanous = false);
 
 /// <summary>
 /// A catalog <see cref="LevelTexture"/> held by reference (<see cref="Level.FindTexture"/>), so a
