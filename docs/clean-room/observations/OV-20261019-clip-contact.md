@@ -428,11 +428,17 @@ lost. Eight carriers under `round4/` and `round5/` (cases `long-step-*`, fast la
 - **A long step is no different**: it pushes from 1.1 as from 2.0 (deep-101, -110) and the next
   single step pushes from 0.54 (every stand), so the depth of the step does not matter; what lost
   clip-move-liber's push was the player's walk toward its follower.
-- **Open: the push at a wall.** With the player 2.76, 2.36 and 2.66 from the west wall and the
-  actor's step ending 0.54 behind it, the original moved the player 0.756, 0.556 and 0.706 toward
-  the wall (to 2.005, 1.806 and 1.956 from it, 1.300, 1.100 and 1.250 from the actor), neither the
-  whole push nor the player's clearance (1.279) nor none; OpenVirtue refuses the push whole
-  (actor-push's rule, measured with the player already at 2.78). Open with actor-push's wall edge.
+- **A push a wall stops lands half way to the wall's line.** With the player 2.761, 2.362 and
+  2.662 from the west wall and the actor's step ending 0.54 behind it, the original moved the
+  player 0.756, 0.556 and 0.706 toward the wall: to 2.005, 1.806 and 1.956 from it, each exactly
+  the midpoint between where the cycle found it and the walk's wall line 1.249 from the wall
+  (`PLAYER_WIDTH` 1.2 plus the clearance 50/1024), the lateral part the midpoint's too (0.050 →
+  0.056 with the held end at 0.062). proximity-events near-actor's small actor pushed its player
+  from 2.634 to 1.941 the same way (0.693). Within about the actor's radius of the line the push
+  is refused whole instead: long-step-edge's player at 1.354 (0.105 from the line) and
+  long-step-into's on the line kept their place and their lateral part. The bound is a guess
+  between 0.105 and 1.113. actor-push's three cycles at its wall (no move at 2.78, then 0.31 and
+  0.72, then rest at 1.751 with the 4-wide actor stopped 1.06 behind) follow neither and stay open.
 - **Open: the lateral nudge after a step aside.** long-step-walk's player, 4/1024 aside from its
   step's nudge, reads 5 after the push (the lateral part scaled to the push distance, 5.4) where
   the 4/1024 minimum on a part under 4 (OV-20261029-actor-step, actor-push) gives 8; a minimum on a
@@ -443,10 +449,12 @@ Implemented: `WdlRuntime.MoveActor` records the actors that stepped into the pla
 `ResolveActorPushes` after it (the push from the stepped position, the wall-refused or nil push
 restoring the cycle's start, the step ending on a centre undone, `IF_NEAR` after);
 `LevelCollisionWorld.Move` holds a move that starts inside an actor's contact circle and heads
-toward it, and ignores that actor otherwise. Tests `Apply_PlayerStepTowardAnActorInsideIt_IsHeld`,
+toward it, and ignores that actor otherwise; `Player.PushAway` lands a wall-stopped push midway
+from the cycle's start, or refuses it within the actor's radius of the line. Tests
+`Apply_PlayerStepTowardAnActorInsideIt_IsHeld`,
 `Apply_PlayerStepAwayFromAnActorInsideIt_IsPushedFromWhereTheStepEnds`,
-`Apply_PushAWallRefuses_RestoresTheCyclesStart`. Oracle diff: long-step-edge, -shallow, -deep-110
-and -into match in full, clip-move-liber 140 of 159 (was 93; the rest the far sentinel), the
-three wall cases 16 of 54, long-step-walk 7 of 54 (the lateral residual from its first push);
-the contact carriers of actor-contact, contact-clock, overlap and proximity-events unchanged.
+`Apply_PushAWallStops_NearTheWallIsRefusedWhole`, `Apply_PushAWallStops_FartherOutLandsMidway`.
+Oracle diff: seven of the eight carriers match in full, long-step-walk 7 of 54 (the lateral
+residual from its first push); clip-move-liber 140 of 159 (was 93; the rest the far sentinel),
+near-actor 17 of 24 (was 13); actor-contact, contact-clock and overlap unchanged.
 

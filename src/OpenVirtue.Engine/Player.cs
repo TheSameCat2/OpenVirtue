@@ -333,14 +333,19 @@ public sealed class Player : AcknexObject
     /// objects stop the push; the move ignores the pusher, whose contact hook is the caller's.
     /// </summary>
     /// <returns>Whether the player was within the contact distance.</returns>
-    public bool PushAway(MapEntity pusher, float pusherRadius) => PushAway(pusher, pusherRadius, out _);
+    public bool PushAway(MapEntity pusher, float pusherRadius) => PushAway(pusher, pusherRadius, out _, null);
 
     /// <summary>
-    /// As <see cref="PushAway(MapEntity, float)"/>, telling whether a wall refused the push
-    /// (<paramref name="wallStopped"/>): the player then stays where it was before its own motion
-    /// this cycle, as <see cref="Interpreter.WdlPlayerMotion"/> restores it.
+    /// As <see cref="PushAway(MapEntity, float)"/>, telling whether a wall stopped the push
+    /// (<paramref name="wallStopped"/>): the player then lands midway between where the cycle found
+    /// it (<paramref name="cycleStart"/>, its position when null) and the point the wall held the
+    /// push at. clip-contact rounds 4–5 (long-step-stand, -deep-101, -deep-104) and
+    /// proximity-events near-actor: 2.76, 2.36, 2.66 and 2.63 from the west wall, the pushed player
+    /// stopped at 2.005, 1.806, 1.956 and 1.941, half way to the wall's 1.249 line each time, its
+    /// lateral part the half of the held end's too (2026-11-04). actor-push's three cycles at its
+    /// wall (no move, 0.31, 0.72) do not follow this and stay open.
     /// </summary>
-    public bool PushAway(MapEntity pusher, float pusherRadius, out bool wallStopped)
+    public bool PushAway(MapEntity pusher, float pusherRadius, out bool wallStopped, Vector2? cycleStart)
     {
         ArgumentNullException.ThrowIfNull(pusher);
         wallStopped = false;
@@ -350,16 +355,24 @@ public sealed class Player : AcknexObject
             return false;
         }
 
-        int region = _region;
-        int blockingWalls = _blockingWalls.Count;
         MoveHorizontal(target.X - position.X, target.Y - position.Y, pusher, out wallStopped);
         if (wallStopped)
         {
-            // A push a wall would stop is refused whole: pressed against the back wall the player stayed
-            // at 2.78 from it while the actor walked on into it, 1.6 apart (actor-push, cycles 24 on).
-            _position = new Vector3(position.X, _position.Y, position.Y);
-            _region = region;
-            _blockingWalls.RemoveRange(blockingWalls, _blockingWalls.Count - blockingWalls);
+            // Within the actor's radius of the wall's line the push is refused whole instead: at 0.105
+            // from it (long-step-edge) and on it (long-step-into) the player kept its place and its
+            // lateral part. The bound between 0.105 and 1.113 is a guess.
+            Vector2 from = cycleStart ?? position;
+            var held = new Vector2(_position.X, _position.Z);
+            if (Vector2.Distance(from, held) <= Math.Max(0, pusherRadius))
+            {
+                _position = new Vector3(from.X, _position.Y, from.Y);
+                return true;
+            }
+
+            _position = new Vector3(
+                MathF.Round((from.X + held.X) * 512) / 1024,
+                _position.Y,
+                MathF.Round((from.Y + held.Y) * 512) / 1024);
             return true;
         }
 

@@ -4380,10 +4380,11 @@ public class WdlRuntimeTests
     }
 
     [Fact]
-    public void Apply_PushAWallRefuses_RestoresTheCyclesStart()
+    public void Apply_PushAWallStops_NearTheWallIsRefusedWhole()
     {
-        // long-step-into at the east wall: the player's step into the wall (with the wall's 4/1024
-        // nudge) is undone when the actor's push behind it is refused by the wall.
+        // long-step-into at the east wall and long-step-edge: a push a wall stops with the player
+        // within the actor's radius of the wall's line is refused whole, the player's own step into
+        // the wall undone with it; further out it lands midway (Apply_PushAWallStops_FartherOutLandsMidway).
         Level level = LoadWithMap(
             PushWallMap,
             PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 0; IF_NEAR near_push; }");
@@ -4400,9 +4401,33 @@ public class WdlRuntimeTests
 
         HostCycle(runtime, player); // the actor steps to 4.3, 0.4 behind the player; the push would go through the wall
 
-        Assert.Equal(4.7, player.Position.X, 3);
+        Assert.Equal(4.7, player.Position.X, 3); // 0.05 from the wall's line, within the actor's radius: refused whole
         Assert.Equal(0, player.Position.Z, 3);
         Assert.Equal(1, runtime.GetSkill("near_count"));
+    }
+
+    [Fact]
+    public void Apply_PushAWallStops_FartherOutLandsMidway()
+    {
+        // clip-contact rounds 4–5 (long-step-stand, -deep-101, -deep-104) and proximity-events
+        // near-actor: 2.76, 2.36, 2.66 and 2.63 from the wall, the pushed player stopped half way to
+        // the wall's 1.249 line. From 3.4 toward the wall at 6: midway between 3.4 and 4.751.
+        Level level = LoadWithMap(
+            PushWallMap,
+            PushCounters + "ACTOR pusher { TEXTURE pushTex; TARGET MOVE; SPEED 0; IF_NEAR near_push; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        runtime.SetSkill("SKIP_FRAMES", 0);
+        player.MoveTo(0, 3.4f, 0);
+        Actor pusher = Assert.Single(level.Actors);
+        HostCycle(runtime, player);
+        pusher["SPEED"] = 3; // to 3.0, 0.4 behind the player: the push target 5.22 lies past the line at 4.751
+
+        HostCycle(runtime, player);
+
+        Assert.Equal((3.4 + (6 - 1279.0 / 1024)) / 2, player.Position.X, 2);
+        Assert.Equal(2.0 / 1024, player.Position.Z, 3); // half the push's 4/1024 nudge aside
     }
 
     [Fact]

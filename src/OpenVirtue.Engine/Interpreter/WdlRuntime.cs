@@ -4402,12 +4402,13 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Pushes the player out of each actor that stepped into it this cycle (<see cref="Player.PushAway(MapEntity, float, out bool)"/>,
+    /// Pushes the player out of each actor that stepped into it this cycle (<see cref="Player.PushAway(MapEntity, float, out bool, Vector2?)"/>,
     /// from where the player's own step ended: a walk away from the follower with a 4/1024 lateral
     /// nudge read 0.005 aside after the push, the standing player 0.004; round 4 long-step-walk),
     /// and fires each one's <c>IF_NEAR</c> after it, pushed or held (push-wall's actor pressed the
     /// player against the wall and kept firing). A held player (<paramref name="held"/>,
-    /// <see cref="IsHeldByActorPush"/>) is not pushed. Returns whether a push moved the player.
+    /// <see cref="IsHeldByActorPush"/>) is not pushed; <paramref name="start"/> is where the cycle
+    /// found the player. Returns whether a push moved the player.
     /// </summary>
     internal bool ResolveActorPushes(Player player, bool held, Vector2 start)
     {
@@ -4416,15 +4417,14 @@ public sealed class WdlRuntime :
         foreach (Actor actor in _pendingPushers)
         {
             System.Numerics.Vector3 before = player.Position;
-            if (!held && player.PushAway(actor, ActorCollisionRadius(actor), out bool wallStopped))
+            if (!held && player.PushAway(actor, ActorCollisionRadius(actor), out _, start))
             {
-                // A push a wall refuses, or one that moves nothing (the player on the actor's centre
-                // within the 22.10 root's reach), leaves the player where the cycle found it, its own
-                // step undone: long-step-into's player, walking into the east wall with the follower
-                // stepping into it from behind, stopped alternating 46.751/46.755 and drifting aside
-                // the cycle the follower reached it, and stayed so once the follower stood on it
-                // (clip-contact round 5, 2026-11-04).
-                if (wallStopped || player.Position == before)
+                // A push that moves nothing (the player on the actor's centre within the 22.10 root's
+                // reach) leaves the player where the cycle found it, its own step undone: long-step-into's
+                // player, walking into the east wall with its follower at rest on it, kept 46.751 without
+                // the wall's 4/1024 alternation or its drift aside (clip-contact round 5, 2026-11-04). A
+                // push a wall stops lands midway from there (Player.PushAway).
+                if (player.Position == before)
                 {
                     player.Position = new System.Numerics.Vector3(start.X, player.Position.Y, start.Y);
                 }

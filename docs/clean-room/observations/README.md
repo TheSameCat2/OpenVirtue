@@ -127,8 +127,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   Open: a moved actor's sentinel beyond about 39 while another sprite is drawn near. Rounds 4–5
   (2026-11-04, eight runs): an actor's push is the player's own motion: a step toward the actor is
   held, any other is taken and the player pushed from where it ended, a push a wall refuses or that
-  moves nothing restores the cycle's start, and the player walks freely from the actor's centre.
-  Open: the push cut at a wall, and the lateral nudge after a step aside.
+  moves nothing restores the cycle's start, and the player walks freely from the actor's centre;
+  a push a wall stops lands half way to the wall's line (refused whole within the actor's radius
+  of it, a guessed bound). Open: the lateral nudge after a step aside, actor-push's wall edge.
 
 ## Region-border climb and headroom (2026-10-19 — confirmed and implemented)
 - `OV-20261019-border-climb.md` — a `PASSABLE` wall lets the player through whatever the
