@@ -220,6 +220,130 @@ internal static class ClipContactProbeCases
         RoomBody: "CLIP_DIST 10;",
         Placements: ["ACTOR cm_f 40 -12 180 0", "ACTOR cm_w 30 12 0 0", "WAY cm_way 30 12 46 12"]);
 
+    // ---- the far DISTANCE of LIBER objects ---------------------------------------------------
+
+    /// <summary>
+    /// <c>CLIP_DIST 10</c>. Standing <c>LIBER</c> objects with counting <c>EACH_TICK</c>s: an actor
+    /// (<c>A</c>) and a thing (<c>T</c>) at (36, 12), an actor (<c>B</c>) and a thing (<c>U</c>) at
+    /// (10, 12). clip-move-liber's way actor read 29.438 right after a beam (three times its
+    /// border), then the sentinel again at 39–41 while the player walked away, and the FOLLOW actor
+    /// read the sentinel at 39.3 after one beam and 40.7 after another: these stands separate the
+    /// player's beam from the actor's own move, and the actor from the thing.
+    /// </summary>
+    private static readonly string LiberFarDeclarations =
+        Skills + SmallTexture +
+        CountingTick("lf_at", "A", "fa") + CountingTick("lf_tt", "T", "ft") +
+        CountingTick("lf_bt", "B", "fb") + CountingTick("lf_ut", "U", "fu") +
+        "ACTOR lf_a { TEXTURE cx_stex; EACH_TICK lf_at; FLAGS LIBER; }\n" +
+        "THING lf_t { TEXTURE cx_stex; EACH_TICK lf_tt; FLAGS LIBER; }\n" +
+        "ACTOR lf_b { TEXTURE cx_stex; EACH_TICK lf_bt; FLAGS LIBER; }\n" +
+        "THING lf_u { TEXTURE cx_stex; EACH_TICK lf_ut; FLAGS LIBER; }\n" +
+        Sampler();
+
+    private static readonly TraceProbeMap LiberFarMap = new(
+        RoomBody: "CLIP_DIST 10;",
+        Placements: ["ACTOR lf_a 36 12 0 0", "THING lf_t 36 12 0 0", "ACTOR lf_b 10 12 0 0", "THING lf_u 10 12 0 0"]);
+
+    /// <summary>
+    /// Beams only (|depth| + |lateral| from A/T, then B/U): S0 the origin (48, 22); P1 (31, −12)
+    /// (29, 45; clip-move-liber's first beam); P2 (31, 0) (17, 33); P3 (31, 6) (11, 27: A/T within
+    /// 15); P4 (19, −12) (41, 33); P5 (23, −12) (37, 37); P6 (15, −12) (45, 29); P7 (30, −8) (26, 40
+    /// behind); P8 (36, −2) (14, 40 behind); P9 (12, 8) (28, 6: B/U within 15); P10 (30, −8) and
+    /// P11 (36, −2) again (B/U 40 behind, now started); P12 the origin; P13 (19, −12).
+    /// </summary>
+    private static readonly string LiberFarBeamRun =
+        ArmSampler + Wait(32, "S0") +
+        Stand(31, -12, "P1") + Stand(31, 0, "P2") + Stand(31, 6, "P3") + Stand(19, -12, "P4") +
+        Stand(23, -12, "P5") + Stand(15, -12, "P6") + Stand(30, -8, "P7") + Stand(36, -2, "P8") +
+        Stand(12, 8, "P9") + Stand(30, -8, "P10") + Stand(36, -2, "P11") + Stand(0, 0, "P12") +
+        Stand(19, -12, "P13") + ClearSampler;
+
+    /// <summary>
+    /// Walks: S1 at (31, 6) starts A/T (11); F1 beams to (31, −12) (29) and walks −X at 0.5 a tick
+    /// for 40 ticks to x = 11 (A/T 33, 37, 41, 45, 49 a cycle, clip-move-liber's walk), stands, walks
+    /// back, stands. S2 at (12, 8) starts B/U (6); G1 beams to (30, −8) (B/U 40 behind), walks +X
+    /// 16 ticks to x = 38 (48), stands, walks −X 32 ticks to x = 22 (32), stands.
+    /// </summary>
+    private static readonly string LiberFarWalkRun =
+        ArmSampler + Wait(32, "S0") + Stand(31, 6, "S1") +
+        Stand(31, -12, "F1", 16) + Walk(-0.5, 0, 40, "F1W") + Wait(32, "F1S") +
+        Walk(0.5, 0, 40, "F1B") + Wait(32, "F1E") +
+        Stand(12, 8, "S2") +
+        Stand(30, -8, "G1", 16) + Walk(0.5, 0, 16, "G1W") + Wait(32, "G1S") +
+        Walk(-0.5, 0, 32, "G1B") + Wait(32, "G1E") + ClearSampler;
+
+    /// <summary>
+    /// The far-DISTANCE stands with TARGET actors that stay in place: <c>kind</c> "way" patrols a
+    /// half-step way ((36, 12) ↔ (36.5, 12), (10, 12) ↔ (10.5, 12)), so each skipped move only
+    /// arrives at the next point; "follow" is a <c>FOLLOW</c> actor with <c>SPEED 0</c>. A plain
+    /// <c>LIBER</c> thing (<c>T</c>, <c>U</c>) stands at each spot as the control. Synonyms let the
+    /// sampler print the actors' positions.
+    /// </summary>
+    private static string LiberFarMoverDeclarations(string kind)
+    {
+        string target(string way) => kind == "way" ? $"TARGET {way}; SPEED 0.2;" : "TARGET FOLLOW; SPEED 0;";
+        return Skills +
+               "SKILL lm_ax { VAL 0; }\nSKILL lm_ay { VAL 0; }\nSKILL lm_bx { VAL 0; }\nSKILL lm_by { VAL 0; }\n" +
+               SmallTexture +
+               "SYNONYM lm_as { TYPE ACTOR; }\nSYNONYM lm_bs { TYPE ACTOR; }\n" +
+               (kind == "way" ? "WAY lm_wa;\nWAY lm_wb;\n" : "") +
+               CountingTick("lf_at", "A", "fa") + CountingTick("lf_tt", "T", "ft") +
+               CountingTick("lf_bt", "B", "fb") + CountingTick("lf_ut", "U", "fu") +
+               $"ACTOR lf_a {{ TEXTURE cx_stex; {target("lm_wa")} EACH_TICK lf_at; FLAGS LIBER; }}\n" +
+               "THING lf_t { TEXTURE cx_stex; EACH_TICK lf_tt; FLAGS LIBER; }\n" +
+               $"ACTOR lf_b {{ TEXTURE cx_stex; {target("lm_wb")} EACH_TICK lf_bt; FLAGS LIBER; }}\n" +
+               "THING lf_u { TEXTURE cx_stex; EACH_TICK lf_ut; FLAGS LIBER; }\n" +
+               Sampler(ReadMoverPositions, "lm_ax", "lm_ay", "lm_bx", "lm_by");
+    }
+
+    private const string ReadMoverPositions =
+        "    RULE lm_ax = lm_as.X;\n    RULE lm_ay = lm_as.Y;\n    RULE lm_bx = lm_bs.X;\n    RULE lm_by = lm_bs.Y;\n";
+
+    private const string BindMovers = "    SET lm_as, lf_a;\n    SET lm_bs, lf_b;\n";
+
+    private static TraceProbeMap LiberFarMoverMap(string kind) => new(
+        RoomBody: "CLIP_DIST 10;",
+        Placements: kind == "way"
+            ? ["ACTOR lf_a 36 12 0 0", "THING lf_t 36 12 0 0", "ACTOR lf_b 10 12 0 0", "THING lf_u 10 12 0 0", "WAY lm_wa 36 12 36.5 12", "WAY lm_wb 10 12 10.5 12"]
+            : ["ACTOR lf_a 36 12 0 0", "THING lf_t 36 12 0 0", "ACTOR lf_b 10 12 0 0", "THING lf_u 10 12 0 0"]);
+
+    /// <summary>The beam stands of liber-far-beam, 48 ticks each (six cycles, one skipped move in each), then liber-far-walk's F1 walk.</summary>
+    private static readonly string LiberFarMoverRun =
+        BindMovers + ArmSampler + Wait(48, "S0") +
+        Stand(31, -12, "P1", 48) + Stand(31, 0, "P2", 48) + Stand(31, 6, "P3", 48) + Stand(19, -12, "P4", 48) +
+        Stand(23, -12, "P5", 48) + Stand(15, -12, "P6", 48) + Stand(30, -8, "P7", 48) + Stand(36, -2, "P8", 48) +
+        Stand(12, 8, "P9", 48) + Stand(30, -8, "P10", 48) + Stand(36, -2, "P11", 48) + Stand(0, 0, "P12", 48) +
+        Stand(19, -12, "P13", 48) + Stand(31, 6, "S1", 48) +
+        Stand(31, -12, "F1", 16) + Walk(-0.5, 0, 40, "F1W") + Wait(48, "F1S") +
+        Walk(0.5, 0, 40, "F1B") + Wait(48, "F1E") + ClearSampler;
+
+    /// <summary>
+    /// Two <c>LIBER</c> <c>FOLLOW</c> actors at 0.2 a tick (<c>A</c> from (40, −12), <c>B</c> from
+    /// (40, 12)) with the player beamed between contact and far stands: B1 (31, −12) 24 cycles
+    /// (both come into contact); B2 the origin (about 45 from both, clip-move-liber's 46.8 that
+    /// stayed real); B3 (31, −12) again; B4 (12, 8) (about 39, its 39.3 that went to the sentinel);
+    /// B5 (31, −12); B6 (−8, −12) (about 41); B7 (31, −12); B8 (36, 16) (about 30); B9 (31, −12).
+    /// </summary>
+    private static readonly string LiberFarFollowRun =
+        BindMovers + ArmSampler + Wait(96, "S0") +
+        Stand(31, -12, "B1", 192) + Stand(0, 0, "B2", 96) + Stand(31, -12, "B3", 96) +
+        Stand(12, 8, "B4", 96) + Stand(31, -12, "B5", 96) + Stand(-8, -12, "B6", 96) +
+        Stand(31, -12, "B7", 96) + Stand(36, 16, "B8", 96) + Stand(31, -12, "B9", 96) + ClearSampler;
+
+    private static readonly string LiberFarFollowDeclarations =
+        Skills +
+        "SKILL lm_ax { VAL 0; }\nSKILL lm_ay { VAL 0; }\nSKILL lm_bx { VAL 0; }\nSKILL lm_by { VAL 0; }\n" +
+        SmallTexture +
+        "SYNONYM lm_as { TYPE ACTOR; }\nSYNONYM lm_bs { TYPE ACTOR; }\n" +
+        CountingTick("lf_at", "A", "fa") + CountingTick("lf_bt", "B", "fb") +
+        "ACTOR lf_a { TEXTURE cx_stex; TARGET FOLLOW; SPEED 0.2; EACH_TICK lf_at; FLAGS LIBER; }\n" +
+        "ACTOR lf_b { TEXTURE cx_stex; TARGET FOLLOW; SPEED 0.2; EACH_TICK lf_bt; FLAGS LIBER; }\n" +
+        Sampler(ReadMoverPositions, "lm_ax", "lm_ay", "lm_bx", "lm_by");
+
+    private static readonly TraceProbeMap LiberFarFollowMap = new(
+        RoomBody: "CLIP_DIST 10;",
+        Placements: ["ACTOR lf_a 40 -12 180 0", "ACTOR lf_b 40 12 180 0"]);
+
     // ---- contact -----------------------------------------------------------------------------
 
     /// <summary>
@@ -403,6 +527,54 @@ internal static class ClipContactProbeCases
             Predict(
                 ("LIBER lifts the movement gate", "S0: cm_f approaches the origin, cm_w patrols 30 ↔ 46; A and W lines in every stand")),
             Map: ClipMoveMap),
+        new TraceProbeCase(
+            "liber-far-beam",
+            "clip-move-liber's LIBER way actor read a DISTANCE of 29.438 two cycles after a beam (its border 10, the start gate 15) and the sentinel again at 39–41 later; its FOLLOW actor read the sentinel at 39.3 after one beam and 40.7 after another. Standing LIBER actors and things, beamed to the same offsets: when does a standing object's DISTANCE start, and does it ever return to the sentinel?",
+            LiberFarDeclarations,
+            LiberFarBeamRun,
+            Predict(
+                ("the start gate is 1.5 × the border for standing objects, a started one is always refreshed", "A/T 65535.999 in S0–P2, 11 from P3 on and every later stand (41, 37, 45, 26, 14, 28, …, 48, 41); B/U 65535.999 until P9 (6), then 40, 40, 22, 33"),
+                ("a far refresh writes the sentinel beyond some range, started or not", "A/T 65535.999 again in P4 or P6; B/U in P10 or P11"),
+                ("a beam starts every object", "A/T 29 in P1, B/U 45")),
+            Map: LiberFarMap),
+        new TraceProbeCase(
+            "liber-far-walk",
+            "The same objects with the player walking: started at 11 (S1) and beamed 29 away (F1), A/T read 33, 37, 41, 45, 49 as the player walks off at 4 a cycle. Does a started standing object keep its distance where clip-move-liber's way actor fell back to the sentinel at 41?",
+            LiberFarDeclarations,
+            LiberFarWalkRun,
+            Predict(
+                ("a started object is refreshed at any distance", "A/T 29 after F1, then 33, 37, 41, 45, 49 in F1W and back; B/U 40, 44, 48 in G1W and 32 after G1B"),
+                ("the sentinel returns beyond some range", "A/T 65535.999 from 41 on, B/U from 44 or 48")),
+            Map: LiberFarMap),
+        new TraceProbeCase(
+            "liber-far-way",
+            "liber-far-beam: a standing LIBER object's DISTANCE starts within 15 and is then refreshed at any distance. clip-move-liber's way actor instead fell back to the sentinel at 39–41 and started at 29.4. The same stands with LIBER way actors that patrol half a step in place: does a TARGET actor's DISTANCE go to the sentinel beyond some range, and does a beam or its own move start it beyond 15?",
+            LiberFarMoverDeclarations("way"),
+            LiberFarMoverRun,
+            Predict(
+                ("as the standing objects", "A and T agree in every stand"),
+                ("a TARGET actor beyond about 38 reads the sentinel, whatever T reads", "A 65535.999 in P4, P6, P12, P13 and in F1W from x < 23; B in P10, P11"),
+                ("its own move starts it", "A 29 in P1 where T stays 65535.999")),
+            Map: LiberFarMoverMap("way")),
+        new TraceProbeCase(
+            "liber-far-follow",
+            "liber-far-way with FOLLOW actors of SPEED 0 in place of the way actors: does a FOLLOW actor's targeting un-start its DISTANCE beyond about 38 (clip-move-liber's follower read the sentinel at 39.3 after a beam)?",
+            LiberFarMoverDeclarations("follow"),
+            LiberFarMoverRun,
+            Predict(
+                ("as the standing objects", "A and T agree in every stand"),
+                ("beyond about 38 the sentinel", "A 65535.999 in P4, P6, P12, P13; B in P10, P11")),
+            Map: LiberFarMoverMap("follow")),
+        new TraceProbeCase(
+            "liber-far-contact",
+            "Two LIBER FOLLOW actors that walk to the player and touch it, then beams to about 45, 39, 41 and 30 away and back: which beams leave a follower's DISTANCE real and which write the sentinel (clip-move-liber: 46.8 real after one beam, 39.3 the sentinel after another, 40.7 real after a third)?",
+            LiberFarFollowDeclarations,
+            LiberFarFollowRun,
+            Predict(
+                ("beyond about 38 the sentinel", "A, B 65535.999 in B2, B4, B6; real in B8"),
+                ("a follower that was in contact reads the sentinel after any beam away", "65535.999 in B2, B4, B6, B8"),
+                ("always real once started", "no 65535.999 after B1")),
+            Map: LiberFarFollowMap),
         new TraceProbeCase(
             "contact-thing",
             "Pushing against a solid THING with DIST 0, 2 (below the contact distance) and 8: does contact fire IF_NEAR in every cycle while outside DIST, and does IF_FAR follow?",

@@ -159,7 +159,14 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   line is compared as it is). `KEY=value` lines compare their numbers, the stamp within one
   start-up cycle.
   Before the first sample the replay plans its start-up in whole 1/32 ticks, so it reaches the
-  original's first sample at the original's `TICKS`. Where no column prints the first cycle's
+  original's first sample at the original's `TICKS`. Where the start-up file (`OVSTA0.TXT`) holds
+  the sampler's token with a column that counts its runs from cycle 1 (a counting `EACH_TICK`'s
+  count: 2 in cycle 2, then every 8th), those lines date their cycles outright, as do the lines of
+  other tokens before the first sample that the sampler's cycle count places (the resumed start
+  action's `TK` at 13.531, five cycles before the first sample); the cycles between are spread
+  evenly. A launch whose first frame is not the cadence's (clip-contact round 2's fast launches:
+  5/32 where the cadence run back gives 13/32) then replays its start-up exactly; one whose
+  start-up kept the cadence plans as before. Where no column prints the first cycle's
   `TIME_CORR` and the template's stamp lies one frame (8/32 to 10/32 of a tick) before the first
   sample, that gap is the step into it: the probe action starts a frame ahead of the first sample
   in most carriers, and the first cycles' rate cannot tell 8/32 from 9/32 there (below-beam's five

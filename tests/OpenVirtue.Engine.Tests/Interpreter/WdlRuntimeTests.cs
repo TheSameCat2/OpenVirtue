@@ -4918,6 +4918,59 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_PlayerProximity_AMovedActorStartsItsDistanceAtAnyRange()
+    {
+        // OV-20261019-clip-contact rounds 2 and 3 (liber-far-beam, liber-far-way): a standing LIBER
+        // thing or actor keeps the sentinel until first refreshed within 1.5 x CLIP_DIST, but an actor
+        // that has moved reads its distance from the next refresh however far it is.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nTHING beacon 36 12 0 0;#0\nACTOR runner 36 12 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; REGION room { CLIP_DIST 10; } THING beacon { FLAGS LIBER; } " +
+            "ACTOR runner { TARGET MOVE; SPEED 0.5; FLAGS LIBER, FAR; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        Thing beacon = Assert.Single(level.Things);
+        Actor runner = Assert.Single(level.Actors);
+        player.MoveTo(0, 0, 0); // both 48 away
+        runtime.Tick(1.0 / 16); // the runner steps +X (FAR: every cycle)
+        Assert.True(runner.X > 36);
+        Assert.Equal(65535.999, beacon["DISTANCE"], 3);
+        Assert.Equal(65535.999, runner["DISTANCE"], 3);
+
+        player.MoveTo(0, 31, -12); // the thing 29 away, beyond 15: still the sentinel; the runner started by its move
+        runtime.Tick(1.0 / 16);
+        Assert.Equal(65535.999, beacon["DISTANCE"], 3);
+        Assert.Equal(29.5, runner["DISTANCE"], 2); // the runner at 36.5 as the cycle began: |dx| + |dy|
+    }
+
+    [Fact]
+    public void Tick_SkipFrames_TheNearRangeStopsAtTheClipBorder()
+    {
+        // OV-20261019-clip-contact clip-move-liber: CLIP_DIST 10. An unseen actor within 20 of the
+        // player moves every cycle only while its refreshed DISTANCE is within the border: the FOLLOW
+        // actor refreshed to 10.123 took no step until the next refresh read 6.119.
+        const string map =
+            "VERTEX 0 0 0;#0\nREGION room 0 10;#0\nACTOR near_runner -9.5 0 0 0;#0\nACTOR far_runner -10.5 4 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; REGION room { CLIP_DIST 10; } " +
+            "ACTOR near_runner { TARGET MOVE; SPEED 0.5; FLAGS LIBER; } ACTOR far_runner { TARGET MOVE; SPEED 0.5; FLAGS LIBER; }");
+        var player = new Player(level);
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", player);
+        Actor near = level.Actors.Single(a => a.Name == "near_runner");
+        Actor far = level.Actors.Single(a => a.Name == "far_runner");
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+
+        Assert.Equal(-9.5 + 1, near.X, 3); // 9.5 within the border: a step in each of the two cycles
+        Assert.Equal(-10.5, far.X, 3); // 14.5 by |dx| + |dy|, within 20 but outside the border: skipping
+    }
+
+    [Fact]
     public void Tick_ObjectEachTick_ActorClipBorderReadsTheRefreshedDistance()
     {
         // OV-20261019-clip-contact, clip-move: CLIP_DIST 10. The runner's moves in front refresh the

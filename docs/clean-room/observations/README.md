@@ -119,10 +119,15 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   no `IF_NEAR`/`IF_FAR`. A `TARGET` naming a way makes the actor patrol it. The player walked onto
   floors 14 and 16 steps higher, so contact with an unenterable region border is still open.
   Seventeen DOSBox-X runs; implemented in `LevelCollisionWorld`, `Player` and `WdlRuntime`. Addendum 2026-11-04: in the first cycle a
-  `BERKELEY` object ahead within the view's arc runs its `EACH_TICK` once outside `DIST`.
+  `BERKELEY` object ahead within the view's arc runs its `EACH_TICK` once outside `DIST`. Rounds
+  2–3 (2026-11-04, seven runs): a standing thing or actor starts its `DISTANCE` when first
+  refreshed within 1.5 × its border and then reads it at any range; an actor that has moved starts
+  at any range. Things and actors run from the last placed to the first whatever their kind, the
+  `SKIP_FRAMES` near range stops at the border, and a `FOLLOW` actor targets `PLAYER_X`/`PLAYER_Y`.
+  Open: a moved actor's sentinel beyond about 39 while another sprite is drawn near, and a long
+  step into the player that does not push.
 
 ## Region-border climb and headroom (2026-10-19 — confirmed and implemented)
-
 - `OV-20261019-border-climb.md` — a `PASSABLE` wall lets the player through whatever the
   heights. Through any other wall between two regions the player enters only if the new floor is
   less than `PLAYER_CLIMB` above the feet (`PLAYER_Z − PLAYER_SIZE`, so a raised eye climbs
