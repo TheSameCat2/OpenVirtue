@@ -96,7 +96,12 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   the replay then presses each key, as the key's own hook and then `IF_ANYKEY`, in the first
   cycle, world or flic, whose `TICKS` reaches the original's line of that token
   (`WdlRuntime.ScheduleActionHook`), and holds it down (`KEY_*` and `KEY_ANY`) for that cycle and
-  the two after, as DOSBox-X's `AUTOTYPE` did (scheduler-order rounds 6 to 8). Every line in `OVFLC0.TXT` is a token
+  the two after, as DOSBox-X's `AUTOTYPE` did (scheduler-order rounds 6 to 8).
+- `instructions` (`InstructionProbeCases`): the region and object instructions — `SHIFT`,
+  `ROTATE`, `LIFT`, `SHAKE`, `DROP`, `SET_ALL`, `PUSH`, `EXPLODE` — on the pad island, each
+  carrier printing the skills in question before and after the instruction. Objects placed with
+  the WMP region field 2 belong to the pad; flags (`VISIBLE`, `INVISIBLE`) are read through `IF`
+  into a skill, not `PRINT_VALUE`d. Every line in `OVFLC0.TXT` is a token
   followed by `FLIC_FRAME` and `TICKS`.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
