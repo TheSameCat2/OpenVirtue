@@ -63,8 +63,24 @@ internal static class FlicProbeCases
     private static readonly string Tail =
         "    WAITT 560;\n" + V("RET", "FLIC_FRAME", "TICKS");
 
+    /// <summary>The first 40 cycles after a flic started in <c>IF_START</c>: <c>Y</c> with <c>FLIC_FRAME</c>, <c>TICKS</c>, <c>TIME_CORR</c> and <c>TOTAL_FRAMES</c>.</summary>
+    private static readonly string FirstCyclesAction = Action(
+        "fl_first",
+        "    RULE fl_n = fl_n + 1;\n    IF (fl_n < 41) {\n" + Indent(V("Y", "FLIC_FRAME", "TICKS", "TIME_CORR", "TOTAL_FRAMES")) + "    }\n");
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        new TraceProbeCase(
+            "start-flic",
+            "Round 2. PLAY_FLICFILE at the top of IF_START, before anything else: is the IF_START cycle still the start-up cycle (TIME_CORR 1, TICKS 0 in the first cycle, OV-20261029-scheduler-order), and what TIME_CORR and TICKS do the flic's first cycles carry?",
+            "SKILL fl_n { VAL 0; }\n" + FirstCyclesAction,
+            "    WAITT 64;\n" + V("RET", "FLIC_FRAME", "TICKS", "TIME_CORR", "TOTAL_FRAMES") + "    STOP_FLIC;\n    SET EACH_TICK.1, NULL;\n",
+            Predict(
+                ("the IF_START cycle stays a start-up cycle", "S0 and S1 at TICKS 0, TIME_CORR 1; the first Y at TICKS 0 or 1.094, TIME_CORR 1.094 (70 ms) after"),
+                ("the flic's clock takes over at once", "S1 after PLAY_FLICFILE reads TIME_CORR 1.094; Y lines count TICKS 1.094 a cycle from the first"),
+                ("the start-up frames run before the flic's first frame", "several Y lines at FLIC_FRAME 0 or 1 with the 60 Hz TIME_CORR 0.25/0.281, then 1.094")),
+            Prelude: "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "FLIC_FRAME", "TICKS", "TIME_CORR") +
+                $"    PLAY_FLICFILE <{FlicFile}>;\n" + V("S1", "FLIC_FRAME", "TICKS", "TIME_CORR") + "    SET EACH_TICK.1, fl_first;\n"),
         new TraceProbeCase(
             "key-control",
             "Harness control, no flic: does the AUTOTYPE Space reach the runtime and fire IF_ANYKEY?",

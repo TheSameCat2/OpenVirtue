@@ -106,11 +106,53 @@ public sealed class RuntimeHostFlicTests : IDisposable
         host.Frame(present: false);
         host.Frame(present: false);
 
+        // The first frame is the IF_START cycle (round 2 of the probe), the second the flic's first.
         Assert.True(DrewFlic(render));
-        Assert.Equal(1, host.Runtime.GetSkill("cycles"));
+        Assert.Equal(2, host.Runtime.GetSkill("cycles"));
         Assert.Equal(1, host.Runtime.GetSkill("FLIC_FRAME"));
         Assert.Equal(10, host.Runtime.GetSkill("TIME_CORR"), 9);
         Assert.Equal(ticks + 10, host.Runtime.GetSkill("TICKS"), 9);
+    }
+
+    [Fact]
+    public void Frame_FlicStartedInIfStart_KeepsTheStartupCycleAndPutsTheFlicsCyclesOnItsGrid()
+    {
+        // OV-20261015-flic-play-blocking round 2 (start-flic, a 70 ms flic from IF_START): the IF_START
+        // cycle reads TIME_CORR 1 and TICKS 0 with frame 1 on screen; the first flic cycle took the
+        // host frame that loaded the flic (1.375 ticks) and the second came back on the grid (2.188),
+        // then 1.094 a cycle.
+        const string main = """
+            VIDEO S640x480;
+            MAPFILE <m.wmp>;
+            BMAP m,<t.pcx>,0,0,1,1;
+            TEXTURE wallTex { BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            SKILL cycles { VAL 0; }
+            SKILL first { VAL -1; }
+            ACTION start { PLAY_FLICFILE <A.FLC>; SET EACH_TICK.1, count; }
+            ACTION count { RULE cycles += 1; IF (first < 0) { RULE first = FLIC_FRAME + (10 * TIME_CORR) + (100 * TOTAL_FRAMES); } }
+            IF_START start;
+            """;
+        using RuntimeHost host = Open(frameDelayMs: 70, out _, out _, main);
+        host.Boot();
+        // The Boot frame runs the IF_START cycle; the frame that loaded the flic is the next one's length.
+        double[] frames = [0.281 / 16, 1.375 / 16, 0.813 / 16, 1.094 / 16];
+        int frame = 0;
+        host.FrameClock = () => frames[Math.Min(frame++, frames.Length - 1)];
+        var ticks = new List<double>();
+        var corrections = new List<double>();
+        for (int i = 0; i < 4; i++)
+        {
+            host.Frame(present: false);
+            ticks.Add(host.Runtime.GetSkill("TICKS"));
+            corrections.Add(host.Runtime.GetSkill("TIME_CORR"));
+        }
+
+        Assert.Equal(11, host.Runtime.GetSkill("first")); // frame 1, TIME_CORR 1, TOTAL_FRAMES 0 in the IF_START cycle
+        Assert.Equal(4, host.Runtime.GetSkill("cycles"));
+        Assert.Equal([0, 1.375, 2.188, 3.282], ticks.Select(static t => Math.Round(t, 3)));
+        Assert.Equal([1, 1.375, 0.813, 1.094], corrections.Select(static c => Math.Round(c, 3)));
+        Assert.Equal(3, host.Runtime.GetSkill("FLIC_FRAME"));
     }
 
     [Fact]
@@ -155,14 +197,14 @@ public sealed class RuntimeHostFlicTests : IDisposable
         host.Boot();
         host.Frame(present: false);
 
-        // The hook runs in the flic's second cycle (scheduler-order round 6).
+        // The Boot frame is the IF_START cycle; the hook runs in the flic's first (scheduler-order round 6).
         host.FrameClock = static () => 10;
         input.PressedKeys.Add(HostKey.Space);
         host.Frame(present: false);
         input.PressedKeys.Clear();
 
-        Assert.Equal(2, host.Runtime.GetSkill("seen"));
-        Assert.Equal(2, host.Runtime.GetSkill("FLIC_FRAME"));
+        Assert.Equal(1, host.Runtime.GetSkill("seen"));
+        Assert.Equal(1, host.Runtime.GetSkill("FLIC_FRAME"));
         Assert.True(DrewFlic(render));
     }
 
@@ -171,6 +213,7 @@ public sealed class RuntimeHostFlicTests : IDisposable
     {
         using RuntimeHost host = Open(frameDelayMs: 1, out _, out FakeRender render);
         host.Boot();
+        host.Frame(present: false); // the IF_START cycle
         Thread.Sleep(50);
 
         host.Frame(present: false);

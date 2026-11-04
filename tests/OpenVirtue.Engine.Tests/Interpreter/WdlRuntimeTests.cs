@@ -1249,9 +1249,14 @@ public class WdlRuntimeTests
             "ACTION objectTick { RULE objectTicks += 1; }");
         var runtime = new WdlRuntime(level);
 
+        // The first cycle under a flic is still the start-up cycle (TICKS 0, flic-play-blocking round 2).
+        runtime.TickFlic(1.0 / 16);
+        Assert.Equal(1, runtime.GetSkill("globalTicks"));
+        Assert.Equal(0, runtime.GetSkill("TICKS"));
+
         runtime.TickFlic(1.0 / 16);
 
-        Assert.Equal(1, runtime.GetSkill("globalTicks"));
+        Assert.Equal(2, runtime.GetSkill("globalTicks"));
         Assert.Equal(0, runtime.GetSkill("objectTicks"));
         Assert.Equal(1, runtime.GetSkill("TICKS"));
     }
