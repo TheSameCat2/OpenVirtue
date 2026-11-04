@@ -531,46 +531,37 @@ public sealed partial class RuntimeHost
         }
     }
 
+    /// <summary>
+    /// <c>FADE_PAL</c> as measured (OV-20261104-fade-pal): a factor of 1 or above makes the named
+    /// palette the current one and ends any blend; a factor between 0 and 1 blends the current palette
+    /// toward the named one; 0 or below shows the current palette again. Each request replaces the last.
+    /// </summary>
     private void ApplyPaletteFade(WdlPaletteFadeRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.FileName) || !TryGetArchiveBytes(request.FileName, out byte[] bytes))
+        byte[]? target = _palettes.Find(p => p.Name.Equals(request.PaletteName, StringComparison.OrdinalIgnoreCase)).Rgb;
+        if (target is null && (string.IsNullOrWhiteSpace(request.FileName) || !TryReadPalette(request.FileName, out target)))
         {
             return;
         }
 
-        try
+        if (request.Factor >= 1)
         {
-            PcxImage paletteImage = PcxImage.Read(bytes);
-            Vector3 target = PaletteColorCast(paletteImage.Palette);
-            float factor = (float)Math.Clamp(request.Factor, 0, 1);
-            _paletteTint = Vector3.Lerp(Vector3.One, target, factor);
+            _currentPalette = target;
+            _fadeTarget = null;
+            _fadeFactor = 0;
         }
-        catch (InvalidDataException)
+        else if (request.Factor <= 0)
         {
-            // A bad palette asset must not stop the frame.
+            _fadeTarget = null;
+            _fadeFactor = 0;
         }
-    }
-
-    private static Vector3 PaletteColorCast(Rgb24[] palette)
-    {
-        if (palette.Length == 0)
+        else
         {
-            return Vector3.One;
+            _fadeTarget = target;
+            _fadeFactor = request.Factor;
         }
 
-        long r = 0;
-        long g = 0;
-        long b = 0;
-        foreach (Rgb24 color in palette)
-        {
-            r += color.R;
-            g += color.G;
-            b += color.B;
-        }
-
-        var average = new Vector3(r, g, b) / (255.0f * palette.Length);
-        float strongestChannel = Math.Max(average.X, Math.Max(average.Y, average.Z));
-        return strongestChannel > 0.01f ? average / strongestChannel : Vector3.Zero;
+        RefreshPaletteFade();
     }
 
     private void HandleRuntimePresentationRequests()

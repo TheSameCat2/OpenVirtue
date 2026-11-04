@@ -47,6 +47,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform sampler2D uPalette;
         uniform sampler2D uShade;
         uniform vec4 uTintAndLight;
+        uniform vec4 uFadeCurrent;
+        uniform vec4 uFadeTarget;
         uniform float uAlphaTest;
         uniform float uShaded;
         uniform vec2 uLight;
@@ -63,8 +65,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                     - 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
                 level = clamp(2.0 * floor(level / 2.0), 0.0, 30.0);
                 float shaded = floor(texelFetch(uShade, ivec2(int(level), int(index)), 0).r * 255.0 + 0.5);
-                vec3 rgb = texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb;
-                fragColor = vec4(clamp(rgb * uTintAndLight.rgb, 0.0, 1.0), 1.0);
+                // The palette already shows the fade (OV-20261104-fade-pal).
+                fragColor = vec4(texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb, 1.0);
                 return;
             }
             vec4 color = texture(uTexture, vUv);
@@ -72,7 +74,10 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 discard;
             }
             float light = clamp(uTintAndLight.a + vAmbient, 0.0, 1.0);
-            fragColor = vec4(clamp(color.rgb * uTintAndLight.rgb * light, 0.0, 1.0), 1.0);
+            vec3 lit = clamp(color.rgb * light, 0.0, 1.0);
+            // OV-20261104-fade-pal: toward the current palette's colour when it is uniform, then toward the target.
+            vec3 faded = mix(mix(lit, uFadeCurrent.rgb, uFadeCurrent.a), uFadeTarget.rgb, uFadeTarget.a);
+            fragColor = vec4(clamp(faded, 0.0, 1.0), 1.0);
         }
         """;
 
@@ -83,6 +88,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly uint _program;
     private readonly int _viewProjectionLocation;
     private readonly int _tintLocation;
+    private readonly int _fadeCurrentLocation;
+    private readonly int _fadeTargetLocation;
     private readonly int _alphaTestLocation;
     private readonly int _shadedLocation;
     private readonly int _lightLocation;
@@ -129,6 +136,8 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _program = LinkProgram(VertexShader, FragmentShader);
         _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
         _tintLocation = _gl.GetUniformLocation(_program, "uTintAndLight");
+        _fadeCurrentLocation = _gl.GetUniformLocation(_program, "uFadeCurrent");
+        _fadeTargetLocation = _gl.GetUniformLocation(_program, "uFadeTarget");
         _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
         _shadedLocation = _gl.GetUniformLocation(_program, "uShaded");
         _lightLocation = _gl.GetUniformLocation(_program, "uLight");
@@ -250,7 +259,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform1(_shadedLocation, shaded ? 1f : 0f);
             _gl.Uniform2(_lightLocation, frame.Light.X, frame.Light.Y);
             UploadMatrix(batch.Transform);
-            _gl.Uniform4(_tintLocation, batch.Tint.X, batch.Tint.Y, batch.Tint.Z, batch.Ambient);
+            _gl.Uniform4(_tintLocation, 1f, 1f, 1f, batch.Ambient);
+            _gl.Uniform4(_fadeCurrentLocation, batch.Fade.Current.X, batch.Fade.Current.Y, batch.Fade.Current.Z, batch.Fade.CurrentWeight);
+            _gl.Uniform4(_fadeTargetLocation, batch.Fade.Target.X, batch.Fade.Target.Y, batch.Fade.Target.Z, batch.Fade.Factor);
             _gl.Uniform1(_alphaTestLocation, batch.AlphaTest ? 1f : 0f);
             _gl.BufferData(BufferTargetARB.ArrayBuffer, batch.Vertices.AsSpan(), BufferUsageARB.DynamicDraw);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)batch.Vertices.Length);

@@ -68,6 +68,7 @@ internal static class ProjectionProbeGenerator
     public const string MoveModeProbeName = "move-mode";
     public const string StringsProbeName = "strings";
     public const string LevelProbeName = "level";
+    public const string FadePalProbeName = "fade-pal";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -117,6 +118,7 @@ internal static class ProjectionProbeGenerator
     private const string MoveModeProbeId = "OV-20261104-move-mode";
     private const string StringsProbeId = "OV-20261104-strings";
     private const string LevelProbeId = "OV-20261104-level";
+    private const string FadePalProbeId = "OV-20261104-fade-pal";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -437,6 +439,7 @@ internal static class ProjectionProbeGenerator
         MoveModeProbeName => MoveModeProbeId,
         StringsProbeName => StringsProbeId,
         LevelProbeName => LevelProbeId,
+        FadePalProbeName => FadePalProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -585,6 +588,7 @@ internal static class ProjectionProbeGenerator
             case MoveModeProbeName:
             case StringsProbeName:
             case LevelProbeName:
+            case FadePalProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -643,6 +647,7 @@ internal static class ProjectionProbeGenerator
         MoveModeProbeName => MoveModeProbeCases.Set,
         StringsProbeName => StringProbeCases.Set,
         LevelProbeName => LevelProbeCases.Set,
+        FadePalProbeName => FadePalProbeCases.Set,
         _ => null,
     };
 
@@ -750,6 +755,29 @@ internal static class ProjectionProbeGenerator
             {
                 WriteValidated(Path.Combine(workDir, file), SyntheticPcx.Write(width, height, pixel, palette));
             }
+        }
+
+        if (plan.ProbeName == FadePalProbeName)
+        {
+            // The fade targets: a uniform black, the retail damage red and a ramp with every entry
+            // different (FadePalProbeCases). Each is a 16x16 swatch like PRBPAL.PCX.
+            var black = new SyntheticPcx.Palette();
+            var red = new SyntheticPcx.Palette();
+            var ramp = new SyntheticPcx.Palette();
+            var unique = new SyntheticPcx.Palette();
+            for (int i = 0; i < 256; i++)
+            {
+                red.Set(i, 200, 30, 15);
+                (byte r, byte g, byte b) = FadePalProbeCases.RampEntry(i);
+                ramp.Set(i, r, g, b);
+                (r, g, b) = FadePalProbeCases.UniqueEntry(i);
+                unique.Set(i, r, g, b);
+            }
+
+            WriteValidated(Path.Combine(workDir, FadePalProbeCases.BlackFile), SyntheticPcx.Swatch(black));
+            WriteValidated(Path.Combine(workDir, FadePalProbeCases.RedFile), SyntheticPcx.Swatch(red));
+            WriteValidated(Path.Combine(workDir, FadePalProbeCases.RampFile), SyntheticPcx.Swatch(ramp));
+            WriteValidated(Path.Combine(workDir, FadePalProbeCases.UniqueFile), SyntheticPcx.Swatch(unique));
         }
 
         if (plan.ProbeName == WallSidesProbeName)
