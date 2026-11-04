@@ -89,7 +89,8 @@ internal static class FlicProbeCases
             Predict(
                 ("the key reaches IF_ANYKEY", "ARM t, KEY 0 t', RET"),
                 ("AUTOTYPE did not inject (harness failure, not a finding)", "ARM t, RET")),
-            KeyAutotype),
+            KeyAutotype,
+            HookToken: "KEY:1"),
         new TraceProbeCase(
             "no-key",
             "Without a key: does the statement after PLAY_FLICFILE run before the flic ends; do a WAITT started before it, " +
@@ -118,7 +119,8 @@ internal static class FlicProbeCases
                 ("the action waits and STOP_FLIC releases it", "KEY, STOPPED, AFTER right after"),
                 ("hooks do not fire during the flic", "no KEY before the flic ends; at most a late KEY after it"),
                 ("the key came before the flic (rerun with a later -w)", "KEY before PLAY")),
-            KeyAutotype),
+            KeyAutotype,
+            HookToken: "KEY:1"),
         new TraceProbeCase(
             "retail-order",
             "The retail title's order: IF_ANYKEY armed after PLAY_FLICFILE in the same action. Can a key cut the flic short?",
@@ -128,7 +130,8 @@ internal static class FlicProbeCases
             Predict(
                 ("the action goes on and the key skips the flic", "AFTER right after PLAY; KEY with 0 < FLIC_FRAME < 430, STOPPED, no FR line after it"),
                 ("the action waits, so the key is not heard during the flic", "FR lines to the end, then AFTER; KEY absent (the key came before the hook was armed)")),
-            KeyAutotype),
+            KeyAutotype,
+            HookToken: "KEY:1"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

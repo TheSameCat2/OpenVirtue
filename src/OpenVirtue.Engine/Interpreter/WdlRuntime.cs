@@ -2363,11 +2363,40 @@ public sealed class WdlRuntime :
         _queuedHooks.Enqueue(name);
     }
 
+    // Hooks due at a TICKS value (the replay's scripted presses): dispatched in the first cycle whose
+    // TICKS reaches it, world or flic, after the hooks queued for that cycle.
+    private readonly List<(double Ticks, string Name)> _scheduledHooks = [];
+
+    /// <summary>Schedules a global <c>IF_*</c> hook for the first cycle whose <c>TICKS</c> is at least <paramref name="atTicks"/>.</summary>
+    public void ScheduleActionHook(double atTicks, string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        _scheduledHooks.Add((atTicks, name));
+    }
+
     private void DispatchQueuedHooks()
     {
         while (_queuedHooks.Count > 0)
         {
             TriggerActionHook(_queuedHooks.Dequeue());
+        }
+
+        if (_scheduledHooks.Count > 0)
+        {
+            double ticks = GetSkill(Timing.TicksSkill);
+            for (int i = 0; i < _scheduledHooks.Count;)
+            {
+                if (_scheduledHooks[i].Ticks <= ticks)
+                {
+                    string name = _scheduledHooks[i].Name;
+                    _scheduledHooks.RemoveAt(i);
+                    TriggerActionHook(name);
+                }
+                else
+                {
+                    i++;
+                }
+            }
         }
     }
 

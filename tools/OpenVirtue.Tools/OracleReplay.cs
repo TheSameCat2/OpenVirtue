@@ -254,9 +254,13 @@ internal static class OracleReplay
         // prints first) gets each press queued in the cycle whose TICKS the original's line shows.
         var hookPresses = new Queue<(double Ticks, string? Hook)>();
         var input = new HeadlessInput();
-        if (carrierCase.Autotype is { } typed && carrierCase.HookToken is { } hookToken)
+        if (carrierCase.Autotype is { } typed && carrierCase.HookToken is { } hookSpec)
         {
-            double[] hookTicks = timingSource.Where(l => l.Token == hookToken).Select(static l => l.Value(0)).OfType<double>().ToArray();
+            // "TOKEN" or "TOKEN:column": the column holding TICKS on the hook's line (0 unless given).
+            int colon = hookSpec.LastIndexOf(':');
+            int ticksColumn = 0;
+            string hookToken = colon > 0 && int.TryParse(hookSpec[(colon + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out ticksColumn) ? hookSpec[..colon] : hookSpec;
+            double[] hookTicks = timingSource.Where(l => l.Token == hookToken).Select(l => l.Value(ticksColumn)).OfType<double>().ToArray();
             (string? Hook, HostKey? Key)[] hooks = HeadlessWindow.ParseAutotypeHooks(typed).ToArray();
             for (int i = 0; i < hookTicks.Length && i < hooks.Length; i++)
             {
@@ -286,26 +290,20 @@ internal static class OracleReplay
         using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, input, audio, new HeadlessRender(), RandomSeed))
         {
             input.Ticks = () => host.Runtime.GetSkill(Timing.TicksSkill);
-            host.FrameClock = () =>
+            host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
+            // Each press lands in the cycle, world or flic, that reaches the original line's TICKS (printed
+            // to three decimals, so up to 1/1024 off the replay's grid: hook-order's 80.813 for 80.8125):
+            // the key's own hook, then IF_ANYKEY, as the host queues them (scheduler-order round 8).
+            while (hookPresses.Count > 0)
             {
-                double ticks = host.Runtime.GetSkill(Timing.TicksSkill);
-                double step = clock.Next(ticks);
-                // The press lands in the cycle that reaches the original line's TICKS: printed to three
-                // decimals, so up to 1/1024 off the replay's grid (hook-order's 80.813 for 80.8125).
-                while (hookPresses.Count > 0 && hookPresses.Peek().Ticks <= ticks + (step * Timing.TicksPerSecond) + (1.5 / 1024))
+                (double at, string? hook) = hookPresses.Dequeue();
+                if (hook is not null)
                 {
-                    // The key's own hook, then IF_ANYKEY, as the host queues them (scheduler-order round 8).
-                    (_, string? hook) = hookPresses.Dequeue();
-                    if (hook is not null)
-                    {
-                        host.Runtime.QueueActionHook(hook);
-                    }
-
-                    host.Runtime.QueueActionHook("IF_ANYKEY");
+                    host.Runtime.ScheduleActionHook(at - (1.5 / 1024), hook);
                 }
 
-                return step;
-            };
+                host.Runtime.ScheduleActionHook(at - (1.5 / 1024), "IF_ANYKEY");
+            }
             host.WriteOriginalSaves = true; // full SAVEs in the original's format too, to hand to the DOS runtime
             host.FatalErrors = true; // a division by zero shuts the original down (OV-20261029-numeric-edge)
 

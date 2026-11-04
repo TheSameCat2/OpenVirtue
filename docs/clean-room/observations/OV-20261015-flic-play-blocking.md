@@ -176,16 +176,24 @@ anything else, with the global slot printing `Y` (`FLIC_FRAME`, `TICKS`, `TIME_C
   70 ms), unless a host frame ran past it: the first flic cycle, after the `IF_START` frame that
   loaded the flic, read 1.375, and the second came 0.813 later, back on the grid at 2.188; from
   then on 1.094 a cycle and `FLIC_FRAME` one up each cycle. So `TIME_CORR` during a flic is the
-  grid step, or the host frame's time when that is longer, and the next cycle makes it up.
+  grid step, or the host frame's time when that is longer by less than a delay, and the next
+  cycle makes it up. The slow carriers of round 1 (8-tick world frames) put their first flic cycle
+  1.1875 after `PLAY` and the grid 0.094 after the cycle's `TICKS` (key-before's `FR 51` at
+  79.875 = 24.094 + 51 × 1.094): the grid hangs on the request's real time, a few ms into its
+  cycle there, which OpenVirtue does not model (it keeps the cycle's `TICKS`).
 - **`CEIL_HGT` reads 0 after `PLAY_FLICFILE`** in the probe's start-up stamp (`OVPRB0.TXT`
   `CEIL=0.000`, printed after a `SET PLAYER_Z` and the settling `WAITT 16`), where the world's
   start-up reads the room's 16: the flic takes the view, and a beam during it refreshes no
   height. `FLOOR_HGT` was 0 either way and is taken to follow.
 - Implemented: `WdlRuntime.TickFlic` runs the start-up cycle first (`FirstCycleRun`),
   `RuntimeHost.RunFlicCycles` keeps the flic's host time in ticks (`RealTicks`) and its request
-  `TICKS` (`StartTicks`), runs the IF_START cycle under a flic, and gives each flic cycle the grid
-  step or the longer host frame; `BeginFlicFile` zeroes `CEIL_HGT` and
+  `TICKS` (`StartTicks`), runs the IF_START cycle under a flic, gives each flic cycle the grid
+  step or a host frame that overran it by less than a delay, and lets a longer frame catch up as
+  many cycles as fit it; `BeginFlicFile` zeroes `CEIL_HGT` and
   `WdlPlayerMotion.Synchronize` leaves the heights while `FLIC_FRAME` is set. Tests
   `RuntimeHostFlicTests.Frame_FlicStartedInIfStart_KeepsTheStartupCycleAndPutsTheFlicsCyclesOnItsGrid`,
   `WdlRuntimeTests.TickFlic_RunsGlobalSchedulerButPausesWorldAndObjectTicks`. start-flic matches
-  in full; the other flic carriers are unchanged.
+  in full. With the replay pressing the scripted Space in the cycle of the original's `KEY` line
+  (`hook_token` `KEY:1`), key-before and retail-order replay 17 of 24 lines (were 5): the rest is
+  the 0.094 of the grid above and the press one cycle after it; the other flic carriers are
+  unchanged.
