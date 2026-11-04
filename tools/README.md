@@ -102,7 +102,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   `ROTATE`, `LIFT`, `SHAKE`, `DROP`, `SET_ALL`, `PUSH`, `EXPLODE` — on the pad island, each
   carrier printing the skills in question before and after the instruction. Objects placed with
   the WMP region field 2 belong to the pad; flags (`VISIBLE`, `INVISIBLE`) are read through `IF`
-  into a skill, not `PRINT_VALUE`d.
+  into a skill, not `PRINT_VALUE`d; `THERE` is a region synonym in V3.963.
+- `move-mode` (`MoveModeProbeCases`): `MOVE_MODE` 1, 0.5, 0 and −0.5 for a 16-tick stand with a
+  per-cycle sampler of the walking player, a way actor and the counts of the object, region,
+  global, `WAIT` and `EACH_SEC` actions; a Space (`hook_token` `K`) restores 1 in case the action
+  is frozen.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

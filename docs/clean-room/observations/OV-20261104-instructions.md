@@ -105,6 +105,11 @@ they do to the skills a script can read — positions, the walls' ends, `DISTANC
   from the source with `SHOOT_RANGE` 20 was not hit.
 
 ## Open
+- `NEXT_THERE`: `THERE` is a region synonym in V3.963 — `SET THERE, in_m` on a thing and
+  `SET in_th, THERE` on a `THING` synonym are type errors (66: `REGION` against `ACTOR/THING`) —
+  and the retail loops walk regions of one name with `IF_EQUAL THERE, NULL` as the end. Whether
+  `NEXT_THERE` wraps (manual p.89) or goes `NULL` after the last needs a room with several regions
+  of one name, which the trace room cannot stage; unprobed.
 - Which `SHAKE`s release a region: a wall or a thing of the region do; an object of another region,
   or the region itself, is untested.
 - `LIFT`'s raised vertices never showed in the floor under the player; the 20 cycles measured may
