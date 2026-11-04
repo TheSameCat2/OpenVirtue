@@ -59,10 +59,11 @@ internal sealed record TraceProbeMap(
     string? Textures = null,
     string? PaletteBody = null,
     IReadOnlyList<double>? PadZ = null,
-    string? WallTextureBody = null);
+    string? WallTextureBody = null,
+    string? RoomFloor = null);
 
 /// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
-internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2);
+internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2, int OffsetX = 0, int OffsetY = 0);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as

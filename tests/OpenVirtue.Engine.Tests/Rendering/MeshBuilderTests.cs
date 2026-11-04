@@ -271,8 +271,34 @@ public class MeshBuilderTests
 
         Assert.Equal(0.25f, batch.Vertices.Min(v => v.U));
         Assert.Equal(1.25f, batch.Vertices.Max(v => v.U));
+        // OV-20261104-texmap: OFFSET_Y 32 of 64 slides the texture half a repeat down.
+        Assert.Equal(-1.5f, batch.Vertices.Min(v => v.V), 1e-4f);
+        Assert.Equal(-0.5f, batch.Vertices.Max(v => v.V), 1e-4f);
+    }
+
+    [Fact]
+    public void BuildWalls_TextureRepeatsStackFromHeightZero()
+    {
+        // OV-20261104-texmap (raised, pit): a wall from height 4 to 8 with a 16-step repeat shows the
+        // rows a quarter to a half repeat down from the grid's top at 16, not from its own floor.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nREGION room 4 8;#0\n" +
+                        "WALL w 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+        const string main =
+            """
+            MAPFILE <m.wmp>;
+            BMAP m, <t.pcx>, 0, 0, 64, 64;
+            TEXTURE wallTex { SCALE_XY 4, 4; BMAPS m; }
+            WALL w { TEXTURE wallTex; }
+            """;
+
+        Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        MeshBatch batch = Assert.Single(MeshBuilder.BuildWalls(level).Batches);
+
         Assert.Equal(-0.5f, batch.Vertices.Min(v => v.V), 1e-4f);
-        Assert.Equal(0.5f, batch.Vertices.Max(v => v.V), 1e-4f);
+        Assert.Equal(-0.25f, batch.Vertices.Max(v => v.V), 1e-4f);
     }
 
     [Fact]
@@ -455,14 +481,15 @@ public class MeshBuilderTests
         LevelMesh mesh = MeshBuilder.Build(level);
 
         MeshBatch floor = mesh.Batches.Single(b => b.Texture == "floorTex");
-        Assert.Equal(0.25f, floor.Vertices.Min(v => v.U));
-        Assert.Equal(1.25f, floor.Vertices.Max(v => v.U));
+        // OV-20261104-texmap: a surface's columns run along −x and its rows along +y.
+        Assert.Equal(-0.75f, floor.Vertices.Min(v => v.U));
+        Assert.Equal(0.25f, floor.Vertices.Max(v => v.U));
         Assert.Equal(0.5f, floor.Vertices.Min(v => v.V));
         Assert.Equal(1.5f, floor.Vertices.Max(v => v.V));
 
         MeshBatch ceiling = mesh.Batches.Single(b => b.Texture == "ceilTex");
-        Assert.Equal(0.125f, ceiling.Vertices.Min(v => v.U));
-        Assert.Equal(1.125f, ceiling.Vertices.Max(v => v.U));
+        Assert.Equal(-0.875f, ceiling.Vertices.Min(v => v.U));
+        Assert.Equal(0.125f, ceiling.Vertices.Max(v => v.U));
         Assert.Equal(0.375f, ceiling.Vertices.Min(v => v.V));
         Assert.Equal(1.375f, ceiling.Vertices.Max(v => v.V));
     }
