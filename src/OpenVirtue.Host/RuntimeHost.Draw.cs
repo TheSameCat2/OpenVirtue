@@ -64,7 +64,7 @@ public sealed partial class RuntimeHost
             alphaTest: false,
             depthTest: false,
             ambient: 1,
-            tint: Vector3.One,
+            fade: PaletteFadeTint.None,
             dynamic: new TextureImage(playback.Animation.Width, playback.Animation.Height, source.Rgba));
         _graphics.Draw(frame);
     }
@@ -395,7 +395,7 @@ public sealed partial class RuntimeHost
         bool alphaTest,
         bool depthTest,
         float ambient,
-        Vector3? tint = null,
+        PaletteFadeTint? fade = null,
         TextureImage? dynamic = null,
         bool shaded = false)
     {
@@ -414,7 +414,7 @@ public sealed partial class RuntimeHost
             AlphaTest = alphaTest,
             DepthTest = depthTest,
             Ambient = ambient,
-            Tint = tint ?? _paletteTint,
+            Fade = fade ?? _fade,
             Vertices = vertices,
             Shaded = shaded,
         });
@@ -490,11 +490,11 @@ public sealed partial class RuntimeHost
         return DefaultClearColor;
     }
 
-    private Vector4 TintedClearColor() => new(
-        Math.Clamp(_clearColor.X * _paletteTint.X, 0, 1),
-        Math.Clamp(_clearColor.Y * _paletteTint.Y, 0, 1),
-        Math.Clamp(_clearColor.Z * _paletteTint.Z, 0, 1),
-        _clearColor.W);
+    private Vector4 TintedClearColor()
+    {
+        Vector3 faded = _fade.Apply(new Vector3(_clearColor.X, _clearColor.Y, _clearColor.Z));
+        return new Vector4(Math.Clamp(faded.X, 0, 1), Math.Clamp(faded.Y, 0, 1), Math.Clamp(faded.Z, 0, 1), _clearColor.W);
+    }
 
     private static Vector4 AverageColor(TextureImage image)
     {

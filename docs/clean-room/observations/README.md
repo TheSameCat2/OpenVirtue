@@ -466,3 +466,9 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261104-level.md` — `LEVEL` lets the action go on to the cycle's end, then the new world
   runs its `IF_START` with `TICKS` and `TOTAL_FRAMES` started over, `GLOBAL` skills kept, plain
   skills, waiting actions and the player's position started over. One carrier; implemented.
+- `OV-20261104-fade-pal.md` — the screen shows the last declared `PALETTE` at a level's start;
+  `FADE_PAL` at 1 or above makes the named palette current, a fraction blends every entry from the
+  current palette toward it in 6-bit DAC units rounded down (not from the blend before), 0 shows
+  the current palette again; `SCREENSHOT` saves the current palette, never the blend; the
+  screenshot is 640x480 whatever `MOTION_BLUR`. Nine screenshot carriers, two grabbed from the
+  emulator's own window. Implemented in `PaletteFade`, the host's palette state and the GL shader.

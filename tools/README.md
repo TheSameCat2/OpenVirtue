@@ -113,6 +113,11 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
 - `level` (`LevelProbeCases`): `LEVEL "TITLE.WDL"` reloading the probe's own world, a `GLOBAL`
   skill counting the passes so the second one ends the run; the trace file and `OVSTA0.TXT` are
   appended to across the change.
+- `fade-pal` (`FadePalProbeCases`): `FADE_PAL` between four palette files (the level's, a
+  uniform black, the retail red and a ramp with every entry different), `SCREENSHOT`s between the
+  fades, the screenshots' palettes read against the files; the `hold` and `swatch` cases hold
+  each fade for hundreds of ticks so the emulator's window can be grabbed from outside, since a
+  screenshot saves the current palette and never the blend the screen shows.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

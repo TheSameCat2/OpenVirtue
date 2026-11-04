@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The OpenVirtue Authors
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using OpenVirtue.Engine;
@@ -52,7 +53,16 @@ public sealed partial class RuntimeHost : IDisposable
         new Dictionary<string, TextureImage>(StringComparer.OrdinalIgnoreCase);
 
     private Vector4 _clearColor = DefaultClearColor;
-    private Vector3 _paletteTint = Vector3.One;
+
+    // OV-20261104-fade-pal: the declared palettes in declaration order, the current one (the last
+    // declared at the start, then the last FADE_PAL's with a factor of 1 or above), the blend's target
+    // and factor, the shade table of the first ranged palette, and the fade as RGB batches draw it.
+    private readonly List<(string Name, byte[] Rgb)> _palettes = [];
+    private byte[]? _currentPalette;
+    private byte[]? _fadeTarget;
+    private double _fadeFactor;
+    private byte[]? _shadeTable;
+    private PaletteFadeTint _fade = PaletteFadeTint.None;
     private string _baseTitle = "OpenVirtue";
     private bool _booted;
     private bool _geometryReady;
@@ -431,7 +441,7 @@ public sealed partial class RuntimeHost : IDisposable
         _handledPersistenceRequests = 0;
         _lastPresentationStatus = null;
         _lastPersistenceStatus = null;
-        _paletteTint = Vector3.One;
+        LoadPalettes();
         _hasPlayerRuntimeSnapshot = false;
         _pressedUiButton = null;
         _pressedUiButtonReleaseAction = null;
@@ -606,43 +616,113 @@ public sealed partial class RuntimeHost : IDisposable
 
     /// <summary>
     /// Builds the shade table of the level's first palette that declares <c>RANGE</c>s (the retail
-    /// levels' <c>levelPal</c>) from its <c>PALFILE</c> and hands it to the renderer; without one,
-    /// textures are drawn in RGB (OV-20261029-shading).
+    /// levels' <c>levelPal</c>) and hands it to the renderer with the palette the screen shows;
+    /// without one, textures are drawn in RGB (OV-20261029-shading).
     /// </summary>
     private void UploadShading()
     {
         _shading = false;
+        _shadeTable = null;
         foreach ((string name, LevelPaletteShading shading) in _level.PaletteShading)
         {
-            if (shading.Ranges.Count == 0 ||
-                !_level.Palettes.TryGetValue(name, out string? file) ||
-                !TryGetArchiveBytes(file, out byte[] bytes))
+            if (shading.Ranges.Count == 0)
             {
                 continue;
             }
 
-            try
+            byte[]? palette = _palettes.Find(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).Rgb;
+            if (palette is null)
             {
-                PcxImage image = PcxImage.Read(bytes);
-                byte[] palette = new byte[256 * 3];
-                for (int i = 0; i < Math.Min(256, image.Palette.Length); i++)
-                {
-                    palette[i * 3] = image.Palette[i].R;
-                    palette[(i * 3) + 1] = image.Palette[i].G;
-                    palette[(i * 3) + 2] = image.Palette[i].B;
-                }
-
-                _graphics.UploadShading(palette, PaletteShading.BuildTable(palette, shading.Ranges, shading.AutoRange));
-                _shading = true;
-                return;
+                continue;
             }
-            catch (InvalidDataException)
+
+            _shadeTable = PaletteShading.BuildTable(palette, shading.Ranges, shading.AutoRange);
+            _shading = true;
+            break;
+        }
+
+        RefreshPaletteFade();
+    }
+
+    /// <summary>
+    /// Reads every declared <c>PALETTE</c>'s colours from its <c>PALFILE</c>, in declaration order;
+    /// the last declared is the one the screen shows at the start (OV-20261104-fade-pal, start).
+    /// </summary>
+    private void LoadPalettes()
+    {
+        _palettes.Clear();
+        foreach ((string name, string file) in _level.Palettes)
+        {
+            if (TryReadPalette(file, out byte[]? rgb))
             {
-                // A bad palette file leaves the level unshaded.
+                _palettes.Add((name, rgb));
             }
         }
 
-        _graphics.UploadShading(null, null);
+        _currentPalette = _palettes.Count > 0 ? _palettes[^1].Rgb : null;
+        _fadeTarget = null;
+        _fadeFactor = 0;
+        _fade = PaletteFadeTint.None;
+    }
+
+    private bool TryReadPalette(string file, [NotNullWhen(true)] out byte[]? rgb)
+    {
+        rgb = null;
+        if (!TryGetArchiveBytes(file, out byte[] bytes))
+        {
+            return false;
+        }
+
+        try
+        {
+            PcxImage image = PcxImage.Read(bytes);
+            rgb = new byte[PaletteFade.Length];
+            for (int i = 0; i < Math.Min(256, image.Palette.Length); i++)
+            {
+                rgb[i * 3] = image.Palette[i].R;
+                rgb[(i * 3) + 1] = image.Palette[i].G;
+                rgb[(i * 3) + 2] = image.Palette[i].B;
+            }
+
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The palette the screen shows (OV-20261104-fade-pal): the current palette blended toward the
+    /// fade's target by its factor, or null when the level declares none.
+    /// </summary>
+    public byte[]? ShownPalette =>
+        _currentPalette is null ? null : PaletteFade.Blend(_currentPalette, _fadeTarget ?? [], _fadeFactor);
+
+    /// <summary>
+    /// Hands the renderer the palette the screen shows (with the shade table, for batches drawn through
+    /// the palette) and works out the fade RGB batches draw: the current palette as a uniform colour
+    /// when it is one, then the blend toward a uniform target.
+    /// </summary>
+    private void RefreshPaletteFade()
+    {
+        _graphics.UploadShading(_shading ? ShownPalette : null, _shading ? _shadeTable : null);
+
+        // RGB batches cannot be re-indexed through another palette, so a non-uniform current palette
+        // draws as the textures' own colours; a uniform one (the retail start palettes are black) is
+        // drawn as that colour.
+        var fade = PaletteFadeTint.None;
+        if (_currentPalette is not null && PaletteFade.IsUniform(_currentPalette, out (byte R, byte G, byte B) shown))
+        {
+            fade = fade with { Current = new Vector3(shown.R, shown.G, shown.B) / 255f, CurrentWeight = 1 };
+        }
+
+        if (_fadeTarget is not null && _fadeFactor > 0 && PaletteFade.IsUniform(_fadeTarget, out (byte R, byte G, byte B) target))
+        {
+            fade = fade with { Target = new Vector3(target.R, target.G, target.B) / 255f, Factor = (float)Math.Min(_fadeFactor, 1) };
+        }
+
+        _fade = fade;
     }
 
     private void RebuildGeometryResources()
@@ -707,7 +787,7 @@ public sealed partial class RuntimeHost : IDisposable
 
         WdlPaletteFadeRequest request = _runtime.PaletteFadeRequests[^1];
         return FormattableString.Invariant(
-            $" | pal {request.PaletteName}:{request.Factor:F2} x{_runtime.PaletteFadeRequests.Count} tint {_paletteTint.X:F2},{_paletteTint.Y:F2},{_paletteTint.Z:F2}");
+            $" | pal {request.PaletteName}:{request.Factor:F2} x{_runtime.PaletteFadeRequests.Count} fade {_fade.CurrentWeight:F2}/{_fade.Factor:F2}");
     }
 
     private string PersistenceStatusText() =>

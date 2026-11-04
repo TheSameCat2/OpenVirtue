@@ -46,8 +46,8 @@ public sealed class DrawBatch
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }
 
-    /// <summary>Multiplies the textured color. Palette fades live here.</summary>
-    public Vector3 Tint { get; init; } = Vector3.One;
+    /// <summary>How the batch shows the palette fade when drawn in RGB (OV-20261104-fade-pal).</summary>
+    public PaletteFadeTint Fade { get; init; } = PaletteFadeTint.None;
 
     /// <summary>
     /// Draw by palette index through the uploaded shade table: <see cref="Ambient"/> plus each
@@ -94,4 +94,20 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
     }
 
     public static PixelRect Full(int width, int height) => new(0, 0, Math.Max(1, width), Math.Max(1, height));
+}
+
+/// <summary>
+/// The palette fade for a batch drawn in RGB rather than through the palette (OV-20261104-fade-pal):
+/// the colour is mixed toward <see cref="Current"/> by <see cref="CurrentWeight"/> (1 when the
+/// current palette is one uniform colour, so the screen is that colour), then toward
+/// <see cref="Target"/> by <see cref="Factor"/>. Batches drawn through the palette carry the fade in
+/// the palette the host uploads, so they take <see cref="None"/>.
+/// </summary>
+public readonly record struct PaletteFadeTint(Vector3 Current, float CurrentWeight, Vector3 Target, float Factor)
+{
+    /// <summary>No fade: the colour as drawn.</summary>
+    public static PaletteFadeTint None => new(Vector3.Zero, 0, Vector3.Zero, 0);
+
+    /// <summary>The fade applied to a colour.</summary>
+    public Vector3 Apply(Vector3 color) => Vector3.Lerp(Vector3.Lerp(color, Current, CurrentWeight), Target, Factor);
 }

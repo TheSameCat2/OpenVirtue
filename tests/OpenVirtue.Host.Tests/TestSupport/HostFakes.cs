@@ -79,6 +79,11 @@ internal sealed class FakeRender : IRenderBackend
 
     public void Draw(HostFrame frame) => LastFrame = frame;
 
+    /// <summary>The palette the host last handed over with <see cref="UploadShading"/> (null when unshaded).</summary>
+    public byte[]? LastPalette { get; private set; }
+
+    public void UploadShading(byte[]? palette, byte[]? shadeTable) => LastPalette = palette;
+
     public RgbaImage ReadRgba() => new(1, 1, [0, 0, 0, 255]);
 
     public void Present()
