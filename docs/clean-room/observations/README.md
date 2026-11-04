@@ -461,3 +461,6 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   takes one character more than the string's declared length (`INKEY` stops at the length);
   `SET_SKILL` reads the number a text starts with (blanks, sign, decimals, exponent), cut to
   22.10, and 0 for none. Three carriers; implemented.
+- `OV-20261104-level.md` — `LEVEL` lets the action go on to the cycle's end, then the new world
+  runs its `IF_START` with `TICKS` and `TOTAL_FRAMES` started over, `GLOBAL` skills kept, plain
+  skills, waiting actions and the player's position started over. One carrier; implemented.

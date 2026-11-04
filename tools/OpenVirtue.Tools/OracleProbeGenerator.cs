@@ -67,7 +67,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.CarefulStopProbeName or
             ProjectionProbeGenerator.InstructionsProbeName or
             ProjectionProbeGenerator.MoveModeProbeName or
-            ProjectionProbeGenerator.StringsProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.StringsProbeName or
+            ProjectionProbeGenerator.LevelProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

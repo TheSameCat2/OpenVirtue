@@ -305,8 +305,10 @@ public sealed class WdlInterpreter(IWdlContext context)
                         ExecuteExit(item);
                         throw new EndActionException();
                     case "LEVEL":
+                        // The action goes on past LEVEL until the cycle ends; the new world drops
+                        // whatever then waits (OV-20261104-level: AFTER printed, AFTER8 not).
                         ExecuteLevel(item);
-                        throw new EndActionException();
+                        break;
                     case "MAP":
                         ExecuteMap(item);
                         throw new EndActionException();
@@ -560,7 +562,7 @@ public sealed class WdlInterpreter(IWdlContext context)
                 break;
             case "LEVEL":
                 ExecuteLevel(item);
-                state.Frames.Clear();
+                frame.Index++;
                 break;
             case "MAP":
                 ExecuteMap(item);
