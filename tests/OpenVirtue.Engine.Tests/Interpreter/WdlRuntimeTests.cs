@@ -2745,7 +2745,7 @@ public class WdlRuntimeTests
         Assert.True(runtime.RunAction("fire"));
 
         Assert.Same(Assert.Single(level.Walls), runtime.GetObject("hit"));
-        Assert.Equal(7 * 16, runtime.GetSkill("HIT_X"));
+        Assert.Equal((7 * 16) - (1.0 / 1024), runtime.GetSkill("HIT_X"), 6);
         Assert.Equal(5, runtime.GetSkill("HIT_DIST"), 6);
     }
 
@@ -2813,9 +2813,10 @@ public class WdlRuntimeTests
         Assert.True(runtime.RunAction("fire"));
 
         Assert.Same(Assert.Single(level.Walls), runtime.GetObject("hit"));
-        Assert.Equal(84, runtime.GetSkill("HIT_X"));
+        // The texel keeps its fraction, a 1/1024 under the product (OV-20261104-instructions round 4).
+        Assert.Equal(84 - (1.0 / 1024), runtime.GetSkill("HIT_X"), 6);
         Assert.Equal(120, runtime.GetSkill("HIT_Y"));
-        Assert.Equal(84, runtime.GetSkill("seen_x"));
+        Assert.Equal(84 - (1.0 / 1024), runtime.GetSkill("seen_x"), 6);
         Assert.Equal(120, runtime.GetSkill("seen_y"));
     }
 

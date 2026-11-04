@@ -1900,12 +1900,15 @@ public sealed class WdlRuntime :
 
         foreach (Wall wall in _level.Walls)
         {
-            if (wall["VISIBLE"] <= 0 || !TryGetWallSegment(wall, out double ax, out double ay, out double bx, out double by))
+            // A wall counts at its DISTANCE skill (|dx| + |dy| to its nearer end: 26 for a wall 22 ahead
+            // reaching 4 aside; push-wall), and only while drawn (VISIBLE is tested on demand).
+            TestWallView(wall);
+            if (wall["VISIBLE"] <= 0 || !wall.HasSkill(DistanceSkill))
             {
                 continue;
             }
 
-            double measured = DistanceToSegment(player.Position.X, player.Position.Z, ax, ay, bx, by);
+            double measured = wall[DistanceSkill];
             if (measured <= distance && measured < best)
             {
                 best = measured;
@@ -5664,8 +5667,10 @@ public sealed class WdlRuntime :
         double pixelsPerStepX = texture.ScaleX > 0 ? texture.ScaleX : 16;
         double pixelsPerStepY = texture.ScaleY > 0 ? texture.ScaleY : 16;
         // The bitmap's left edge sits at the wall's SECOND vertex for a viewer in its left region
-        // (OV-20261009-shoot-mapping, far-wall face), the same direction MeshBuilder maps u.
-        double hitX = Math.Floor(wall.OffsetX + ((1 - along) * length * pixelsPerStepX));
+        // (OV-20261009-shoot-mapping, far-wall face), the same direction MeshBuilder maps u. The
+        // texel keeps its fraction, a unit under the product (15.999 four steps along a 4-texel
+        // wall, 103.999 at 26; OV-20261104-instructions round 4 shoot-wall).
+        double hitX = (Math.Round((wall.OffsetX + ((1 - along) * length * pixelsPerStepX)) * 1024) - 1) / 1024;
         double wallTop = WallSegmentTopAtHit(wall, along, eyeHeight);
         double hitY = Math.Floor(wall.OffsetY + ((wallTop - eyeHeight) * pixelsPerStepY));
         return new HitCandidate(wall, distance, traceDistance, hitX, hitY);
@@ -5710,8 +5715,12 @@ public sealed class WdlRuntime :
         out int nextRegion)
     {
         nextRegion = wall.LeftRegion == region ? wall.RightRegion : wall.LeftRegion;
+        // A free-standing wall (the same region on both sides) stops a shot unless PASSABLE: a solid
+        // one 22 ahead took the SHOOT where OpenVirtue went on to the room's wall at 48
+        // (OV-20261104-instructions round 4 shoot-wall).
         if (nextRegion < 0 ||
             nextRegion >= _level.Regions.Count ||
+            (wall.LeftRegion == wall.RightRegion && wall["PASSABLE"] <= 0) ||
             !traversed.Add((region, wallIndex)))
         {
             return false;
