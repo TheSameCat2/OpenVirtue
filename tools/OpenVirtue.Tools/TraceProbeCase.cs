@@ -62,8 +62,13 @@ internal sealed record TraceProbeMap(
     string? WallTextureBody = null,
     string? RoomFloor = null);
 
-/// <summary>A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both sides.</summary>
-internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2, int OffsetX = 0, int OffsetY = 0);
+/// <summary>
+/// A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both
+/// sides. <c>Region</c>, when not 0, is the map region on both sides instead (the pad island is
+/// region 2), so a wall standing inside the pad island spans that region's heights rather than
+/// the room's.
+/// </summary>
+internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2, int OffsetX = 0, int OffsetY = 0, int Region = 0);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as

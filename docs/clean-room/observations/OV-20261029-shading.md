@@ -126,8 +126,15 @@ show in the screenshots. Shade levels, where region `AMBIENT` 0.5 alone gives 14
   `LIGHT_ANGLE` is unknown (round 4), `HARD` on an unsorted palette, and a wall seen from its right
   region.
 
+## Addendum (2026-11-05): which region a wall takes
+The "**Walls.**" bullet of round 3 is superseded by OV-20261105-wall-light. A wall's piece takes
+the `AMBIENT` of the region on the side it faces: the lower piece the lower floor's region and the
+upper piece the higher ceiling's region, not the left region and not the eye's. Round 3's wall
+took the room's because the room was also the lower floor's region, so the reading cannot tell the
+two rules apart.
+
 ## Implementation
-`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`), the palette `RANGE`/`FLAGS`
+`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`, now the facing piece's region; see the addendum), the palette `RANGE`/`FLAGS`
 in `Level.PaletteShading`, palette indices in `TextureImage`, and the GL backend's shaded path
 (index texture → shade table → palette, level from the clip-space depth). Tests: `PaletteShadingTests`
 reproduce the measured levels.

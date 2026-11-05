@@ -1,6 +1,7 @@
 # OV-20261104 — The retail title screens, frame against frame
 
-Status: confirmed (two runs of the retail title under the DOS runtime, four screens) and implemented.
+Status: confirmed (two runs of the retail title under the DOS runtime, four screens) and
+implemented; its Apathy start frame was re-measured on 2026-11-05.
 
 ## Question
 Every rendering rule so far was measured on synthetic levels. Does the retail title — its logo
@@ -42,14 +43,42 @@ where not, why?
 - **A raw carriage return inside a string counts as a character of its line**, blank but a cell
   wide, so a centred line ending in CR LF sits half a cell further left than its text alone.
 
+## Round 2 (2026-11-05): the wall pieces and the row mask
+A second look with the wall-pieces and wall-light rules (OV-20261105-wall-pieces,
+OV-20261105-wall-light) explains the start frame's three largest differences.
+
+- **The two green blobs are the original's indicator attaches**, `ATTACH` textures on walls
+  between two regions, which OpenVirtue drew on a one-region wall only. They are bright green in
+  one sampled frame and dark green in the next: one attach whose own texture has two `CYCLES`.
+- **The "dark passage with a pedestal" is the left alcove's far wall**, which OpenVirtue already
+  drew; it read too bright because a wall took its left region's `AMBIENT` where the original
+  takes the ambient of the region on the side the piece faces.
+- **The seat rows' stripes were not sub-texel edges but two rules**: `PORTCULLIS` anchoring a
+  two-piece wall's texture at each piece's own edge, and the bit mask a wall bitmap's rows are
+  read through (the seats' 120-row curtain reads `v & 119`, a period of 128 rows).
+
+Measured against the same original frame (`../OV-20261104-retail-frames/apathy/cmp/orig-text.png`,
+frames `ov.png` and `ov3.png`, the latter from the final build): `magick compare -metric AE
+-fuzz 6%` 3408 → 2893 and `-fuzz 15%` 1469 → 1073 (the same weighted-distance sum the figures
+above quote, not a pixel count, so this frame's earlier 3379 is the same measurement from
+before); a strict count of the pixels differing by more than 6% of the range, 56828 → 55433 of
+307 200. Region means (original / before / after):
+
+| Region | Original | Before | After |
+|---|---|---|---|
+| seat rows left | 18.4, 19.6, 19.1 | 14.7, 12.8, 12.2 | 18.4, 19.7, 19.2 |
+| left alcove bricks | 25.5, 24.7, 27.0 | 30.0, 29.3, 32.1 | 25.8, 25.3, 28.3 |
+| right alcove bricks | 31.1, 30.1, 31.6 | 32.8, 32.0, 33.9 | 32.8, 32.0, 33.9 |
+| curtains | 15.1, 13.9, 50.6 | 13.7, 12.3, 45.1 | 13.7, 12.3, 45.1 |
+
+Still open: the curtains (about 1.5 shades, and 5.5 in the last band), the right alcove's bricks
+(about one shade), the right-hand seat rows' bright bands sitting a row or two off in places, and
+the sub-pixel edges the earlier note named.
+
 ## Open Questions
-- The two green sprites above the brick blocks and the dark passage with a pedestal in the
-  left alcove of Apathy's start: rays from the stage cross only curtain walls and reach the
-  solid `border` region 57 steps out, so they are seen through the curtains' transparent holes;
-  the far `ShieldUp` and `prideHead` sprites 200–390 steps away in the lonely area stand at
-  floor 0 and would project near the eye line, not where the blobs are. Untested.
-- The pixel-level texture edge differences on the seat rows and curtains (sub-texel
-  rasterisation), and the flic frames.
+- The curtains' shades (15.1, 13.9 and 50.6 in the original against 13.7, 12.3 and 45.1) and the
+  right alcove's bricks, about one shade; the flic frames.
+- Sub-pixel texture edges, if any remain after the wall rules above.
 
 ## Implementation
 `RuntimeHost.TintedClearColor` clears to the shown palette's `FRAME_COLOR` entry when the level

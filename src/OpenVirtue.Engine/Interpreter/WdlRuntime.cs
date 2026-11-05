@@ -295,6 +295,7 @@ public sealed class WdlRuntime :
         foreach (Wall wall in level.Walls)
         {
             wall.Vertices = level.Vertices;
+            wall.GeometryInvalidated = invalidated => RecordGeometryInvalidation(invalidated);
         }
         _loadFloorHeights = [.. level.Regions.Select(static r => r.FloorHeight)];
         _random = random ?? new Random();
@@ -2271,6 +2272,21 @@ public sealed class WdlRuntime :
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentException.ThrowIfNullOrEmpty(memberName);
+        if (target is Wall wall && IsWallGeometryProperty(memberName))
+        {
+            // OV-20261105-wall-pieces: a wall's PORTCULLIS or POSITION change moves or re-textures its
+            // quads, so the mesh is rebuilt as a SHAKE's request has it — but only a real change: a
+            // script that re-writes the value it read must not rebuild the level's mesh every cycle.
+            bool changed = target[memberName] != value;
+            target[memberName] = value;
+            if (changed)
+            {
+                RecordGeometryInvalidation(wall);
+            }
+
+            return;
+        }
+
         if (target is MapEntity visibilityEntity &&
             memberName.Equals("INVISIBLE", StringComparison.OrdinalIgnoreCase))
         {
@@ -4986,6 +5002,16 @@ public sealed class WdlRuntime :
         ArgumentNullException.ThrowIfNull(target);
         _shakeRequests.Add(new WdlShakeRequest(target.Name));
     }
+
+    /// <summary>
+    /// OV-20261105-wall-pieces: the wall properties the mesh is built from. A wall's <c>TEXTURE</c> and
+    /// <c>ATTACH</c> are keyword-valued and reach the mesh through
+    /// <see cref="Map.Wall.GeometryInvalidated"/>; these numeric ones would otherwise change the quads
+    /// with nothing telling the host to rebuild them.
+    /// </summary>
+    private static bool IsWallGeometryProperty(string name) =>
+        name.Equals("POSITION", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("PORTCULLIS", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The objects' part of a cycle, after the global slots, in the original's order
