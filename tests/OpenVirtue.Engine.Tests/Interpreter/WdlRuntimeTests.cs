@@ -2471,6 +2471,32 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_SetWallPositionToTheSameValue_KeepsTheGeometryInvalidationCount()
+    {
+        // OV-20261105-wall-pieces: a script that writes back the value it read must not rebuild the
+        // level's mesh every cycle, so only a real change to a wall's POSITION records one.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; BMAP m,<t.pcx>,0,0,16,16; TEXTURE wallTex { BMAPS m; } " +
+            "WALL gate { TEXTURE wallTex; FLAGS PORTCULLIS; POSITION 0; } " +
+            "ACTION setIt { SET gate.POSITION, 1; } ACTION sameAgain { SET gate.POSITION, 1; } " +
+            "ACTION clearIt { SET gate.POSITION, 0; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("setIt"));
+        Assert.Single(runtime.ShakeRequests);
+
+        Assert.True(runtime.RunAction("sameAgain"));
+        Assert.Single(runtime.ShakeRequests);
+
+        Assert.True(runtime.RunAction("clearIt"));
+        Assert.Equal(2, runtime.ShakeRequests.Count);
+    }
+
+    [Fact]
     public void Runtime_ShakeInstruction_ResolvesMyReference()
     {
         const string map =

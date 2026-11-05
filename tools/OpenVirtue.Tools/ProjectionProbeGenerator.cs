@@ -74,6 +74,8 @@ internal static class ProjectionProbeGenerator
     public const string BlendProbeName = "blend";
     public const string GeniusProbeName = "genius";
     public const string SpriteShadeProbeName = "sprite-shade";
+    public const string WallPiecesProbeName = "wall-pieces";
+    public const string WallLightProbeName = "wall-light";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -129,6 +131,8 @@ internal static class ProjectionProbeGenerator
     private const string BlendProbeId = "OV-20261104-blend";
     private const string GeniusProbeId = "OV-20261104-genius";
     private const string SpriteShadeProbeId = "OV-20261104-sprite-shade";
+    private const string WallPiecesProbeId = "OV-20261105-wall-pieces";
+    private const string WallLightProbeId = "OV-20261105-wall-light";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -455,6 +459,8 @@ internal static class ProjectionProbeGenerator
         BlendProbeName => BlendProbeId,
         GeniusProbeName => GeniusProbeId,
         SpriteShadeProbeName => SpriteShadeProbeId,
+        WallPiecesProbeName => WallPiecesProbeId,
+        WallLightProbeName => WallLightProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -609,6 +615,8 @@ internal static class ProjectionProbeGenerator
             case BlendProbeName:
             case GeniusProbeName:
             case SpriteShadeProbeName:
+            case WallPiecesProbeName:
+            case WallLightProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -673,6 +681,8 @@ internal static class ProjectionProbeGenerator
         BlendProbeName => BlendProbeCases.Set,
         GeniusProbeName => GeniusProbeCases.Set,
         SpriteShadeProbeName => SpriteShadeProbeCases.Set,
+        WallPiecesProbeName => WallPiecesProbeCases.Set,
+        WallLightProbeName => WallLightProbeCases.Set,
         _ => null,
     };
 
@@ -737,9 +747,10 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
         }
 
-        if (plan.ProbeName is ShadingProbeName or GeniusProbeName)
+        if (plan.ProbeName is ShadingProbeName or GeniusProbeName or WallLightProbeName)
         {
-            // The side walls and the floor in the ramp's brightest colour, which shading darkens.
+            // The side walls and the floor in the ramp's brightest colour, which shading darkens;
+            // wall-light reads the shade level a two-region wall takes off its region.
             WriteValidated(Path.Combine(workDir, "PRBBLU.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
         }
         else
@@ -748,7 +759,7 @@ internal static class ProjectionProbeGenerator
         }
 
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        if (plan.ProbeName is ShadingProbeName or BlendProbeName or GeniusProbeName)
+        if (plan.ProbeName is ShadingProbeName or BlendProbeName or GeniusProbeName or WallLightProbeName)
         {
             WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
         }
@@ -787,6 +798,17 @@ internal static class ProjectionProbeGenerator
             WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
             WriteValidated(Path.Combine(workDir, AttachProbeCases.StripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Magenta, palette));
             WriteValidated(Path.Combine(workDir, AttachProbeCases.SquareFile), SyntheticPcx.Solid(16, 16, (byte)Ink.TargetLeft, palette));
+        }
+
+        if (plan.ProbeName == WallPiecesProbeName)
+        {
+            // Only the attach square and round 2's native 12x12 grid: block 2's base texture is
+            // the template's blue bitmap, and the swatch is PRBPAL.PCX, which every carrier
+            // already gets.
+            WriteValidated(Path.Combine(workDir, AttachProbeCases.SquareFile), SyntheticPcx.Solid(16, 16, (byte)Ink.TargetLeft, palette));
+            WriteValidated(
+                Path.Combine(workDir, WallPiecesProbeCases.Native12File),
+                SyntheticPcx.Write(12, 12, (x, y) => (byte)((y * 16) + x), palette));
         }
 
         if (plan.ProbeName == TexmapProbeName)
@@ -1246,7 +1268,7 @@ internal static class ProjectionProbeGenerator
 
         foreach (TraceProbeWall extra in map?.Walls ?? [])
         {
-            sb.Append(CultureInfo.InvariantCulture, $"WALL {extra.Keyword} {extraFirst} {extraFirst + 1} 0 0 {extra.OffsetX} {extra.OffsetY};#{wall++}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"WALL {extra.Keyword} {extraFirst} {extraFirst + 1} {extra.Region} {extra.Region} {extra.OffsetX} {extra.OffsetY};#{wall++}\r\n");
             extraFirst += 2;
         }
 

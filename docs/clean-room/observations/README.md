@@ -504,4 +504,22 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   `FRAME_COLOR`, not a clear colour of OpenVirtue's own) and in RGB-drawn grays missing the DAC's
   6-bit rounding; Apathy's start differed in a panel `PICTURE` with a literal frame selector and
   in text lines ending in a raw carriage return, which counts as a character. Implemented in the
-  host's clear colour, the GL shader and the UI builders.
+  host's clear colour, the GL shader and the UI builders. Its 2026-11-05 re-measure attributes the
+  start frame's remaining differences to the wall rules below: 3408 → 2893 at `-fuzz 6%`.
+
+## Wall pieces, `PORTCULLIS` and wall light (2026-11-05 — confirmed and implemented)
+
+- `OV-20261105-wall-pieces.md` — a wall between two regions shows a lower piece between the two
+  floors and an upper one between the two ceilings, each **limited to the region it faces** (so a
+  room against a solid above it shows only the room's face); `PORTCULLIS` anchors *each piece's* texture
+  rows at its own lower edge (`POSITION` 0, the bitmap's last row on it) or upper edge
+  (`POSITION` 1, its first row on it), `OFFSET_Y` counting on top and a sloped edge carrying the
+  rows along it; a wall's `ATTACH` is one square, one origin a wall, cut to its pieces and never
+  repeated, from a fixed anchor (0, the lowest lower edge, or the highest upper edge) plus one
+  repeat of the bitmap's real height, with the wall's offsets sliding it; a wall bitmap's rows
+  read through `v & (H−1)` and its columns by modulo. 59 carriers over six prepare rounds;
+  implemented in `MeshBuilder`, `TextureLoader` and `Wall.GeometryInvalidated`.
+- `OV-20261105-wall-light.md` — each piece takes the `AMBIENT` of the region on the side it
+  faces, the lower piece the lower floor's region and the upper piece the higher ceiling's,
+  neither the left region's nor the eye's, which supersedes the left-region reading of
+  OV-20261029-shading. Seven carriers; implemented in `MeshBuilder.WallPieces`.

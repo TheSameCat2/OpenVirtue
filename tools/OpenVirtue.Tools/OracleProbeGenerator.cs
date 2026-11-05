@@ -74,7 +74,9 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.TexmapProbeName or
             ProjectionProbeGenerator.BlendProbeName or
             ProjectionProbeGenerator.GeniusProbeName or
-            ProjectionProbeGenerator.SpriteShadeProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.SpriteShadeProbeName or
+            ProjectionProbeGenerator.WallPiecesProbeName or
+            ProjectionProbeGenerator.WallLightProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

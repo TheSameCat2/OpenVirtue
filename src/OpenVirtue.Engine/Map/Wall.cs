@@ -41,6 +41,14 @@ public sealed class Wall : AcknexObject
     /// <summary>Wall-level <c>IF_*</c> event action assignments, by hook keyword.</summary>
     public IReadOnlyDictionary<string, string?> ActionHooks => _actionHooks;
 
+    /// <summary>
+    /// Raised when a property the mesh is built from changes at run time (OV-20261105-wall-pieces): a
+    /// retail script does <c>SET curtainWallIndic1.ATTACH, indicator2_tex;</c> during play, and the
+    /// wall's quad then moves to the new texture. The runtime points this at its geometry
+    /// invalidation, the same one <c>SHAKE</c> records; nothing else sets it.
+    /// </summary>
+    public Action<Wall>? GeometryInvalidated { get; set; }
+
     /// <summary>Assigns or clears a documented wall-level event action hook.</summary>
     public void SetActionHook(string name, string? actionName)
     {
@@ -95,15 +103,31 @@ public sealed class Wall : AcknexObject
     {
         if (name.Equals("TEXTURE", StringComparison.OrdinalIgnoreCase))
         {
+            bool changed = !string.Equals(Texture, value, StringComparison.OrdinalIgnoreCase);
             Texture = value;
+            if (changed)
+            {
+                // OV-20261105-wall-pieces: the wall's quad is drawn with this texture, so a script's
+                // change rebuilds the mesh (as a SHAKE does).
+                GeometryInvalidated?.Invoke(this);
+            }
+
             return true;
         }
 
         if (name.Equals("ATTACH", StringComparison.OrdinalIgnoreCase))
         {
-            AttachTexture = string.IsNullOrWhiteSpace(value) || value.Equals("NULL", StringComparison.OrdinalIgnoreCase)
+            string? attach = string.IsNullOrWhiteSpace(value) || value.Equals("NULL", StringComparison.OrdinalIgnoreCase)
                 ? null
                 : value;
+            bool changed = !string.Equals(AttachTexture, attach, StringComparison.OrdinalIgnoreCase);
+            AttachTexture = attach;
+            if (changed)
+            {
+                // OV-20261105-wall-pieces: retail sets a wall's ATTACH during play.
+                GeometryInvalidated?.Invoke(this);
+            }
+
             return true;
         }
 

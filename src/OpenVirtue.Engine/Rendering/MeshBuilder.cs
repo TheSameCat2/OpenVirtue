@@ -24,8 +24,9 @@ public static class MeshBuilder
     {
         ArgumentNullException.ThrowIfNull(level);
         var accumulator = new Accumulator();
-        AddWalls(level, accumulator);
-        AddSurfaces(level, accumulator);
+        IReadOnlySet<string> rowMasked = TextureLoader.RowMaskedWallTextures(level);
+        AddWalls(level, accumulator, rowMasked);
+        AddSurfaces(level, accumulator, rowMasked);
         return accumulator.ToMesh();
     }
 
@@ -34,11 +35,11 @@ public static class MeshBuilder
     {
         ArgumentNullException.ThrowIfNull(level);
         var accumulator = new Accumulator();
-        AddWalls(level, accumulator);
+        AddWalls(level, accumulator, TextureLoader.RowMaskedWallTextures(level));
         return accumulator.ToMesh();
     }
 
-    private static void AddWalls(Level level, Accumulator accumulator)
+    private static void AddWalls(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked)
     {
         foreach (Wall wall in level.Walls)
         {
@@ -53,40 +54,100 @@ public static class MeshBuilder
             Region? right = RegionAt(level, wall.RightRegion);
             if ((left?.BelowRegion ?? -1) >= 0 || (right?.BelowRegion ?? -1) >= 0)
             {
-                AddStackedWall(level, accumulator, wall, v1, v2);
+                AddStackedWall(level, accumulator, wall, v1, v2, rowMasked);
                 continue;
             }
 
-            if (left is not null && right is not null && !ReferenceEquals(left, right))
+            List<WallPiece> pieces = WallPieces(level, wall, v1, v2, left, right);
+            foreach (WallPiece piece in pieces)
             {
-                // Each end of the wall meets each region's surfaces at that vertex's height, if the
-                // region's slope flags make it follow them (OV-20261029-slope).
-                EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(Floor(left, v1), Floor(right, v1)), Math.Max(Floor(left, v1), Floor(right, v1)),
-                    Math.Min(Floor(left, v2), Floor(right, v2)), Math.Max(Floor(left, v2), Floor(right, v2)));
-                EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Math.Min(Ceiling(left, v1), Ceiling(right, v1)), Math.Max(Ceiling(left, v1), Ceiling(right, v1)),
-                    Math.Min(Ceiling(left, v2), Ceiling(right, v2)), Math.Max(Ceiling(left, v2), Ceiling(right, v2)));
-                continue;
+                EmitWallSegment(level, accumulator, wall, v1, v2, piece, rowMasked);
             }
 
-            Region? region = left ?? right;
-            if (region is not null)
-            {
-                EmitWallSegment(level, accumulator, wall, v1, v2,
-                    Floor(region, v1), Ceiling(region, v1), Floor(region, v2), Ceiling(region, v2));
-                EmitWallAttachment(level, accumulator, wall, v1, v2,
-                    Math.Min(Floor(region, v1), Floor(region, v2)), Math.Max(Ceiling(region, v1), Ceiling(region, v2)));
-            }
+            // OV-20261105-wall-pieces: a wall's ATTACH is drawn on every wall, cut to the pieces it
+            // shows (before this only a one-region wall called for it, so nearly every retail attach
+            // was missing). A sky wall's attach is not drawn, as before: the wall itself is skipped
+            // above and the attach goes with it.
+            EmitWallAttachment(level, accumulator, wall, v1, v2, pieces);
         }
     }
 
     /// <summary>
-    /// The wall's <c>ATTACH</c> texture (OV-20261104-attach): a quad of the attach's own size
-    /// (pixels over its <c>SCALE</c>) whose upper left corner lies <c>POS_X</c> pixels of the wall
-    /// texture (at the wall texture's scale) along the wall from its u origin at the second vertex and
-    /// <c>POS_Y</c> such pixels below the top of the wall texture's first repeat above the floor, cut
-    /// to the wall. The wall is seen from both sides, so the quad is laid a hair off the wall on each.
+    /// The pieces a wall shows. Between two regions it shows the lower piece, between the two floors,
+    /// and the upper piece, between the two ceilings; a wall of one region shows the whole floor to
+    /// ceiling. Each piece's ends follow each region's surfaces at that vertex's height when the
+    /// region's slope flags make it (OV-20261029-slope), and each carries the region-facing
+    /// <c>AMBIENT</c> of OV-20261105-wall-light.
+    /// </summary>
+    /// <remarks>
+    /// OV-20261105-wall-pieces round 6: a piece is limited by the region it faces. The lower piece
+    /// faces the lower-floor region F and ends at <c>min(higher floor, F's ceiling)</c>, so a room
+    /// 0…16 against a solid 41…41 shows 0…16 and no upper piece at all; the upper piece faces the
+    /// higher-ceiling region C and starts at <c>max(lower ceiling, C's floor)</c>, so a room 0…16
+    /// against a pad 19…24 shows 0…16 and 19…24. The limits are per vertex, on F's and C's own
+    /// surfaces at that vertex (measured flat only).
+    /// </remarks>
+    private static List<WallPiece> WallPieces(Level level, Wall wall, Vertex v1, Vertex v2, Region? left, Region? right)
+    {
+        var pieces = new List<WallPiece>(2);
+        if (left is not null && right is not null && !ReferenceEquals(left, right))
+        {
+            // OV-20261105-wall-light: the lower piece faces the region with the lower floor and the
+            // upper piece the region with the higher ceiling; a tie keeps the left region's.
+            Region lowerFloor = LowerFloorRegion(left, right, v1, v2);
+            Region higherCeiling = HigherCeilingRegion(left, right, v1, v2);
+            pieces.Add(new WallPiece(
+                Math.Min(Floor(left, v1), Floor(right, v1)),
+                Math.Min(Math.Max(Floor(left, v1), Floor(right, v1)), Ceiling(lowerFloor, v1)),
+                Math.Min(Floor(left, v2), Floor(right, v2)),
+                Math.Min(Math.Max(Floor(left, v2), Floor(right, v2)), Ceiling(lowerFloor, v2)),
+                WallAmbient(level, wall, lowerFloor)));
+            pieces.Add(new WallPiece(
+                Math.Max(Math.Min(Ceiling(left, v1), Ceiling(right, v1)), Floor(higherCeiling, v1)),
+                Math.Max(Ceiling(left, v1), Ceiling(right, v1)),
+                Math.Max(Math.Min(Ceiling(left, v2), Ceiling(right, v2)), Floor(higherCeiling, v2)),
+                Math.Max(Ceiling(left, v2), Ceiling(right, v2)),
+                WallAmbient(level, wall, higherCeiling)));
+            return pieces;
+        }
+
+        if ((left ?? right) is { } region)
+        {
+            pieces.Add(new WallPiece(
+                Floor(region, v1),
+                Ceiling(region, v1),
+                Floor(region, v2),
+                Ceiling(region, v2),
+                WallAmbient(level, wall)));
+        }
+
+        return pieces;
+    }
+
+    /// <summary>
+    /// OV-20261105-wall-light: the region whose floor is lower at the wall's ends, the side a wall's
+    /// lower piece faces (a room and a pad stepped up to, measured: the room's). A tie is the left
+    /// region's.
+    /// </summary>
+    private static Region LowerFloorRegion(Region left, Region right, Vertex v1, Vertex v2) =>
+        Math.Min(Floor(left, v1), Floor(left, v2)) <= Math.Min(Floor(right, v1), Floor(right, v2)) ? left : right;
+
+    /// <summary>
+    /// OV-20261105-wall-light: the region whose ceiling is higher at the wall's ends, the side a wall's
+    /// upper piece faces (a dropped pad ceiling, measured: the room's). A tie is the left region's.
+    /// </summary>
+    private static Region HigherCeilingRegion(Region left, Region right, Vertex v1, Vertex v2) =>
+        Math.Max(Ceiling(left, v1), Ceiling(left, v2)) >= Math.Max(Ceiling(right, v1), Ceiling(right, v2)) ? left : right;
+
+    /// <summary>
+    /// The wall's <c>ATTACH</c> texture (OV-20261104-attach, OV-20261105-wall-pieces): a quad of the
+    /// attach's own size (pixels over its <c>SCALE</c>) whose upper left corner lies <c>POS_X</c> pixels
+    /// of the wall texture (at the wall texture's scale) along the wall from its u origin at the second
+    /// vertex, and <c>POS_Y</c> such pixels below the top of a repeat measured from a fixed anchor: 0 on
+    /// a free wall whatever its region's floor, or the edge a <c>PORTCULLIS</c> position names. The
+    /// repeat is the wall bitmap's real height over <c>SCALE_Y</c>, not the masked row period. It is
+    /// drawn once for each piece the wall shows, cut to that piece, and lit as it. The wall is seen
+    /// from both sides, so each quad is laid a hair off the wall on each.
     /// </summary>
     private static void EmitWallAttachment(
         Level level,
@@ -94,14 +155,18 @@ public static class MeshBuilder
         Wall wall,
         Vertex v1,
         Vertex v2,
-        float floor,
-        float ceiling)
+        IReadOnlyList<WallPiece> pieces)
     {
         if (wall.AttachTexture is null ||
             !level.Textures.TryGetValue(wall.AttachTexture, out LevelTexture attach) ||
             attach.Width <= 0 ||
-            attach.Height <= 0 ||
-            ceiling <= floor)
+            attach.Height <= 0)
+        {
+            return;
+        }
+
+        List<WallPiece> shown = [.. pieces.Where(static piece => !piece.IsEmpty)];
+        if (shown.Count == 0)
         {
             return;
         }
@@ -123,51 +188,80 @@ public static class MeshBuilder
             : DefaultScale;
         float width = (float)(attach.Width / (attach.ScaleX > 0 ? attach.ScaleX : DefaultScale));
         float height = (float)(attach.Height / (attach.ScaleY > 0 ? attach.ScaleY : DefaultScale));
-        // The repeats stack from height 0 (texmap), so the first repeat's top above the floor lies on
-        // that grid; the probe's walls stood on height 0.
+        // The attach hangs on the wall texture's own repeat, its real bitmap height over SCALE_Y: 60
+        // rows at 4 px a step repeat every 15 steps, not the 16 the masked row period would give.
         float repeatHeight = 1f / mapping.WorldToV;
-        float s0 = (float)(attach.PosX / wallScaleX);
+        float anchor = AttachAnchor(wall, shown);
+        // OV-20261105-wall-pieces: the wall's offsets slide the attach as they slide its texture,
+        // OFFSET_X back along u and OFFSET_Y further down.
+        float s0 = (float)((attach.PosX - wall.OffsetX) / wallScaleX);
         float s1 = s0 + width;
-        float top = ((MathF.Floor(floor / repeatHeight) + 1) * repeatHeight) - (float)(attach.PosY / wallScaleY);
+        float top = anchor + repeatHeight - (float)((attach.PosY + wall.OffsetY) / wallScaleY);
         float bottom = top - height;
 
-        float cs0 = Math.Max(s0, 0);
-        float cs1 = Math.Min(s1, length);
-        float ct = Math.Min(top, ceiling);
-        float cb = Math.Max(bottom, floor);
-        if (cs1 <= cs0 || ct <= cb)
-        {
-            return;
-        }
-
-        float u0 = (cs0 - s0) / width;
-        float u1 = (cs1 - s0) / width;
-        float vTop = (top - ct) / height;
-        float vBottom = (top - cb) / height;
-        float ambient = WallAmbient(level, wall);
-        List<RenderVertex> target = accumulator.Bucket(wall.AttachTexture, animationSource: null, alphaTest: true);
+        List<RenderVertex> target = accumulator.Bucket(
+            wall.AttachTexture, AnimationSourceFor(level, wall.AttachTexture, wall), alphaTest: true);
         float dirX = dx / length;
         float dirY = dz / length;
         const float lift = 0.02f;
-        foreach (float side in (ReadOnlySpan<float>)[lift, -lift])
+        // OV-20261105-wall-pieces: one quad a piece, each cut to the piece's own span and lit as it —
+        // the pieces cannot overlap now that each is limited by the region it faces. On a sloped piece
+        // the cut uses the piece's bounding heights, `Low` and `High` (unmeasured: every carrier's
+        // piece ends were flat).
+        foreach (WallPiece piece in shown)
         {
-            float nx = -dirY * side;
-            float ny = dirX * side;
-            (float X, float Z) At(float s) => (v2.X + (dirX * s) + nx, RenderSpace.ZFromMapY(v2.Y + (dirY * s) + ny));
-            (float x0, float z0) = At(cs0);
-            (float x1, float z1) = At(cs1);
-            var bottomLeft = new RenderVertex(x0, cb, z0, u0, vBottom, ambient);
-            var bottomRight = new RenderVertex(x1, cb, z1, u1, vBottom, ambient);
-            var topRight = new RenderVertex(x1, ct, z1, u1, vTop, ambient);
-            var topLeft = new RenderVertex(x0, ct, z0, u0, vTop, ambient);
-            target.Add(bottomLeft);
-            target.Add(bottomRight);
-            target.Add(topRight);
-            target.Add(bottomLeft);
-            target.Add(topRight);
-            target.Add(topLeft);
+            float cs0 = Math.Max(s0, 0);
+            float cs1 = Math.Min(s1, length);
+            float ct = Math.Min(top, piece.High);
+            float cb = Math.Max(bottom, piece.Low);
+            if (cs1 <= cs0 || ct <= cb)
+            {
+                continue;
+            }
+
+            float ambient = piece.Ambient;
+            float u0 = (cs0 - s0) / width;
+            float u1 = (cs1 - s0) / width;
+            float vTop = (top - ct) / height;
+            float vBottom = (top - cb) / height;
+            foreach (float side in (ReadOnlySpan<float>)[lift, -lift])
+            {
+                float nx = -dirY * side;
+                float ny = dirX * side;
+                (float X, float Z) At(float s) => (v2.X + (dirX * s) + nx, RenderSpace.ZFromMapY(v2.Y + (dirY * s) + ny));
+                (float x0, float z0) = At(cs0);
+                (float x1, float z1) = At(cs1);
+                var bottomLeft = new RenderVertex(x0, cb, z0, u0, vBottom, ambient);
+                var bottomRight = new RenderVertex(x1, cb, z1, u1, vBottom, ambient);
+                var topRight = new RenderVertex(x1, ct, z1, u1, vTop, ambient);
+                var topLeft = new RenderVertex(x0, ct, z0, u0, vTop, ambient);
+                target.Add(bottomLeft);
+                target.Add(bottomRight);
+                target.Add(topRight);
+                target.Add(bottomLeft);
+                target.Add(topRight);
+                target.Add(topLeft);
+            }
         }
     }
+
+    /// <summary>
+    /// OV-20261105-wall-pieces: the height an attach's repeats are measured from. A free wall's is 0,
+    /// a fixed height rather than its region's floor (measured: a free wall in a region with floor 9
+    /// and a repeat of 8 hides an attach at POS_Y 8 and shows one at POS_Y −24 at z 10–11). A
+    /// <c>PORTCULLIS</c> wall's is the edge its <c>POSITION</c> names, taken from the pieces the wall
+    /// shows and so from their limited edges (round 6: a room 0…16 against a solid 41…41 anchors
+    /// POSITION 1 at 16, where the attach's top is 12 at POS_Y 80 and −13 at POS_Y 180): the lowest
+    /// lower edge, position 0, or the highest upper edge, position 1. "Upper" is only measured for
+    /// <c>POSITION</c> 0 and 1, and the manual's <c>FENCE</c> (which implies <c>PORTCULLIS</c>, p.54)
+    /// is neither implemented nor used by retail.
+    /// </summary>
+    private static float AttachAnchor(Wall wall, IReadOnlyList<WallPiece> pieces) =>
+        wall["PORTCULLIS"] <= 0
+            ? 0f
+            : wall["POSITION"] > 0
+                ? pieces.Max(static piece => piece.High)
+                : pieces.Min(static piece => piece.Low);
 
     /// <summary>
     /// A wall beside a <c>BELOW</c> stack (manual p.59): each side's column is open over its
@@ -178,26 +272,42 @@ public static class MeshBuilder
     /// piece facing storey k shows the texture's sides 4k… when it has that many (manual p.38: "the
     /// first four sides are assigned to the uppermost region, the BELOW region has the next four").
     /// </summary>
-    private static void AddStackedWall(Level level, Accumulator accumulator, Wall wall, Vertex v1, Vertex v2)
+    private static void AddStackedWall(
+        Level level, Accumulator accumulator, Wall wall, Vertex v1, Vertex v2, IReadOnlySet<string> rowMasked)
     {
         List<(float Floor, float Ceiling)> left = OpenSpans(level, wall.LeftRegion);
         List<(float Floor, float Ceiling)> right = OpenSpans(level, wall.RightRegion);
+        var pieces = new List<WallPiece>();
         if (left.Count == 0 || right.Count == 0 || wall.LeftRegion == wall.RightRegion)
         {
             List<(float Floor, float Ceiling)> spans = left.Count > 0 ? left : right;
             for (int storey = 0; storey < spans.Count; storey++)
             {
-                EmitWallSegment(level, accumulator, wall, v1, v2, spans[storey].Floor, spans[storey].Ceiling, storey);
+                pieces.Add(StackedPiece(level, wall, spans[storey].Floor, spans[storey].Ceiling));
+                EmitWallSegment(
+                    level, accumulator, wall, v1, v2, spans[storey].Floor, spans[storey].Ceiling, rowMasked, storey);
             }
-
-            return;
         }
-
-        foreach ((float floor, float ceiling, int storey) in Uncovered(left, right).Concat(Uncovered(right, left)))
+        else
         {
-            EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, storey);
+            foreach ((float floor, float ceiling, int storey) in Uncovered(left, right).Concat(Uncovered(right, left)))
+            {
+                pieces.Add(StackedPiece(level, wall, floor, ceiling));
+                EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, rowMasked, storey);
+            }
         }
+
+        // OV-20261105-wall-pieces: the attach cuts to each span as to a piece. Unprobed on a stack:
+        // none of the attach measurements stood beside a BELOW region.
+        EmitWallAttachment(level, accumulator, wall, v1, v2, pieces);
     }
+
+    /// <summary>
+    /// A <c>BELOW</c> stack's span as a piece: flat, and lit as the wall's left region is (unmeasured
+    /// beside a stack).
+    /// </summary>
+    private static WallPiece StackedPiece(Level level, Wall wall, float floor, float ceiling) =>
+        new(floor, ceiling, floor, ceiling, WallAmbient(level, wall));
 
     /// <summary>The open spans of the stack at a map region, top first.</summary>
     private static List<(float Floor, float Ceiling)> OpenSpans(Level level, int regionIndex)
@@ -276,6 +386,19 @@ public static class MeshBuilder
     private static float Ceiling(Region region, Vertex vertex) =>
         (float)(region.CeilHeight + (LevelTopology.SlopeSign(region, ceiling: true) * vertex.Z));
 
+    /// <summary>A wall piece: its lower and upper edge at each vertex, which differ on a sloped edge.</summary>
+    private readonly record struct WallPiece(float Floor1, float Ceiling1, float Floor2, float Ceiling2, float Ambient)
+    {
+        /// <summary>The piece's lowest edge, over both ends.</summary>
+        public float Low => MathF.Min(Floor1, Floor2);
+
+        /// <summary>The piece's highest edge, over both ends.</summary>
+        public float High => MathF.Max(Ceiling1, Ceiling2);
+
+        /// <summary>Whether the piece shows nothing (the two regions' surfaces meet all along it).</summary>
+        public bool IsEmpty => Ceiling1 <= Floor1 && Ceiling2 <= Floor2;
+    }
+
     /// <summary>A flat-topped wall piece between two heights (a <c>BELOW</c> stack's spans).</summary>
     private static void EmitWallSegment(
         Level level,
@@ -285,8 +408,10 @@ public static class MeshBuilder
         Vertex v2,
         float floor,
         float ceiling,
+        IReadOnlySet<string> rowMasked,
         int storey) =>
-        EmitWallSegment(level, accumulator, wall, v1, v2, floor, ceiling, floor, ceiling, storey);
+        EmitWallSegment(
+            level, accumulator, wall, v1, v2, StackedPiece(level, wall, floor, ceiling), rowMasked, storey);
 
     private static void EmitWallSegment(
         Level level,
@@ -294,13 +419,11 @@ public static class MeshBuilder
         Wall wall,
         Vertex v1,
         Vertex v2,
-        float floor1,
-        float ceiling1,
-        float floor2,
-        float ceiling2,
+        WallPiece piece,
+        IReadOnlySet<string> rowMasked,
         int storey = 0)
     {
-        if (ceiling1 <= floor1 && ceiling2 <= floor2)
+        if (piece.IsEmpty)
         {
             return;
         }
@@ -308,7 +431,7 @@ public static class MeshBuilder
         float dx = v2.X - v1.X;
         float dz = v2.Y - v1.Y;
         float length = MathF.Sqrt((dx * dx) + (dz * dz));
-        TextureMapping mapping = TextureMappingFor(level, wall.Texture);
+        TextureMapping mapping = RowMaskedTextureMappingFor(level, wall.Texture, rowMasked);
         // OV-20261009-shoot-mapping: viewed from the wall's left region (the room side of the
         // retail convention), the bitmap's left half sits at the SECOND vertex, so u starts at
         // v2 and grows toward v1. OV-20261030-wall-sides: from the other face it is the same, the
@@ -316,7 +439,7 @@ public static class MeshBuilder
         float uAtV2 = (float)wall.OffsetX * mapping.OffsetToU;
         float v0 = (float)wall.OffsetY * mapping.OffsetToV;
         float uAtV1 = uAtV2 + (length * mapping.WorldToU);
-        float ambient = WallAmbient(level, wall);
+        float ambient = piece.Ambient;
 
         List<RenderVertex> target = StoreySide(level, wall.Texture, storey) is { } sideTexture
             ? accumulator.Bucket(sideTexture, animationSource: null, alphaTest: wall["TRANSPARENT"] > 0)
@@ -328,11 +451,16 @@ public static class MeshBuilder
         // stacked from height 0 whatever the regions' floors (raised, pit), so v is −height at the
         // texture's scale; OFFSET_Y slides the texture down (wall-offset), so it is taken off v. A
         // sloped edge thus cuts the texture rather than stretching it.
+        // OV-20261105-wall-pieces: a PORTCULLIS wall stacks its repeats from the edge its POSITION
+        // names instead, each vertex's own edge of this piece, so a sloped edge keeps one row along
+        // it; OFFSET_Y still slides the texture on top of that anchor.
         float worldToV = mapping.WorldToV;
-        var bottomLeft = new RenderVertex(v1.X, floor1, z1, uAtV1, -v0 - (floor1 * worldToV), ambient);
-        var bottomRight = new RenderVertex(v2.X, floor2, z2, uAtV2, -v0 - (floor2 * worldToV), ambient);
-        var topRight = new RenderVertex(v2.X, ceiling2, z2, uAtV2, -v0 - (ceiling2 * worldToV), ambient);
-        var topLeft = new RenderVertex(v1.X, ceiling1, z1, uAtV1, -v0 - (ceiling1 * worldToV), ambient);
+        float anchor1 = WallAnchor(wall, piece.Floor1, piece.Ceiling1);
+        float anchor2 = WallAnchor(wall, piece.Floor2, piece.Ceiling2);
+        var bottomLeft = new RenderVertex(v1.X, piece.Floor1, z1, uAtV1, -v0 + ((anchor1 - piece.Floor1) * worldToV), ambient);
+        var bottomRight = new RenderVertex(v2.X, piece.Floor2, z2, uAtV2, -v0 + ((anchor2 - piece.Floor2) * worldToV), ambient);
+        var topRight = new RenderVertex(v2.X, piece.Ceiling2, z2, uAtV2, -v0 + ((anchor2 - piece.Ceiling2) * worldToV), ambient);
+        var topLeft = new RenderVertex(v1.X, piece.Ceiling1, z1, uAtV1, -v0 + ((anchor1 - piece.Ceiling1) * worldToV), ambient);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);
@@ -341,7 +469,17 @@ public static class MeshBuilder
         target.Add(topLeft);
     }
 
-    private static void AddSurfaces(Level level, Accumulator accumulator)
+    /// <summary>
+    /// OV-20261105-wall-pieces: the height a vertex's texture rows are measured from. A wall without
+    /// the <c>PORTCULLIS</c> flag stacks from 0, as before; with it, POSITION 0 anchors at the vertex's
+    /// lower edge of its piece and POSITION 1 at the upper one. Only 0 and 1 are measured, so any
+    /// value above 0 is taken as "upper"; the manual's <c>FENCE</c>, which implies <c>PORTCULLIS</c>
+    /// (p.54), is not implemented and retail uses neither.
+    /// </summary>
+    private static float WallAnchor(Wall wall, float floor, float ceiling) =>
+        wall["PORTCULLIS"] <= 0 ? 0f : wall["POSITION"] > 0 ? ceiling : floor;
+
+    private static void AddSurfaces(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked)
     {
         // OV-20261104-attach: a plain floor or ceiling hides no sprite (the batch is a Surface the host
         // draws without writing depth); the slabs of a BELOW stack do, since a sight line never leaves
@@ -391,6 +529,7 @@ public static class MeshBuilder
                 region,
                 (float)region.FloorOffsetX,
                 (float)region.FloorOffsetY,
+                rowMasked,
                 flip: false,
                 stacked: stacked.Contains(regionIndex));
             EmitSurface(
@@ -404,6 +543,7 @@ public static class MeshBuilder
                 region,
                 (float)region.CeilOffsetX,
                 (float)region.CeilOffsetY,
+                rowMasked,
                 flip: true,
                 stacked: stacked.Contains(regionIndex));
         }
@@ -420,6 +560,7 @@ public static class MeshBuilder
         Region region,
         float offsetX,
         float offsetY,
+        IReadOnlySet<string> rowMasked,
         bool flip,
         bool stacked = false)
     {
@@ -428,7 +569,11 @@ public static class MeshBuilder
             return;
         }
 
-        TextureMapping mapping = TextureMappingFor(level, texture);
+        // OV-20261105-wall-pieces round 6: a surface reading a bitmap the loader expanded to its row
+        // period spans the period's rows too, since the image it samples has them. The mask is a wall
+        // rule, so a surface of such a bitmap is unmeasured; this keeps a shared bitmap consistent
+        // with the walls that read it.
+        TextureMapping mapping = RowMaskedTextureMappingFor(level, texture, rowMasked);
         List<RenderVertex> target = accumulator.Bucket(
             texture,
             AnimationSourceFor(level, texture, region),
@@ -478,15 +623,18 @@ public static class MeshBuilder
         index >= 0 && index < level.Regions.Count ? level.Regions[index] : null;
 
     /// <summary>
-    /// A wall's region <c>AMBIENT</c>: its left region's, the room side of the retail convention. A
-    /// room with <c>AMBIENT</c> −0.25 darkened its walls to a solid region by 8 levels
-    /// (OV-20261029-shading round 3), so the brighter side does not win. One mesh serves both sides;
-    /// the view from the right region is unmeasured.
+    /// A wall piece's region <c>AMBIENT</c> (OV-20261105-wall-light): the region the piece faces, given
+    /// as <paramref name="facing"/> — the lower piece the region with the lower floor, the upper piece
+    /// the region with the higher ceiling — and, for a one-region wall or a tie, the left region's, the
+    /// room side of the retail convention. A room with <c>AMBIENT</c> −0.25 darkened its walls to a
+    /// solid region by 8 levels (OV-20261029-shading round 3), so the brighter side does not win. The
+    /// <c>GENIUS</c> light stays the left region's whatever the piece (unmeasured).
     /// </summary>
-    private static float WallAmbient(Level level, Wall wall) =>
-        (RegionAt(level, wall.LeftRegion) is { } leftRegion ? (float)leftRegion.Ambient
-        : RegionAt(level, wall.RightRegion) is { } rightRegion ? (float)rightRegion.Ambient
-        : 0) + (float)GeniusLight(level, wall);
+    private static float WallAmbient(Level level, Wall wall, Region? facing = null)
+    {
+        Region? region = facing ?? RegionAt(level, wall.LeftRegion) ?? RegionAt(level, wall.RightRegion);
+        return (region is null ? 0f : (float)region.Ambient) + (float)GeniusLight(level, wall);
+    }
 
     /// <summary>
     /// The light a region's <c>GENIUS</c> object gives a wall of it (OV-20261104-genius): a thing or
@@ -526,6 +674,39 @@ public static class MeshBuilder
 
         double cosine = ((normalX * toLampX) + (normalY * toLampY)) / lengths;
         return texture.Albedo * 0.5 * cosine;
+    }
+
+    /// <summary>
+    /// OV-20261105-wall-pieces: the mapping of a bitmap <see cref="TextureLoader"/> expanded to its
+    /// row period P, whose rows then span P rows rather than the bitmap's H: one repeat of the rows is
+    /// <c>SCALE_Y / P</c> of <c>v</c> and <c>OFFSET_Y</c> is one pixel of the expanded image, 1/P. The
+    /// columns are a plain modulo of the width, so they are unchanged. Only the bitmaps
+    /// <see cref="TextureLoader.RowMaskedWallTextures"/> names are expanded, so a wall texture shared
+    /// with a sprite or used as an attach keeps its real image and its plain mapping; anything else
+    /// (<see cref="TextureMappingFor"/>), an attach's own coordinates and its real repeat height
+    /// included, is untouched.
+    /// </summary>
+    private static TextureMapping RowMaskedTextureMappingFor(
+        Level level, string? texture, IReadOnlySet<string> rowMasked)
+    {
+        TextureMapping mapping = TextureMappingFor(level, texture);
+        if (texture is not null &&
+            rowMasked.Contains(texture) &&
+            level.Textures.TryGetValue(texture, out LevelTexture resolved) &&
+            resolved.ScaleY > 0)
+        {
+            int period = TextureLoader.WallRowPeriod(resolved.Height);
+            if (period > 0)
+            {
+                return mapping with
+                {
+                    WorldToV = (float)(resolved.ScaleY / period),
+                    OffsetToV = 1f / period,
+                };
+            }
+        }
+
+        return mapping;
     }
 
     private static TextureMapping TextureMappingFor(Level level, string? texture)

@@ -136,6 +136,25 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
 - `sprite-shade` (`SpriteShadeProbeCases`): a thing in the gray ramp's first colour at several
   depths, aside, with a texture `AMBIENT`, at exact-even depths and at the range's ends; the
   index over the sprite is its shade level.
+- `wall-pieces` (`WallPiecesProbeCases`): the two-region wall's own pieces on the pad island — the
+  level palette's 16×12 swatch window at `SCALE` 2 (`FLAGS PORTCULLIS` with and without
+  `POSITION 1`, and the map's `OFFSET_Y`, on the step up, on the piece above a dropped ceiling, on
+  both at once, in a pit, and on a free wall), and a 16×16 cyan square attached to the template's
+  blue wall texture at `POS_X`/`POS_Y` (plain, on an 8-pixel-a-step grid, in a pit, and with
+  `PORTCULLIS`); each screenshot pixel's index names the texel under it, or the square.
+  Round 2 adds the attach on a `PORTCULLIS` piece with `POSITION` 0 and 1 and a negative `POS_Y`,
+  the piece's own edges as the repeat's origin on a step and in a pit, a free wall standing inside
+  the pad (region 2 on both sides), a 15-step repeat, and the row/column masks of a bitmap whose
+  width — and, natively, height — is 12. Round 4 adds the map's `OFFSET_X`/`OFFSET_Y` on the
+  attach (and with `PORTCULLIS`), an attach on a wall that has both a lower and an upper piece,
+  and — with the pad's corner heights under `FLOOR_LIFTED` — whether a `PORTCULLIS` texture
+  follows a sloped piece edge or hangs from one height, on the whole 16×16 swatch. Round 6 asks
+  where `POSITION 1` and an attach anchor on a wall against a solid region (floor = ceiling at 41
+  or 43, retail's rooms against `border`) and on a wall whose two pieces overlap (16…19).
+- `wall-light` (`WallLightProbeCases`): a wall between two regions with different `AMBIENT` (room
+  0.5 / pad 0.25 and the swap) as a step, as the piece above a dropped ceiling, in a pit and as
+  both pieces at once, with `PLAYER_LIGHT` 0; the index over the wall is 16 plus its shade level
+  and so names the region whose `AMBIENT` the wall took.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of
