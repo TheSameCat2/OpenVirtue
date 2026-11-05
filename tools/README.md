@@ -17,7 +17,7 @@ dotnet run --project tools/OpenVirtue.Tools -- save pack    <body> <file.sav>   
 dotnet run --project tools/OpenVirtue.Tools -- save capture <archive.wrs> <file.sav> [main.wdl]   # a level as loaded, in the original's save format
 dotnet run --project tools/OpenVirtue.Tools -- save play <archive.wrs> <main.wdl> [--ticks N]     # runs a level headless (0.25 ticks a cycle); its full SAVEs also land beside the archive in the original's format
 dotnet run --project tools/OpenVirtue.Tools -- wdl info     <script.wdl>
-dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl]
+dotnet run --project tools/OpenVirtue.Tools -- level info   <archive.wrs> [main.wdl] [--sprites]   # --sprites lists every sprite with its bearing and distance from the start
 dotnet run --project tools/OpenVirtue.Tools -- level bench  <archive.wrs> [frames] [main.wdl]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
 dotnet run --project tools/OpenVirtue.Tools -- oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]

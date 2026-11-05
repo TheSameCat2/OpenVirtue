@@ -124,6 +124,26 @@ public sealed class UiTextBuilderTests
     }
 
     [Fact]
+    public void Build_CarriageReturnInAString_CountsAsABlankCharacter()
+    {
+        // OV-20261104-retail-frames: the retail scripts' strings end their lines in CR LF; the original
+        // centres such a line as if the CR were a character, half a cell further left, and draws nothing for it.
+        Level level = Load(
+            "MAPFILE <test.wmp>;\n" +
+            "STRING prompt,\"AB\r\nC\";\n" +
+            "FONT menuFont, <menu.pcx>, 8, 10;\n" +
+            "TEXT promptText { FONT menuFont; STRING prompt; POS_X 50; POS_Y 40; FLAGS VISIBLE,CENTER_X; }\n");
+
+        IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(level);
+
+        // "AB\r" is three cells wide: it starts at 50 - 12; the CR is the third glyph; "C" is centred alone.
+        Assert.Equal(4, glyphs.Count);
+        Assert.Equal(38, glyphs[0].X);
+        Assert.Equal('\r', glyphs[2].CodePoint);
+        Assert.Equal(46, glyphs[3].X);
+    }
+
+    [Fact]
     public void Build_CondensedAndNarrowText_CompressesHorizontalAdvance()
     {
         Level level = Load(

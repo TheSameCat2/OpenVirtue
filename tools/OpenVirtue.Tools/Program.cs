@@ -481,6 +481,26 @@ internal static class Cli
                 if (level.PlayerStart is { } ps)
                 {
                     Console.WriteLine($"  player start: ({ps.X}, {ps.Y}) angle {ps.Angle} in region {ps.Region}");
+                    if (Environment.GetCommandLineArgs().Contains("--sprites", StringComparer.Ordinal))
+                    {
+                        // Every sprite layer as the renderer builds it from the start, with its bearing from
+                        // the start's facing (counter-clockwise positive) and its distance: for frame
+                        // comparisons against the original (OV-20261104-retail-frames).
+                        Console.WriteLine("  sprites (name, map x y, base height, half width x height, texture, region, distance, bearing):");
+                        double facing = ps.Angle * Math.PI / 180;
+                        foreach (OpenVirtue.Engine.Rendering.SpriteBillboard sprite in OpenVirtue.Engine.Rendering.SpriteBuilder.Build(level, new System.Numerics.Vector2((float)ps.X, (float)ps.Y)))
+                        {
+                            double mapX = sprite.BasePosition.X;
+                            double mapY = OpenVirtue.Engine.Rendering.RenderSpace.MapYFromZ(sprite.BasePosition.Z);
+                            double dx = mapX - ps.X;
+                            double dy = mapY - ps.Y;
+                            double distance = Math.Sqrt((dx * dx) + (dy * dy));
+                            double bearing = ((Math.Atan2(dy, dx) - facing + (3 * Math.PI)) % (2 * Math.PI)) - Math.PI;
+                            Console.WriteLine(FormattableString.Invariant(
+                                $"    {sprite.Source?.Name ?? "?"} ({mapX:F2}, {mapY:F2}) h {sprite.BasePosition.Y:F2} {sprite.HalfWidth:F2}x{sprite.HalfHeight:F2} {sprite.Texture} r{sprite.Source?.Region ?? -1} d {distance:F1} b {bearing * 180 / Math.PI:F1}"));
+                        }
+                    }
+
                     if (ps.Region >= 0 && ps.Region < level.Regions.Count)
                     {
                         OpenVirtue.Engine.Map.Region startRegion = level.Regions[ps.Region];

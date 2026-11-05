@@ -167,11 +167,9 @@ public static class UiTextBuilder
             for (int i = 0; i < value.Value.Length; i++)
             {
                 char ch = value.Value[i];
-                if (ch == '\r')
-                {
-                    continue;
-                }
-
+                // OV-20261104-retail-frames: a carriage return inside a string (the retail scripts'
+                // lines end in CR LF) counts as a character of the line, blank but as wide as any,
+                // so the original centres such a line half a character further left.
                 if (ch == '\n' ||
                     (ch == '\\' && i + 1 < value.Value.Length && value.Value[i + 1] == 'n'))
                 {

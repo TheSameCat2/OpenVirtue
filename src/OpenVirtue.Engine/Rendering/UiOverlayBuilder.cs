@@ -414,14 +414,18 @@ public static class UiOverlayBuilder
                 NumberAt(values, 0) is not { } localX ||
                 NumberAt(values, 1) is not { } localY ||
                 IdentifierAt(values, 2) is not { } textureName ||
-                IdentifierAt(values, 3) is not { } skillName ||
                 !level.Textures.TryGetValue(textureName, out LevelTexture texture) ||
                 texture.Frames.Count == 0)
             {
                 continue;
             }
 
-            int frameIndex = Math.Max(0, (int)Math.Truncate(skills.GetValueOrDefault(skillName)) - 1);
+            // The fourth argument names the skill that picks the frame, or is a number (the retail
+            // HUD's scroll icon has a literal 0: OV-20261104-retail-frames).
+            double selector = IdentifierAt(values, 3) is { } skillName
+                ? skills.GetValueOrDefault(skillName)
+                : NumberAt(values, 3) ?? 0;
+            int frameIndex = Math.Max(0, (int)Math.Truncate(selector) - 1);
             frameIndex = Math.Clamp(frameIndex, 0, texture.Frames.Count - 1);
             if (texture.Frames[frameIndex] is not { } frame)
             {

@@ -502,4 +502,6 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261104-retail-frames.md` — the retail title's splash comes out of OpenVirtue pixel for
   pixel; its menu differed only in the border around the 3-D window (palette entry
   `FRAME_COLOR`, not a clear colour of OpenVirtue's own) and in RGB-drawn grays missing the DAC's
-  6-bit rounding. Implemented in the host's clear colour and the GL shader.
+  6-bit rounding; Apathy's start differed in a panel `PICTURE` with a literal frame selector and
+  in text lines ending in a raw carriage return, which counts as a character. Implemented in the
+  host's clear colour, the GL shader and the UI builders.

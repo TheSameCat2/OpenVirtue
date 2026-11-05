@@ -419,6 +419,26 @@ public sealed class UiOverlayBuilderTests
         Assert.Equal("iconTwo", picture.Bitmap);
     }
 
+    [Fact]
+    public void BuildPanelWidgets_PictureWithALiteralSelector_DrawsTheFirstFrame()
+    {
+        // OV-20261104-retail-frames: the retail HUD's scroll icon is PICTURE 136, 5, scrollIconTex, 0.
+        Level level = Load(
+            """
+            MAPFILE <test.wmp>;
+            BMAP iconOne, <one.pcx>, 0, 0, 11, 12;
+            BMAP iconTwo, <two.pcx>, 0, 0, 21, 22;
+            TEXTURE iconTex { BMAPS iconOne, iconTwo; }
+            PANEL menu { POS_X 10; POS_Y 20; PICTURE 136,5,iconTex,0; FLAGS VISIBLE; }
+            """);
+
+        UiOverlaySprite picture = Assert.Single(UiOverlayBuilder.BuildPanelWidgets(level, level.Skills));
+
+        Assert.Equal("iconOne", picture.Bitmap);
+        Assert.Equal(146, picture.X);
+        Assert.Equal(25, picture.Y);
+    }
+
     private static Level Load(string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
