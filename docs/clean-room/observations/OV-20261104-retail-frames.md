@@ -73,12 +73,47 @@ before); a strict count of the pixels differing by more than 6% of the range, 56
 
 Still open: the curtains (about 1.5 shades, and 5.5 in the last band), the right alcove's bricks
 (about one shade), the right-hand seat rows' bright bands sitting a row or two off in places, and
-the sub-pixel edges the earlier note named.
+the sub-pixel edges the earlier note named. Round 3 below closes the first two and measures four
+new residuals.
+
+## Round 3 (2026-11-06): the shade rule, re-measured
+OV-20261105-shade-global replaced the shade formula, and the same frame was compared again
+(`ratio2/compare.txt`, `ratio2/summary.txt`; both frames through the same 6-bit DAC, so equal
+palette colours give equal bytes). The curtains and the right alcove's bricks are the two items
+Round 2 named, and both close:
+
+| Region | Original | Round 2 (before) | Now (after) |
+|---|---|---|---|
+| curtains | 15.1, 13.9, 50.6 | 13.7, 12.3, 45.1 | 15.6, 14.3, 50.6 |
+| right alcove bricks | 31.1, 30.1, 31.6 | 32.8, 32.0, 33.9 | 31.1, 30.2, 31.9 |
+| left alcove bricks | 25.5, 24.7, 27.0 | 25.8, 25.3, 28.3 | 25.2, 24.6, 27.1 |
+
+Pixels exactly equal to the original's: the 3-D view 49.2% → 50.8%, the curtains 34.6% → 45.7%, the
+ceiling 49.5% → 53.3%. The view's mean brightness error +1.8% → +0.1%, the curtains +11.9% → +0.5%,
+the right alcove's bricks −6.6% → −0.8%. No named region is more than ±1.5% off in mean brightness.
+
+What the same measurement found, all of it outside the shading change:
+
+- **Ours is one row taller than the original's 3-D view.** The original's row y=32 is pure black and
+  its view starts at y=33; OpenVirtue fills y=32 with ceiling and ends at y=419, so its view is 388
+  rows where the original's is 387. The rest of that band (y 33..60) is within 0.2%.
+- **A 1-pixel misalignment that grows with distance.** Best-fit offsets of the whole view are
+  (+1, 0): 53.2% exact against 50.8% at (0, 0); the curtains prefer (+1, −1) at 74.5% against 45.7%;
+  the left alcove and the ceiling prefer (0, 0). Near surfaces align at (0, 0) and far ones want the
+  offset, so it is not a rigid frame shift.
+- **The surround outside the view is not the original's.** Columns 28–31 and 608–611, rows 30–31,
+  read 4, 4, 4 in the original and 0, 0, 0 in OpenVirtue: the letterbox is the palette's 4 grey.
+- **The capture is not reproducible run to run.** `RetailSmokeTests` paces frames on wall time, so
+  the engine has ticked a different amount by the capture: two runs of the same binaries are 91.4%
+  byte-identical in the 3-D view (1.5% over magick's 6% threshold). Read any delta under about 1%
+  as noise.
 
 ## Open Questions
 - The curtains' shades (15.1, 13.9 and 50.6 in the original against 13.7, 12.3 and 45.1) and the
-  right alcove's bricks, about one shade; the flic frames.
-- Sub-pixel texture edges, if any remain after the wall rules above.
+  right alcove's bricks, about one shade: both closed by Round 3, which leaves the row, the offset
+  and the letterbox it names; the flic frames.
+- Sub-pixel texture edges, if any remain after the wall rules above, and the distance-dependent
+  one-pixel offset Round 3 measures.
 
 ## Implementation
 `RuntimeHost.TintedClearColor` clears to the shown palette's `FRAME_COLOR` entry when the level

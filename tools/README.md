@@ -155,6 +155,20 @@ dotnet run --project tools/OpenVirtue.Tools -- oracle prepare proximity-events [
   0.5 / pad 0.25 and the swap) as a step, as the piece above a dropped ceiling, in a pit and as
   both pieces at once, with `PLAYER_LIGHT` 0; the index over the wall is 16 plus its shade level
   and so names the region whose `AMBIENT` the wall took.
+- `shade-global` (`ShadeGlobalProbeCases`): the coefficient the global `AMBIENT` skill takes in the
+  shade level, which OV-20261029-shading never measured — it fitted one constant with both
+  ambients at 0. One free wall from (24, −20) to (48, 20) in the room and the room's own floor,
+  with the global at 0, 0.3 or 0.5 against a region `AMBIENT` of 0, 0.2, −0.1 or 0.5, each crossed
+  with retail's light (`PLAYER_LIGHT` 0.2, `LIGHT_DIST` 20) and a strong one (1, 10) that puts five
+  level boundaries between d 22 and 48; `PLAYER_LIGHT` 0 carriers read the flat base, and a mirrored
+  wall, a reversed one and the retail declaration `SKILL AMBIENT { VAL 0.3; }` in place of `SET`
+  check the reading against geometry and the declaration form. Fitting a boundary's level against
+  its depth gives the base and k. Round 2 (2026-11-05, 153 carriers) sweeps what round 1 could not
+  resolve: `PLAYER_LIGHT` 0.05…1 at `LIGHT_DIST` 10 and 20 with the floor read down a clear column
+  from two eye heights, the region `AMBIENT` in 1/128 steps at four lights with no free wall, and
+  one free wall at a time along the eye line — oblique, mirrored, and frontal with the half-steps
+  made by moving the eye back (`SET PLAYER_X`), all against depth taken from the ray-wall
+  intersection.
 - `oracle prepare proximity-events` — the OV-20261019-proximity-events carriers, built from
   `ProximityProbeCases.cs` on the same trace scaffold. A global `EACH_TICK` sampler walks the
   player by setting `PLAYER_VX/PLAYER_VY` every cycle. The cases walk past, beam into and out of

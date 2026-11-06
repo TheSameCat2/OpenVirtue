@@ -113,7 +113,8 @@ internal static class ShadingProbeCases
             ("no effect", "every wall at region-ambient's shade")),
         Map: new TraceProbeMap(RoomBody: "AMBIENT 0.5;", PaletteBody: Range, WallTextureBody: "ALBEDO 1; "));
 
-    private const string LowEye = "    SET PLAYER_SIZE, 2;\n    SET PLAYER_Z, 2;\n";
+    /// <summary>The eye lowered to 2, shared with the <c>shade-global</c> probe's round 2 (block A/B).</summary>
+    internal const string LowEye = "    SET PLAYER_SIZE, 2;\n    SET PLAYER_Z, 2;\n";
 
     /// <summary>
     /// Round 2: the eye lowered to 2, so the floor shows from about 5.5 steps out to the far wall at 48,

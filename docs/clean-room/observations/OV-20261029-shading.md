@@ -133,8 +133,21 @@ upper piece the higher ceiling's region, not the left region and not the eye's. 
 took the room's because the room was also the lower floor's region, so the reading cannot tell the
 two rules apart.
 
+## Addendum (2026-11-06): the invariant is a staircase, not a line
+The **Invariant** above is superseded by OV-20261105-shade-global, which measures the level along
+every depth from 22 to 48 steps instead of fitting boundaries: the light is a whole number of zones
+`m` and the level is `2·⌊(30 + φ − 32·A − 2·m)/2⌋`, with a floor's `m = ⌈Qf/d⌉`, a sprite's
+`⌊Qw/d⌋` and a wall's stepped across the screen. `30.4` was the slope of a straight line fitted
+through a stepped function, which is why it ran 30.0 to 31.9 between light sets; the light's share
+is `15·p·l` in 1/d plus about half a level at `LIGHT_DIST` 10 and 4.3 at 20, and every level
+boundary is 2 levels because the zone count is a whole number. The `32·AMBIENT` factor survives
+(measured as 32 levels a unit here), but the sum it takes was never tested above `AMBIENT` 0 and
+now includes the global skill at equal weight. The fitting procedure, the round-2 light law and
+`DARK_DIST` 1000 all stand.
+
 ## Implementation
-`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the left region's `AMBIENT`, now the facing piece's region; see the addendum), the palette `RANGE`/`FLAGS`
+`OpenVirtue.Engine.Rendering.PaletteShading` (`Level`, `BuildTable`), `MeshBuilder.WallAmbient` (the
+left region's `AMBIENT`, now the facing piece's region; see the addendum), the palette `RANGE`/`FLAGS`
 in `Level.PaletteShading`, palette indices in `TextureImage`, and the GL backend's shaded path
 (index texture → shade table → palette, level from the clip-space depth). Tests: `PaletteShadingTests`
 reproduce the measured levels.

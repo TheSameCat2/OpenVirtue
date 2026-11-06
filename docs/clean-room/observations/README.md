@@ -498,7 +498,8 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   sprite, by the walls' formula with the player's light term two levels less, not below 0: two
   levels darker than a wall where the light reaches it, the walls' level where it does not; a
   lamp and `ALBEDO` do nothing to it. Fifteen carriers. Implemented in the host's batch shade
-  bias and the GL shader.
+  bias and the GL shader; OV-20261105-shade-global restates the term as the floor form of its
+  zones, one zone more and floored.
 - `OV-20261104-retail-frames.md` — the retail title's splash comes out of OpenVirtue pixel for
   pixel; its menu differed only in the border around the 3-D window (palette entry
   `FRAME_COLOR`, not a clear colour of OpenVirtue's own) and in RGB-drawn grays missing the DAC's
@@ -523,3 +524,13 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   faces, the lower piece the lower floor's region and the upper piece the higher ceiling's,
   neither the left region's nor the eye's, which supersedes the left-region reading of
   OV-20261029-shading. Seven carriers; implemented in `MeshBuilder.WallPieces`.
+
+## The shade rule (2026-11-05 — confirmed and implemented)
+
+- `OV-20261105-shade-global.md` — the level is `2·⌊(30 + φ − 32·A − 2·m)/2⌋`: the player's light is a
+  whole number of zones, a floor's and ceiling's `⌈Qf/d⌉`, a sprite's `⌊Qw/d⌋`, a wall's stepped
+  across the screen from its first visible column, with `Qf = 15·p·l + 4.3·(l/20)³`, `Qw = Qf + 1`
+  and `φ = l/32` fits through `LIGHT_DIST` 10 and 20; the global, region's and texture's `AMBIENT`
+  are one sum at 32 levels a unit, so no level is ever odd and the old continuous `−30.4·p·l/d` was
+  a fit over a staircase. 178 carriers over two prepare rounds; implemented in `PaletteShading`,
+  `MeshBuilder`, the host's `HostFrame` and the GL backend's shaders.

@@ -47,9 +47,11 @@ public sealed class RuntimeHostBlendTests : IDisposable
         Assert.Equal(BatchBlend.Ghost, sprites.Single(batch => batch.Texture == "ghostTex").Blend);
         Assert.Equal(expected, sprites.Single(batch => batch.Texture == "glassTex").Blend);
 
-        // OV-20261104-sprite-shade: sprites are shaded two levels darker than walls.
-        Assert.All(sprites, batch => Assert.Equal(PaletteShading.SpriteBias, batch.ShadeBias));
-        Assert.All(render.LastFrame.Batches.Where(batch => batch.Texture == "wt"), batch => Assert.Equal(0, batch.ShadeBias));
+        // OV-20261105-shade-global: a sprite's batch is marked so the renderer floors its zones, and its
+        // vertices carry no wall ends (only a wall's do).
+        Assert.All(sprites, batch => Assert.Equal(PaletteShading.SpriteMarker, batch.SpriteMarker));
+        Assert.All(sprites.SelectMany(batch => batch.Vertices), vertex => Assert.Equal(0, vertex.WallAX + vertex.WallAZ + vertex.WallBX + vertex.WallBZ));
+        Assert.All(render.LastFrame.Batches.Where(batch => batch.Texture == "wt"), batch => Assert.Equal(0, batch.SpriteMarker));
     }
 
     public void Dispose()

@@ -203,6 +203,8 @@ public static class MeshBuilder
             wall.AttachTexture, AnimationSourceFor(level, wall.AttachTexture, wall), alphaTest: true);
         float dirX = dx / length;
         float dirY = dz / length;
+        float wallZ1 = RenderSpace.ZFromMapY(v1.Y);
+        float wallZ2 = RenderSpace.ZFromMapY(v2.Y);
         const float lift = 0.02f;
         // OV-20261105-wall-pieces: one quad a piece, each cut to the piece's own span and lit as it —
         // the pieces cannot overlap now that each is limited by the region it faces. On a sloped piece
@@ -231,10 +233,12 @@ public static class MeshBuilder
                 (float X, float Z) At(float s) => (v2.X + (dirX * s) + nx, RenderSpace.ZFromMapY(v2.Y + (dirY * s) + ny));
                 (float x0, float z0) = At(cs0);
                 (float x1, float z1) = At(cs1);
-                var bottomLeft = new RenderVertex(x0, cb, z0, u0, vBottom, ambient);
-                var bottomRight = new RenderVertex(x1, cb, z1, u1, vBottom, ambient);
-                var topRight = new RenderVertex(x1, ct, z1, u1, vTop, ambient);
-                var topLeft = new RenderVertex(x0, ct, z0, u0, vTop, ambient);
+                // An attach is shaded as its wall, ends and all: unmeasured, but the original's attach
+                // moves with the wall's texture, so the same stepping is the natural choice.
+                var bottomLeft = new RenderVertex(x0, cb, z0, u0, vBottom, ambient, v1.X, wallZ1, v2.X, wallZ2);
+                var bottomRight = new RenderVertex(x1, cb, z1, u1, vBottom, ambient, v1.X, wallZ1, v2.X, wallZ2);
+                var topRight = new RenderVertex(x1, ct, z1, u1, vTop, ambient, v1.X, wallZ1, v2.X, wallZ2);
+                var topLeft = new RenderVertex(x0, ct, z0, u0, vTop, ambient, v1.X, wallZ1, v2.X, wallZ2);
                 target.Add(bottomLeft);
                 target.Add(bottomRight);
                 target.Add(topRight);
@@ -457,10 +461,12 @@ public static class MeshBuilder
         float worldToV = mapping.WorldToV;
         float anchor1 = WallAnchor(wall, piece.Floor1, piece.Ceiling1);
         float anchor2 = WallAnchor(wall, piece.Floor2, piece.Ceiling2);
-        var bottomLeft = new RenderVertex(v1.X, piece.Floor1, z1, uAtV1, -v0 + ((anchor1 - piece.Floor1) * worldToV), ambient);
-        var bottomRight = new RenderVertex(v2.X, piece.Floor2, z2, uAtV2, -v0 + ((anchor2 - piece.Floor2) * worldToV), ambient);
-        var topRight = new RenderVertex(v2.X, piece.Ceiling2, z2, uAtV2, -v0 + ((anchor2 - piece.Ceiling2) * worldToV), ambient);
-        var topLeft = new RenderVertex(v1.X, piece.Ceiling1, z1, uAtV1, -v0 + ((anchor1 - piece.Ceiling1) * worldToV), ambient);
+        // OV-20261105-shade-global: every vertex carries the wall's own ends (not this piece's), so the
+        // renderer can step the shade zones across the screen from them.
+        var bottomLeft = new RenderVertex(v1.X, piece.Floor1, z1, uAtV1, -v0 + ((anchor1 - piece.Floor1) * worldToV), ambient, v1.X, z1, v2.X, z2);
+        var bottomRight = new RenderVertex(v2.X, piece.Floor2, z2, uAtV2, -v0 + ((anchor2 - piece.Floor2) * worldToV), ambient, v1.X, z1, v2.X, z2);
+        var topRight = new RenderVertex(v2.X, piece.Ceiling2, z2, uAtV2, -v0 + ((anchor2 - piece.Ceiling2) * worldToV), ambient, v1.X, z1, v2.X, z2);
+        var topLeft = new RenderVertex(v1.X, piece.Ceiling1, z1, uAtV1, -v0 + ((anchor1 - piece.Ceiling1) * worldToV), ambient, v1.X, z1, v2.X, z2);
         target.Add(bottomLeft);
         target.Add(bottomRight);
         target.Add(topRight);

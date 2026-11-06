@@ -11,9 +11,10 @@ namespace OpenVirtue.App.Rendering;
 /// <summary>
 /// OpenGL 3.3 core renderer. Textures are point-sampled. Shaded batches (world and sprites when the
 /// level's palette declares <c>RANGE</c>s, ADR-0008 decision 3) draw by palette index: the texel's
-/// shade level comes from its depth, <c>PLAYER_LIGHT</c>, <c>LIGHT_DIST</c> and <c>AMBIENT</c> as
-/// measured in OV-20261029-shading, the shade table maps index and level to an index, and the palette
-/// gives its colour. Other batches keep the RGB tint and ambient multiply.
+/// shade level comes from its depth, the light's zones, and <c>AMBIENT</c> as measured in
+/// OV-20261105-shade-global — a wall steps its zones across the screen from its own end vertices —
+/// the shade table maps index and level to an index, and the palette gives its colour. Other batches
+/// keep the RGB tint and ambient multiply.
 /// </summary>
 public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 {
@@ -22,10 +23,15 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec2 aUv;
         layout(location = 2) in float aAmbient;
+        layout(location = 3) in vec4 aWall;
         uniform mat4 uViewProjection;
+        uniform float uColumns;
         out vec2 vUv;
         out float vAmbient;
         out float vDepth;
+        flat out float vIsWall;
+        flat out float vWallSlope;
+        flat out float vWallStart;
         void main() {
             // uViewProjection is a System.Numerics row-vector matrix. It is uploaded with
             // glUniformMatrix4fv transpose=false, so GL reads that memory as column-major.
@@ -35,6 +41,34 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             vAmbient = aAmbient;
             // The perspective w is the depth along the line of sight.
             vDepth = gl_Position.w;
+
+            // OV-20261105-shade-global: a wall steps its shade zones across the screen from its two
+            // end vertices at a rounded slope. The ends' columns come from clip x and w alone: the
+            // tilt is a y-shear, which leaves x where it was, so y 0 serves for both ends. Their
+            // x/w and 1/w stay collinear even when one end is behind the eye, which keeps the slope
+            // right there; the first visible column is then the window's left edge.
+            vec4 clipA = uViewProjection * vec4(aWall.x, 0.0, aWall.y, 1.0);
+            vec4 clipB = uViewProjection * vec4(aWall.z, 0.0, aWall.w, 1.0);
+            vIsWall = (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0) ? 1.0 : 0.0;
+            if (vIsWall > 0.5) {
+                // The slope of 1/w per column, written without dividing by w so an end on the eye
+                // plane (w = 0) stays finite: with N the columns,
+                // colA - colB = 0.5*N*(xA*wB - xB*wA)/(wA*wB) and 1/wA - 1/wB = (wB - wA)/(wA*wB),
+                // so their ratio is (wB - wA) / (0.5*N*(xA*wB - xB*wA)). Only a pair on one ray,
+                // where that denominator vanishes, is degenerate, and its slope is 0.
+                float columns = 0.5 * uColumns * (clipA.x * clipB.w - clipB.x * clipA.w);
+                vWallSlope = abs(columns) > 1e-9 ? (clipB.w - clipA.w) / columns : 0.0;
+                if (clipA.w > 0.0 && clipB.w > 0.0) {
+                    float colA = (clipA.x / clipA.w * 0.5 + 0.5) * uColumns;
+                    float colB = (clipB.x / clipB.w * 0.5 + 0.5) * uColumns;
+                    vWallStart = max(min(colA, colB), 0.0);
+                } else {
+                    vWallStart = 0.0;
+                }
+            } else {
+                vWallSlope = 0.0;
+                vWallStart = 0.0;
+            }
         }
         """;
 
@@ -43,6 +77,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         in vec2 vUv;
         in float vAmbient;
         in float vDepth;
+        flat in float vIsWall;
+        flat in float vWallSlope;
+        flat in float vWallStart;
         uniform sampler2D uTexture;
         uniform sampler2D uPalette;
         uniform sampler2D uShade;
@@ -50,11 +87,15 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform vec4 uFadeCurrent;
         uniform vec4 uFadeTarget;
         uniform int uBlend;
-        uniform int uShadeBias;
+        uniform int uSprite;
         uniform int uHeightParity;
         uniform float uAlphaTest;
         uniform float uShaded;
-        uniform vec2 uLight;
+        uniform float uSurfaceQ;
+        uniform float uWallQ;
+        uniform float uPhi;
+        uniform float uColumns;
+        uniform vec2 uViewport;
         out vec4 fragColor;
         void main() {
             // OV-20261104-blend: GHOST shows its texels where the screen pixel's x + y (from the top
@@ -64,16 +105,29 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 discard;
             }
             if (uShaded > 0.5) {
-                // OV-20261029-shading: level = 30 - 32*AMBIENT - 30.4*PLAYER_LIGHT*LIGHT_DIST/d,
-                // down to an even level, 0..30; then index -> shaded index -> colour.
+                // OV-20261105-shade-global: level = 2*floor((30 + phi - 32*A - 2*m)/2), m the light's
+                // zones at the texel: ceil(Qf/d) for a surface, floor(Qw/d) for a sprite, and ceil of
+                // a wall's stepped value; then index -> shaded index -> colour.
                 float index = floor(texture(uTexture, vUv).r * 255.0 + 0.5);
                 if (uAlphaTest > 0.5 && index < 0.5) {
                     discard;
                 }
-                // A sprite's light term is two levels less, not below 0 (OV-20261104-sprite-shade).
-                float lightTerm = 30.4 * max(uLight.x, 0.0) * max(uLight.y, 0.0) / max(vDepth, 0.001);
-                lightTerm = max(lightTerm - float(uShadeBias), 0.0);
-                float level = 30.0 - 32.0 * (uTintAndLight.a + vAmbient) - lightTerm;
+                float depth = max(vDepth, 0.001);
+                float zones;
+                if (uSprite > 0) {
+                    zones = floor(uWallQ / depth);
+                } else if (vIsWall > 0.5) {
+                    // The column in the 3-D window's own pixels, then the slope rounded the way the
+                    // original advances it: r = ceil(1024*s)/1024, and 0 when it is under a unit.
+                    float column = floor((gl_FragCoord.x - uViewport.x) * uColumns / uViewport.y);
+                    float slope = uWallQ * vWallSlope;
+                    float units = 1024.0 * slope;
+                    float step = abs(units) < 1e-3 ? 0.0 : ceil(units) / 1024.0;
+                    zones = ceil((uWallQ / depth) + (column - vWallStart) * (step - slope));
+                } else {
+                    zones = ceil(uSurfaceQ / depth);
+                }
+                float level = 30.0 + uPhi - 32.0 * (uTintAndLight.a + vAmbient) - 2.0 * zones;
                 // Past the range's end (level 32 and up) the texel shows the INFINITY colour, entry 1
                 // (OV-20261104-genius).
                 level = 2.0 * floor(level / 2.0);
@@ -109,12 +163,16 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _tintLocation;
     private readonly int _fadeCurrentLocation;
     private readonly int _blendLocation;
-    private readonly int _shadeBiasLocation;
+    private readonly int _spriteLocation;
     private readonly int _heightParityLocation;
     private readonly int _fadeTargetLocation;
     private readonly int _alphaTestLocation;
     private readonly int _shadedLocation;
-    private readonly int _lightLocation;
+    private readonly int _surfaceQLocation;
+    private readonly int _wallQLocation;
+    private readonly int _phiLocation;
+    private readonly int _columnsLocation;
+    private readonly int _viewportLocation;
     private readonly Dictionary<string, uint> _worldIndices = new(StringComparer.OrdinalIgnoreCase);
     private uint _palette;
     private uint _shade;
@@ -154,18 +212,25 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 12);
         _gl.EnableVertexAttribArray(2);
         _gl.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, stride, 20);
+        // OV-20261105-shade-global: the wall's two ends, (x, z) each, in render space.
+        _gl.EnableVertexAttribArray(3);
+        _gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, stride, 24);
 
         _program = LinkProgram(VertexShader, FragmentShader);
         _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
         _tintLocation = _gl.GetUniformLocation(_program, "uTintAndLight");
         _fadeCurrentLocation = _gl.GetUniformLocation(_program, "uFadeCurrent");
         _blendLocation = _gl.GetUniformLocation(_program, "uBlend");
-        _shadeBiasLocation = _gl.GetUniformLocation(_program, "uShadeBias");
+        _spriteLocation = _gl.GetUniformLocation(_program, "uSprite");
         _heightParityLocation = _gl.GetUniformLocation(_program, "uHeightParity");
         _fadeTargetLocation = _gl.GetUniformLocation(_program, "uFadeTarget");
         _alphaTestLocation = _gl.GetUniformLocation(_program, "uAlphaTest");
         _shadedLocation = _gl.GetUniformLocation(_program, "uShaded");
-        _lightLocation = _gl.GetUniformLocation(_program, "uLight");
+        _surfaceQLocation = _gl.GetUniformLocation(_program, "uSurfaceQ");
+        _wallQLocation = _gl.GetUniformLocation(_program, "uWallQ");
+        _phiLocation = _gl.GetUniformLocation(_program, "uPhi");
+        _columnsLocation = _gl.GetUniformLocation(_program, "uColumns");
+        _viewportLocation = _gl.GetUniformLocation(_program, "uViewport");
         _gl.UseProgram(_program);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uPalette"), 1);
@@ -282,13 +347,17 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             }
 
             _gl.Uniform1(_shadedLocation, shaded ? 1f : 0f);
-            _gl.Uniform2(_lightLocation, frame.Light.X, frame.Light.Y);
+            _gl.Uniform1(_surfaceQLocation, frame.Zones.X);
+            _gl.Uniform1(_wallQLocation, frame.Zones.Y);
+            _gl.Uniform1(_phiLocation, frame.Zones.Z);
+            _gl.Uniform1(_columnsLocation, frame.Columns);
+            _gl.Uniform2(_viewportLocation, (float)batch.Viewport.X, (float)batch.Viewport.Width);
             UploadMatrix(batch.Transform);
             _gl.Uniform4(_tintLocation, 1f, 1f, 1f, batch.Ambient);
             _gl.Uniform4(_fadeCurrentLocation, batch.Fade.Current.X, batch.Fade.Current.Y, batch.Fade.Current.Z, batch.Fade.CurrentWeight);
             _gl.Uniform4(_fadeTargetLocation, batch.Fade.Target.X, batch.Fade.Target.Y, batch.Fade.Target.Z, batch.Fade.Factor);
             _gl.Uniform1(_blendLocation, (int)batch.Blend);
-            _gl.Uniform1(_shadeBiasLocation, batch.ShadeBias);
+            _gl.Uniform1(_spriteLocation, batch.SpriteMarker);
             _gl.Uniform1(_heightParityLocation, (Height - 1) & 1);
             if (batch.Blend == BatchBlend.Diaphanous)
             {
