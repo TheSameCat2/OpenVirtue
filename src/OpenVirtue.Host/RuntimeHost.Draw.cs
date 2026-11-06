@@ -31,7 +31,8 @@ public sealed partial class RuntimeHost
             Height = height,
             ClearColor = TintedClearColor(),
             ClearDepth = true,
-            Light = new Vector2((float)_runtime.GetSkill("PLAYER_LIGHT"), (float)_runtime.GetSkill("LIGHT_DIST")),
+            Zones = Zones(),
+            Columns = WorldColumns(display),
         };
 
         AddSky(frame, worldPixels);
@@ -268,7 +269,7 @@ public sealed partial class RuntimeHost
                 _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
                 shaded: _shading,
                 blend: BatchBlendOf(blend),
-                shadeBias: PaletteShading.SpriteBias);
+                spriteMarker: PaletteShading.SpriteMarker);
             start = end;
         }
     }
@@ -415,7 +416,7 @@ public sealed partial class RuntimeHost
         bool shaded = false,
         bool depthWrite = true,
         BatchBlend blend = BatchBlend.None,
-        int shadeBias = 0)
+        int spriteMarker = 0)
     {
         if (vertices.Length == 0)
         {
@@ -433,7 +434,7 @@ public sealed partial class RuntimeHost
             DepthTest = depthTest,
             DepthWrite = depthWrite,
             Blend = blend,
-            ShadeBias = shadeBias,
+            SpriteMarker = spriteMarker,
             Ambient = ambient,
             Fade = fade ?? _fade,
             Vertices = vertices,
@@ -455,6 +456,21 @@ public sealed partial class RuntimeHost
         return VirtualDisplayLayout.Create(width, height, width, height);
     }
 
+    /// <summary>
+    /// OV-20261105-shade-global: the frame's light as the zones a shaded batch is drawn with —
+    /// <c>Qf</c> for surfaces, <c>Qw</c> for walls and sprites, and φ — computed once from the live
+    /// <c>PLAYER_LIGHT</c> and <c>LIGHT_DIST</c>.
+    /// </summary>
+    private Vector3 Zones()
+    {
+        double light = _runtime.GetSkill("PLAYER_LIGHT");
+        double distance = _runtime.GetSkill("LIGHT_DIST");
+        return new Vector3(
+            (float)PaletteShading.SurfaceQ(light, distance),
+            (float)PaletteShading.WallQ(light, distance),
+            (float)PaletteShading.Phi(light, distance));
+    }
+
     /// <summary>The live projection in 3-D-window pixels.</summary>
     private ProjectionModel CurrentProjection() =>
         ProjectionModel.Create(
@@ -466,12 +482,26 @@ public sealed partial class RuntimeHost
 
     private DisplayRectangle WorldViewport(VirtualDisplayLayout display)
     {
+        (float x, float y, float width, float height) = WorldWindow(display);
+        return display.ToPhysical(x, y, width, height);
+    }
+
+    /// <summary>
+    /// The 3-D window in the virtual display's own pixels, clamped to it as the original clamps it:
+    /// the width a wall's shade steps are counted across (OV-20261105-shade-global,
+    /// <see cref="HostFrame.Columns"/>).
+    /// </summary>
+    private (float X, float Y, float Width, float Height) WorldWindow(VirtualDisplayLayout display)
+    {
         float x = (float)Math.Clamp(_runtime.GetSkill("SCREEN_X"), 0, display.VirtualWidth - 1);
         float y = (float)Math.Clamp(_runtime.GetSkill("SCREEN_Y"), 0, display.VirtualHeight - 1);
         float width = (float)Math.Clamp(_runtime.GetSkill("SCREEN_WIDTH"), 1, display.VirtualWidth - x);
         float height = (float)Math.Clamp(_runtime.GetSkill("SCREEN_HGT"), 1, display.VirtualHeight - y);
-        return display.ToPhysical(x, y, width, height);
+        return (x, y, width, height);
     }
+
+    /// <summary>The 3-D window's width in virtual columns, the space a wall's shade steps are counted in.</summary>
+    private float WorldColumns(VirtualDisplayLayout display) => WorldWindow(display).Width;
 
     /// <summary>The global and the texture's <c>AMBIENT</c> for a shaded batch; the region's comes per vertex.</summary>
     private float ShadeAmbient(string? texture)

@@ -11,7 +11,7 @@ namespace OpenVirtue.Engine.Rendering;
 
 /// <summary>
 /// A CPU-side 32-bit RGBA image ready to upload as a GPU texture, with the palette indices it was
-/// decoded from when it came from a PCX (the renderer shades by index, OV-20261029-shading).
+/// decoded from when it came from a PCX (the renderer shades by index, OV-20261105-shade-global).
 /// </summary>
 public readonly record struct TextureImage(int Width, int Height, byte[] Rgba, byte[]? Indices = null);
 

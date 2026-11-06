@@ -18,8 +18,19 @@ public sealed class HostFrame
 
     public bool ClearDepth { get; init; }
 
-    /// <summary><c>PLAYER_LIGHT</c> and <c>LIGHT_DIST</c> for the shaded batches (OV-20261029-shading).</summary>
-    public Vector2 Light { get; init; }
+    /// <summary>
+    /// The light's zones for the shaded batches (OV-20261105-shade-global):
+    /// <c>PaletteShading.SurfaceQ</c>, <c>WallQ</c> and <c>Phi</c> of the frame's <c>PLAYER_LIGHT</c>
+    /// and <c>LIGHT_DIST</c>. The renderer divides them by a texel's depth; a wall steps the result
+    /// across the screen from the wall's ends.
+    /// </summary>
+    public Vector3 Zones { get; init; }
+
+    /// <summary>
+    /// The 3-D window's width in virtual columns (<c>SCREEN_WIDTH</c>), the space a wall's shade
+    /// steps are counted in: the renderer turns a fragment's x back into this window.
+    /// </summary>
+    public float Columns { get; init; }
 
     public List<DrawBatch> Batches { get; } = [];
 }
@@ -58,10 +69,11 @@ public sealed class DrawBatch
     public BatchBlend Blend { get; init; } = BatchBlend.None;
 
     /// <summary>
-    /// Shade levels taken off the player's light term, not below 0 (OV-20261104-sprite-shade): a
-    /// sprite is two levels darker than a wall at its depth wherever the light reaches it.
+    /// Non-zero marks a sprite (OV-20261105-shade-global, <c>PaletteShading.SpriteMarker</c>): the
+    /// renderer floors the light's zones for a sprite where a floor or ceiling ceilings them and a wall
+    /// steps them. The value itself means nothing.
     /// </summary>
-    public int ShadeBias { get; init; }
+    public int SpriteMarker { get; init; }
 
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }
@@ -71,7 +83,7 @@ public sealed class DrawBatch
 
     /// <summary>
     /// Draw by palette index through the uploaded shade table: <see cref="Ambient"/> plus each
-    /// vertex's ambient is the texel's <c>AMBIENT</c>, and its distance and <see cref="HostFrame.Light"/>
+    /// vertex's ambient is the texel's <c>AMBIENT</c>, and its depth and <see cref="HostFrame.Zones"/>
     /// set its shade level.
     /// </summary>
     public bool Shaded { get; init; }

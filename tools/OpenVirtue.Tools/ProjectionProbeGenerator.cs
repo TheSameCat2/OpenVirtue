@@ -76,6 +76,7 @@ internal static class ProjectionProbeGenerator
     public const string SpriteShadeProbeName = "sprite-shade";
     public const string WallPiecesProbeName = "wall-pieces";
     public const string WallLightProbeName = "wall-light";
+    public const string ShadeGlobalProbeName = "shade-global";
 
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
@@ -133,6 +134,7 @@ internal static class ProjectionProbeGenerator
     private const string SpriteShadeProbeId = "OV-20261104-sprite-shade";
     private const string WallPiecesProbeId = "OV-20261105-wall-pieces";
     private const string WallLightProbeId = "OV-20261105-wall-light";
+    private const string ShadeGlobalProbeId = "OV-20261105-shade-global";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -461,6 +463,7 @@ internal static class ProjectionProbeGenerator
         SpriteShadeProbeName => SpriteShadeProbeId,
         WallPiecesProbeName => WallPiecesProbeId,
         WallLightProbeName => WallLightProbeId,
+        ShadeGlobalProbeName => ShadeGlobalProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -617,6 +620,7 @@ internal static class ProjectionProbeGenerator
             case SpriteShadeProbeName:
             case WallPiecesProbeName:
             case WallLightProbeName:
+            case ShadeGlobalProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -683,6 +687,7 @@ internal static class ProjectionProbeGenerator
         SpriteShadeProbeName => SpriteShadeProbeCases.Set,
         WallPiecesProbeName => WallPiecesProbeCases.Set,
         WallLightProbeName => WallLightProbeCases.Set,
+        ShadeGlobalProbeName => ShadeGlobalProbeCases.Set,
         _ => null,
     };
 
@@ -747,7 +752,7 @@ internal static class ProjectionProbeGenerator
             WriteTexture(workDir, "PRBCLR.PCX", Ink.Transparent, palette);
         }
 
-        if (plan.ProbeName is ShadingProbeName or GeniusProbeName or WallLightProbeName)
+        if (plan.ProbeName is ShadingProbeName or GeniusProbeName or WallLightProbeName or ShadeGlobalProbeName)
         {
             // The side walls and the floor in the ramp's brightest colour, which shading darkens;
             // wall-light reads the shade level a two-region wall takes off its region.
@@ -759,7 +764,7 @@ internal static class ProjectionProbeGenerator
         }
 
         WriteTexture(workDir, "PRBMAG.PCX", Ink.Magenta, palette);
-        if (plan.ProbeName is ShadingProbeName or BlendProbeName or GeniusProbeName or WallLightProbeName)
+        if (plan.ProbeName is ShadingProbeName or BlendProbeName or GeniusProbeName or WallLightProbeName or ShadeGlobalProbeName)
         {
             WriteValidated(Path.Combine(workDir, "PRBFLR.PCX"), SyntheticPcx.Solid(64, 64, ShadeRampStart, palette));
         }

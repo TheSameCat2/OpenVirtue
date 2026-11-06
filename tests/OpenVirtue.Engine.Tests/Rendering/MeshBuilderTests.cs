@@ -1064,6 +1064,48 @@ public class MeshBuilderTests
     }
 
     [Fact]
+    public void BuildWalls_WallVertices_CarryTheWallsOwnEnds()
+    {
+        // OV-20261105-shade-global: a wall's shade zones step across the screen from its two end
+        // vertices, so every vertex — both pieces of a two-region wall and its attach — carries them,
+        // in render space (map y is render −z).
+        Level level = AttachLevel(
+            Wall8("REGION a 0 8;#0\nREGION b 0 16;#1\n", "WALL w 0 1 0 1 0 0"),
+            0,
+            16);
+
+        LevelMesh mesh = MeshBuilder.BuildWalls(level);
+        List<RenderVertex> wall = [.. mesh.Batches.Where(static b => b.Texture == "wallTex").SelectMany(static b => b.Vertices)];
+        List<RenderVertex> attach = [.. mesh.Batches.Where(static b => b.Texture == "square").SelectMany(static b => b.Vertices)];
+
+        Assert.NotEmpty(wall);
+        Assert.NotEmpty(attach);
+        // v1 (32, −4) is render z +4 and v2 (32, 4) render z −4.
+        Assert.All(wall.Concat(attach), vertex => Assert.Equal((32f, 4f, 32f, -4f), (vertex.WallAX, vertex.WallAZ, vertex.WallBX, vertex.WallBZ)));
+    }
+
+    [Fact]
+    public void Build_SurfaceAndSpriteVertices_CarryNoWallEnds()
+    {
+        // A floor, a ceiling and a sprite are no wall's: their vertices leave the wall ends at 0 and
+        // the renderer shades them as surfaces (a sprite marks its batch instead).
+        Level level = LevelFrom(
+            "VERTEX 0 0 0;#0\nVERTEX 4 0 0;#1\nVERTEX 4 4 0;#2\nVERTEX 0 4 0;#3\n" +
+            "REGION room 0 10;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\n" +
+            "WALL w 3 0 0 -1 0 0;#3\nPLAYER_START 0 0 0 0;#4",
+            "BMAP m,<t.pcx>,0,0,64,64; TEXTURE floorTex { BMAPS m; } WALL w { TEXTURE floorTex; } " +
+            "REGION room { FLOOR_TEX floorTex; CEIL_TEX floorTex; }");
+
+        LevelMesh mesh = MeshBuilder.Build(level);
+
+        Assert.Contains(mesh.Batches, static b => b.Surface);
+        Assert.All(
+            mesh.Batches.Where(static b => b.Surface).SelectMany(static b => b.Vertices),
+            vertex => Assert.Equal((0f, 0f, 0f, 0f), (vertex.WallAX, vertex.WallAZ, vertex.WallBX, vertex.WallBZ)));
+    }
+
+    [Fact]
     public void Build_AddsFloorAndCeilingForASquareRegion()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

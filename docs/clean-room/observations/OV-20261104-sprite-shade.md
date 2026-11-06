@@ -57,7 +57,18 @@ rounded down to an even level (OV-20261029-shading).
 - Actors (the same path in OpenVirtue), attach layers, and a sprite past level 30 (a negative
   `AMBIENT`): the `INFINITY` colour as a wall shows, or held at 30.
 
+## Addendum (2026-11-06): the rule is the floor form of the zones
+The **A sprite is shaded by its depth** rule above is the same rule as a floor's, with the light's
+zone count floored instead of ceiled and one zone more (OV-20261105-shade-global): a sprite takes
+`m = ⌊Qw/d⌋` where a floor takes `⌈Qf/d⌉`, and the level is `2·⌊(30 + φ − 32·A − 2·m)/2⌋`. The
+"two levels less" was that difference seen at one light, not a constant: the whole table above is
+reproduced by the floor form. The depths 15.2, 19, 30.4 and 38, chosen as "exact even" under the old
+`k` 30.4, are simply those where `Qw/d` sits just under 10, 8, 5 and 4 zones, which is a property of
+that `k` and not of the engine. What stands: one level over the whole sprite, by its depth and not
+its distance, `AMBIENT` brightening it as a wall, a lamp and `ALBEDO` doing nothing.
+
 ## Implementation
-`PaletteShading.SpriteBias` (2) and `SpriteLevel`; the host gives sprite batches
-`DrawBatch.ShadeBias` 2 and the GL shader takes it off the light term, not below 0. Tests:
-`PaletteShadingTests.SpriteLevel_TakesTwoOffTheLightTerm`, `RuntimeHostBlendTests`.
+`PaletteShading.SpriteLevel` (⌊Qw/d⌋ zones; `SpriteBias` is gone with the addendum above) and
+`PaletteShading.SpriteMarker`, which marks a sprite's batch so the shader floors where a surface
+ceils; the host sets the marker on sprite batches instead of a shade bias. Tests:
+`PaletteShadingTests.SpriteLevel_FloorsTheWallZones`, `RuntimeHostBlendTests`.

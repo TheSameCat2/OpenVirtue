@@ -11,7 +11,9 @@ using static TraceProbeWdl;
 /// bitmap in the gray ramp's first colour stands at several depths, once off to the side (depth 28,
 /// distance 30.5) and once with a texture <c>AMBIENT</c>; the final screenshot's index over the
 /// sprite is 16 plus its shade level, read at its centre and its edges to see whether a sprite is
-/// one level or shaded across.
+/// one level or shaded across. (The rule these carriers tested — two levels less than a wall's
+/// light term — was replaced by OV-20261105-shade-global's floored zones; their predictions are the
+/// record of that fit.)
 /// </summary>
 internal static class SpriteShadeProbeCases
 {
