@@ -295,12 +295,12 @@ public sealed class Player : AcknexObject
     }
 
     /// <summary>
-    /// Where one wall holds a step, in 22.10 (OV-20261110-wall-slide): the whole step is taken, its
-    /// end's distance to the wall line is measured with the wall's normal in 1/1024 (each component
-    /// rounded), the product cut down, and the end is pushed back along that normal to
-    /// <see cref="Width"/> + <see cref="WallClearance"/>, each axis's part cut down. A 0.2 step slid
-    /// along walls of slope 1/2, 1 and 2 to the unit this way. Null when the step's end is not within
-    /// the wall's span (its ends are rounded off elsewhere).
+    /// Where one wall holds a step, in 22.10 (OV-20261110-wall-slide): the whole step is taken, first
+    /// pushed off the wall's ends like things of no width; then, if it is within <see cref="Width"/> of
+    /// the line, its distance is measured with the wall's exact unit normal and cut down, and it is
+    /// pushed back along the normal to <see cref="Width"/> + <see cref="WallClearance"/>, each axis's
+    /// part cut down. Walls of slope 1/2, 3/4, 1 and 2 slid to the unit this way. Null for a wall with
+    /// a missing vertex or no length.
     /// </summary>
     private Vector2? HoldOffWall(Wall wall, Vector2 start, float dx, float dz)
     {
@@ -341,8 +341,10 @@ public sealed class Player : AcknexObject
             return new Vector2(qx / 1024f, qy / 1024f);
         }
 
-        long nx = (long)Math.Round(-(by - ay) * 1024 / length);
-        long ny = (long)Math.Round((bx - ax) * 1024 / length);
+        // The wall's unit normal toward the player, not rounded: the 3:4 wall of the probe took it so
+        // in all 96 cycles, where a normal in 1/1024 missed 63.
+        double nx = -(by - ay) / length;
+        double ny = (bx - ax) / length;
         if (((px - ax) * nx) + ((py - ay) * ny) < 0)
         {
             nx = -nx;
@@ -351,7 +353,7 @@ public sealed class Player : AcknexObject
 
         // As along an axis, the line stops only an end within PLAYER_WIDTH of it (w45-s02 cycle 189: the
         // end's push left the step 1248 from the line, and the line let it be).
-        long distance = FloorDiv(((qx - ax) * nx) + ((qy - ay) * ny), 1024);
+        long distance = (long)Math.Floor(((qx - ax) * nx) + ((qy - ay) * ny));
         long hold = (long)Math.Round((Width + WallClearance) * 1024.0);
         if (distance > Math.Round(Width * 1024.0))
         {
@@ -359,12 +361,10 @@ public sealed class Player : AcknexObject
         }
 
         long push = hold - distance;
-        qx += FloorDiv(push * nx, 1024);
-        qy += FloorDiv(push * ny, 1024);
+        qx += (long)Math.Floor(push * nx);
+        qy += (long)Math.Floor(push * ny);
         return new Vector2(qx / 1024f, qy / 1024f);
     }
-
-    private static long FloorDiv(long value, long divisor) => (long)Math.Floor(value / (double)divisor);
 
     /// <summary>
     /// Pushes the player out of a solid thing or actor it overlaps, straight away from the
