@@ -205,6 +205,62 @@ public sealed class ViewClipTests
     }
 
     [Fact]
+    public void SpriteHidingDepth_BeyondAnOpenPad_KeepsItsDepth()
+    {
+        // OV-20261106-clip-view round 5 p-behind: a thing seen across a raised pad's open borders is cut
+        // at them, so they do not pull its hiding depth ahead.
+        var clip = new ViewClip(LoadPadRoom());
+
+        Assert.Equal(30, clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 30, 0, 2));
+    }
+
+    [Fact]
+    public void SpriteHidingDepth_WideBesideItsRegionsWalls_ComesAheadOfThem()
+    {
+        // OV-20261106-clip-view p-wide: the walls onto a closed region bound the room; a wide thing shows
+        // over them, its hiding depth ahead of the nearest within its columns.
+        var clip = new ViewClip(LoadPadRoom());
+
+        float hiding = clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 46, 0, 30);
+
+        Assert.InRange(hiding, 30, 45);
+    }
+
+    private static Level LoadPadRoom()
+    {
+        const string map = """
+            VERTEX 0 -24 0;#0
+            VERTEX 48 -24 0;#1
+            VERTEX 48 24 0;#2
+            VERTEX 0 24 0;#3
+            VERTEX 10 -5 0;#4
+            VERTEX 20 -5 0;#5
+            VERTEX 20 5 0;#6
+            VERTEX 10 5 0;#7
+            REGION room 0 16;#0
+            REGION pad 4 16;#1
+            REGION solid 16 16;#2
+            WALL plain 0 1 0 2 0 0;#0
+            WALL plain 1 2 0 2 0 0;#1
+            WALL plain 2 3 0 2 0 0;#2
+            WALL plain 3 0 0 2 0 0;#3
+            WALL plain 4 5 1 0 0 0;#4
+            WALL plain 5 6 1 0 0 0;#5
+            WALL plain 6 7 1 0 0 0;#6
+            WALL plain 7 4 1 0 0 0;#7
+            PLAYER_START 1 0 0 0;
+            """;
+        const string main = """
+            MAPFILE <m.wmp>;
+            BMAP wm,<W.PCX>;
+            TEXTURE wt { SCALE_X 4; SCALE_Y 4; BMAPS wm; }
+            WALL plain { TEXTURE wt; }
+            """;
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", main, name => resources.GetValueOrDefault(Path.GetFileName(name)));
+    }
+
+    [Fact]
     public void BuildOccluders_InvisibleStep_HidesNothing()
     {
         // OV-20261106-clip-view p-top: past a raised pad's INVISIBLE corner the far wall shows.

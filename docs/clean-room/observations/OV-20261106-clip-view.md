@@ -124,3 +124,12 @@ reads 212), p-front 19 888 → 146, p-beside 20 019 → 277, p-behind 22 542 →
 border-kinds, border-climb, texmap, attach and blend (220 screens) the total goes 1 250 340 → 1 113 485,
 13 screens better and none worse. Tests: `ViewClipTests.BuildOccluders_InvisibleStep_HidesNothing` and
 `ViewClipTests.Build_InvisibleStep_ContinuesTheHigherFloorsPlaneOverItsRows`.
+- **A sprite's own region's open borders are ways into it, not walls bounding it.** A thing in the room
+  seen across a raised pad is cut at the pad's openings (`p-behind`), so the pad's borders no longer pull
+  its hiding depth ahead. Only walls onto a closed region, and a `BELOW` stack's borders (below-view
+  `deck`), still do. p-behind 3 566 → 146, p-wide 23 851 → 16 953, round 4 o-step-open 3 714 → 299. Over
+  clip-view, below-view, below-beam, sprite-shade and view-activity, three screens are better and none
+  worse. Still open in p-wide: the wide thing should be cut at the pad's far edge, yet drawn over the
+  room's back wall. A single hiding depth per sprite cannot give both. Tests:
+  `ViewClipTests.SpriteHidingDepth_BeyondAnOpenPad_KeepsItsDepth` and
+  `ViewClipTests.SpriteHidingDepth_WideBesideItsRegionsWalls_ComesAheadOfThem`.
