@@ -12,6 +12,12 @@ public static class WdlPlayerMotion
     /// Advances position and facing by the <c>PLAYER_V*</c> skills, scaled by
     /// <c>TIME_CORR</c>, then updates collision and derived skills.
     /// </summary>
+    /// <summary>
+    /// How near a move's float displacement must come to its 1/1024 step to count as the whole step: a
+    /// quarter of 1/1024, well above a float's resolution at map coordinates (0.5/1024 at ±512).
+    /// </summary>
+    private const double WholeStepTolerance = 0.25 / 1024;
+
     public static void Apply(WdlRuntime runtime, Player player, double timeCorrection)
     {
         ArgumentNullException.ThrowIfNull(runtime);
@@ -90,18 +96,20 @@ public static class WdlPlayerMotion
         displacement -= held ? Vector2.Zero : player.LastObjectPush;
         // A step taken whole keeps the script's velocity to the last 1/1024: Apathy's walk set −15/1024
         // and read it back, where dividing the step by TIME_CORR again gave −16 (OV-20261110-retail-play
-        // apathy-walk). Only a step a wall or an object cut changes it.
-        // A region border the player could not climb holds the step back and keeps the velocity too:
-        // Apathy's walk, held at a 2-step border, read PLAYER_VY 0.902 on and walked up to it again
-        // (OV-20261110-retail-play round 4). A solid wall writes the cut step back.
-        bool whole = (wallStopped && player.StoppedAtBorderOnly && !pushed) ||
-            (Math.Abs(displacement.X - nudgeX - stepX) < 1e-6 && Math.Abs(displacement.Y - nudgeY - stepY) < 1e-6);
-        double actualVelocityX = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
-        double actualVelocityY = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
+        // apathy-walk). A wall stop keeps it as well: held at a 2-step border and sliding along a closed
+        // region's wall, the walk read the script's PLAYER_VX and PLAYER_VY on, on all 600 lines
+        // (round 4). The step a wall cut still counts toward IMPACT_VX and IMPACT_VY, the manual's
+        // "change of speed by collision" (chapter 11, the player skills); a step an object cut changes the velocity.
+        bool whole = Math.Abs(displacement.X - stepX) < WholeStepTolerance && Math.Abs(displacement.Y - stepY) < WholeStepTolerance;
+        bool keep = whole || (wallStopped && !pushed);
+        double cutVelocityX = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
+        double cutVelocityY = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
+        double actualVelocityX = keep ? requestedVelocityX : cutVelocityX;
+        double actualVelocityY = keep ? requestedVelocityY : cutVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
         runtime.SetSkill("PLAYER_VY", actualVelocityY);
-        runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + actualVelocityX - requestedVelocityX);
-        runtime.SetSkill("IMPACT_VY", runtime.GetSkill("IMPACT_VY") + actualVelocityY - requestedVelocityY);
+        runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + cutVelocityX - requestedVelocityX);
+        runtime.SetSkill("IMPACT_VY", runtime.GetSkill("IMPACT_VY") + cutVelocityY - requestedVelocityY);
 
         // PLAYER_VZ moves the eye freely (the feet may sink below the floor) and keeps its value;
         // the eye clamp then holds the eye inside the region and adds its correction, in steps,
@@ -128,11 +136,12 @@ public static class WdlPlayerMotion
             runtime.DispatchPlayerVerticalTransition(transition);
         }
 
+        // The turn steps by the engine's rounded product like the move (OV-20261110-retail-play round 4:
+        // cut toward zero, Apathy's turn fell 0.006 behind in 32 cycles at the same PLAYER_VROT).
         double angle = NormalizeAngle(
-            runtime.GetSkill("PLAYER_ANGLE") + (runtime.GetSkill("PLAYER_VROT") * Math.Max(0, timeCorrection)));
+            runtime.GetSkill("PLAYER_ANGLE") + WdlRuntime.EngineProduct(runtime.GetSkill("PLAYER_VROT"), Math.Max(0, timeCorrection)));
         runtime.SetSkill("PLAYER_ANGLE", angle);
-        runtime.SetSkill("PLAYER_SIN", Math.Sin(angle));
-        runtime.SetSkill("PLAYER_COS", Math.Cos(angle));
+        SetHeading(runtime);
 
         double previousSpeed = runtime.GetSkill("PLAYER_SPEED");
         double speed = (actualVelocityX * Math.Cos(angle)) + (actualVelocityY * Math.Sin(angle));
@@ -216,6 +225,25 @@ public static class WdlPlayerMotion
 
         return start + (part < -1e-6f ? -minimum : minimum);
     }
+
+    /// <summary>
+    /// Sets <c>PLAYER_SIN</c> and <c>PLAYER_COS</c> from <c>PLAYER_ANGLE</c> as stored, in 1/1024, each
+    /// cut toward zero: Apathy's start at 2412/1024 read <c>PLAYER_COS</c> −723/1024 (−723.7), not −724
+    /// (OV-20261110-retail-play round 4).
+    /// </summary>
+    public static void SetHeading(WdlRuntime runtime)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        double angle = runtime.GetSkill("PLAYER_ANGLE");
+        runtime.SetSkill("PLAYER_SIN", CutTowardZero(Math.Sin(angle)));
+        runtime.SetSkill("PLAYER_COS", CutTowardZero(Math.Cos(angle)));
+    }
+
+    // A value within 1/10000 of a 1/1024 step below the next is the next: the angle 6434/1024, a
+    // float's 2π from the camera, keeps PLAYER_COS 1 as the original's saves hold it at heading 0
+    // (OV-20261029-save-body).
+    private static double CutTowardZero(double value) =>
+        Math.Truncate((value * 1024) + Math.CopySign(1e-4, value)) / 1024;
 
     private static double NormalizeAngle(double angle)
     {

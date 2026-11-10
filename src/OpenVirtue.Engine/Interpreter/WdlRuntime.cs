@@ -3534,8 +3534,7 @@ public sealed class WdlRuntime :
         SetSkill("PLAYER_Y", playerStart.Y);
         SetSkill("PLAYER_REGION", playerStart.Region);
         SetSkill("PLAYER_ANGLE", angle);
-        SetSkill("PLAYER_SIN", Math.Sin(angle));
-        SetSkill("PLAYER_COS", Math.Cos(angle));
+        WdlPlayerMotion.SetHeading(this);
     }
 
     private void InitializeEachTickActions(Level level)

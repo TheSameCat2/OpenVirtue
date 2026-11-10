@@ -76,7 +76,8 @@ cycles, `FORCE_ROT` 0.5 for 60, then both for 200, and prints the velocities and
   + trunc(t·a/I)`** for each tick `t` of the cycle. With the action's force −63/1024 and `FRICTION` 0.2 it
   fits 59 cycles exactly (0, −15, −31, −44, −56 …). OpenVirtue's doubles stepped −16, −32, −48.
 - **A step taken whole leaves `PLAYER_VX`/`PLAYER_VY` as the script set them.** OpenVirtue wrote them back as
-  the step over `TIME_CORR`, which turned −15 into −16. Only a step a wall or an object cut changes them.
+  the step over `TIME_CORR`, which turned −15 into −16. Only a step a wall or an object cut changes them
+  (round 4: a wall keeps them too).
 - **The engine's own step products round a half up, toward +∞**: −186 raw at `TIME_CORR` 0.25 stepped −46, not
   −47. Every earlier carrier agrees (none had a negative half).
 
@@ -107,13 +108,23 @@ probe's new `edge-2` case (OV-20261019-border-climb, 2026-11-10 addendum). Apath
   −6 to −4 with the feet 2.478, 2.479 and 2.484 below the new floor after the rise, and from −4 toward −2
   2.497. It was held at 2.502. Measured before the rise those were 2.509 to 2.527, which a strict
   `PLAYER_CLIMB` 2.5 would have blocked. Standing still, `edge-2` enters a step 1/1024 under the climb.
-- **A region border held only by the climb keeps the script's velocity**: held 0.826 back at the −2 border,
-  the player read `PLAYER_VY` 0.902 on, walked up to it again and climbed it 9 cycles later, its eye
-  higher. OpenVirtue wrote the cut step back, −3.3, and the player bounced. A border to a region the eye does
-  not fit (the trace room's outer walls) and a solid wall still write it back: keeping it there loses four
-  `contact-clock` carriers.
+- **A wall stop keeps the script's velocity**: held 0.826 back at the −2 border, the player read `PLAYER_VY`
+  0.902 on, walked up to it again and climbed it 9 cycles later with its eye higher. Sliding along a closed
+  region's wall from line 399, it read the `ACCEL` velocities on every line. OpenVirtue wrote the cut step
+  back (−3.3), and the player bounced. Only an object's push changes the velocity now. The cut step still
+  counts toward `IMPACT_VX`/`IMPACT_VY`, which the manual calls the collision's change of speed. Round 3's
+  "a wall cut changes them" came from a fault in OpenVirtue's own check: a step under 4/1024 made up to the
+  minimum never counted as whole. That fault, not the walls, is why keeping the velocity on every stop
+  seemed to cost four `contact-clock` carriers.
+- **The turn steps by the engine's rounded product, `PLAYER_ANGLE += round(PLAYER_VROT·TIME_CORR)`** like the
+  move. Cut toward zero, the angle fell 0.006 behind in 32 cycles at the same `PLAYER_VROT`.
+- **`PLAYER_SIN` and `PLAYER_COS` are the sine and cosine of the 1/1024 angle, cut toward zero**: the start
+  at 2412/1024 reads `PLAYER_COS` −0.706 (−723.7 → −723), and the action's force (0.1·1.3·`PLAYER_COS` and
+  the same with the sine) then matches on all 600 lines. A 2048-, 4096- or 8192-entry sine table with
+  rounded entries fits fewer lines. The saves' `PLAYER_COS` 1 at heading 0 holds as well.
 
-After round 4 `apathy-walk`'s y matches to line 312, its velocities to 308 and `STEPS` to 330.
+After round 4 `apathy-walk` matches to line 398. From there its x and y are 1/1024 off while it slides
+along the wall. Its angle, `PLAYER_VROT`, velocities and the action's force match on all 600 lines.
 
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
@@ -121,9 +132,10 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 
 ## Open Questions
 - `PLAYER_Z` drifts up to 0.02 from the fifth frame on.
-- apathy-walk from line 309: while the player turns in place without `FORCE_AHEAD`, `PLAYER_VX` and
-  `PLAYER_VY` come out 1/1024 nearer zero than the original's (−12 against −13, 60 against 61): an `ACCEL`
-  rounding at small speeds.
+- apathy-walk from line 399: sliding along the closed region's wall, the position is 1/1024 off in x and y
+  (−5.222 against −5.221), and `PLAYER_Z` from line 469.
+- `PLAYER_COS` on the second line: the original keeps the start's −0.706 until the first frame, where
+  OpenVirtue already shows the script's new angle.
 - The ten `WALK` values 2/1024 off: one angle step, from where the product a·3216/period is cut.
 - `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
   took, and a long first step changes where an actor walks.
@@ -141,10 +153,10 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 used by `WdlPlayerMotion.Apply` and `Synchronize`; the host's pose snapshot keeps the published
 `PLAYER_Z`; `WdlInterpreter.ExecuteAccel` and `WdlRuntime.EngineProduct` for round 3;
 `WdlRuntime.CountPlayerSteps`, `WdlRuntime.AdvanceWalk` (with `PlayerPlaced` and `WalkPeriods`, which
-`RuntimeHost` plays the floor's footstep from), `Player.ClimbEyeRise` and `Player.StoppedAtBorderOnly`,
-both set and read by `WdlPlayerMotion.Apply`, for round 4; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`;
+`RuntimeHost` plays the floor's footstep from), `Player.ClimbEyeRise`, the velocity kept at a wall stop and the turn step in `WdlPlayerMotion.Apply`, and
+`WdlPlayerMotion.SetHeading`, for round 4; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`;
 `WdlRuntimeTests.Runtime_Steps_SquaresEachComponentIn1024thsAndCountsTheMoveACycleLate`,
 `WdlRuntimeTests.Runtime_Walk_FollowsTheStepsThroughEachWalkPeriod`,
 `PlayerTests.MoveHorizontal_IntoRegionBorder_MeasuresTheFeetFromTheEyeThisFrameRisesTo`,
-`PlayerTests.MoveHorizontal_StoppedAtRegionBorder_ReportsWhetherOnlyTheClimbHeldIt` and
-`WdlPlayerMotionTests.Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity`.
+`WdlPlayerMotionTests.Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity` and
+`WdlPlayerMotionTests.Apply_SolidWallCollision_KeepsVelocityAndAccumulatesImpact`.

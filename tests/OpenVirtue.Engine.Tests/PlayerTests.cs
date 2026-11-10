@@ -143,32 +143,6 @@ public class PlayerTests
     }
 
     [Theory]
-    [InlineData(4, 16, 8f, 1.5f, true)] // a floor too high to climb, the eye between floor and ceiling
-    [InlineData(16, 16, 8f, 20f, false)] // a closed region
-    [InlineData(10, 16, 9.9f, 1.5f, false)] // the eye below the new floor
-    public void MoveHorizontal_StoppedAtRegionBorder_ReportsWhetherOnlyTheClimbHeldIt(
-        int padFloor, int padCeiling, float eye, float climb, bool expected)
-    {
-        (Player player, _) = PadPlayer(padFloor, padCeiling, eye, eyeHeight: 8, climb);
-
-        player.MoveHorizontal(0, 10, out bool stopped);
-
-        Assert.True(stopped);
-        Assert.Equal(expected, player.StoppedAtBorderOnly);
-    }
-
-    [Fact]
-    public void MoveHorizontal_StoppedBySolidWall_IsNotABorderStop()
-    {
-        (Player player, _) = PadPlayer(padFloor: 0, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1.5f);
-
-        player.MoveHorizontal(0, -10, out bool stopped);
-
-        Assert.True(stopped);
-        Assert.False(player.StoppedAtBorderOnly);
-    }
-
-    [Theory]
     [InlineData(10, 16, 9.9f, 1f, 1.5f, 0)] // the eye must be above the new floor
     [InlineData(10, 16, 10.5f, 1f, 1.5f, 1)]
     [InlineData(10, 16, 11f, 8f, 7.5f, 1)] // taller than the headroom of 6, but the eye fits
