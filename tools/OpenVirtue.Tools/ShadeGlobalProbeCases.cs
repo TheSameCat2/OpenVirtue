@@ -278,6 +278,30 @@ internal static class ShadeGlobalProbeCases
         }
     }
 
+    /// <summary>
+    /// Round 3: side walls whose near end lies behind the eye, as a corridor's walls do (Heart's start
+    /// reads its side walls 1.15 to 1.4 times brighter in OpenVirtue). Each runs from x −10 to 46 at
+    /// y ±6, both vertex orders, at the strong and at retail's light; the <c>-front</c> ones start at
+    /// x 2, ahead of the eye but off the screen.
+    /// </summary>
+    private static IEnumerable<TraceProbeCase> BehindWalls()
+    {
+        (string Label, int X1, int Y1, int X2, int Y2)[] walls =
+        [
+            ("bh-l", -10, 6, 46, 6),
+            ("bh-l-m", 46, 6, -10, 6),
+            ("bh-r", -10, -6, 46, -6),
+            ("bh-r-m", 46, -6, -10, -6),
+            ("bh-l-front", 2, 6, 46, 6),
+            ("bh-r-front", 2, -6, 46, -6),
+        ];
+        foreach ((string label, int x1, int y1, int x2, int y2) in walls)
+        {
+            yield return Wall(label, 1, 10, x1, y1, x2, y2, 0);
+            yield return Wall("r" + label, RetailLight, (int)RetailLightDistance, x1, y1, x2, y2, 0);
+        }
+    }
+
     /// <summary>The frontal walls' depths: around the level edges at 25, 30 and 37.5 steps (p 1, l 10).</summary>
     private static double[] Frontals() => [24.5, 25, 25.5, 29, 29.5, 30, 30.5, 31, 37, 37.5, 38, 38.5, 39];
 
@@ -354,6 +378,7 @@ internal static class ShadeGlobalProbeCases
         ..LightSweep(),
         ..AmbientSweep(),
         ..WallGeometry(),
+        ..BehindWalls(),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
