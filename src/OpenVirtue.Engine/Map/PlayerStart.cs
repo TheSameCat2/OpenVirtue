@@ -13,5 +13,9 @@ namespace OpenVirtue.Engine.Map;
 public readonly record struct PlayerStart(float X, float Y, float Angle, int Region)
 {
     /// <summary>The start heading as a <c>PLAYER_ANGLE</c> value (radians, counter-clockwise, 0 = map +x).</summary>
-    public double AngleRadians => Angle * (Math.PI / 180.0);
+    /// <remarks>
+    /// Cut toward zero to 1/1024, as the original holds it: Heart's 135° reads 2.355, not 2.356
+    /// (OV-20261110-retail-play).
+    /// </remarks>
+    public double AngleRadians => Math.Truncate(Angle * (Math.PI / 180.0) * 1024) / 1024;
 }

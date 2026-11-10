@@ -130,7 +130,7 @@ public static class LevelLoader
                 way.Points.Select(point => new LevelWayPoint(WdlFixed.Literal(point.X), WdlFixed.Literal(point.Y))).ToList()),
             StringComparer.OrdinalIgnoreCase);
         PlayerStart? start = map.PlayerStart is { } ps
-            ? new PlayerStart(ps.X, ps.Y, ps.Angle, ps.Region)
+            ? new PlayerStart(Cut(ps.X), Cut(ps.Y), ps.Angle, ps.Region)
             : null;
 
         (Dictionary<string, double> skillValues,
@@ -194,6 +194,12 @@ public static class LevelLoader
 
         return result;
     }
+
+    /// <summary>
+    /// A map coordinate as the original holds it, cut toward zero to 1/1024 (OV-20261110-retail-play:
+    /// Heart's start y 168.031 reads 168.030, Apathy's −16.835 reads −16.835).
+    /// </summary>
+    private static float Cut(float value) => (float)(Math.Truncate(value * 1024.0) / 1024.0);
 
     private static Region BuildRegion(WmpRegion r, WdlDeclarations declarations, double defaultClipDistance)
     {
