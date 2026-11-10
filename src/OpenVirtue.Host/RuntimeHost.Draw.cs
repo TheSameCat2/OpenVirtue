@@ -17,7 +17,11 @@ public sealed partial class RuntimeHost
         VirtualDisplayLayout display = DisplayLayout();
         PixelRect worldPixels = PixelRect.From(WorldViewport(display), width, height);
         PixelRect letterbox = PixelRect.From(display.PhysicalDisplay, width, height);
-        Matrix4x4 viewProjection = _camera.View * CurrentProjection().CreateProjectionMatrix(1f, 200000f);
+        // OV-20261106-screen-frame: the original samples a row at its integer position where GL
+        // samples at the row's centre, so the picture moves down half a row: a wall's top edge at
+        // row 130.17 starts at row 131, its bottom edge at 349.83 ends at row 349.
+        Matrix4x4 viewProjection = _camera.View * CurrentProjection().CreateProjectionMatrix(1f, 200000f) *
+            Matrix4x4.CreateTranslation(-1f / Math.Max(1f, (float)_runtime.GetSkill("SCREEN_WIDTH")), -1f / Math.Max(1f, (float)_runtime.GetSkill("SCREEN_HGT")), 0);
         Matrix4x4 uiProjection = Matrix4x4.CreateOrthographicOffCenter(
             0,
             display.VirtualWidth,
@@ -25,21 +29,58 @@ public sealed partial class RuntimeHost
             0,
             0,
             1);
+        bool firstOnScreen = _screenSize != (width, height);
+        _screenSize = (width, height);
+        if (firstOnScreen)
+        {
+            _uiDirty.Clear();
+        }
+
+        // OV-20261106-screen-frame: the screen is one persistent picture. FRAME_COLOR paints it while
+        // the skill is not 0 (a frame sets it, the next leaves it), and only the 3-D window, the
+        // overlays, the texts and what a panel redraws touch it otherwise. RENDER_MODE 0 leaves the
+        // window alone as well (manual p.104).
         var frame = new HostFrame
         {
             Width = width,
             Height = height,
             ClearColor = TintedClearColor(),
+            PaintColor = _runtime.GetSkill("FRAME_COLOR") != 0 || (ShownPalette is null && firstOnScreen),
+            Display = letterbox,
             ClearDepth = true,
             Zones = Zones(),
             Columns = WorldColumns(display),
         };
 
-        AddSky(frame, worldPixels);
-        AddWorldBatches(frame, viewProjection, worldPixels);
-        AddSprites(frame, viewProjection, worldPixels);
-        AddUiOverlays(frame, display, uiProjection, letterbox);
-        AddUiText(frame, uiProjection, letterbox);
+        if (_runtime.GetSkill("RENDER_MODE") != 0)
+        {
+            AddSolid(frame, worldPixels, WindowBackdrop());
+            AddSky(frame, worldPixels);
+            AddOccluders(frame, viewProjection, worldPixels);
+            AddWorldBatches(frame, viewProjection, worldPixels);
+            AddClipFills(frame, viewProjection, worldPixels);
+            AddSprites(frame, viewProjection, worldPixels);
+            AddTopRow(frame, display, worldPixels);
+        }
+
+        // The picture before IF_START has no UI yet: the panels' first two frames come after it.
+        if (_booted)
+        {
+            _uiSeen.Clear();
+            _uiPieceIndex.Clear();
+            AddUiOverlays(frame, display, uiProjection, letterbox);
+            AddUiText(frame, uiProjection, letterbox);
+        }
+
+        // A piece that was not built this frame (its panel hidden) counts as changed when it returns.
+        if (_booted)
+        {
+            foreach ((string Element, int Place) key in _uiDirty.Keys.Where(key => !_uiSeen.Contains(key)).ToList())
+            {
+                _uiDirty.Remove(key);
+            }
+        }
+
         _graphics.Draw(frame);
     }
 
@@ -53,6 +94,8 @@ public sealed partial class RuntimeHost
             Width = width,
             Height = height,
             ClearColor = new Vector4(0, 0, 0, 1),
+            PaintColor = true,
+            Display = PixelRect.Full(width, height),
             ClearDepth = false,
         };
         AddBatch(
@@ -69,6 +112,17 @@ public sealed partial class RuntimeHost
             dynamic: new TextureImage(playback.Animation.Width, playback.Animation.Height, source.Rgba));
         _graphics.Draw(frame);
     }
+
+    /// <summary>A quad over the whole clip space, for <see cref="AddSolid"/>.</summary>
+    private static readonly RenderVertex[] FullScreenClip =
+    [
+        new(-1, -1, 0, 0, 0),
+        new(1, -1, 0, 0, 0),
+        new(1, 1, 0, 0, 0),
+        new(-1, -1, 0, 0, 0),
+        new(1, 1, 0, 0, 0),
+        new(-1, 1, 0, 0, 0),
+    ];
 
     private void AddSky(HostFrame frame, PixelRect viewport)
     {
@@ -195,6 +249,97 @@ public sealed partial class RuntimeHost
         }
     }
 
+    /// <summary>
+    /// OV-20261106-clip-view: every wall's piece reaching on up or down, depth only and first, so a
+    /// surface or a sprite past a wall is hidden in that wall's whole column, not just where the wall
+    /// is drawn. Pushed back a hair, so each wall still draws over its own occluder.
+    /// </summary>
+    private void AddOccluders(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
+    {
+        if (_occluders.Length > 0)
+        {
+            frame.Batches.Add(new DrawBatch
+            {
+                Transform = viewProjection,
+                Viewport = viewport,
+                DepthTest = true,
+                DepthOnly = true,
+                Vertices = _occluders,
+            });
+        }
+    }
+
+    /// <summary>
+    /// OV-20261106-clip-view: the walls out of <c>CLIP_DIST</c> reaching both ways in palette entry
+    /// 1, pulled forward to win over their own drawn faces and occluders.
+    /// </summary>
+    private void AddClipFills(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
+    {
+        _clipFill.Clear();
+        Vector3 forward = _camera.LevelForward;
+        _viewClip?.AddFills(
+            _camera.Position.X,
+            RenderSpace.MapYFromZ(_camera.Position.Z),
+            forward.X,
+            RenderSpace.MapYFromZ(forward.Z),
+            _clipFill);
+        if (_clipFill.Count > 0)
+        {
+            frame.Batches.Add(new DrawBatch
+            {
+                Transform = viewProjection,
+                Viewport = viewport,
+                DepthTest = true,
+                PullForward = true,
+                Solid = PaletteEntry(1),
+                Vertices = _clipFill.ToArray(),
+            });
+        }
+    }
+
+    /// <summary>OV-20261106-screen-frame: the 3-D window's first row is never drawn; it reads palette entry 0.</summary>
+    private void AddTopRow(HostFrame frame, VirtualDisplayLayout display, PixelRect worldPixels)
+    {
+        int row = Math.Max(1, (int)MathF.Round(display.PhysicalDisplay.Height / display.VirtualHeight));
+        AddSolid(frame, new PixelRect(worldPixels.X, worldPixels.Y, worldPixels.Width, Math.Min(row, worldPixels.Height)), PaletteEntry(0));
+    }
+
+    /// <summary>A rectangle of one colour, drawn without depth.</summary>
+    private static void AddSolid(HostFrame frame, PixelRect rectangle, Vector4 color)
+    {
+        frame.Batches.Add(new DrawBatch
+        {
+            Transform = Matrix4x4.Identity,
+            Viewport = rectangle,
+            DepthTest = false,
+            Solid = color,
+            Vertices = FullScreenClip,
+        });
+    }
+
+    /// <summary>What the 3-D window shows where no surface covers it.</summary>
+    private Vector4 WindowBackdrop()
+    {
+        if (ShownPalette is not null)
+        {
+            return PaletteEntry(0);
+        }
+
+        Vector3 faded = _fade.Apply(new Vector3(_clearColor.X, _clearColor.Y, _clearColor.Z));
+        return new Vector4(Math.Clamp(faded.X, 0, 1), Math.Clamp(faded.Y, 0, 1), Math.Clamp(faded.Z, 0, 1), 1);
+    }
+
+    private Vector4 PaletteEntry(int index)
+    {
+        if (ShownPalette is not { } palette)
+        {
+            return new Vector4(0, 0, 0, 1);
+        }
+
+        int entry = Math.Clamp(index, 0, 255) * 3;
+        return new Vector4(palette[entry] / 255f, palette[entry + 1] / 255f, palette[entry + 2] / 255f, 1f);
+    }
+
     private void AddSprites(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
     {
         if (_sprites.Count == 0)
@@ -205,7 +350,13 @@ public sealed partial class RuntimeHost
         Vector3 right = _camera.Right;
         Vector3 up = Vector3.UnitY;
         Vector3 horizontalForward = _camera.LevelForward;
-        IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(_sprites, _camera.Position);
+        float eyeX = _camera.Position.X;
+        float eyeY = RenderSpace.MapYFromZ(_camera.Position.Z);
+        Region? playerRegion = (uint)_player.Region < (uint)_level.Regions.Count ? _level.Regions[_player.Region] : null;
+        IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(
+            _sprites.Where(billboard => billboard.Source is not { } source ||
+                (!_runtime.IsRetired(source) && ViewClip.IsEntityInReach(_level, source, playerRegion, eyeX, eyeY))).ToList(),
+            _camera.Position);
         for (int start = 0; start < sorted.Count;)
         {
             string texture = sorted[start].Texture;
@@ -249,12 +400,13 @@ public sealed partial class RuntimeHost
                     source.Region >= 0 && source.Region < _level.Regions.Count
                     ? (float)_level.Regions[source.Region].Ambient
                     : 0;
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient));
-                vertices.Add(new RenderVertex(bottomRight.X, bottomRight.Y, bottomRight.Z, rightU, 1, localAmbient));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient));
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient));
-                vertices.Add(new RenderVertex(topLeft.X, topLeft.Y, topLeft.Z, leftU, 0, localAmbient));
+                float hiding = SpriteHidingDepth(billboard, center);
+                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient, hiding));
+                vertices.Add(new RenderVertex(bottomRight.X, bottomRight.Y, bottomRight.Z, rightU, 1, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient, hiding));
+                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topLeft.X, topLeft.Y, topLeft.Z, leftU, 0, localAmbient, hiding));
             }
 
             AddBatch(
@@ -272,6 +424,30 @@ public sealed partial class RuntimeHost
                 spriteMarker: PaletteShading.SpriteMarker);
             start = end;
         }
+    }
+
+    /// <summary>The depth a sprite is hidden at, in <c>RenderVertex.WallAX</c>; 0 when it is its true depth.</summary>
+    private float SpriteHidingDepth(in SpriteBillboard billboard, Vector3 center)
+    {
+        if (_viewClip is null || billboard.Source is not { } source || billboard.Orientation != SpriteOrientation.Upright)
+        {
+            return 0;
+        }
+
+        Vector3 forward = _camera.LevelForward;
+        Vector3 toCenter = center - _camera.Position;
+        float depth = Vector3.Dot(toCenter, forward);
+        float lateral = Vector3.Dot(toCenter, _camera.Right);
+        float hiding = _viewClip.SpriteHidingDepth(
+            source.Region,
+            _camera.Position.X,
+            RenderSpace.MapYFromZ(_camera.Position.Z),
+            forward.X,
+            RenderSpace.MapYFromZ(forward.Z),
+            depth,
+            lateral,
+            billboard.HalfWidth);
+        return hiding < depth ? hiding : 0;
     }
 
     /// <summary>
@@ -295,6 +471,11 @@ public sealed partial class RuntimeHost
             : [];
         foreach (UiOverlaySprite overlay in overlays.Concat(dynamicWidgets))
         {
+            if (!PanelPieceDraws(overlay.SourceElement, overlay.GetHashCode()))
+            {
+                continue;
+            }
+
             TextureImage? image = _uiImages.TryGetValue(overlay.Bitmap, out TextureImage found) ? found : null;
             float width = overlay.Width > 0 ? overlay.Width : image?.Width ?? 0;
             float height = overlay.Height > 0 ? overlay.Height : image?.Height ?? 0;
@@ -338,7 +519,24 @@ public sealed partial class RuntimeHost
             return;
         }
 
-        IReadOnlyList<UiTextGlyph> glyphs = UiTextBuilder.Build(_level, _runtime.Strings, _runtime.Skills, _runtime.UiElements);
+        IReadOnlyList<UiTextGlyph> built = UiTextBuilder.Build(_level, _runtime.Strings, _runtime.Skills, _runtime.UiElements);
+        var glyphs = new List<UiTextGlyph>(built.Count);
+        foreach (IGrouping<(string Element, int Piece), UiTextGlyph> display in built.GroupBy(static glyph => (glyph.SourceElement, glyph.Piece)))
+        {
+            // A panel's DIGITS redraw whole (OV-20261106-screen-frame digits-out: a one-digit change
+            // repaints all five places); a TEXT is no panel and draws on every frame.
+            var hash = default(HashCode);
+            foreach (UiTextGlyph glyph in display)
+            {
+                hash.Add(glyph);
+            }
+
+            if (PanelPieceDraws(display.Key.Element + "#digits", hash.ToHashCode()))
+            {
+                glyphs.AddRange(display);
+            }
+        }
+
         foreach (IGrouping<string, UiTextGlyph> group in glyphs.GroupBy(glyph => glyph.Font, StringComparer.OrdinalIgnoreCase))
         {
             if (!_fontImages.TryGetValue(group.Key, out TextureImage image))
@@ -399,6 +597,38 @@ public sealed partial class RuntimeHost
                 depthTest: false,
                 ambient: 1);
         }
+    }
+
+    /// <summary>
+    /// OV-20261106-screen-frame: a panel without <c>REFRESH</c> draws a piece only on the two frames
+    /// after that piece changed (the bitmap, a moved panel, a value its display shows), and leaves it
+    /// to last on the screen otherwise. An element that is no panel, or a panel with the flag, draws
+    /// on every frame. The piece's key is its element and its place among that element's pieces.
+    /// </summary>
+    private bool PanelPieceDraws(string element, int signature)
+    {
+        string name = element.EndsWith("#digits", StringComparison.Ordinal) ? element[..^"#digits".Length] : element;
+        if (_runtime.UiElements is not { } elements ||
+            !elements.TryGetValue(name, out WdlUiElement? definition) ||
+            !definition.Keyword.Equals("PANEL", StringComparison.OrdinalIgnoreCase) ||
+            UiOverlayBuilder.HasFlag(definition, "REFRESH"))
+        {
+            return true;
+        }
+
+        int place = _uiPieceIndex.GetValueOrDefault(element);
+        _uiPieceIndex[element] = place + 1;
+        (string Element, int Place) key = (element, place);
+        _uiSeen.Add(key);
+        (int signature, int frames) state = _uiDirty.GetValueOrDefault(key, (signature, PanelRedrawFrames));
+        if (state.signature != signature)
+        {
+            state = (signature, PanelRedrawFrames);
+        }
+
+        bool draw = state.frames > 0;
+        _uiDirty[key] = (signature, Math.Max(0, state.frames - 1));
+        return draw;
     }
 
     private void AddBatch(

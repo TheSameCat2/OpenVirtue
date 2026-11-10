@@ -19,14 +19,20 @@ public static class MeshBuilder
 {
     private const float DefaultScale = 16f;
 
-    /// <summary>Builds walls and floor/ceiling surfaces.</summary>
-    public static LevelMesh Build(Level level)
+    /// <summary>The texture a floor or ceiling draws when its bitmap is no size a surface can show.</summary>
+    public const string BlankSurface = "#blank-surface";
+
+    /// <summary>
+    /// Builds walls and floor/ceiling surfaces. <paramref name="blankSurfaces"/> names the textures that
+    /// draw as palette entry 0 on a surface (<see cref="TextureLoader.BlankSurfaceTextures"/>).
+    /// </summary>
+    public static LevelMesh Build(Level level, IReadOnlySet<string>? blankSurfaces = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         var accumulator = new Accumulator();
         IReadOnlySet<string> rowMasked = TextureLoader.RowMaskedWallTextures(level);
         AddWalls(level, accumulator, rowMasked);
-        AddSurfaces(level, accumulator, rowMasked);
+        AddSurfaces(level, accumulator, rowMasked, blankSurfaces);
         return accumulator.ToMesh();
     }
 
@@ -39,6 +45,94 @@ public static class MeshBuilder
         return accumulator.ToMesh();
     }
 
+    /// <summary>
+    /// The walls as a sprite and a clip fill see them (OV-20261106-clip-view): a step's lower piece
+    /// reaching down without end, its upper piece reaching up without end, a wall of one region both
+    /// ways, depth only. So a sprite behind a wall is hidden even where it sticks out above the
+    /// wall's top. A see-through wall hides nothing, and a <c>BELOW</c> stack's walls keep to what
+    /// they draw.
+    /// </summary>
+    public static RenderVertex[] BuildOccluders(Level level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        var vertices = new List<RenderVertex>();
+        foreach (Wall wall in level.Walls)
+        {
+            if (!TryVertex(level, wall.Vertex1, out Vertex v1) || !TryVertex(level, wall.Vertex2, out Vertex v2))
+            {
+                continue;
+            }
+
+            Region? left = RegionAt(level, wall.LeftRegion);
+            Region? right = RegionAt(level, wall.RightRegion);
+            if ((left?.BelowRegion ?? -1) >= 0 || (right?.BelowRegion ?? -1) >= 0 || wall["TRANSPARENT"] > 0)
+            {
+                continue;
+            }
+
+            List<WallPiece> pieces = WallPieces(level, wall, v1, v2, left, right);
+            if (pieces.Count == 1)
+            {
+                if (wall["INVISIBLE"] <= 0)
+                {
+                    AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, ViewClip.Reach, ViewClip.Reach);
+                }
+
+                continue;
+            }
+
+            if (pieces.Count == 2 && left is not null && right is not null)
+            {
+                // No opening between the two regions at either end (retail's closed "border"
+                // regions, floor on ceiling): the column stops here whatever piece it shows.
+                if (Math.Min(Ceiling(left, v1), Ceiling(right, v1)) <= Math.Max(Floor(left, v1), Floor(right, v1)) &&
+                    Math.Min(Ceiling(left, v2), Ceiling(right, v2)) <= Math.Max(Floor(left, v2), Floor(right, v2)))
+                {
+                    AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, ViewClip.Reach, ViewClip.Reach);
+                    continue;
+                }
+
+                WallPiece lower = pieces[0];
+                WallPiece upper = pieces[1];
+                if (lower.Ceiling1 > lower.Floor1 || lower.Ceiling2 > lower.Floor2)
+                {
+                    AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, lower.Ceiling1, lower.Ceiling2);
+                }
+
+                if (upper.Ceiling1 > upper.Floor1 || upper.Ceiling2 > upper.Floor2)
+                {
+                    AddOccluder(vertices, v1, v2, upper.Floor1, upper.Floor2, ViewClip.Reach, ViewClip.Reach);
+                }
+            }
+        }
+
+        return vertices.ToArray();
+    }
+
+    private static void AddOccluder(List<RenderVertex> vertices, Vertex v1, Vertex v2, float low1, float low2, float high1, float high2)
+    {
+        // A hair longer than the wall, so no fill or far surface shows through the crack where two
+        // walls meet at a vertex.
+        float dx = v2.X - v1.X;
+        float dy = v2.Y - v1.Y;
+        float length = MathF.Max(MathF.Sqrt((dx * dx) + (dy * dy)), 0.001f);
+        float along = 0.01f / length;
+        float x1 = v1.X - (dx * along);
+        float x2 = v2.X + (dx * along);
+        float z1 = RenderSpace.ZFromMapY(v1.Y - (dy * along));
+        float z2 = RenderSpace.ZFromMapY(v2.Y + (dy * along));
+        var a = new RenderVertex(x1, low1, z1, 0, 0);
+        var b = new RenderVertex(x2, low2, z2, 0, 0);
+        var c = new RenderVertex(x2, high2, z2, 0, 0);
+        var d = new RenderVertex(x1, high1, z1, 0, 0);
+        vertices.Add(a);
+        vertices.Add(b);
+        vertices.Add(c);
+        vertices.Add(a);
+        vertices.Add(c);
+        vertices.Add(d);
+    }
+
     private static void AddWalls(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked)
     {
         foreach (Wall wall in level.Walls)
@@ -46,6 +140,12 @@ public static class MeshBuilder
             if (!TryVertex(level, wall.Vertex1, out Vertex v1) ||
                 !TryVertex(level, wall.Vertex2, out Vertex v2) ||
                 IsSkyTexture(level, wall.Texture))
+            {
+                continue;
+            }
+
+            // OV-20261106-clip-view p-top: an INVISIBLE wall shows no face, a step's piece included.
+            if (wall["INVISIBLE"] > 0)
             {
                 continue;
             }
@@ -485,8 +585,10 @@ public static class MeshBuilder
     private static float WallAnchor(Wall wall, float floor, float ceiling) =>
         wall["PORTCULLIS"] <= 0 ? 0f : wall["POSITION"] > 0 ? ceiling : floor;
 
-    private static void AddSurfaces(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked)
+    private static void AddSurfaces(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces)
     {
+        string? Shown(string? texture) => texture is not null && blankSurfaces?.Contains(texture) == true ? BlankSurface : texture;
+
         // OV-20261104-attach: a plain floor or ceiling hides no sprite (the batch is a Surface the host
         // draws without writing depth); the slabs of a BELOW stack do, since a sight line never leaves
         // its storey within the stack's footprint (OV-20261029-below-view), so those regions' surfaces
@@ -504,9 +606,17 @@ public static class MeshBuilder
 
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
+            // OV-20261106-clip-view: a closed region (retail's "border", floor on ceiling) is never
+            // entered, so nothing shows its surfaces: drawn, they lay over a neighbour's sky.
+            if (level.Regions[regionIndex] is { } closed && closed.CeilHeight <= closed.FloorHeight && closed.BelowRegion < 0 && !stacked.Contains(regionIndex))
+            {
+                continue;
+            }
+
             List<int>? loop = LevelTopology.TraceRegionLoop(level, regionIndex);
             if (loop is null)
             {
+                AddOutlineSurfaces(level, accumulator, regionIndex, rowMasked, stacked.Contains(regionIndex), Shown);
                 continue;
             }
 
@@ -531,7 +641,7 @@ public static class MeshBuilder
                 triangles,
                 (float)region.FloorHeight,
                 (float)LevelTopology.SlopeSign(region, ceiling: false),
-                region.FloorTexture,
+                Shown(region.FloorTexture),
                 region,
                 (float)region.FloorOffsetX,
                 (float)region.FloorOffsetY,
@@ -545,13 +655,67 @@ public static class MeshBuilder
                 triangles,
                 (float)region.CeilHeight,
                 (float)LevelTopology.SlopeSign(region, ceiling: true),
-                region.CeilTexture,
+                Shown(region.CeilTexture),
                 region,
                 (float)region.CeilOffsetX,
                 (float)region.CeilOffsetY,
                 rowMasked,
                 flip: true,
                 stacked: stacked.Contains(regionIndex));
+        }
+    }
+
+    /// <summary>
+    /// A region with no single wall loop, an island inside it or a vertex three walls meet at: 158
+    /// regions of Apathy's 1073 and as many elsewhere had no floor or ceiling at all. Its surfaces come
+    /// from the even-odd trapezoids of its bounding walls, one quad a span.
+    /// </summary>
+    private static void AddOutlineSurfaces(Level level, Accumulator accumulator, int regionIndex, IReadOnlySet<string> rowMasked, bool stacked, Func<string?, string?> shown)
+    {
+        List<RegionSpan> spans = LevelTopology.RegionSpans(level, regionIndex);
+        if (spans.Count == 0)
+        {
+            return;
+        }
+
+        Region region = level.Regions[regionIndex];
+        EmitSpans(level, accumulator, spans, (float)region.FloorHeight, (float)LevelTopology.SlopeSign(region, ceiling: false), shown(region.FloorTexture), region, (float)region.FloorOffsetX, (float)region.FloorOffsetY, rowMasked, stacked);
+        EmitSpans(level, accumulator, spans, (float)region.CeilHeight, (float)LevelTopology.SlopeSign(region, ceiling: true), shown(region.CeilTexture), region, (float)region.CeilOffsetX, (float)region.CeilOffsetY, rowMasked, stacked);
+    }
+
+    private static void EmitSpans(
+        Level level,
+        Accumulator accumulator,
+        List<RegionSpan> spans,
+        float height,
+        float slopeSign,
+        string? texture,
+        Region region,
+        float offsetX,
+        float offsetY,
+        IReadOnlySet<string> rowMasked,
+        bool stacked)
+    {
+        if (string.IsNullOrEmpty(texture) || IsSkyTexture(level, texture))
+        {
+            return;
+        }
+
+        TextureMapping mapping = RowMaskedTextureMappingFor(level, texture, rowMasked);
+        List<RenderVertex> target = accumulator.Bucket(texture, AnimationSourceFor(level, texture, region), surface: !stacked);
+        var ambient = (float)region.Ambient;
+        foreach (RegionSpan span in spans)
+        {
+            RenderVertex a = SurfaceVertex(span.A, height, slopeSign, mapping, offsetX, offsetY, ambient);
+            RenderVertex b = SurfaceVertex(span.B, height, slopeSign, mapping, offsetX, offsetY, ambient);
+            RenderVertex c = SurfaceVertex(span.C, height, slopeSign, mapping, offsetX, offsetY, ambient);
+            RenderVertex d = SurfaceVertex(span.D, height, slopeSign, mapping, offsetX, offsetY, ambient);
+            target.Add(a);
+            target.Add(b);
+            target.Add(c);
+            target.Add(a);
+            target.Add(c);
+            target.Add(d);
         }
     }
 
@@ -597,10 +761,13 @@ public static class MeshBuilder
     }
 
     private static RenderVertex SurfaceVertex(
-        Level level, int vertexIndex, float height, float slopeSign, TextureMapping mapping, float offsetX, float offsetY, float ambient)
+        Level level, int vertexIndex, float height, float slopeSign, TextureMapping mapping, float offsetX, float offsetY, float ambient) =>
+        SurfaceVertex(level.Vertices[vertexIndex], height, slopeSign, mapping, offsetX, offsetY, ambient);
+
+    private static RenderVertex SurfaceVertex(
+        Vertex vertex, float height, float slopeSign, TextureMapping mapping, float offsetX, float offsetY, float ambient)
     {
         // A surface follows its vertices' heights only with a slope flag (OV-20261029-slope).
-        Vertex vertex = level.Vertices[vertexIndex];
         // OV-20261104-texmap (floor-cell, ceil-cell): the texture's columns run along −x and its rows
         // along +y from the origin, at SCALE pixels a step; OV-20261104-blend (floor-offs, ceil-offs):
         // the region's OFFS_X comes off the column and its OFFS_Y adds to the row.

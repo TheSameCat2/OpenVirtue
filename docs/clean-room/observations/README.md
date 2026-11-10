@@ -534,3 +534,17 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   are one sum at 32 levels a unit, so no level is ever odd and the old continuous `−30.4·p·l/d` was
   a fit over a staircase. 178 carriers over two prepare rounds; implemented in `PaletteShading`,
   `MeshBuilder`, the host's `HostFrame` and the GL backend's shaders.
+
+## The persistent screen and the column walk (2026-11-06 — confirmed and implemented)
+
+- `OV-20261106-screen-frame.md` — the screen is one picture that lasts: `FRAME_COLOR` not 0 paints it, the 3-D
+  window repaints its own rectangle less the first row, a panel without `REFRESH` draws a changed piece on two
+  frames, a `TEXT`, overlay and pointer on every frame, and pixels are sampled half a pixel from their centres.
+  50 carriers over two rounds.
+- `OV-20261106-clip-view.md` — a column is walked from the eye: a wall is out of reach by `|dx| + |dy|` to its
+  nearer vertex against the seeing region's `CLIP_DIST`, and ends the walk in palette entry 1; a step's piece hides
+  all behind it up or down, a level border nothing, a sprite is not cut by its own region's walls, a closed region
+  shows no surface, an `INVISIBLE` wall no face. 88 carriers over six rounds. A region with an island now has its
+  floor and ceiling: 518 retail regions had none.
+- `OV-20261104-texmap.md` round 2 — a floor or ceiling shows a bitmap of exactly 64×64, 128×128 or 256×256, and
+  entry 0 for any other square size. 17 carriers.

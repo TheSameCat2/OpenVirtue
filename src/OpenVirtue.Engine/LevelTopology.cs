@@ -324,6 +324,124 @@ public static class LevelTopology
         return loop.Count == edges.Count ? loop : null;
     }
 
+    /// <summary>
+    /// The vertex pairs of the walls bounding a region, once each, whatever shape they make. A region
+    /// with an island or a vertex three walls meet at has no single loop, and
+    /// <see cref="RegionSpans"/> reads these as an even-odd outline.
+    /// </summary>
+    public static List<(int First, int Second)> RegionEdges(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        regionIndex = Footprint(level, regionIndex);
+        var edges = new List<(int, int)>();
+        var seen = new HashSet<(int, int)>();
+        foreach (Wall wall in level.Walls)
+        {
+            if (BoundsRegion(wall, regionIndex) &&
+                seen.Add(wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1)))
+            {
+                edges.Add((wall.Vertex1, wall.Vertex2));
+            }
+        }
+
+        return edges;
+    }
+
+    /// <summary>
+    /// Whether a point is inside a region, even-odd over its bounding walls, for a region of any
+    /// shape.
+    /// </summary>
+    public static bool RegionContains(Level level, int regionIndex, double x, double y)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        if ((uint)regionIndex >= (uint)level.Regions.Count)
+        {
+            return false;
+        }
+
+        bool inside = false;
+        foreach ((int first, int second) in RegionEdges(level, regionIndex))
+        {
+            if ((uint)first >= (uint)level.Vertices.Count || (uint)second >= (uint)level.Vertices.Count)
+            {
+                continue;
+            }
+
+            Vertex a = level.Vertices[first];
+            Vertex b = level.Vertices[second];
+            if ((a.Y > y) != (b.Y > y) && x < a.X + ((y - a.Y) * (b.X - a.X) / (b.Y - a.Y)))
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    /// <summary>
+    /// A region's inside as trapezoids, even-odd over its bounding walls: the map cut at every vertex's
+    /// x, and in each slab the walls crossing it sorted by y and taken in pairs. Each span lists the two
+    /// slab ends' lower and upper points with their heights.
+    /// </summary>
+    public static List<RegionSpan> RegionSpans(Level level, int regionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        var spans = new List<RegionSpan>();
+        List<(int First, int Second)> edges = RegionEdges(level, regionIndex);
+        var cuts = new SortedSet<float>();
+        foreach ((int first, int second) in edges)
+        {
+            if ((uint)first >= (uint)level.Vertices.Count || (uint)second >= (uint)level.Vertices.Count)
+            {
+                return spans;
+            }
+
+            cuts.Add(level.Vertices[first].X);
+            cuts.Add(level.Vertices[second].X);
+        }
+
+        float[] xs = [.. cuts];
+        var crossing = new List<(float Middle, Vertex Left, Vertex Right)>();
+        for (int slab = 0; slab + 1 < xs.Length; slab++)
+        {
+            float x0 = xs[slab];
+            float x1 = xs[slab + 1];
+            float middle = (x0 + x1) * 0.5f;
+            crossing.Clear();
+            foreach ((int first, int second) in edges)
+            {
+                Vertex a = level.Vertices[first];
+                Vertex b = level.Vertices[second];
+                if (a.X == b.X || middle <= MathF.Min(a.X, b.X) || middle >= MathF.Max(a.X, b.X))
+                {
+                    continue;
+                }
+
+                Vertex left = a.X < b.X ? a : b;
+                Vertex right = a.X < b.X ? b : a;
+                crossing.Add((left.Y + ((middle - left.X) * (right.Y - left.Y) / (right.X - left.X)), left, right));
+            }
+
+            crossing.Sort(static (p, q) => p.Middle.CompareTo(q.Middle));
+            for (int i = 0; i + 1 < crossing.Count; i += 2)
+            {
+                spans.Add(new RegionSpan(
+                    AtX(crossing[i].Left, crossing[i].Right, x0),
+                    AtX(crossing[i].Left, crossing[i].Right, x1),
+                    AtX(crossing[i + 1].Left, crossing[i + 1].Right, x1),
+                    AtX(crossing[i + 1].Left, crossing[i + 1].Right, x0)));
+            }
+        }
+
+        return spans;
+    }
+
+    private static Vertex AtX(Vertex left, Vertex right, float x)
+    {
+        float t = (x - left.X) / (right.X - left.X);
+        return new Vertex(x, left.Y + (t * (right.Y - left.Y)), left.Z + (t * (right.Z - left.Z)));
+    }
+
     /// <summary>The largest closed loop among a region's walls, when they form several (a region with holes).</summary>
     private static List<int>? LargestLoop(Level level, int regionIndex)
     {
@@ -597,3 +715,6 @@ public static class LevelTopology
         list.Add(to);
     }
 }
+
+/// <summary>A trapezoid of a region's inside, its four corners in order round it.</summary>
+public readonly record struct RegionSpan(Vertex A, Vertex B, Vertex C, Vertex D);

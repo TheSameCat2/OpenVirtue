@@ -20,7 +20,8 @@ public readonly record struct UiTextGlyph(
     int SourceWidth = 0,
     int SourceHeight = 0,
     int DrawWidth = 0,
-    int DrawHeight = 0);
+    int DrawHeight = 0,
+    int Piece = 0);
 
 /// <summary>Builds first-pass screen-space glyphs for visible WDL text and panel display declarations.</summary>
 public static class UiTextBuilder
@@ -199,8 +200,10 @@ public static class UiTextBuilder
         float panelX = NumberProperty(panel, "POS_X") ?? 0;
         float panelY = NumberProperty(panel, "POS_Y") ?? 0;
         int layer = (int)(NumberProperty(panel, "LAYER") ?? 0);
+        int piece = 0;
         foreach (WdlUiProperty property in panel.Properties)
         {
+            piece++;
             WdlUiValue[] values = ArgumentValues(property.Values);
             if (!property.Keyword.Equals("DIGITS", StringComparison.OrdinalIgnoreCase) ||
                 values.Length < 6 ||
@@ -227,7 +230,7 @@ public static class UiTextBuilder
             float y = panelY + localY;
             foreach (char ch in display)
             {
-                AddGlyph(glyphs, panel.Name, fontName, ch, x, y, font, layer);
+                AddGlyph(glyphs, panel.Name, fontName, ch, x, y, font, layer, piece: piece);
                 x += font.Width;
             }
         }
@@ -247,7 +250,8 @@ public static class UiTextBuilder
         int sourceWidth = 0,
         int sourceHeight = 0,
         int drawWidth = 0,
-        int drawHeight = 0) =>
+        int drawHeight = 0,
+        int piece = 0) =>
         glyphs.Add(new UiTextGlyph(
             sourceElement,
             fontName,
@@ -262,7 +266,8 @@ public static class UiTextBuilder
             sourceWidth,
             sourceHeight,
             drawWidth,
-            drawHeight));
+            drawHeight,
+            piece));
 
     private static int TextAdvance(FontDef font, WdlUiElement element)
     {

@@ -78,6 +78,10 @@ internal static class ProjectionProbeGenerator
     public const string WallLightProbeName = "wall-light";
     public const string ShadeGlobalProbeName = "shade-global";
 
+    public const string ScreenFrameProbeName = "screen-frame";
+
+    public const string ClipViewProbeName = "clip-view";
+
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
     private const string TiltProbeId = "OV-20261009-tilt-model-shear-vs-pitch";
@@ -135,6 +139,10 @@ internal static class ProjectionProbeGenerator
     private const string WallPiecesProbeId = "OV-20261105-wall-pieces";
     private const string WallLightProbeId = "OV-20261105-wall-light";
     private const string ShadeGlobalProbeId = "OV-20261105-shade-global";
+
+    private const string ScreenFrameProbeId = "OV-20261106-screen-frame";
+
+    private const string ClipViewProbeId = "OV-20261106-clip-view";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -464,6 +472,8 @@ internal static class ProjectionProbeGenerator
         WallPiecesProbeName => WallPiecesProbeId,
         WallLightProbeName => WallLightProbeId,
         ShadeGlobalProbeName => ShadeGlobalProbeId,
+        ScreenFrameProbeName => ScreenFrameProbeId,
+        ClipViewProbeName => ClipViewProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -621,6 +631,8 @@ internal static class ProjectionProbeGenerator
             case WallPiecesProbeName:
             case WallLightProbeName:
             case ShadeGlobalProbeName:
+            case ScreenFrameProbeName:
+            case ClipViewProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -688,6 +700,8 @@ internal static class ProjectionProbeGenerator
         WallPiecesProbeName => WallPiecesProbeCases.Set,
         WallLightProbeName => WallLightProbeCases.Set,
         ShadeGlobalProbeName => ShadeGlobalProbeCases.Set,
+        ScreenFrameProbeName => ScreenFrameProbeCases.Set,
+        ClipViewProbeName => ClipViewProbeCases.Set,
         _ => null,
     };
 
@@ -783,7 +797,7 @@ internal static class ProjectionProbeGenerator
                 SyntheticFlic.WriteValidated(FlicProbeCases.FlicFrames, FlicProbeCases.FlicSpeedMs));
         }
 
-        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName or SaveBodyProbeName)
+        if (plan.ProbeName is UiLayoutProbeName or UiTextProbeName or SaveBodyProbeName or ScreenFrameProbeName)
         {
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.FontFile), SyntheticPcx.Write(128, 64, UiLayoutProbeCases.FontPixel, palette));
             WriteValidated(Path.Combine(workDir, UiLayoutProbeCases.DigitFile), SyntheticPcx.Write(88, 8, UiLayoutProbeCases.DigitPixel, palette));
@@ -798,7 +812,7 @@ internal static class ProjectionProbeGenerator
             }
         }
 
-        if (plan.ProbeName == AttachProbeName)
+        if (plan.ProbeName is AttachProbeName or ClipViewProbeName)
         {
             WriteValidated(Path.Combine(workDir, AttachProbeCases.BaseFile), SyntheticPcx.Solid(32, 48, (byte)Ink.TargetRight, palette));
             WriteValidated(Path.Combine(workDir, AttachProbeCases.StripFile), SyntheticPcx.Solid(48, 12, (byte)Ink.Magenta, palette));
@@ -818,6 +832,13 @@ internal static class ProjectionProbeGenerator
 
         if (plan.ProbeName == TexmapProbeName)
         {
+            foreach ((int width, int height) in TexmapProbeCases.SurfaceSizes)
+            {
+                WriteValidated(
+                    Path.Combine(workDir, TexmapProbeCases.SizeFile(width, height)),
+                    SyntheticPcx.Write(width, height, TexmapProbeCases.SizePixel, palette));
+            }
+
             WriteValidated(Path.Combine(workDir, TexmapProbeCases.CellFile), SyntheticPcx.Write(64, 64, TexmapProbeCases.CellPixel, palette));
         }
 

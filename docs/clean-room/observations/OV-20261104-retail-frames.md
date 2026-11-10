@@ -108,6 +108,24 @@ What the same measurement found, all of it outside the shading change:
   byte-identical in the 3-D view (1.5% over magick's 6% threshold). Read any delta under about 1%
   as noise.
 
+## Round 4 (2026-11-06): Heart, Legalism and New Age, and what that explains
+The other three gameplay levels were run the same way, each opened directly (`VRUN.EXE -NJ <LEVEL> -RUN`,
+`_research/oracle-runs/OV-20261106-retail-levels/`), against `RetailSmokeTests`' `archive-*-hud` and, with
+`OV_RETAIL_LONG` set, `archive-*-clear`. The geometry, HUD and text agreed at once; the differences led to
+OV-20261106-screen-frame and OV-20261106-clip-view:
+
+- **Round 3's row is the view's first row, drawn by nothing; its 4, 4, 4 surround is palette entry 1**, painted by
+  retail's `SET FRAME_COLOR, 1` once at the start and kept since.
+- **Its "1-pixel misalignment" is half a pixel of each axis**, sampling at the row's top and the column's right.
+- **New Age's dark ovals and Legalism's brown wedge were pickups and props behind walls**, shown above the walls'
+  tops; a wall hides them in its whole column.
+- **Heart, Legalism and New Age hold `RENDER_MODE` 0 through their start-up**, so their first frames are black in
+  the original too, as OpenVirtue now draws them.
+
+`magick compare -metric AE -fuzz 2%` against the frame after the intro text clears (the same weighted sum as
+above): Heart 13130, Legalism 8859 from 9586, New Age 9473 from 17244. Heart's left wall still reads brighter
+than the original's, and Legalism keeps a faint wedge high up against the far ceiling.
+
 ## Open Questions
 - The curtains' shades (15.1, 13.9 and 50.6 in the original against 13.7, 12.3 and 45.1) and the
   right alcove's bricks, about one shade: both closed by Round 3, which leaves the row, the offset

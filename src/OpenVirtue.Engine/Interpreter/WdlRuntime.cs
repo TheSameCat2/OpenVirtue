@@ -6417,6 +6417,12 @@ public sealed class WdlRuntime :
         target is MapEntity entity && (entity["INVISIBLE"] > 0 || _retiredObjects.Contains(entity));
 
     /// <inheritdoc/>
+    /// <summary>
+    /// Whether <c>SET_ALL</c> on a position retired this object: it runs no more, and it is not drawn
+    /// (OV-20261106-clip-view against the instructions probe's set-all frame).
+    /// </summary>
+    public bool IsRetired(AcknexObject target) => _retiredObjects.Contains(target);
+
     public void RetireObjects(IEnumerable<AcknexObject> objects)
     {
         ArgumentNullException.ThrowIfNull(objects);
