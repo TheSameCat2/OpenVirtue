@@ -79,7 +79,8 @@ internal static class OracleProbeGenerator
             ProjectionProbeGenerator.WallLightProbeName or
             ProjectionProbeGenerator.ShadeGlobalProbeName or
             ProjectionProbeGenerator.ScreenFrameProbeName or
-            ProjectionProbeGenerator.ClipViewProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
+            ProjectionProbeGenerator.ClipViewProbeName or
+            ProjectionProbeGenerator.ActorWidthProbeName => ProjectionProbeGenerator.Prepare(probe, args[1..]),
             "-h" or "--help" or "help" => Usage(),
             _ => Usage($"Unknown oracle probe '{args[0]}'."),
         };

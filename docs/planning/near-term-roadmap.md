@@ -448,7 +448,11 @@ First targets:
 ### Status (2026-11-03)
 
 The notes are under `docs/clean-room/observations/`. `ovtool oracle summary` replays every carrier
-against the original's traces and saves; 1037 of 1201 match in full (2026-11-06, later: the screen-frame,
+against the original's traces and saves; 1053 of 1223 match in full (2026-11-10: a retail level replayed for
+the first time, Apathy's start traced for 600 cycles under the original, its beamed enemy now walking the
+original's path line for line and the player's height within 0.02 (OV-20261110-retail-play); actor-width's
+seven carriers; shade-global round 3's twelve on walls nearer than `LIGHT_DIST` and from behind the eye.
+Before that 1037 of 1201 (2026-11-06, later: the screen-frame,
 clip-view and texmap round 2 probes, 124 carriers on what the screen keeps, what `CLIP_DIST` and a wall's column
 hide and which bitmaps a surface shows; their traces carry little and all but screen-frame's 28 match, those being
 single `TICKS` samples on the replay's fixed clock like fade-pal's; the screenshots are what they measure, and

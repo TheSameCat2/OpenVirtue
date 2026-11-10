@@ -82,6 +82,8 @@ internal static class ProjectionProbeGenerator
 
     public const string ClipViewProbeName = "clip-view";
 
+    public const string ActorWidthProbeName = "actor-width";
+
     private const string FovProbeId = "OV-20261009-projection-fov-player-arc";
     private const string AspectProbeId = "OV-20261009-pixel-aspect-video-modes";
     private const string TiltProbeId = "OV-20261009-tilt-model-shear-vs-pitch";
@@ -143,6 +145,8 @@ internal static class ProjectionProbeGenerator
     private const string ScreenFrameProbeId = "OV-20261106-screen-frame";
 
     private const string ClipViewProbeId = "OV-20261106-clip-view";
+
+    private const string ActorWidthProbeId = "OV-20261110-actor-width";
 
     /// <summary>
     /// SHOOT targets: three THINGs standing inside the <see cref="Room.Face"/> room at
@@ -474,6 +478,7 @@ internal static class ProjectionProbeGenerator
         ShadeGlobalProbeName => ShadeGlobalProbeId,
         ScreenFrameProbeName => ScreenFrameProbeId,
         ClipViewProbeName => ClipViewProbeId,
+        ActorWidthProbeName => ActorWidthProbeId,
         _ => throw new ArgumentException($"Unknown projection probe '{probeName}'."),
     };
 
@@ -633,6 +638,7 @@ internal static class ProjectionProbeGenerator
             case ShadeGlobalProbeName:
             case ScreenFrameProbeName:
             case ClipViewProbeName:
+            case ActorWidthProbeName:
                 // Trace probes: the room only gives the runtime a valid world to boot.
                 foreach (TraceProbeCase traceCase in TraceSet(probeName)!.Cases)
                 {
@@ -702,6 +708,7 @@ internal static class ProjectionProbeGenerator
         ShadeGlobalProbeName => ShadeGlobalProbeCases.Set,
         ScreenFrameProbeName => ScreenFrameProbeCases.Set,
         ClipViewProbeName => ClipViewProbeCases.Set,
+        ActorWidthProbeName => ActorWidthProbeCases.Set,
         _ => null,
     };
 

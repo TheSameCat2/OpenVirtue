@@ -548,3 +548,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   floor and ceiling: 518 retail regions had none.
 - `OV-20261104-texmap.md` round 2 — a floor or ceiling shows a bitmap of exactly 64×64, 128×128 or 256×256, and
   entry 0 for any other square size. 17 carriers.
+
+## A retail level replayed (2026-11-10 — confirmed and implemented)
+
+- `OV-20261110-retail-play.md` — Apathy left to its own scripts, traced every cycle under the original and
+  replayed: a beamed actor keeps its region, a `VERTEX` target does not arrive at region borders, and the
+  player's heights read 0 until the first frame stands it on its floor. The start's beamed head now walks
+  the original's path on all 600 lines. With `OV-20261110-actor-width`, seven carriers on `ACTOR_WIDTH`.

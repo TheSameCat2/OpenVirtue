@@ -356,7 +356,9 @@ public sealed partial class RuntimeHost
         {
             _runtime.SetSkill("MOUSE_ANGLE", runtimeAngle);
         }
-        RememberPlayerRuntimeSnapshot(position.X, position.Z, position.Y, _player.Region, runtimeAngle, runtimeTilt);
+        // The height as published: before the first frame PLAYER_Z reads 0 (OV-20261110-retail-play), and a
+        // script's write is told from that, not from the eye's own height.
+        RememberPlayerRuntimeSnapshot(position.X, position.Z, _runtime.GetSkill("PLAYER_Z"), _player.Region, runtimeAngle, runtimeTilt);
     }
 
     private void UpdateRuntimeInputSkills(bool includeMouse = false)

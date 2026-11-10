@@ -257,9 +257,14 @@ public sealed class WdlActorMotionTests
         Assert.Equal(17, runtime.GetSkill("observedCeiling"), 3);
     }
 
-    [Fact]
-    public void Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForAnyTargetMode()
+    [Theory]
+    [InlineData("TARGET MOVE; ANGLE 0;", 1)]
+    [InlineData("TARGET VERTEX; TARGET_X 15; TARGET_Y 5;", 0)]
+    public void Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex(string target, int expected)
     {
+        // Manual p.65-66: a CAREFULLY MOVE, BULLET, FOLLOW or REPEL actor arrives at each region border
+        // it crosses; a VERTEX target arrives at its target only (OV-20261110-retail-play: Apathy's
+        // beamed head crosses two borders on its way without one).
         const string map =
             "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 10 10 0;#2\nVERTEX 0 10 0;#3\n" +
             "VERTEX 20 0 0;#4\nVERTEX 20 10 0;#5\n" +
@@ -271,8 +276,7 @@ public sealed class WdlActorMotionTests
             "ACTOR mover 5 5 0 0;#7\nPLAYER_START 2 5 0 0;#8";
         (WdlRuntime runtime, Level level) = Create(
             "SKILL arrivals { VAL 0; } ACTION arrived { ADD arrivals,1; } " +
-            "ACTOR mover { TARGET VERTEX; TARGET_X 15; TARGET_Y 5; SPEED 6; " +
-            "FLAGS CAREFULLY; IF_ARRIVED arrived; }",
+            "ACTOR mover { " + target + " SPEED 6; FLAGS CAREFULLY; IF_ARRIVED arrived; }",
             map);
 
         runtime.Tick(1.0 / 16);
@@ -280,7 +284,7 @@ public sealed class WdlActorMotionTests
         Actor actor = Assert.Single(level.Actors);
         Assert.Equal(1, actor.Region);
         Assert.Equal(11, actor.X, 3);
-        Assert.Equal(1, runtime.GetSkill("arrivals"));
+        Assert.Equal(expected, runtime.GetSkill("arrivals"));
     }
 
     [Fact]
