@@ -399,6 +399,30 @@ public sealed class OracleTraceTests
         Assert.Equal(0.28125 / 16, clock.Next(now), 9);
     }
 
+    [Theory]
+    [InlineData(200, 8.125 - 1.3125)] // a sampler that printed every cycle: the gap is one long frame
+    [InlineData(20, 0.25)] // too few samples to tell: a skipped stretch, run at the typical step
+    public void ReplayClock_RareLongGapInAnEveryCycleSampler_IsOneLongFrame(int samples, double expectedStep)
+    {
+        // OV-20261110-retail-play heart-idle: C lines a quarter tick apart, but 1.3125 → 8.125 across a disk load.
+        List<double> ticks = [];
+        for (int i = 0; i < samples; i++)
+        {
+            ticks.Add(i < 6 ? i * 0.25 + 0.0625 : 8.125 + ((i - 6) * 0.25));
+        }
+
+        var clock = new OracleReplay.ReplayClock(ticks, fallbackTicks: 0.25);
+        clock.Anchor(ticks[0]);
+        double now = ticks[0];
+        for (int i = 1; i < 6; i++)
+        {
+            now += clock.Next(now) * 16;
+        }
+
+        Assert.Equal(1.3125, now, 9);
+        Assert.Equal(expectedStep / 16, clock.Next(now), 9);
+    }
+
     [Fact]
     public void ReplayClock_AfterTheLastSample_WithoutACadence_TakesTheRecentMedian()
     {
