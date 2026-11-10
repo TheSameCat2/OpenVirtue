@@ -104,9 +104,12 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
   neither the distance, the speed nor either times `TIME_CORR`, a cycle or two late, fits the pairs.
 - `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
   took, and a long first step changes where an actor walks.
-- actor-width: in the cycle a careful actor is held off a wall, the original moves it along the wall by
-  4/1024 only, where OpenVirtue takes the step's whole part along the wall (`w15-g125`: −9.996 against
-  −9.500).
+- actor-width, settled for the first move: **on its first move since it was placed, an actor standing in its
+  region within its hold of a wall is put at the hold and moves along the wall by the 4/1024 nudge only**
+  (`w15-g125`: −10 to −9.996); later holds, and a walker coming in from rock (actor-step v-c-d), take the
+  step's part along the wall. Implemented in `WdlRuntime.HoldCarefulActorAt`; w15-g125 and w15-g140 then
+  match to line 15. Still open there: walking on beside the wall, the original holds the actor back to
+  1.549 as soon as it drifts inside that, where OpenVirtue waits until it is within its 1.5.
 - Scripted key input over a retail level (DOSBox-X types keys but cannot hold them).
 
 ## Implementation
