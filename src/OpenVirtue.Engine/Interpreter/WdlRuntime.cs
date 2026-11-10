@@ -157,6 +157,12 @@ public sealed class WdlRuntime :
     // Objects SET_ALL moved: out of the run for good (set-all-near, set-all-shake).
     private readonly HashSet<AcknexObject> _retiredObjects = [];
 
+    /// <summary>Actors that have made a move since they were placed (OV-20261110-actor-width).</summary>
+    private readonly HashSet<Actor> _movedActors = [];
+
+    /// <summary>Whether the move <see cref="MoveActor"/> is making is the actor's first.</summary>
+    private bool _firstMove;
+
     // PLAYER_ANGLE as the cycle began: DROP places along it, not along a SET of the same action (drop).
     private double _cycleStartAngle;
     private readonly List<WdlFlicRequest> _flicRequests = [];
@@ -4374,6 +4380,9 @@ public sealed class WdlRuntime :
             return;
         }
 
+        // A hold on the actor's first move since it was placed differs (HoldCarefulActorAt).
+        _firstMove = _movedActors.Add(actor);
+
         double requestedX = x - actor.X;
         double requestedY = y - actor.Y;
         int previousRegion = actor.Region;
@@ -4777,6 +4786,17 @@ public sealed class WdlRuntime :
         const double Nudge = 4.0 / 1024;
         Vector2 normal = held - start;
         Vector2 parallel = normal.LengthSquared() > 0 ? step - (Vector2.Dot(step, normal) / normal.LengthSquared() * normal) : step;
+
+        // OV-20261110-actor-width: on its first move an actor placed in its region within its hold of a
+        // wall is put at the hold and moves along the wall by the 4/1024 nudge alone (w15-g125: −10 to
+        // −9.996, then its full steps); a later hold, and one from rock, takes the step's part along the
+        // wall (OV-20261029-actor-step v-c-d).
+        if (_firstMove &&
+            (uint)actor.Region < (uint)_level.Regions.Count &&
+            LevelTopology.RegionContains(_level, actor.Region, start.X, start.Y))
+        {
+            parallel = Vector2.Zero;
+        }
         double x = Math.Round((held.X + parallel.X) * 1024) / 1024;
         double y = Math.Round((held.Y + parallel.Y) * 1024) / 1024;
         if (Math.Abs(held.X - start.X) < 1e-6 && Math.Abs(x - start.X) < Nudge - 1e-9)
