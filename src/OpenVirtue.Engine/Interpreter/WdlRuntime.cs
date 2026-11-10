@@ -2774,7 +2774,8 @@ public sealed class WdlRuntime :
     /// <summary>
     /// Moves <c>WALK</c> by the distance <c>STEPS</c> just added (OV-20261110-retail-play, round 4):
     /// the distance since the last whole <c>WALK_PERIOD</c>, <c>a</c>, gives the angle
-    /// trunc(a · 3216 / period) in 1/1024 radians (π cut to 3216/1024), and <c>WALK</c> is 1 − 2·sin of
+    /// trunc(a · 3216 / period + 1/16) in 1/1024 radians (π cut to 3216/1024; a fraction from 0.938 up
+    /// steps on, one to 0.936 does not), and <c>WALK</c> is 1 − 2·sin of
     /// it, the sine cut to 1/1024: 1 at each period's start, −1 at its middle, a sharp top and a round
     /// bottom. The cycle in which <c>a</c> reaches the period keeps <c>WALK</c>, and so does the next,
     /// whose distance is dropped; <c>a</c> starts again from 0 after it. A cycle the player stood still
@@ -2803,7 +2804,7 @@ public sealed class WdlRuntime :
             return;
         }
 
-        long angle = _walkDistanceRaw * 3216 / period;
+        long angle = ((_walkDistanceRaw * 3216) + (period / 16)) / period;
         long sine = (long)Math.Floor(1024 * Math.Abs(Math.Sin(angle / 1024.0)));
         _skills["WALK"] = (1024 - (2 * sine)) / 1024.0;
     }

@@ -100,13 +100,14 @@ probe's new `edge-2` case (OV-20261019-border-climb, 2026-11-10 addendum). Apath
   move. A player who creeps less than 32/1024 a component counts nothing. The save-format beam (5, 3) still
   gives trunc(1024·√34). All 239 lines before the step border match.
 - **`WALK` is 1 − 2·|sin|, not a cosine**: with `a` the distance `STEPS` added since the last whole
-  `WALK_PERIOD`, the angle is trunc(a·3216/period) in 1/1024 radians (π cut to 3216/1024) and `WALK` is
+  `WALK_PERIOD`, the angle is trunc(a·3216/period + 1/16) in 1/1024 radians (π cut to 3216/1024; of 234
+  lines where it decides, fractions to 0.936 take the floor and from 0.938 the next step) and `WALK` is
   (1024 − 2·trunc(1024·sin))/1024: 1 at a period's start, −1 at its middle, a sharp top and a round bottom.
   The cycle in which `a` reaches the period keeps `WALK`, the next keeps it too and drops its distance, and
   `a` starts again from 0 (the three equal values at each top, 0.852, 0.938, 0.906, 0.906 …). A cycle that
   adds nothing keeps `WALK` (−0.078 for 25 cycles while the player turned in place). `WALK` reads 0 until
-  the cycle after the one that first sees the player standing on its floor, then 1. The rule gives 590 of 600
-  lines to the printed digit; the ten others are 2/1024 off, one angle step on a rounding edge.
+  the cycle after the one that first sees the player standing on its floor, then 1. The rule gives all
+  600 lines to the printed digit.
   `WALK_TIME` played no part in this walk.
 - **The climb test measures the feet from the eye this frame's `PLAYER_VZ` moves it to.** OpenVirtue moved the
   player across first and then the eye. With the eye rising 0.02 to 0.03 a frame, Apathy climbed from floor
@@ -141,7 +142,6 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
   (−5.222 against −5.221), and `PLAYER_Z` from line 469.
 - `PLAYER_COS` on the second line: the original keeps the start's −0.706 until the first frame, where
   OpenVirtue already shows the script's new angle.
-- The ten `WALK` values 2/1024 off: one angle step, from where the product a·3216/period is cut.
 - The idle runs' seconds clock: the replay would need the original's `SECS` to place the eye's countdown
   bob (heart-idle and legalism-idle from line 159).
 - actor-width, settled for the first move: **on its first move since it was placed, an actor standing in its
