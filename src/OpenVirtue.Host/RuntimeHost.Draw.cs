@@ -372,7 +372,8 @@ public sealed partial class RuntimeHost
         IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront(
             _sprites.Where(billboard => billboard.Source is not { } source ||
                 (!_runtime.IsRetired(source) && ViewClip.IsEntityInReach(_level, source, playerRegion, eyeX, eyeY))).ToList(),
-            _camera.Position);
+            _camera.Position,
+            horizontalForward);
         for (int start = 0; start < sorted.Count;)
         {
             string texture = sorted[start].Texture;
@@ -463,6 +464,9 @@ public sealed partial class RuntimeHost
                 depthTest: true,
                 _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
                 shaded: _shading,
+                // OV-20261030-below-beam round 2: sprites are painted in their order and do not hide
+                // one another by depth; each still hides behind the walls at its hiding depth.
+                depthWrite: false,
                 blend: BatchBlendOf(blend),
                 spriteMarker: PaletteShading.SpriteMarker,
                 scissor: scissor);

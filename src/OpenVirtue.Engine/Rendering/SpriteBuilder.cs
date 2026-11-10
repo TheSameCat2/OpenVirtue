@@ -83,6 +83,25 @@ public static class SpriteBuilder
     }
 
     /// <summary>
+    /// Returns sprites ordered far-to-near by their depth along <paramref name="forward"/> (the view's
+    /// level direction, render space), a thing after an actor at the same depth (OV-20261030-below-beam
+    /// round 2): with two things and an actor in a row 8 ahead, at y 6, 2 and −2, the original draws the
+    /// things over the actor, the one at y 6 too, though it lies farther from the eye. Sprites are painted
+    /// in this order without hiding one another by depth.
+    /// </summary>
+    public static IReadOnlyList<SpriteBillboard> OrderBackToFront(
+        IEnumerable<SpriteBillboard> billboards,
+        Vector3 cameraPosition,
+        Vector3 forward)
+    {
+        ArgumentNullException.ThrowIfNull(billboards);
+        return billboards
+            .OrderByDescending(b => MathF.Round(Vector3.Dot(b.BasePosition - cameraPosition, forward) * 1024))
+            .ThenBy(static b => b.Source is Thing ? 1 : 0)
+            .ToArray();
+    }
+
+    /// <summary>
     /// Selects the frontmost upright texture layer per material entity for mouse interaction.
     /// Ground shadows never enlarge the click target.
     /// </summary>

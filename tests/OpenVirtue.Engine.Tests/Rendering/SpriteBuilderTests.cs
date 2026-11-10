@@ -252,6 +252,22 @@ public class SpriteBuilderTests
         Assert.Equal(["b", "c", "a"], sorted.Select(s => s.Texture).ToArray());
     }
 
+    [Fact]
+    public void OrderBackToFront_ByViewDepth_PaintsAThingAfterAnActorOfTheSameDepth()
+    {
+        // OV-20261030-below-beam round 2: a row of sprites 8 ahead; the one off to the side is not
+        // farther for the order, and at one depth the thing is painted over the actor.
+        var forward = new Vector3(1, 0, 0);
+        var aside = new SpriteBillboard("aside", new Vector3(8, 0, -6), 8, 8, new OpenVirtue.Engine.Map.Thing("t1"));
+        var actor = new SpriteBillboard("actor", new Vector3(8, 0, 2), 8, 8, new OpenVirtue.Engine.Map.Actor("a"));
+        var thing = new SpriteBillboard("thing", new Vector3(8, 0, -2), 8, 8, new OpenVirtue.Engine.Map.Thing("t2"));
+        var far = new SpriteBillboard("far", new Vector3(20, 0, 0), 8, 8, new OpenVirtue.Engine.Map.Actor("f"));
+
+        IReadOnlyList<SpriteBillboard> sorted = SpriteBuilder.OrderBackToFront([aside, actor, thing, far], Vector3.Zero, forward);
+
+        Assert.Equal(["far", "actor", "aside", "thing"], sorted.Select(s => s.Texture).ToArray());
+    }
+
     private static Level Load(string placements, string main)
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

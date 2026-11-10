@@ -91,3 +91,21 @@ thing-ground-4 `832ebe7e`, …) match, and so do all six round 2 carriers.
 
 ## Open Questions
 - An eye exactly at a storey's ceiling.
+
+## Addendum: the round 2 screenshots and the sprites' order (2026-11-10)
+Read from `round2/*/work/OVBBS0.PCX`: two things (magenta) and two actors (yellow), 16 wide, in a row 8
+ahead at y 6, 2, −2 and −6. One of them is beamed away behind the eye.
+
+- **Sprites are painted in order of their depth along the view, not of their distance from the eye, and
+  do not hide one another by depth.** With the actor at y −2 and the things at y 6 and 2, the thing at
+  y 6 shows over the actor, though it is 10 from the eye and the actor 8.25. OpenVirtue sorted by
+  distance and let each sprite's own hiding depth settle overlaps: the actor covered the whole picture.
+- At one depth a thing went over an actor in `actor-ground-4` and `thing-ground-*`, but under two actors
+  in `thing-rel-0`. No single tie rule fits all four. Every sprite here stands at exactly one depth,
+  which a level rarely has. OpenVirtue paints a thing after an actor of the same depth.
+
+Implemented: `SpriteBuilder.OrderBackToFront(billboards, eye, forward)`, used by the host, whose sprite
+batches no longer write depth. thing-ground-4, -12 and -12-nolocate now match to the pixel. Over the
+seven round 2 screens the difference goes 1 114 677 → 472 723, `thing-rel-0` worse by 223 226. No other
+screen of clip-view, below-view, sprite-shade or view-activity changes. Test:
+`SpriteBuilderTests.OrderBackToFront_ByViewDepth_PaintsAThingAfterAnActorOfTheSameDepth`.
