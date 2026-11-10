@@ -52,8 +52,9 @@ prints the position × 1024. `w45-s02-w14` sets `PLAYER_WIDTH` 1.4.
   (10502, 313), the rule (10501, 314)) and w63-s02 from 1053.8.
 - **A wall's ends hold the step first, each like a thing of no width; the line then holds it only if it
   is still within `PLAYER_WIDTH` of it.** Rounding the 45° wall's end, the player stands 1268.7 to
-  1269.5/1024 from the end point (1467.5 to 1468.5 at width 1.4). That is the step-into-a-thing push-back
-  to c²/1024 + 98 with c = `PLAYER_WIDTH` (OV-20261103-contact-clock). On cycle 188 the step's end came
+  1269.5/1024 from the end point (1467.5 to 1468.5 at width 1.4). That is the push-out from a thing, to
+  (c − 1)²/1024 + 102 with c = `PLAYER_WIDTH` (OV-20261103-startup-clock). The step-into-a-thing
+  push-back, c²/1024 + 98, leaves cycle 188 a unit off. On cycle 188 the step's end came
   within 1185 of the end point, which put it at (19369, 8803). That is 1217.6 from the line, which then
   held it at (19325, 8846), as printed. On cycle 189 the end's push left the step 1248 from the line, and
   the line let it be. After that the positions are within 1/1024 of the original's: the point push's
@@ -62,7 +63,7 @@ prints the position × 1024. `w45-s02-w14` sets `PLAYER_WIDTH` 1.4.
 ## Rules
 - **A single wall's hold is the whole step pushed back in 22.10**, as above. Along an axis it gives the
   earlier hold at `PLAYER_WIDTH` + 51/1024 exactly (OV-20261019-eye-clamp).
-- **Its ends come first**, as things of no width, and the line holds only a step still within
+- **Its ends come first**, as things of no width that push the player out, and the line holds only a step still within
   `PLAYER_WIDTH` of it.
 
 ## Confidence
