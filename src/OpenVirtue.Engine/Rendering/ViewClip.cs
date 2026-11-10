@@ -43,6 +43,16 @@ public sealed class ViewClip
     {
         ArgumentNullException.ThrowIfNull(level);
         _level = level;
+        var stacked = new HashSet<int>();
+        for (int i = 0; i < level.Regions.Count; i++)
+        {
+            if (level.Regions[i].BelowRegion >= 0)
+            {
+                stacked.Add(i);
+                stacked.Add(level.Regions[i].BelowRegion);
+            }
+        }
+
         foreach (Wall wall in level.Walls)
         {
             if (wall.LeftRegion == wall.RightRegion ||
@@ -52,8 +62,22 @@ public sealed class ViewClip
                 continue;
             }
 
+            // OV-20261106-clip-view round 5 p-wide: a border the sight line can pass, open between its
+            // two regions, is a way into the region, not a wall bounding it: a wide thing seen across a
+            // raised pad's borders is cut at them. A wall onto a closed region still bounds it.
+            // A BELOW stack's borders keep the old rule (below-view deck).
+            bool open = (uint)wall.LeftRegion < (uint)level.Regions.Count &&
+                (uint)wall.RightRegion < (uint)level.Regions.Count &&
+                !stacked.Contains(wall.LeftRegion) && !stacked.Contains(wall.RightRegion) &&
+                Math.Min(level.Regions[wall.LeftRegion].CeilHeight, level.Regions[wall.RightRegion].CeilHeight) >
+                    Math.Max(level.Regions[wall.LeftRegion].FloorHeight, level.Regions[wall.RightRegion].FloorHeight);
             foreach (int region in (ReadOnlySpan<int>)[wall.LeftRegion, wall.RightRegion])
             {
+                if (open)
+                {
+                    break;
+                }
+
                 if (!_regionWalls.TryGetValue(region, out List<Wall>? list))
                 {
                     list = [];
@@ -163,63 +187,75 @@ public sealed class ViewClip
             return depth;
         }
 
-        float rightX = forwardY;
-        float rightY = -forwardX;
         float from = (lateral - halfWidth) / depth;
         float to = (lateral + halfWidth) / depth;
         float nearest = depth;
         foreach (Wall wall in walls)
         {
-            Vertex a = _level.Vertices[wall.Vertex1];
-            Vertex b = _level.Vertices[wall.Vertex2];
-
-            float da = ((a.X - x) * forwardX) + ((a.Y - y) * forwardY);
-            float db = ((b.X - x) * forwardX) + ((b.Y - y) * forwardY);
-            if (da <= NearDepth && db <= NearDepth)
+            if (WallDepthInColumns(wall, x, y, forwardX, forwardY, from, to) is { } near)
             {
-                continue;
+                nearest = MathF.Min(nearest, near);
             }
-
-            float la = ((a.X - x) * rightX) + ((a.Y - y) * rightY);
-            float lb = ((b.X - x) * rightX) + ((b.Y - y) * rightY);
-
-            // Cut the wall at the near plane.
-            if (da < NearDepth)
-            {
-                float t = (NearDepth - da) / (db - da);
-                la += (lb - la) * t;
-                da = NearDepth;
-            }
-            else if (db < NearDepth)
-            {
-                float t = (NearDepth - db) / (da - db);
-                lb += (la - lb) * t;
-                db = NearDepth;
-            }
-
-            // Where it crosses the sprite's columns, 1/depth runs straight in the column.
-            float ca = la / da;
-            float cb = lb / db;
-            if (ca > cb)
-            {
-                (ca, cb) = (cb, ca);
-                (da, db) = (db, da);
-            }
-
-            float low = MathF.Max(ca, from);
-            float high = MathF.Min(cb, to);
-            if (low > high)
-            {
-                continue;
-            }
-
-            float span = cb - ca;
-            float atLow = span > 1e-6f ? 1f / da + ((low - ca) / span * ((1f / db) - (1f / da))) : 1f / da;
-            float atHigh = span > 1e-6f ? 1f / da + ((high - ca) / span * ((1f / db) - (1f / da))) : 1f / db;
-            nearest = MathF.Min(nearest, 1f / MathF.Max(atLow, atHigh));
         }
 
         return nearest < depth ? MathF.Max(NearDepth, nearest - 0.05f) : depth;
+    }
+
+    /// <summary>
+    /// The nearest depth of <paramref name="wall"/> within the view's columns <paramref name="from"/> to
+    /// <paramref name="to"/> (lateral over depth), cut at the near plane; null when it does not cross them.
+    /// </summary>
+    private float? WallDepthInColumns(Wall wall, float x, float y, float forwardX, float forwardY, float from, float to)
+    {
+        float rightX = forwardY;
+        float rightY = -forwardX;
+        Vertex a = _level.Vertices[wall.Vertex1];
+        Vertex b = _level.Vertices[wall.Vertex2];
+
+        float da = ((a.X - x) * forwardX) + ((a.Y - y) * forwardY);
+        float db = ((b.X - x) * forwardX) + ((b.Y - y) * forwardY);
+        if (da <= NearDepth && db <= NearDepth)
+        {
+            return null;
+        }
+
+        float la = ((a.X - x) * rightX) + ((a.Y - y) * rightY);
+        float lb = ((b.X - x) * rightX) + ((b.Y - y) * rightY);
+
+        // Cut the wall at the near plane.
+        if (da < NearDepth)
+        {
+            float t = (NearDepth - da) / (db - da);
+            la += (lb - la) * t;
+            da = NearDepth;
+        }
+        else if (db < NearDepth)
+        {
+            float t = (NearDepth - db) / (da - db);
+            lb += (la - lb) * t;
+            db = NearDepth;
+        }
+
+        // Where it crosses the sprite's columns, 1/depth runs straight in the column.
+        float ca = la / da;
+        float cb = lb / db;
+        if (ca > cb)
+        {
+            (ca, cb) = (cb, ca);
+            (da, db) = (db, da);
+        }
+
+        float low = MathF.Max(ca, from);
+        float high = MathF.Min(cb, to);
+        if (low > high)
+        {
+            return null;
+        }
+
+        float span = cb - ca;
+        float atLow = span > 1e-6f ? 1f / da + ((low - ca) / span * ((1f / db) - (1f / da))) : 1f / da;
+        float atHigh = span > 1e-6f ? 1f / da + ((high - ca) / span * ((1f / db) - (1f / da))) : 1f / db;
+        return 1f / MathF.Max(atLow, atHigh);
     }
 
     /// <summary>Whether a thing or actor is within its reach of (<paramref name="x"/>, <paramref name="y"/>).</summary>
