@@ -62,7 +62,12 @@ level's four commonest actor kinds:
 - **The start's position and heading are cut toward zero to 1/1024**: Heart's start y 168.031 reads 168.030
   and its 135° reads 2.355 (2412/1024); OpenVirtue printed 168.031 and 2.356.
 - A frame after the start's `WAIT 4` takes 6.6 to 6.8 ticks in the original (a disk load), as the `SAVE`
-  did in Apathy; the replay's clock cannot know it, so the lines run 6.6 ticks apart after it.
+  did in Apathy. The replay's clock used to split it into ordinary frames, which put every later line
+  6.6 ticks off. Since round 4 it takes a sampler that printed every cycle as one: `oracle diff` now
+  replays the long frame whole. apathy-idle and newage-idle then match on every line, and heart-idle on
+  884 of 901. heart-idle and legalism-idle part at line 159, where the eye's countdown bob starts: the
+  seconds clock's phase depends on the launch (OV-20261103-contact-clock), and these traces do not print
+  `SECS`.
 - Matched by `TICKS` instead of by line, the player's eye starts its countdown bob at 47.97, 48.25 and
   48.16 in the original and 47.47, 47.44 and 48.16 in OpenVirtue: the seconds clock, which runs on real time
   (OV-20261103-contact-clock), within a tick, and New Age's to the line.
@@ -137,8 +142,8 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 - `PLAYER_COS` on the second line: the original keeps the start's −0.706 until the first frame, where
   OpenVirtue already shows the script's new angle.
 - The ten `WALK` values 2/1024 off: one angle step, from where the product a·3216/period is cut.
-- `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
-  took, and a long first step changes where an actor walks.
+- The idle runs' seconds clock: the replay would need the original's `SECS` to place the eye's countdown
+  bob (heart-idle and legalism-idle from line 159).
 - actor-width, settled for the first move: **on its first move since it was placed, an actor standing in its
   region within its hold of a wall is put at the hold and moves along the wall by the 4/1024 nudge only**
   (`w15-g125`: −10 to −9.996); later holds, and a walker coming in from rock (actor-step v-c-d), take the

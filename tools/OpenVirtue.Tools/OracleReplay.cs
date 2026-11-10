@@ -1103,6 +1103,11 @@ internal static class OracleReplay
         // at 8 ticks a cycle, then at 60 Hz).
         private readonly double _shortest = ShortestGap(cycleTicks) ?? fallbackTicks;
 
+        // A sampler that printed every cycle: at least 100 samples, all but one in a hundred a typical
+        // frame apart. Its rare long gaps are long frames of the original's (a retail level's disk load
+        // after its start, 6.8 ticks: OV-20261110-retail-play), not skipped cycles.
+        private readonly bool _everyCycle = consecutive || EveryCycle(cycleTicks);
+
         // DOSBox-X's rate drifts within a run, so the start-up runs at the first sampled cycles' rate,
         // or at the step the first sample's own TIME_CORR column gives (FirstCycleStep).
         private readonly double _startup = firstStep ?? (cycleTicks.Count >= 3 ? Median([cycleTicks[0], cycleTicks[1], cycleTicks[2]]) : null) ?? Median(cycleTicks) ?? fallbackTicks;
@@ -1204,7 +1209,7 @@ internal static class OracleReplay
                 // counter placed every sample one frame apart (its shortest step a frame's, at most a
                 // tick; a counter of WAITT 8 loops steps 8): then it is one long frame of the original's.
                 double gap = cycleTicks[_next] + Offset - ticks;
-                if (gap <= 4 * _typical || (consecutive && _shortest <= 1))
+                if (gap <= 4 * _typical || (_everyCycle && _shortest <= 1))
                 {
                     step = gap;
                 }
@@ -1263,6 +1268,25 @@ internal static class OracleReplay
         /// <summary>The median of the last <paramref name="gaps"/> steps between samples.</summary>
         private static double? RecentMedian(IReadOnlyList<double> ticks, int gaps) =>
             ticks.Count < 2 ? null : Median([.. ticks.Skip(Math.Max(0, ticks.Count - gaps - 1))]);
+
+        private static bool EveryCycle(IReadOnlyList<double> ticks)
+        {
+            if (ticks.Count < 100 || Median(ticks) is not { } typical)
+            {
+                return false;
+            }
+
+            int longGaps = 0;
+            for (int i = 1; i < ticks.Count; i++)
+            {
+                if (ticks[i] - ticks[i - 1] > 4 * typical)
+                {
+                    longGaps++;
+                }
+            }
+
+            return longGaps * 100 <= ticks.Count;
+        }
 
         private static double? Median(IReadOnlyList<double> ticks)
         {
