@@ -1,6 +1,6 @@
 # OV-20261110-wall-slide: The player sliding along a diagonal wall
 Date: 2026-11-10
-Status: confirmed for the middle of a wall and its ends, implemented; a deep first contact and the 3:4 wall open
+Status: confirmed for the middle of a wall and its ends, implemented; one deep first contact open
 Observer: Claude Code (Opus 5.5)
 Implementer: same
 
@@ -41,15 +41,13 @@ prints the position × 1024. `w45-s02-w14` sets `PLAYER_WIDTH` 1.4.
 - One rule gives every middle-of-wall cycle of the 45°, 1:2 and 2:1 walls, at both widths and both steps
   (585 of 587 cycles; the two others are first contacts):
   1. Take the whole step, q = p + s.
-  2. Measure d = ⌊(q − a)·N / 1024⌋. Here a is the wall's first vertex and N is the wall's normal toward
-     the player, in 1/1024, each component rounded.
-  3. Push back along N to h = `PLAYER_WIDTH` + 51/1024: q += ⌊(h − d)·N / 1024⌋, each axis cut down.
-- The 3:4 wall (y = 3x/4 − 9, step 0.3) takes the step's part along the wall cut down, (198, 148). That
-  creeps 0.4/1024 toward the wall per cycle, and a (197, 149) cycle restores it whenever the distance
-  would fall under about 1278.5. The rule above fits it only with N = (−615, 820) and h = 1280, where the
-  normal rounds to (−614, 819). How the original makes this wall's normal is open.
-- A first contact that comes in deep differs by a unit: `w45-s02-w14` from 1334.9 (the original
-  (10502, 313), the rule (10501, 314)) and w63-s02 from 1053.8.
+  2. Measure d = ⌊(q − a)·n⌋. Here a is the wall's first vertex and n is the wall's unit normal toward
+     the player, not rounded.
+  3. Push back along n to h = `PLAYER_WIDTH` + 51/1024: q += ⌊(h − d)·n⌋, each axis cut down.
+- The 3:4 wall (y = 3x/4 − 9, step 0.3) settles the normal: it is the exact unit normal. A normal rounded to
+  1/1024, (−614, 819), misses 63 of its 96 cycles; the exact one misses none. The exact normal also fits
+  the width-1.4 first contact the rounded one missed. Over all six carriers, one middle-of-wall cycle
+  misses: w63-s02's first contact, from 1053.8.
 - **A wall's ends hold the step first, each like a thing of no width; the line then holds it only if it
   is still within `PLAYER_WIDTH` of it.** Rounding the 45° wall's end, the player stands 1268.7 to
   1269.5/1024 from the end point (1467.5 to 1468.5 at width 1.4). That is the push-out from a thing, to
@@ -71,8 +69,7 @@ High for the middle of a wall of slope 1/2, 1 and 2. The 3:4 wall shows the norm
 simply to the nearest unit.
 
 ## Open Questions
-- The 3:4 wall's normal and hold.
-- A deep first contact.
+- w63-s02's first contact, from 1053.8: a unit off.
 - The point push's last unit at a wall's end.
 - Two or more walls at once (corners): still OpenVirtue's float solver, rounded to the nearest unit.
 
@@ -81,6 +78,7 @@ simply to the nearest unit.
 `LevelCollisionWorld.StepOffPoint` for its ends. Test: `PlayerTests.MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths`. Probe cases:
 `tools/OpenVirtue.Tools/WallSlideProbeCases.cs`.
 
-With the rule, the probe's carriers match to lines 191 (45°), 203 (1:2), 205 (2:1) and 109 (45°, 0.5),
-up from 108, 146, 112 and 76. Apathy's walk matches 399 lines (396 before). The replay summary keeps
-its 1059 carriers.
+With the rule (exact normal since 2026-11-10's second batch), the probe's carriers match to lines 192 (45°),
+203 (1:2), 205 (2:1), 109 (45°, 0.5), 156 (3:4) and 191 (45°, width 1.4), up from 108, 146, 112, 76, 89
+and 107. Apathy's walk matches 400 lines (396 before). Heart's walk meets the same kind of 3:4 wall,
+with vertices that are not whole steps. The replay summary keeps all its carriers.

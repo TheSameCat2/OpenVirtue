@@ -384,8 +384,9 @@ public class PlayerTests
     [InlineData(4, -8, 20, 8, 10958, 479, 11061, 583)]
     [InlineData(-4, -12, 28, 4, 18520, 450, 18684, 532)] // w27-s02: y = x/2 − 10
     [InlineData(4, -8, 20, 8, 19238, 8759, 19325, 8846)] // w45-s02 cycle 188: the wall's end, then the line
+    [InlineData(0, -9, 24, 9, 13169, 2260, 13367, 2408, 307)] // w37-s03: y = 3x/4 − 9, the unit normal not rounded
     public void MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths(
-        int x1, int y1, int x2, int y2, int fromX, int fromY, int toX, int toY)
+        int x1, int y1, int x2, int y2, int fromX, int fromY, int toX, int toY, int stepX = 204)
     {
         // OV-20261110-wall-slide: the whole step, its end's distance measured with the wall's normal in
         // 1/1024 and cut down, pushed back to PLAYER_WIDTH + 51/1024 with each axis's part cut down.
@@ -399,7 +400,7 @@ public class PlayerTests
         var player = new Player(Load(map)) { Width = 1228f / 1024 };
         player.Position = new Vector3(fromX / 1024f, 8, fromY / 1024f);
 
-        player.MoveHorizontal(204f / 1024, 4f / 1024);
+        player.MoveHorizontal(stepX / 1024f, 4f / 1024);
 
         Assert.Equal(toX, player.Position.X * 1024, 3);
         Assert.Equal(toY, player.Position.Z * 1024, 3);
