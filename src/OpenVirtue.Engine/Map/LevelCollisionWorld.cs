@@ -409,6 +409,32 @@ public sealed class LevelCollisionWorld
         return new Vector2((float)((px + AtLeastFour(ex - px)) / 1024), (float)((py + AtLeastFour(ey - py)) / 1024));
     }
 
+    /// <summary>
+    /// Where a step whose end comes within <paramref name="radius"/> of <paramref name="point"/> (a solid
+    /// wall's end) is put: like a step into a thing of no width, out from the point to c²/1024 +
+    /// <see cref="WalkSlackSquaredRaw"/> in 22.10 (OV-20261110-wall-slide: a player 1.2 wide rounded a
+    /// wall's end 1268.7 to 1269.5/1024 from it, 1.4 wide 1467.5 to 1468.5). Null when the end is not
+    /// inside (c − 1)²/1024, or the point lies ahead of where the step started.
+    /// </summary>
+    public static Vector2? StepOffPoint(Vector2 from, Vector2 desired, Vector2 point, float radius)
+    {
+        long contact = Raw(Math.Max(0.01f, radius));
+        long ax = (long)Math.Round(point.X * 1024.0);
+        long ay = (long)Math.Round(point.Y * 1024.0);
+        long dx = (long)Math.Round(desired.X * 1024.0) - ax;
+        long dy = (long)Math.Round(desired.Y * 1024.0) - ay;
+        long lengthSquared = ((dx * dx) + (dy * dy)) / 1024;
+        if (lengthSquared >= ContactTestSquared(contact) || lengthSquared == 0)
+        {
+            return null;
+        }
+
+        bool ahead = (dx * ((long)Math.Round(from.X * 1024.0) - ax)) + (dy * ((long)Math.Round(from.Y * 1024.0) - ay)) >= 0;
+        return ahead && ScaleToContact(dx, dy, lengthSquared, WalkTargetSquared(contact)) is (double ox, double oy)
+            ? new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024))
+            : null;
+    }
+
     private static (double X, double Y)? ScaleToContact(long dx, long dy, long lengthSquared, long contactSquared)
     {
         long ratio = contactSquared * 1024 / lengthSquared;

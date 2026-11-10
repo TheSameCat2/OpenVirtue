@@ -1,6 +1,6 @@
 # OV-20261110-wall-slide: The player sliding along a diagonal wall
 Date: 2026-11-10
-Status: confirmed for the middle of a wall, implemented; wall ends, a deep first contact and the 3:4 wall open
+Status: confirmed for the middle of a wall and its ends, implemented; a deep first contact and the 3:4 wall open
 Observer: Claude Code (Opus 5.5)
 Implementer: same
 
@@ -50,11 +50,20 @@ prints the position × 1024. `w45-s02-w14` sets `PLAYER_WIDTH` 1.4.
   normal rounds to (−614, 819). How the original makes this wall's normal is open.
 - A first contact that comes in deep differs by a unit: `w45-s02-w14` from 1334.9 (the original
   (10502, 313), the rule (10501, 314)) and w63-s02 from 1053.8.
-- Past a wall's end the player rounds the end point. The rule does not cover that.
+- **A wall's ends hold the step first, each like a thing of no width; the line then holds it only if it
+  is still within `PLAYER_WIDTH` of it.** Rounding the 45° wall's end, the player stands 1268.7 to
+  1269.5/1024 from the end point (1467.5 to 1468.5 at width 1.4). That is the step-into-a-thing push-back
+  to c²/1024 + 98 with c = `PLAYER_WIDTH` (OV-20261103-contact-clock). On cycle 188 the step's end came
+  within 1185 of the end point, which put it at (19369, 8803). That is 1217.6 from the line, which then
+  held it at (19325, 8846), as printed. On cycle 189 the end's push left the step 1248 from the line, and
+  the line let it be. After that the positions are within 1/1024 of the original's: the point push's
+  rounding is no better known for walls than for things.
 
 ## Rules
 - **A single wall's hold is the whole step pushed back in 22.10**, as above. Along an axis it gives the
   earlier hold at `PLAYER_WIDTH` + 51/1024 exactly (OV-20261019-eye-clamp).
+- **Its ends come first**, as things of no width, and the line holds only a step still within
+  `PLAYER_WIDTH` of it.
 
 ## Confidence
 High for the middle of a wall of slope 1/2, 1 and 2. The 3:4 wall shows the normal's rounding is not
@@ -63,12 +72,12 @@ simply to the nearest unit.
 ## Open Questions
 - The 3:4 wall's normal and hold.
 - A deep first contact.
-- The wall's ends.
+- The point push's last unit at a wall's end.
 - Two or more walls at once (corners): still OpenVirtue's float solver, rounded to the nearest unit.
 
 ## Implementation
-`Player.HoldOffWall`, used by `Player.MoveHorizontal` when exactly one wall stops the step within its
-span. Test: `PlayerTests.MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths`. Probe cases:
+`Player.HoldOffWall`, used by `Player.MoveHorizontal` when exactly one wall stops the step, and
+`LevelCollisionWorld.StepOffPoint` for its ends. Test: `PlayerTests.MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths`. Probe cases:
 `tools/OpenVirtue.Tools/WallSlideProbeCases.cs`.
 
 With the rule, the probe's carriers match to lines 191 (45°), 203 (1:2), 205 (2:1) and 109 (45°, 0.5),
