@@ -138,8 +138,13 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 
 ## Open Questions
 - `PLAYER_Z` drifts up to 0.02 from the fifth frame on.
-- apathy-walk from line 399: sliding along the closed region's wall, the position is 1/1024 off in x and y
-  (−5.222 against −5.221), and `PLAYER_Z` from line 469.
+- apathy-walk from line 399: sliding along the closed region's wall from (−1.447, 42.397) to (−12, 32.5)
+  with `PLAYER_WIDTH` 1.4, the original holds the player 1484.2 to 1485.9/1024 from the wall line, and
+  OpenVirtue holds it 1483.4 to 1485.2. The original's slide per cycle is about the whole step projected
+  onto the wall ((−18, −16) for a step of (−180, 156)), where OpenVirtue's comes out a unit short in one
+  axis. No hold distance (1484 to 1485.5) or rounding (nearest, toward zero, away from the wall) fits the
+  original's 72 cycles: its distance is likely taken in 22.10 from the vertices as stored. The position
+  then drifts by up to 8/1024 and moves `STEPS`, `WALK` and `PLAYER_Z` from line 464.
 - `PLAYER_COS` on the second line: the original keeps the start's −0.706 until the first frame, where
   OpenVirtue already shows the script's new angle.
 - The idle runs' seconds clock: the replay would need the original's `SECS` to place the eye's countdown
