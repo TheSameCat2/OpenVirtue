@@ -276,7 +276,6 @@ public sealed class Player : AcknexObject
         LastObjectPush = result.ObjectPush;
         Vector2 end = result.Position;
         wallStopped = blocking.Count > 0;
-        StoppedAtBorderOnly = wallStopped && blocking.TrueForAll(IsClimbBorder);
         if (wallStopped)
         {
             end = new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
@@ -291,43 +290,6 @@ public sealed class Player : AcknexObject
 
         _position = new Vector3(end.X, _position.Y, end.Y);
         return end - start;
-    }
-
-    /// <summary>
-    /// Whether the last horizontal move was stopped only by region borders the player could not climb:
-    /// walls between two regions, not <c>IMPASSABLE</c>, whose other region has the eye between its
-    /// floor and ceiling but its floor <see cref="StepUp"/> or more above the feet. Such a stop keeps
-    /// the script's velocity (OV-20261110-retail-play round 4); a solid wall, or a border to a region
-    /// the eye does not fit, writes the cut step back (OV-20261103-contact-clock).
-    /// </summary>
-    public bool StoppedAtBorderOnly { get; private set; }
-
-    private bool IsClimbBorder(AcknexObject blocker)
-    {
-        if (blocker is not Wall wall || wall["IMPASSABLE"] > 0 ||
-            (uint)wall.LeftRegion >= (uint)_level.Regions.Count ||
-            (uint)wall.RightRegion >= (uint)_level.Regions.Count)
-        {
-            return false;
-        }
-
-        int footprint = LevelTopology.Footprint(_level, _region);
-        int left = LevelTopology.Footprint(_level, wall.LeftRegion);
-        int right = LevelTopology.Footprint(_level, wall.RightRegion);
-        if (left == right)
-        {
-            return false;
-        }
-
-        int other = StoreyFor(left == footprint ? wall.RightRegion : wall.LeftRegion);
-        if ((uint)other >= (uint)_level.Regions.Count)
-        {
-            return false;
-        }
-
-        float eye = _position.Y;
-        float floor = FloorOf(other);
-        return eye > floor && eye < CeilingOf(other) && floor - (eye + ClimbEyeRise - EyeHeight) >= StepUp;
     }
 
     /// <summary>

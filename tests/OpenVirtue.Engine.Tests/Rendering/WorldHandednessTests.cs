@@ -178,7 +178,8 @@ public sealed class WorldHandednessTests
         Assert.Equal(1, eastRuntime.GetSkill("PLAYER_COS"));
         // The start angle is cut to 1/1024 as the original holds it (OV-20261110-retail-play): 1608/1024.
         Assert.Equal(1608.0 / 1024, northRuntime.GetSkill("PLAYER_ANGLE"), 1e-12);
-        Assert.Equal(1, northRuntime.GetSkill("PLAYER_SIN"), 1e-6);
+        // Its sine is cut toward zero too (OV-20261110-retail-play round 4): sin(1608/1024) = 0.99999988.
+        Assert.Equal(1023.0 / 1024, northRuntime.GetSkill("PLAYER_SIN"));
 
         // The host's start sync goes WMP angle → yaw → PLAYER_ANGLE and must land on the same value.
         double yaw = RenderSpace.YawFromPlayerAngle(north.PlayerStart!.Value.AngleRadians);

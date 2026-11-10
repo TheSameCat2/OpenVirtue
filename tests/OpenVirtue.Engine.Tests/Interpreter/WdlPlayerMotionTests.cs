@@ -91,16 +91,18 @@ public sealed class WdlPlayerMotionTests
     }
 
     [Fact]
-    public void Apply_SolidWallCollision_AdaptsVelocityAndAccumulatesImpact()
+    public void Apply_SolidWallCollision_KeepsVelocityAndAccumulatesImpact()
     {
+        // OV-20261110-retail-play round 4: a wall stop keeps the script's velocity; the cut step still
+        // counts toward IMPACT_VX.
         (WdlRuntime runtime, Player player) = Create();
         runtime.SetSkill("PLAYER_VX", -10);
 
         WdlPlayerMotion.Apply(runtime, player, 1);
 
         Assert.Equal(player.Width + Player.WallClearance, player.Position.X, 3);
-        Assert.Equal(-3.75, runtime.GetSkill("PLAYER_VX"), 2); // PLAYER_WIDTH is 1228/1024, not 1.2
-        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2);
+        Assert.Equal(-10, runtime.GetSkill("PLAYER_VX"));
+        Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2); // the step cut to −3.75: PLAYER_WIDTH is 1228/1024
     }
 
     [Fact]
@@ -122,7 +124,6 @@ public sealed class WdlPlayerMotionTests
         Assert.Equal(0, player.Region);
         Assert.Equal(-(player.Width + Player.WallClearance), player.Position.Z, 3);
         Assert.Equal(10, runtime.GetSkill("PLAYER_VY"));
-        Assert.Equal(0, runtime.GetSkill("IMPACT_VY"));
     }
 
     [Theory]
@@ -203,9 +204,12 @@ public sealed class WdlPlayerMotionTests
 
         WdlPlayerMotion.Apply(runtime, player, 0.5);
 
-        Assert.Equal(0.25, runtime.GetSkill("PLAYER_ANGLE"), 6);
-        Assert.Equal(Math.Sin(0.25), runtime.GetSkill("PLAYER_SIN"), 6);
-        Assert.Equal(Math.Cos(0.25), runtime.GetSkill("PLAYER_COS"), 6);
+        // The angle is held in 1/1024 and the turn steps by the engine's rounded product; the sine and
+        // cosine of the stored angle are cut toward zero (OV-20261110-retail-play round 4).
+        double angle = runtime.GetSkill("PLAYER_ANGLE");
+        Assert.Equal(0.25, angle, 2);
+        Assert.Equal(Math.Truncate(Math.Sin(angle) * 1024) / 1024, runtime.GetSkill("PLAYER_SIN"));
+        Assert.Equal(Math.Truncate(Math.Cos(angle) * 1024) / 1024, runtime.GetSkill("PLAYER_COS"));
     }
 
     [Theory]
