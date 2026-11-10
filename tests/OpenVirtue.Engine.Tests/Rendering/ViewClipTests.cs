@@ -205,6 +205,52 @@ public sealed class ViewClipTests
     }
 
     [Fact]
+    public void BuildOccluders_InvisibleStep_HidesNothing()
+    {
+        // OV-20261106-clip-view p-top: past a raised pad's INVISIBLE corner the far wall shows.
+        Level level = LoadInvisibleStep();
+
+        Assert.DoesNotContain(MeshBuilder.BuildOccluders(level), static vertex => vertex.X == 48);
+    }
+
+    [Fact]
+    public void Build_InvisibleStep_ContinuesTheHigherFloorsPlaneOverItsRows()
+    {
+        // OV-20261106-clip-view p-top: the step's rows, 0 to 4, show the far floor's plane at 4.
+        Level level = LoadInvisibleStep();
+
+        List<RenderVertex> riser = [.. MeshBuilder.Build(level).Batches
+            .Where(static batch => batch.Surface)
+            .SelectMany(static batch => batch.Vertices)
+            .Where(static vertex => vertex.PlaneFill > 0)];
+
+        Assert.Equal(6, riser.Count);
+        Assert.All(riser, static vertex => Assert.Equal(48, vertex.X));
+        Assert.All(riser, static vertex => Assert.Equal(4, vertex.PlaneY));
+        Assert.Contains(riser, static vertex => vertex.Y == 0);
+        Assert.Contains(riser, static vertex => vertex.Y == 4);
+    }
+
+    private static Level LoadInvisibleStep()
+    {
+        const string main = """
+            MAPFILE <m.wmp>;
+            BMAP wm,<W.PCX>;
+            TEXTURE wt { SCALE_X 4; SCALE_Y 4; BMAPS wm; }
+            WALL plain { TEXTURE wt; }
+            WALL inner { TEXTURE wt; }
+            WALL step { TEXTURE wt; FLAGS INVISIBLE; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 16; FLOOR_TEX wt; CEIL_TEX wt; }
+            REGION far { FLOOR_HGT 4; CEIL_HGT 16; FLOOR_TEX wt; CEIL_TEX wt; }
+            """;
+        string map = Map
+            .Replace("WALLNAME", "inner", StringComparison.Ordinal)
+            .Replace("WALL plain 1 2 0 1 0 0;#1", "WALL step 1 2 0 1 0 0;#1", StringComparison.Ordinal);
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", main, name => resources.GetValueOrDefault(Path.GetFileName(name)));
+    }
+
+    [Fact]
     public void BuildOccluders_SeeThroughWall_HidesNothing()
     {
         Level level = Load(1000, "FLAGS TRANSPARENT;");

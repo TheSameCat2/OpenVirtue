@@ -33,6 +33,7 @@ public static class MeshBuilder
         IReadOnlySet<string> rowMasked = TextureLoader.RowMaskedWallTextures(level);
         AddWalls(level, accumulator, rowMasked);
         AddSurfaces(level, accumulator, rowMasked, blankSurfaces);
+        AddInvisibleSteps(level, accumulator, rowMasked, blankSurfaces);
         return accumulator.ToMesh();
     }
 
@@ -94,7 +95,11 @@ public static class MeshBuilder
 
                 WallPiece lower = pieces[0];
                 WallPiece upper = pieces[1];
-                if (lower.Ceiling1 > lower.Floor1 || lower.Ceiling2 > lower.Floor2)
+                // OV-20261106-clip-view p-top: an INVISIBLE step hides nothing; its rows show the higher
+                // floor's plane (AddInvisibleSteps), and past a raised pad's edge-on corner the far wall
+                // shows (p-top 315 → 211 differing pixels, p-front 250 → 146). Its upper piece is not
+                // measured and keeps the solid rule.
+                if (wall["INVISIBLE"] <= 0 && (lower.Ceiling1 > lower.Floor1 || lower.Ceiling2 > lower.Floor2))
                 {
                     AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, lower.Ceiling1, lower.Ceiling2);
                 }
@@ -719,6 +724,81 @@ public static class MeshBuilder
                 rowMasked,
                 flip: true,
                 stacked: slabCeilings.Contains(regionIndex));
+        }
+    }
+
+    /// <summary>
+    /// OV-20261106-clip-view p-top: an <c>INVISIBLE</c> wall between two floors shows no face, and the
+    /// rows its lower piece would cover show the higher floor's plane continued toward the eye: a raised
+    /// pad behind invisible walls reads its grey floor down to the room's floor line, where OpenVirtue
+    /// left those rows unpainted. Each such piece becomes a quad in the higher floor's surface bucket
+    /// that the shader fills from that plane (<see cref="RenderVertex.PlaneFill"/>). A sloped higher
+    /// floor and a <c>BELOW</c> stack are left as they were (not measured).
+    /// </summary>
+    private static void AddInvisibleSteps(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces)
+    {
+        foreach (Wall wall in level.Walls)
+        {
+            if (wall["INVISIBLE"] <= 0 ||
+                !TryVertex(level, wall.Vertex1, out Vertex v1) ||
+                !TryVertex(level, wall.Vertex2, out Vertex v2) ||
+                RegionAt(level, wall.LeftRegion) is not { } left ||
+                RegionAt(level, wall.RightRegion) is not { } right ||
+                ReferenceEquals(left, right) ||
+                left.BelowRegion >= 0 || right.BelowRegion >= 0)
+            {
+                continue;
+            }
+
+            Region lower = LowerFloorRegion(left, right, v1, v2);
+            Region higher = ReferenceEquals(lower, left) ? right : left;
+            if (LevelTopology.SlopeSign(higher, ceiling: false) != 0 ||
+                higher.CeilHeight <= higher.FloorHeight)
+            {
+                continue;
+            }
+
+            float bottom1 = Floor(lower, v1);
+            float bottom2 = Floor(lower, v2);
+            float top1 = Math.Min(Floor(higher, v1), Ceiling(lower, v1));
+            float top2 = Math.Min(Floor(higher, v2), Ceiling(lower, v2));
+            if (top1 <= bottom1 + 1e-4f && top2 <= bottom2 + 1e-4f)
+            {
+                continue;
+            }
+
+            string? texture = higher.FloorTexture is { } floor && blankSurfaces?.Contains(floor) == true ? BlankSurface : higher.FloorTexture;
+            if (texture is null || IsSkyTexture(level, texture))
+            {
+                continue;
+            }
+
+            TextureMapping mapping = RowMaskedTextureMappingFor(level, texture, rowMasked);
+            List<RenderVertex> target = accumulator.Bucket(texture, AnimationSourceFor(level, texture, higher), surface: true);
+            float planeY = (float)higher.FloorHeight;
+            RenderVertex Corner(Vertex v, float height) => new(
+                v.X,
+                height,
+                RenderSpace.ZFromMapY(v.Y),
+                0,
+                0,
+                (float)higher.Ambient,
+                mapping.WorldToU,
+                -(float)higher.FloorOffsetX * mapping.OffsetToU,
+                mapping.WorldToV,
+                (float)higher.FloorOffsetY * mapping.OffsetToV,
+                PlaneFill: 1,
+                PlaneY: planeY);
+            RenderVertex a = Corner(v1, bottom1);
+            RenderVertex b = Corner(v2, bottom2);
+            RenderVertex c = Corner(v2, top2);
+            RenderVertex d = Corner(v1, top1);
+            target.Add(a);
+            target.Add(b);
+            target.Add(c);
+            target.Add(a);
+            target.Add(c);
+            target.Add(d);
         }
     }
 

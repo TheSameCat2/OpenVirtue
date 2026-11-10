@@ -48,6 +48,9 @@ public sealed class HostFrame
     /// </summary>
     public float Columns { get; init; }
 
+    /// <summary>The eye in render space, for the quads that continue a floor's plane (<c>RenderVertex.PlaneFill</c>).</summary>
+    public Vector3 Eye { get; init; }
+
     public List<DrawBatch> Batches { get; } = [];
 }
 

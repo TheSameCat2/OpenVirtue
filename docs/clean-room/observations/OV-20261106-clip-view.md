@@ -91,8 +91,8 @@ wide sprite, and OpenVirtue implements it by a depth test against its own walls'
 
 ## Open Questions
 - The default 1000 in a level larger than it: no carrier reached it.
-- An `INVISIBLE` step's rows: the original continues the far region's floor there (p-top); OpenVirtue
-  leaves them unpainted (black in a probe, seen against a raised invisible pad only).
+- An `INVISIBLE` step between two ceilings: whether its rows show the far ceiling's plane, as a floor
+  step's do, is not measured.
 - A sprite beside its own region's wall when a nearer wall of another region also crosses its columns.
 - Fills beside a `BELOW` stack keep their old behaviour.
 - A `SKILL CLIP_DIST` declaration changed nothing with the region unset, in V3.963 only. A V3.990 runtime
@@ -103,3 +103,24 @@ wide sprite, and OpenVirtue implements it by a depth test against its own walls'
 `LevelTopology.RegionEdges`, `RegionSpans` and `RegionContains`, `MeshBuilder.AddOutlineSurfaces`.
 `RuntimeHost.DrawWorld` draws, in order: backdrop, sky, the occluders depth-only and pushed a hair back, the
 world, the fills pulled a hair forward, the sprites, the top row. Tests: `ViewClipTests`.
+
+## Addendum: an INVISIBLE step's rows (2026-11-10)
+Read from the round 5 screenshots (`p-top`, `p-front`, `p-beside`, `p-behind`, `p-wide`): a raised pad
+(floor 4) behind the carrier's invisible passable boundary walls.
+
+- **An `INVISIBLE` step's rows show the higher floor's plane continued toward the eye.** Each riser pixel
+  carries the texel, and the light, of where its line of sight meets the pad's floor height. In `p-top`
+  that is the pad's grey down to the room's floor line, where OpenVirtue left the rows black.
+- **Such a step hides nothing behind it.** At the pad's left corner the side wall is seen almost
+  edge-on, and the original shows the far magenta wall in that column. OpenVirtue's lower-piece occluder
+  for the invisible wall hid it there, with nothing drawn in its place.
+
+Implemented in `MeshBuilder.AddInvisibleSteps`: a quad over the lower piece, in the higher floor's
+surface bucket, flagged `RenderVertex.PlaneFill`. The shader takes the texel and depth from the plane.
+`MeshBuilder.BuildOccluders` gives an `INVISIBLE` wall's lower piece no occluder; a sloped higher floor
+and a `BELOW` stack are left as they were. Differing pixels: p-top 19 953 → 211 (the `p-none` control
+reads 212), p-front 19 888 → 146, p-beside 20 019 → 277, p-behind 22 542 → 3 566, p-wide 38 442 →
+23 851. wall-pieces' padded carriers also gain about 5 500 each. Over clip-view, wall-pieces,
+border-kinds, border-climb, texmap, attach and blend (220 screens) the total goes 1 250 340 → 1 113 485,
+13 screens better and none worse. Tests: `ViewClipTests.BuildOccluders_InvisibleStep_HidesNothing` and
+`ViewClipTests.Build_InvisibleStep_ContinuesTheHigherFloorsPlaneOverItsRows`.
