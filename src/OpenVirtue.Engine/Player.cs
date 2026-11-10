@@ -278,7 +278,9 @@ public sealed class Player : AcknexObject
         wallStopped = blocking.Count > 0;
         if (wallStopped)
         {
-            end = new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
+            end = blocking.Count == 1 && blocking[0] is Wall stopWall && HoldOffWall(stopWall, start, dx, dz) is { } held
+                ? held
+                : new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
             foreach (AcknexObject wall in blocking)
             {
                 if (!_blockingWalls.Contains(wall))
@@ -291,6 +293,64 @@ public sealed class Player : AcknexObject
         _position = new Vector3(end.X, _position.Y, end.Y);
         return end - start;
     }
+
+    /// <summary>
+    /// Where one wall holds a step, in 22.10 (OV-20261110-wall-slide): the whole step is taken, its
+    /// end's distance to the wall line is measured with the wall's normal in 1/1024 (each component
+    /// rounded), the product cut down, and the end is pushed back along that normal to
+    /// <see cref="Width"/> + <see cref="WallClearance"/>, each axis's part cut down. A 0.2 step slid
+    /// along walls of slope 1/2, 1 and 2 to the unit this way. Null when the step's end is not within
+    /// the wall's span (its ends are rounded off elsewhere).
+    /// </summary>
+    private Vector2? HoldOffWall(Wall wall, Vector2 start, float dx, float dz)
+    {
+        if ((uint)wall.Vertex1 >= (uint)_level.Vertices.Count || (uint)wall.Vertex2 >= (uint)_level.Vertices.Count)
+        {
+            return null;
+        }
+
+        long ax = (long)Math.Round(_level.Vertices[wall.Vertex1].X * 1024.0);
+        long ay = (long)Math.Round(_level.Vertices[wall.Vertex1].Y * 1024.0);
+        long bx = (long)Math.Round(_level.Vertices[wall.Vertex2].X * 1024.0);
+        long by = (long)Math.Round(_level.Vertices[wall.Vertex2].Y * 1024.0);
+        double length = Math.Sqrt((double)((bx - ax) * (bx - ax)) + ((by - ay) * (by - ay)));
+        if (length < 1)
+        {
+            return null;
+        }
+
+        long px = (long)Math.Round(start.X * 1024.0);
+        long py = (long)Math.Round(start.Y * 1024.0);
+        long qx = px + (long)Math.Round(dx * 1024.0);
+        long qy = py + (long)Math.Round(dz * 1024.0);
+        double along = (((qx - ax) * (double)(bx - ax)) + ((qy - ay) * (double)(by - ay))) / (length * length);
+        if (along <= 0 || along >= 1)
+        {
+            return null;
+        }
+
+        long nx = (long)Math.Round(-(by - ay) * 1024 / length);
+        long ny = (long)Math.Round((bx - ax) * 1024 / length);
+        if (((px - ax) * nx) + ((py - ay) * ny) < 0)
+        {
+            nx = -nx;
+            ny = -ny;
+        }
+
+        long distance = FloorDiv(((qx - ax) * nx) + ((qy - ay) * ny), 1024);
+        long hold = (long)Math.Round((Width + WallClearance) * 1024.0);
+        if (distance >= hold)
+        {
+            return null;
+        }
+
+        long push = hold - distance;
+        qx += FloorDiv(push * nx, 1024);
+        qy += FloorDiv(push * ny, 1024);
+        return new Vector2(qx / 1024f, qy / 1024f);
+    }
+
+    private static long FloorDiv(long value, long divisor) => (long)Math.Floor(value / (double)divisor);
 
     /// <summary>
     /// Pushes the player out of a solid thing or actor it overlaps, straight away from the

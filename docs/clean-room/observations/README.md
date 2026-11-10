@@ -555,3 +555,10 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
   replayed: a beamed actor keeps its region, a `VERTEX` target does not arrive at region borders, and the
   player's heights read 0 until the first frame stands it on its floor. The start's beamed head now walks
   the original's path on all 600 lines. With `OV-20261110-actor-width`, seven carriers on `ACTOR_WIDTH`.
+- Round 4 of the same note: `STEPS` counts each move a cycle late in 22.10, and `WALK` is 1 − 2·|sin| of the
+  distance since the last whole `WALK_PERIOD`. The climb test sees the eye after the frame's `PLAYER_VZ`,
+  and a wall stop keeps the script's velocity. The turn steps by the rounded product, and `PLAYER_SIN`/`COS`
+  are cut toward zero. Apathy's walk matches its angle, velocities and force on all 600 lines.
+- `OV-20261110-wall-slide.md` — the player sliding along diagonal walls: the whole step, pushed back along
+  the wall's normal in 1/1024 to `PLAYER_WIDTH` + 51/1024, each part cut down. Six carriers; the 3:4 wall,
+  deep first contacts and wall ends stay open.

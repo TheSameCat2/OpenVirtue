@@ -379,6 +379,31 @@ public class PlayerTests
         Assert.Equal(0.35f, player.Position.Y, 4);
     }
 
+    [Theory]
+    [InlineData(4, -8, 20, 8, 10854, 376, 10958, 479)] // wall-slide w45-s02: y = x − 12, steps (204, 4)
+    [InlineData(4, -8, 20, 8, 10958, 479, 11061, 583)]
+    [InlineData(-4, -12, 28, 4, 18520, 450, 18684, 532)] // w27-s02: y = x/2 − 10
+    public void MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths(
+        int x1, int y1, int x2, int y2, int fromX, int fromY, int toX, int toY)
+    {
+        // OV-20261110-wall-slide: the whole step, its end's distance measured with the wall's normal in
+        // 1/1024 and cut down, pushed back to PLAYER_WIDTH + 51/1024 with each axis's part cut down.
+        string map =
+            "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+            $"VERTEX {x1} {y1} 0;#4\nVERTEX {x2} {y2} 0;#5\n" +
+            "REGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL d 4 5 0 0 0 0;#4\n" +
+            "PLAYER_START 0 0 0 0;#6";
+        var player = new Player(Load(map)) { Width = 1228f / 1024 };
+        player.Position = new Vector3(fromX / 1024f, 8, fromY / 1024f);
+
+        player.MoveHorizontal(204f / 1024, 4f / 1024);
+
+        Assert.Equal(toX, player.Position.X * 1024, 3);
+        Assert.Equal(toY, player.Position.Z * 1024, 3);
+    }
+
     [Fact]
     public void MoveHorizontal_DiagonallyIntoSolidWall_SlidesAlongWall()
     {

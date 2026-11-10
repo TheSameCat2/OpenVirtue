@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The OpenVirtue Authors
+
+using System.Globalization;
+using static TraceProbeWdl;
+
+/// <summary>
+/// The cases of the <c>wall-slide</c> probe: how the player slides along a solid wall it walks into at
+/// an angle. Apathy's walk slid along a diagonal wall with about the whole step projected onto it, held
+/// 1484 to 1486/1024 from the wall with <c>PLAYER_WIDTH</c> 1.4, where OpenVirtue's slide came out a
+/// unit short and its hold a unit nearer (OV-20261110-retail-play). Each case puts one free-standing
+/// wall with whole-step vertices across the player's path from the origin and walks the player into
+/// it with a fixed step a cycle: a global <c>EACH_TICK</c> sampler sets <c>PLAYER_VX</c> and
+/// <c>PLAYER_VY</c> to the step over <c>TIME_CORR</c> every cycle once <c>GO</c> is printed and prints
+/// <c>TICKS</c>, a cycle counter, <c>TIME_CORR</c> and the position × 1024.
+/// </summary>
+internal static class WallSlideProbeCases
+{
+    /// <summary>The PRINTFILE base name of the trace file (written as OVWSL0.TXT).</summary>
+    public const string TraceFile = "ovwsl";
+
+    private const string Skills =
+        "SKILL ws_n { VAL 0; }\nSKILL ws_go { VAL 0; }\nSKILL ws_sx { VAL 0; }\nSKILL ws_sy { VAL 0; }\n" +
+        "SKILL ws_vx { VAL 0; }\nSKILL ws_vy { VAL 0; }\nSKILL ws_x { VAL 0; }\nSKILL ws_y { VAL 0; }\n" +
+        "WALL ws_wall { TEXTURE red_tex; }\n";
+
+    private static readonly string Sampler = Action(
+        "ws_tick",
+        "    RULE ws_n = ws_n + 1;\n" +
+        "    IF (ws_go > 0) {\n        RULE ws_vx = ws_sx / TIME_CORR;\n        RULE ws_vy = ws_sy / TIME_CORR;\n" +
+        "        SET PLAYER_VX, ws_vx;\n        SET PLAYER_VY, ws_vy;\n    }\n" +
+        "    IF (ws_n < 400) {\n" +
+        Indent("    RULE ws_x = PLAYER_X * 1024;\n    RULE ws_y = PLAYER_Y * 1024;\n" + V("Y", "TICKS", "ws_n", "TIME_CORR", "ws_x", "ws_y")) +
+        "    }\n");
+
+    private static readonly string Prelude =
+        "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "ws_n", "TIME_CORR") + "    SET EACH_TICK.1, ws_tick;\n";
+
+    private static TraceProbeCase Slide(string label, (int X1, int Y1, int X2, int Y2) wall, double sx, double sy, string question, double? width = null) => new(
+        label,
+        question,
+        Skills + Sampler,
+        (width is { } w ? string.Create(CultureInfo.InvariantCulture, $"    SET PLAYER_WIDTH, {w};\n") : "") +
+        string.Create(CultureInfo.InvariantCulture, $"    RULE ws_sx = {sx};\n    RULE ws_sy = {sy};\n    RULE ws_go = 1;\n") +
+        V("GO", "TICKS", "ws_n") +
+        "    WAIT 150;\n    RULE ws_go = 0;\n    SET PLAYER_VX, 0;\n    SET PLAYER_VY, 0;\n" + P("RET"),
+        Predict(
+            ("the whole step projected onto the wall, held at PLAYER_WIDTH + 51/1024", "each cycle moves by the step's part along the wall, the distance stays at the hold"),
+            ("the step cut at contact, then the rest slid", "the first cycle at the wall moves less along it than the later ones")),
+        Map: new TraceProbeMap(Walls: [new TraceProbeWall("ws_wall", wall.X1, wall.Y1, wall.X2, wall.Y2)]),
+        Prelude: Prelude);
+
+    public static readonly IReadOnlyList<TraceProbeCase> All =
+    [
+        Slide("w45-s02", (4, -8, 20, 8), 0.2, 0,
+            "A wall at 45° (y = x − 12) across the player's +x walk at 0.2 a cycle: where is the player each cycle once it meets the wall?"),
+        Slide("w45-s05", (4, -8, 20, 8), 0.5, 0, "The 45° wall at 0.5 a cycle."),
+        Slide("w27-s02", (-4, -12, 28, 4), 0.2, 0, "A wall of slope 1/2 (y = x/2 − 10) at 0.2 a cycle."),
+        Slide("w63-s02", (8, -8, 16, 8), 0.2, 0, "A wall of slope 2 (y = 2x − 24) at 0.2 a cycle."),
+        Slide("w37-s03", (0, -9, 24, 9), 0.3, 0, "A wall of slope 3/4 (y = 3x/4 − 9) at 0.3 a cycle."),
+        Slide("w45-s02-w14", (4, -8, 20, 8), 0.2, 0, "The 45° wall at 0.2 a cycle with PLAYER_WIDTH 1.4, as Apathy sets it.", 1.4),
+    ];
+
+    /// <summary>The probe as the generator consumes it.</summary>
+    public static readonly TraceProbeSet Set = new(
+        "wall-slide",
+        TraceFile,
+        "ovwsp",
+        "After the skill dump, `IF_START` selects the trace file, arms the sampler and runs the case. Each `Y`\n" +
+        "line is `TICKS`, the cycle, `TIME_CORR` and the player's x and y × 1024; `GO` marks the start of the\n" +
+        "walk and `RET` its end. The wall's vertices are in `work/TITLE.WMP`.",
+        All);
+}
