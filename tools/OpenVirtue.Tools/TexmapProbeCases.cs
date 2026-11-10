@@ -99,6 +99,12 @@ internal static class TexmapProbeCases
             new TraceProbeMap(Textures: Textures, PadBody: "", PadFloor: -4, PadWall: "tm_wall"),
             "    SET PLAYER_ANGLE, 2.03;\n    SET PLAYER_TILT, 0.3;\n",
             [("from height 0", "row 0 at the top of the step"), ("from the lower region's floor", "row 8 at the top of the step")]),
+        .. new[] { 4, 8, 12 }.Select(static eye => Case(
+            $"round3/blank-eye{eye}",
+            $"Round 3. With a blank ceiling (the 16×16 swatch) the walls reached above the room's ceiling 16, to about 24 with the eye at 8. With the eye at {eye}: where do they end (ceiling + 8: 24; 2·ceiling − eye: {32 - eye}; ceiling + eye: {16 + eye})?",
+            new TraceProbeMap(Textures: Textures, RoomCeiling: "tm_tex"),
+            $"    SET PLAYER_SIZE, {eye};\n    SET PLAYER_Z, {eye};\n",
+            [("ceiling + 8", "the far wall's top at height 24"), ("mirror of the eye in the ceiling", $"at {32 - eye}"), ("ceiling + eye", $"at {16 + eye}")])),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
