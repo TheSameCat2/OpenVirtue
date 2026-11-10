@@ -24,6 +24,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         layout(location = 1) in vec2 aUv;
         layout(location = 2) in float aAmbient;
         layout(location = 3) in vec4 aWall;
+        layout(location = 4) in vec2 aPlane;
         uniform mat4 uViewProjection;
         uniform float uColumns;
         uniform int uSprite;
@@ -33,6 +34,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         flat out float vIsWall;
         flat out float vWallSlope;
         flat out float vWallStart;
+        out vec3 vWorld;
+        flat out vec2 vPlane;
+        flat out vec4 vPlaneMap;
         void main() {
             // uViewProjection is a System.Numerics row-vector matrix. It is uploaded with
             // glUniformMatrix4fv transpose=false, so GL reads that memory as column-major.
@@ -49,6 +53,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 
             vUv = aUv;
             vAmbient = aAmbient;
+            vWorld = aPos;
+            vPlane = aPlane;
+            vPlaneMap = aWall;
             // The perspective w is the depth along the line of sight.
             vDepth = gl_Position.w;
 
@@ -59,7 +66,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             // right there; the first visible column is then the window's left edge.
             vec4 clipA = uViewProjection * vec4(aWall.x, 0.0, aWall.y, 1.0);
             vec4 clipB = uViewProjection * vec4(aWall.z, 0.0, aWall.w, 1.0);
-            vIsWall = (uSprite <= 0 && (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0)) ? 1.0 : 0.0;
+            vIsWall = (uSprite <= 0 && aPlane.x < 0.5 && (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0)) ? 1.0 : 0.0;
             if (vIsWall > 0.5) {
                 // The slope of 1/w per column, written without dividing by w so an end on the eye
                 // plane (w = 0) stays finite: with N the columns,
@@ -101,6 +108,10 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         flat in float vIsWall;
         flat in float vWallSlope;
         flat in float vWallStart;
+        in vec3 vWorld;
+        flat in vec2 vPlane;
+        flat in vec4 vPlaneMap;
+        uniform vec3 uEye;
         uniform sampler2D uTexture;
         uniform sampler2D uPalette;
         uniform sampler2D uShade;
@@ -131,15 +142,26 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             if (uBlend == 1 && ((int(gl_FragCoord.x) + int(gl_FragCoord.y) + uHeightParity) & 1) == 0) {
                 discard;
             }
+            // OV-20261106-clip-view p-top: an INVISIBLE step's rows show the far floor's plane
+            // continued: the texel and the depth where the line of sight meets that plane.
+            vec2 uv = vUv;
+            float sightDepth = vDepth;
+            if (vPlane.x > 0.5) {
+                float rise = vWorld.y - uEye.y;
+                float s = abs(rise) > 1e-6 ? (vPlane.y - uEye.y) / rise : 1.0;
+                vec3 hit = uEye + (vWorld - uEye) * s;
+                uv = vec2(-hit.x * vPlaneMap.x + vPlaneMap.y, -hit.z * vPlaneMap.z + vPlaneMap.w);
+                sightDepth = vDepth * s;
+            }
             if (uShaded > 0.5) {
                 // OV-20261105-shade-global: level = 2*floor((30 + phi - 32*A - 2*m)/2), m the light's
                 // zones at the texel: ceil(Qf/d) for a surface, floor(Qw/d) for a sprite, and ceil of
                 // a wall's stepped value; then index -> shaded index -> colour.
-                float index = floor(texture(uTexture, vUv).r * 255.0 + 0.5);
+                float index = floor(texture(uTexture, uv).r * 255.0 + 0.5);
                 if (uAlphaTest > 0.5 && index < 0.5) {
                     discard;
                 }
-                float depth = max(vDepth, 0.001);
+                float depth = max(sightDepth, 0.001);
                 float zones;
                 // OV-20261105-shade-global round 3: within LIGHT_DIST the player's light stops
                 // growing, as if the texel stood at LIGHT_DIST.
@@ -168,7 +190,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 fragColor = vec4(uBlend == 3 ? vec3(0.0) : texelFetch(uPalette, ivec2(int(shaded), 0), 0).rgb, uBlend == 2 ? 0.5 : 1.0);
                 return;
             }
-            vec4 color = texture(uTexture, vUv);
+            vec4 color = texture(uTexture, uv);
             if (uAlphaTest > 0.5 && color.a < 0.5) {
                 discard;
             }
@@ -205,6 +227,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _viewportLocation;
     private readonly int _solidLocation;
     private readonly int _lightDistLocation;
+    private readonly int _eyeLocation;
     private uint _screenFramebuffer;
     private uint _screenColor;
     private uint _screenDepth;
@@ -252,6 +275,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         // OV-20261105-shade-global: the wall's two ends, (x, z) each, in render space.
         _gl.EnableVertexAttribArray(3);
         _gl.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, stride, 24);
+        // OV-20261106-clip-view p-top: the plane-fill flag and height (RenderVertex.PlaneFill, PlaneY).
+        _gl.EnableVertexAttribArray(4);
+        _gl.VertexAttribPointer(4, 2, VertexAttribPointerType.Float, false, stride, 40);
 
         _program = LinkProgram(VertexShader, FragmentShader);
         _viewProjectionLocation = _gl.GetUniformLocation(_program, "uViewProjection");
@@ -270,6 +296,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _columnsLocation = _gl.GetUniformLocation(_program, "uColumns");
         _viewportLocation = _gl.GetUniformLocation(_program, "uViewport");
         _solidLocation = _gl.GetUniformLocation(_program, "uSolid");
+        _eyeLocation = _gl.GetUniformLocation(_program, "uEye");
         _gl.UseProgram(_program);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uPalette"), 1);
@@ -427,6 +454,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform1(_wallQLocation, frame.Zones.Y);
             _gl.Uniform1(_phiLocation, frame.Zones.Z);
             _gl.Uniform1(_lightDistLocation, frame.LightDistance);
+            _gl.Uniform3(_eyeLocation, frame.Eye.X, frame.Eye.Y, frame.Eye.Z);
             _gl.Uniform1(_columnsLocation, frame.Columns);
             _gl.Uniform2(_viewportLocation, (float)batch.Viewport.X, (float)batch.Viewport.Width);
             UploadMatrix(batch.Transform);

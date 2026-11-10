@@ -50,6 +50,7 @@ public sealed partial class RuntimeHost
             ClearDepth = true,
             Zones = Zones(),
             LightDistance = (float)Math.Max(0, _runtime.GetSkill("LIGHT_DIST")),
+            Eye = _camera.Position,
             Columns = WorldColumns(display),
         };
 
