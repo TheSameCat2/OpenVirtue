@@ -164,9 +164,11 @@ public sealed class ProjectionModelTests
         double pixelX = (ndcX + 1) * 0.5 * 640;
         double pixelY = (1 - ndcY) * 0.5 * 480;
 
+        // The matrix draws with the tangent cut to a 1024th (OV-20261106-screen-frame), which Project,
+        // the shot's and the view cone's exact model, does not: a fifth of a pixel at most here.
         (double expectedX, double expectedY) = model.Project(48, 5, 3);
-        Assert.Equal(expectedX, pixelX, 1e-3);
-        Assert.Equal(expectedY, pixelY, 1e-3);
+        Assert.Equal(expectedX, pixelX, 0.2);
+        Assert.Equal(expectedY, pixelY, 0.2);
         Assert.InRange(clip.Z / clip.W, 0, 1);
     }
 
@@ -176,8 +178,11 @@ public sealed class ProjectionModelTests
         ProjectionModel model = ProjectionModel.Default(640, 480);
         Matrix4x4 matrix = model.CreateProjectionMatrix(1, 200000);
 
-        Assert.Equal(1 / Math.Tan(0.5), matrix.M11, 1e-5);
-        Assert.Equal(1 / ((2.0 / 3.0) * Math.Tan(0.5)), matrix.M22, 1e-5);
+        // OV-20261106-screen-frame: the drawn tangent is tan(0.5) cut to a 1024th, 559/1024.
+        double drawn = 559.0 / 1024;
+        Assert.Equal(drawn, model.DrawnHalfTangent, 1e-12);
+        Assert.Equal(1 / drawn, matrix.M11, 1e-5);
+        Assert.Equal(1 / ((2.0 / 3.0) * drawn), matrix.M22, 1e-5);
         Assert.Equal(0, matrix.M32, 1e-9);
     }
 
@@ -201,8 +206,8 @@ public sealed class ProjectionModelTests
 
         (double expectedX, double expectedY) = model.Project(48, 8, 4);
         Assert.True(pixelX > 320, $"expected the point on the right half, got column {pixelX}");
-        Assert.Equal(expectedX, pixelX, 1e-2);
-        Assert.Equal(expectedY, pixelY, 1e-2);
+        Assert.Equal(expectedX, pixelX, 0.2);
+        Assert.Equal(expectedY, pixelY, 0.2);
     }
 
     [Fact]

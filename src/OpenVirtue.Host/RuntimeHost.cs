@@ -37,6 +37,7 @@ public sealed partial class RuntimeHost : IDisposable
     private readonly Dictionary<string, int> _uiPieceIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<(string Element, int Place)> _uiSeen = [];
     private RenderVertex[] _occluders = [];
+    private RenderVertex[] _spriteFrames = [];
     private IReadOnlySet<string>? _blankSurfaces;
     private ViewClip? _viewClip;
     private (int Width, int Height) _screenSize;
@@ -769,6 +770,7 @@ public sealed partial class RuntimeHost : IDisposable
     {
         _batches.Clear();
         _occluders = MeshBuilder.BuildOccluders(_level);
+        _spriteFrames = MeshBuilder.BuildSpriteFrames(_level);
         _viewClip = new ViewClip(_level);
         LevelMesh mesh = MeshBuilder.Build(_level, _blankSurfaces);
         foreach (MeshBatch batch in mesh.Batches)

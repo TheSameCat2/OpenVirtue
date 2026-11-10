@@ -146,6 +146,7 @@ public sealed class ViewClip
     /// region, still hides it.
     /// </summary>
     /// <param name="regionIndex">The sprite's region.</param>
+    /// <param name="eyeRegion">The player's region.</param>
     /// <param name="x">The eye's map x.</param>
     /// <param name="y">The eye's map y.</param>
     /// <param name="forwardX">The view's map direction, x.</param>
@@ -153,9 +154,11 @@ public sealed class ViewClip
     /// <param name="depth">The sprite's depth along the view.</param>
     /// <param name="lateral">The sprite's centre across the view, to the right.</param>
     /// <param name="halfWidth">The sprite's half width.</param>
-    public float SpriteHidingDepth(int regionIndex, float x, float y, float forwardX, float forwardY, float depth, float lateral, float halfWidth)
+    public float SpriteHidingDepth(int regionIndex, int eyeRegion, float x, float y, float forwardX, float forwardY, float depth, float lateral, float halfWidth)
     {
-        if (depth <= 0 || !_regionWalls.TryGetValue(regionIndex, out List<Wall>? walls))
+        // Only from inside the sprite's region do its walls let it through (p-wide); seen from another
+        // region, the border it is seen across is the opening that cuts it (below-view room-high).
+        if (depth <= 0 || regionIndex != eyeRegion || !_regionWalls.TryGetValue(regionIndex, out List<Wall>? walls))
         {
             return depth;
         }
@@ -169,6 +172,7 @@ public sealed class ViewClip
         {
             Vertex a = _level.Vertices[wall.Vertex1];
             Vertex b = _level.Vertices[wall.Vertex2];
+
             float da = ((a.X - x) * forwardX) + ((a.Y - y) * forwardY);
             float db = ((b.X - x) * forwardX) + ((b.Y - y) * forwardY);
             if (da <= NearDepth && db <= NearDepth)

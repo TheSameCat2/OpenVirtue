@@ -67,6 +67,12 @@ its whole width in all 840.
   `REFRESH` draws a piece on the two frames after that piece changed.** The background, a moved panel
   and each display are separate pieces; a value change redraws its display only.
 - **`SCREENSHOT` saves the screen as it stands when the instruction runs**, the last frame drawn.
+- **A sprite is never drawn on the window's first two rows**: row 0 is blank, row 1 shows walls, floors
+  and ceilings only (below-view deck, clip-view h-room read their sprites from row 2).
+- **The picture is drawn with the half arc's tangent cut to a 1024th** (559/1024 at `PLAYER_ARC` 1): the
+  frontal walls of shade-global fit a vertical scale of 659.45 to 660.15 rows only, 559/1024 gives 659.46,
+  and the probes' edge pixels fall by a quarter with it (102 149 → 77 719 over 84 screens). The view cone's
+  column test and `SHOOT` keep the exact tangent (careful-stop cone-w2 loses a line with the cut one).
 - **Sampling is at integer pixel positions.** A wall whose top edge projects to row 130.17 starts at
   row 131 and its bottom edge at 349.83 ends at row 349: the row samples its top edge, not its centre.
   The stripes' columns (first column of each `⌊x⌋`) sample each column's right edge. So the picture is

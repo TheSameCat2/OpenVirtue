@@ -109,6 +109,56 @@ public static class MeshBuilder
         return vertices.ToArray();
     }
 
+    /// <summary>
+    /// The frames sprites are seen through (below-view room-high): a sprite in another region is cut
+    /// to the opening of each border it is seen across, at the border's floor and ceiling lines even
+    /// where the two sides' heights are equal and no piece is drawn. Every wall between two regions,
+    /// a stack's too, reaches up from the opening's top and down from its bottom, depth only. A fill
+    /// is not cut this way (clip-view q-vis), so these go after the fills and before the sprites; a
+    /// sprite's own region's walls do not cut it, its hiding depth having been pulled ahead of them.
+    /// </summary>
+    public static RenderVertex[] BuildSpriteFrames(Level level)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        var vertices = new List<RenderVertex>();
+        foreach (Wall wall in level.Walls)
+        {
+            if (wall.LeftRegion == wall.RightRegion ||
+                !TryVertex(level, wall.Vertex1, out Vertex v1) ||
+                !TryVertex(level, wall.Vertex2, out Vertex v2) ||
+                RegionAt(level, wall.LeftRegion) is not { } left ||
+                RegionAt(level, wall.RightRegion) is not { } right)
+            {
+                continue;
+            }
+
+            if (left.BelowRegion >= 0 || right.BelowRegion >= 0)
+            {
+                List<(float Floor, float Ceiling)> a = OpenSpans(level, wall.LeftRegion);
+                List<(float Floor, float Ceiling)> b = OpenSpans(level, wall.RightRegion);
+                if (a.Count == 0 || b.Count == 0)
+                {
+                    continue;
+                }
+
+                float top = MathF.Min(a.Max(static span => span.Ceiling), b.Max(static span => span.Ceiling));
+                float bottom = MathF.Max(a.Min(static span => span.Floor), b.Min(static span => span.Floor));
+                AddOccluder(vertices, v1, v2, top, top, ViewClip.Reach, ViewClip.Reach);
+                AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, bottom, bottom);
+                continue;
+            }
+
+            float top1 = Math.Min(Ceiling(left, v1), Ceiling(right, v1));
+            float top2 = Math.Min(Ceiling(left, v2), Ceiling(right, v2));
+            float bottom1 = Math.Max(Floor(left, v1), Floor(right, v1));
+            float bottom2 = Math.Max(Floor(left, v2), Floor(right, v2));
+            AddOccluder(vertices, v1, v2, top1, top2, ViewClip.Reach, ViewClip.Reach);
+            AddOccluder(vertices, v1, v2, -ViewClip.Reach, -ViewClip.Reach, bottom1, bottom2);
+        }
+
+        return vertices.ToArray();
+    }
+
     private static void AddOccluder(List<RenderVertex> vertices, Vertex v1, Vertex v2, float low1, float low2, float high1, float high2)
     {
         // A hair longer than the wall, so no fill or far surface shows through the crack where two
@@ -593,7 +643,12 @@ public static class MeshBuilder
         // draws without writing depth); the slabs of a BELOW stack do, since a sight line never leaves
         // its storey within the stack's footprint (OV-20261029-below-view), so those regions' surfaces
         // stay ordinary batches.
+        // below-view room-high: only a slab between two storeys hides a sprite, a storey's floor with
+        // one below it and a ceiling with one above; the top storey's ceiling and the bottom one's
+        // floor are plain surfaces a sprite of their own storey is drawn over.
         var stacked = new HashSet<int>();
+        var slabFloors = new HashSet<int>();
+        var slabCeilings = new HashSet<int>();
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
             int below = level.Regions[regionIndex].BelowRegion;
@@ -601,6 +656,8 @@ public static class MeshBuilder
             {
                 stacked.Add(regionIndex);
                 stacked.Add(below);
+                slabFloors.Add(regionIndex);
+                slabCeilings.Add(below);
             }
         }
 
@@ -616,7 +673,7 @@ public static class MeshBuilder
             List<int>? loop = LevelTopology.TraceRegionLoop(level, regionIndex);
             if (loop is null)
             {
-                AddOutlineSurfaces(level, accumulator, regionIndex, rowMasked, stacked.Contains(regionIndex), Shown);
+                AddOutlineSurfaces(level, accumulator, regionIndex, rowMasked, slabFloors.Contains(regionIndex), slabCeilings.Contains(regionIndex), Shown);
                 continue;
             }
 
@@ -647,7 +704,7 @@ public static class MeshBuilder
                 (float)region.FloorOffsetY,
                 rowMasked,
                 flip: false,
-                stacked: stacked.Contains(regionIndex));
+                stacked: slabFloors.Contains(regionIndex));
             EmitSurface(
                 level,
                 accumulator,
@@ -661,7 +718,7 @@ public static class MeshBuilder
                 (float)region.CeilOffsetY,
                 rowMasked,
                 flip: true,
-                stacked: stacked.Contains(regionIndex));
+                stacked: slabCeilings.Contains(regionIndex));
         }
     }
 
@@ -670,7 +727,7 @@ public static class MeshBuilder
     /// regions of Apathy's 1073 and as many elsewhere had no floor or ceiling at all. Its surfaces come
     /// from the even-odd trapezoids of its bounding walls, one quad a span.
     /// </summary>
-    private static void AddOutlineSurfaces(Level level, Accumulator accumulator, int regionIndex, IReadOnlySet<string> rowMasked, bool stacked, Func<string?, string?> shown)
+    private static void AddOutlineSurfaces(Level level, Accumulator accumulator, int regionIndex, IReadOnlySet<string> rowMasked, bool slabFloor, bool slabCeiling, Func<string?, string?> shown)
     {
         List<RegionSpan> spans = LevelTopology.RegionSpans(level, regionIndex);
         if (spans.Count == 0)
@@ -679,8 +736,8 @@ public static class MeshBuilder
         }
 
         Region region = level.Regions[regionIndex];
-        EmitSpans(level, accumulator, spans, (float)region.FloorHeight, (float)LevelTopology.SlopeSign(region, ceiling: false), shown(region.FloorTexture), region, (float)region.FloorOffsetX, (float)region.FloorOffsetY, rowMasked, stacked);
-        EmitSpans(level, accumulator, spans, (float)region.CeilHeight, (float)LevelTopology.SlopeSign(region, ceiling: true), shown(region.CeilTexture), region, (float)region.CeilOffsetX, (float)region.CeilOffsetY, rowMasked, stacked);
+        EmitSpans(level, accumulator, spans, (float)region.FloorHeight, (float)LevelTopology.SlopeSign(region, ceiling: false), shown(region.FloorTexture), region, (float)region.FloorOffsetX, (float)region.FloorOffsetY, rowMasked, slabFloor);
+        EmitSpans(level, accumulator, spans, (float)region.CeilHeight, (float)LevelTopology.SlopeSign(region, ceiling: true), shown(region.CeilTexture), region, (float)region.CeilOffsetX, (float)region.CeilOffsetY, rowMasked, slabCeiling);
     }
 
     private static void EmitSpans(

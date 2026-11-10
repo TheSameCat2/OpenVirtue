@@ -68,9 +68,20 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 // where that denominator vanishes, is degenerate, and its slope is 0.
                 float columns = 0.5 * uColumns * (clipA.x * clipB.w - clipB.x * clipA.w);
                 vWallSlope = abs(columns) > 1e-9 ? (clipB.w - clipA.w) / columns : 0.0;
-                if (clipA.w > 0.0 && clipB.w > 0.0) {
-                    float colA = (clipA.x / clipA.w * 0.5 + 0.5) * uColumns;
-                    float colB = (clipB.x / clipB.w * 0.5 + 0.5) * uColumns;
+                // OV-20261105-shade-global round 3: an end behind the eye counts as the wall cut just
+                // in front of the eye (bh-r reads as bh-r-front), so the first visible column is
+                // the lower of the two ends' columns either way.
+                vec4 endA = clipA;
+                vec4 endB = clipB;
+                const float nearW = 0.01;
+                if (endA.w < nearW && endB.w >= nearW) {
+                    endA = mix(endB, endA, (endB.w - nearW) / (endB.w - endA.w));
+                } else if (endB.w < nearW && endA.w >= nearW) {
+                    endB = mix(endA, endB, (endA.w - nearW) / (endA.w - endB.w));
+                }
+                if (endA.w >= nearW && endB.w >= nearW) {
+                    float colA = (endA.x / endA.w * 0.5 + 0.5) * uColumns;
+                    float colB = (endB.x / endB.w * 0.5 + 0.5) * uColumns;
                     vWallStart = max(min(colA, colB), 0.0);
                 } else {
                     vWallStart = 0.0;
@@ -104,6 +115,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform float uSurfaceQ;
         uniform float uWallQ;
         uniform float uPhi;
+        uniform float uLightDist;
         uniform float uColumns;
         uniform vec2 uViewport;
         uniform vec4 uSolid;
@@ -129,6 +141,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 }
                 float depth = max(vDepth, 0.001);
                 float zones;
+                // OV-20261105-shade-global round 3: within LIGHT_DIST the player's light stops
+                // growing, as if the texel stood at LIGHT_DIST.
+                float near = max(uLightDist, 0.001);
                 if (uSprite > 0) {
                     zones = floor(uWallQ / depth);
                 } else if (vIsWall > 0.5) {
@@ -138,7 +153,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                     float slope = uWallQ * vWallSlope;
                     float units = 1024.0 * slope;
                     float step = abs(units) < 1e-3 ? 0.0 : ceil(units) / 1024.0;
-                    zones = ceil((uWallQ / depth) + (column - vWallStart) * (step - slope));
+                    zones = ceil(min((uWallQ / depth) + (column - vWallStart) * (step - slope), uWallQ / near));
                 } else {
                     zones = ceil(uSurfaceQ / depth);
                 }
@@ -189,6 +204,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _columnsLocation;
     private readonly int _viewportLocation;
     private readonly int _solidLocation;
+    private readonly int _lightDistLocation;
     private uint _screenFramebuffer;
     private uint _screenColor;
     private uint _screenDepth;
@@ -249,6 +265,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _shadedLocation = _gl.GetUniformLocation(_program, "uShaded");
         _surfaceQLocation = _gl.GetUniformLocation(_program, "uSurfaceQ");
         _wallQLocation = _gl.GetUniformLocation(_program, "uWallQ");
+        _lightDistLocation = _gl.GetUniformLocation(_program, "uLightDist");
         _phiLocation = _gl.GetUniformLocation(_program, "uPhi");
         _columnsLocation = _gl.GetUniformLocation(_program, "uColumns");
         _viewportLocation = _gl.GetUniformLocation(_program, "uViewport");
@@ -351,6 +368,16 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             int glY = Height - (batch.Viewport.Y + batch.Viewport.Height);
             _gl.Viewport(batch.Viewport.X, glY, (uint)batch.Viewport.Width, (uint)batch.Viewport.Height);
             _gl.ColorMask(!batch.DepthOnly, !batch.DepthOnly, !batch.DepthOnly, !batch.DepthOnly);
+            if (batch.Scissor is { } scissor)
+            {
+                _gl.Enable(EnableCap.ScissorTest);
+                _gl.Scissor(scissor.X, Height - (scissor.Y + scissor.Height), (uint)Math.Max(0, scissor.Width), (uint)Math.Max(0, scissor.Height));
+            }
+            else
+            {
+                _gl.Disable(EnableCap.ScissorTest);
+            }
+
             if (batch.PullForward || batch.DepthOnly)
             {
                 _gl.Enable(EnableCap.PolygonOffsetFill);
@@ -399,6 +426,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform1(_surfaceQLocation, frame.Zones.X);
             _gl.Uniform1(_wallQLocation, frame.Zones.Y);
             _gl.Uniform1(_phiLocation, frame.Zones.Z);
+            _gl.Uniform1(_lightDistLocation, frame.LightDistance);
             _gl.Uniform1(_columnsLocation, frame.Columns);
             _gl.Uniform2(_viewportLocation, (float)batch.Viewport.X, (float)batch.Viewport.Width);
             UploadMatrix(batch.Transform);
@@ -424,6 +452,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 
         _gl.ColorMask(true, true, true, true);
         _gl.Disable(EnableCap.PolygonOffsetFill);
+        _gl.Disable(EnableCap.ScissorTest);
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 

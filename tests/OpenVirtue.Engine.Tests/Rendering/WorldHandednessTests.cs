@@ -72,7 +72,8 @@ public sealed class WorldHandednessTests
         {
             double column = ProjectColumn(RenderSpace.FromMap(48, 8, mapY), viewProjection);
             Assert.True(column > previous, $"edge at map y {mapY} (column {column:F1}) is not right of the previous edge");
-            Assert.Equal(model.CenterColumn - (model.FocalLengthX * mapY / 48), column, 0.05);
+            // Drawn with the tangent cut to a 1024th (OV-20261106-screen-frame): within 0.2 of the exact model.
+            Assert.Equal(model.CenterColumn - (model.FocalLengthX * mapY / 48), column, 0.2);
             previous = column;
         }
     }

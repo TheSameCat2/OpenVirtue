@@ -49,6 +49,7 @@ public sealed partial class RuntimeHost
             Display = letterbox,
             ClearDepth = true,
             Zones = Zones(),
+            LightDistance = (float)Math.Max(0, _runtime.GetSkill("LIGHT_DIST")),
             Columns = WorldColumns(display),
         };
 
@@ -59,7 +60,8 @@ public sealed partial class RuntimeHost
             AddOccluders(frame, viewProjection, worldPixels);
             AddWorldBatches(frame, viewProjection, worldPixels);
             AddClipFills(frame, viewProjection, worldPixels);
-            AddSprites(frame, viewProjection, worldPixels);
+            AddDepthOnly(frame, viewProjection, worldPixels, _spriteFrames);
+            AddSprites(frame, viewProjection, worldPixels, SpriteScissor(display, worldPixels));
             AddTopRow(frame, display, worldPixels);
         }
 
@@ -254,9 +256,12 @@ public sealed partial class RuntimeHost
     /// surface or a sprite past a wall is hidden in that wall's whole column, not just where the wall
     /// is drawn. Pushed back a hair, so each wall still draws over its own occluder.
     /// </summary>
-    private void AddOccluders(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
+    private void AddOccluders(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport) =>
+        AddDepthOnly(frame, viewProjection, viewport, _occluders);
+
+    private static void AddDepthOnly(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport, RenderVertex[] vertices)
     {
-        if (_occluders.Length > 0)
+        if (vertices.Length > 0)
         {
             frame.Batches.Add(new DrawBatch
             {
@@ -264,7 +269,7 @@ public sealed partial class RuntimeHost
                 Viewport = viewport,
                 DepthTest = true,
                 DepthOnly = true,
-                Vertices = _occluders,
+                Vertices = vertices,
             });
         }
     }
@@ -340,7 +345,17 @@ public sealed partial class RuntimeHost
         return new Vector4(palette[entry] / 255f, palette[entry + 1] / 255f, palette[entry + 2] / 255f, 1f);
     }
 
-    private void AddSprites(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
+    /// <summary>
+    /// OV-20261106-screen-frame: a sprite is never drawn on the 3-D window's first two rows (row 0 is
+    /// blank, row 1 shows only walls, floors and ceilings: below-view deck, clip-view h-room).
+    /// </summary>
+    private static PixelRect SpriteScissor(VirtualDisplayLayout display, PixelRect worldPixels)
+    {
+        int rows = Math.Max(2, (int)MathF.Round(2 * display.PhysicalDisplay.Height / display.VirtualHeight));
+        return new PixelRect(worldPixels.X, worldPixels.Y + rows, worldPixels.Width, Math.Max(0, worldPixels.Height - rows));
+    }
+
+    private void AddSprites(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport, PixelRect scissor)
     {
         if (_sprites.Count == 0)
         {
@@ -396,17 +411,44 @@ public sealed partial class RuntimeHost
                 Vector3 topLeft = center - r + u;
                 float leftU = billboard.Mirror ? 1 : 0;
                 float rightU = billboard.Mirror ? 0 : 1;
+                float bottomV = 1;
+                float topV = 0;
+
+                // below-view room-high: a sprite in a lower storey of a BELOW stack, seen from outside
+                // that storey, shows only within the storey's own floor and ceiling; the slab and the deck
+                // above then hide the rest.
+                if (billboard.Orientation == SpriteOrientation.Upright &&
+                    billboard.Source is { } stackedSource &&
+                    stackedSource.Region != _player.Region &&
+                    IsStoreyOfStack(stackedSource.Region) &&
+                    (uint)stackedSource.Region < (uint)_level.Regions.Count)
+                {
+                    Region storey = _level.Regions[stackedSource.Region];
+                    float low = bottomLeft.Y;
+                    float high = topLeft.Y;
+                    float clipLow = MathF.Max(low, (float)storey.FloorHeight);
+                    float clipHigh = MathF.Min(high, (float)storey.CeilHeight);
+                    if (clipHigh <= clipLow || high <= low)
+                    {
+                        continue;
+                    }
+
+                    bottomV = 1 - ((clipLow - low) / (high - low));
+                    topV = (high - clipHigh) / (high - low);
+                    bottomLeft.Y = bottomRight.Y = clipLow;
+                    topLeft.Y = topRight.Y = clipHigh;
+                }
                 float localAmbient = billboard.Source is { } source &&
                     source.Region >= 0 && source.Region < _level.Regions.Count
                     ? (float)_level.Regions[source.Region].Ambient
                     : 0;
                 float hiding = SpriteHidingDepth(billboard, center);
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient, hiding));
-                vertices.Add(new RenderVertex(bottomRight.X, bottomRight.Y, bottomRight.Z, rightU, 1, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient, hiding));
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, 1, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, 0, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topLeft.X, topLeft.Y, topLeft.Z, leftU, 0, localAmbient, hiding));
+                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, bottomV, localAmbient, hiding));
+                vertices.Add(new RenderVertex(bottomRight.X, bottomRight.Y, bottomRight.Z, rightU, bottomV, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, topV, localAmbient, hiding));
+                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, bottomV, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, topV, localAmbient, hiding));
+                vertices.Add(new RenderVertex(topLeft.X, topLeft.Y, topLeft.Z, leftU, topV, localAmbient, hiding));
             }
 
             AddBatch(
@@ -421,10 +463,19 @@ public sealed partial class RuntimeHost
                 _shading ? ShadeAmbient(texture) : TextureAmbient(texture),
                 shaded: _shading,
                 blend: BatchBlendOf(blend),
-                spriteMarker: PaletteShading.SpriteMarker);
+                spriteMarker: PaletteShading.SpriteMarker,
+                scissor: scissor);
             start = end;
         }
     }
+
+    /// <summary>
+    /// Whether a region is a lower storey of a <c>BELOW</c> stack. The top storey's sprites are cut by
+    /// the border they are seen across like any other region's.
+    /// </summary>
+    private bool IsStoreyOfStack(int region) =>
+        (uint)region < (uint)_level.Regions.Count &&
+        _level.Regions.Any(other => other.BelowRegion == region);
 
     /// <summary>The depth a sprite is hidden at, in <c>RenderVertex.WallAX</c>; 0 when it is its true depth.</summary>
     private float SpriteHidingDepth(in SpriteBillboard billboard, Vector3 center)
@@ -440,6 +491,7 @@ public sealed partial class RuntimeHost
         float lateral = Vector3.Dot(toCenter, _camera.Right);
         float hiding = _viewClip.SpriteHidingDepth(
             source.Region,
+            _player.Region,
             _camera.Position.X,
             RenderSpace.MapYFromZ(_camera.Position.Z),
             forward.X,
@@ -646,7 +698,8 @@ public sealed partial class RuntimeHost
         bool shaded = false,
         bool depthWrite = true,
         BatchBlend blend = BatchBlend.None,
-        int spriteMarker = 0)
+        int spriteMarker = 0,
+        PixelRect? scissor = null)
     {
         if (vertices.Length == 0)
         {
@@ -665,6 +718,7 @@ public sealed partial class RuntimeHost
             DepthWrite = depthWrite,
             Blend = blend,
             SpriteMarker = spriteMarker,
+            Scissor = scissor,
             Ambient = ambient,
             Fade = fade ?? _fade,
             Vertices = vertices,

@@ -89,6 +89,15 @@ public readonly record struct ProjectionModel
     /// <summary>The vertical extent at unit forward distance that reaches the window's top or bottom edge (before tilt).</summary>
     public double VerticalHalfTangent => VerticalTangentRatio * Aspect * HorizontalHalfTangent;
 
+    /// <summary>
+    /// OV-20261106-screen-frame: the picture is drawn with the half arc's tangent cut to a 1024th
+    /// (559/1024 at <c>PLAYER_ARC</c> 1, a vertical scale of 659.46 rows): frontal walls from 24.5 to 48
+    /// steps fit only a scale between 659.45 and 660.15, and the probes' edge pixels fall by a quarter
+    /// with it. The view cone's test and <c>SHOOT</c> keep the exact tangent their traces measured
+    /// (careful-stop cone-w2 loses a line with the cut one).
+    /// </summary>
+    public double DrawnHalfTangent => Math.Floor(Math.Tan(PlayerArc * 0.5) * 1024) / 1024;
+
     /// <summary>Horizontal focal length in window pixels.</summary>
     public double FocalLengthX => (ScreenWidth * 0.5) / HorizontalHalfTangent;
 
@@ -157,8 +166,8 @@ public readonly record struct ProjectionModel
 
         var m = new Matrix4x4
         {
-            M11 = (float)(1.0 / HorizontalHalfTangent),
-            M22 = (float)(1.0 / VerticalHalfTangent),
+            M11 = (float)(1.0 / DrawnHalfTangent),
+            M22 = (float)(1.0 / (VerticalTangentRatio * Aspect * DrawnHalfTangent)),
             M32 = (float)(-ShearNdc),
             M33 = farPlane / (nearPlane - farPlane),
             M34 = -1f,

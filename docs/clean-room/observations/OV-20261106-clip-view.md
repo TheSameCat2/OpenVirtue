@@ -73,6 +73,12 @@ far wall of stripes at x 48, side walls from x −16 to 48, half width 24, eye a
   region's `CLIP_DIST`.** `THING_DIST` and `ACTOR_DIST` do nothing on the picture.
 - **A sprite is not cut by the walls bounding its own region**: a wide one beside a wall shows across it.
   A free wall in the region, or any wall on the way into it, still hides it.
+- **A sprite seen from another region is cut at the opening of each border it is seen across**, at the
+  border's floor and ceiling lines even where both sides are level (below-view room-high: the deck's thing
+  ends at the deck's near ceiling line, and its part outside the deck's footprint is whole). A sprite in a
+  lower storey of a `BELOW` stack, seen from outside it, shows within that storey only; and of a stack only
+  the slabs between storeys hide sprites, not the top storey's ceiling or the bottom one's floor. With
+  these, below-view goes from 91 004 differing pixels to 2 646 and below-beam from 32 000–108 000 to 400–650.
 - **A closed region (floor at or above ceiling) shows no surface**, and an `INVISIBLE` wall no face.
 - A region of no single wall loop (an island inside it, a vertex three walls meet at) has floors and
   ceilings like any other. OpenVirtue drew none for them: 158 of Apathy's 1073 regions, 81 of Heart's
@@ -88,7 +94,7 @@ wide sprite, and OpenVirtue implements it by a depth test against its own walls'
 - An `INVISIBLE` step's rows: the original continues the far region's floor there (p-top); OpenVirtue
   leaves them unpainted (black in a probe, seen against a raised invisible pad only).
 - A sprite beside its own region's wall when a nearer wall of another region also crosses its columns.
-- Walls and fills in a `BELOW` stack keep their old behaviour here; below-view's room-high still differs.
+- Fills beside a `BELOW` stack keep their old behaviour.
 - A `SKILL CLIP_DIST` declaration changed nothing with the region unset, in V3.963 only. A V3.990 runtime
   may differ, as it does with `APPEND_MODE`.
 

@@ -171,6 +171,36 @@ alcove bricks 25.5, 24.7, 27.0 / 25.8, 25.3, 28.3 / 25.2, 24.6, 27.1. Pixels equ
 in the 3-D view 49.2% → 50.8%, in the curtains 34.6% → 45.7%; the view's mean brightness error
 +1.8% → +0.1%.
 
+## Round 3 (2026-11-10): walls nearer than LIGHT_DIST, and walls from behind the eye
+Heart's start read its side walls 1.15 to 1.4 times brighter in OpenVirtue than in the original. Round 3
+(`round3/`, twelve carriers) stands a side wall in the ramp colour from x −10, behind the eye, to 46 at
+y ±6, in both vertex orders, at the strong light (p 1, l 10) and at retail's (p 0.2, l 20); the `-front`
+ones start at x 2, ahead of the eye but off the screen. Hashes of `OVSGS0.PCX`: bh-l `7a61448c`, bh-r and
+bh-r-front both `975793b6`, rbh-l `63be34fd`, rbh-r `befcc21b`. Read along row 150:
+
+| Case | Original | OpenVirtue before |
+|---|---|---|
+| rbh-l (retail light, left wall) | level 22 from column 0 to 156, 24 to 213, 26 on | 18, 20, 22, 24, 26: brighter and brighter towards the edge |
+| rbh-r | the mirror image | the same |
+| bh-l (strong light) | steps from level 2 at the edge on | the same steps |
+| bh-r against bh-r-front | **pixel for pixel the same picture** | the stepping started at column 0 for bh-r only |
+
+- **Nearer than `LIGHT_DIST` a wall's light grows no more**: its zones are counted as if it stood at
+  `LIGHT_DIST`, so retail's light gives a wall `⌈65.3/20⌉ = 4` zones, level 22, however near. At `LIGHT_DIST`
+  10 no wall of the strong-light carriers was nearer than 11, so nothing showed there. A floor is not held
+  so: the eye-2 floors of round 2 read down to depth 5.5 at the unclamped zones (a clamp put 45 000 to 112 000
+  pixels wrong). A sprite at depth 12 reads the same either way; it is left unclamped.
+- **A wall's end behind the eye counts as the wall cut just in front of it**: the stepping starts at the
+  lower of the two ends' columns either way, which is what makes bh-r and bh-r-front one picture.
+
+Heart's start against the original after this round: every 80 × 60 block within 2% in mean brightness, the
+weighted difference (`magick compare -fuzz 2%`) 13 130 → 6 540; Legalism 8 859 → 8 291, New Age 9 473 → 9 132.
+
+A refit of `Q` from round 2's floor bands, with the rows sampled at their top edge as walls are, does not
+settle on one formula: `Q − 15·p·l` scatters from 0 to 1.3 at `LIGHT_DIST` 10 and from 3 to 5.5 at 20, and
+`⌈K·p·l/d + c⌉` misses a fifth of the band rows at its best. The zone count is likely read from a table in
+fixed point. OpenVirtue keeps the fit, a row or two off on near floors.
+
 ## Rules
 - **The player's light is a whole number of zones, separate from the ambient. A floor or ceiling
   takes `m = ⌈Qf/d⌉`, a sprite `m = ⌊Qw/d⌋`, a wall `m = ⌈mw⌉` as below; the level is
@@ -198,6 +228,7 @@ in the 3-D view 49.2% → 50.8%, in the curtains 34.6% → 45.7%; the view's mea
   `Qw` and a floor instead of a ceiling, which is not a constant.
 
 ## Open Questions
+- A left wall's steps at retail's light land up to nine columns later in OpenVirtue (rbh-l: 166 against 157).
 - `Q` and `φ` at other `LIGHT_DIST` values: the cube and `l/32` are fits through 10 and 20 and
   nothing was read at 5, 40 or retail's other values.
 - `φ` at low `PLAYER_LIGHT` (the bound 0.375 comes from one p 1 carrier), and `φ` at l 20 for any p

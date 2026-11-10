@@ -37,6 +37,12 @@ public sealed class HostFrame
     public Vector3 Zones { get; init; }
 
     /// <summary>
+    /// <c>LIGHT_DIST</c>: nearer than it the player's light grows no more (OV-20261105-shade-global
+    /// round 3), so a texel's zones are counted at the larger of its depth and this.
+    /// </summary>
+    public float LightDistance { get; init; }
+
+    /// <summary>
     /// The 3-D window's width in virtual columns (<c>SCREEN_WIDTH</c>), the space a wall's shade
     /// steps are counted in: the renderer turns a fragment's x back into this window.
     /// </summary>
@@ -90,6 +96,9 @@ public sealed class DrawBatch
     /// first row).
     /// </summary>
     public Vector4? Solid { get; init; }
+
+    /// <summary>When set, the batch draws only inside this rectangle (framebuffer pixels, origin top-left).</summary>
+    public PixelRect? Scissor { get; init; }
 
     /// <summary>Writes depth only, pushed a hair away from the eye: the occluders of OV-20261106-clip-view.</summary>
     public bool DepthOnly { get; init; }
