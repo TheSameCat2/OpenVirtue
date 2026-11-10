@@ -90,6 +90,19 @@ public static class WdlPlayerMotion
         // PLAYER_VZ moves the eye freely (the feet may sink below the floor) and keeps its value;
         // the eye clamp then holds the eye inside the region and adds its correction, in steps,
         // to IMPACT_VZ, also when a script moved PLAYER_Z out of range (OV-20261019-eye-clamp).
+        // OV-20261110-retail-play: the first frame stands the player's feet on the floor, the eye
+        // PLAYER_SIZE above it, before PLAYER_VZ moves it: Apathy's stage (floor −2, size 5) read
+        // PLAYER_Z 0 through IF_START and 3 + 4·(−0.079) = 2.684 after the first frame. A PLAYER_Z the
+        // script set before then is kept.
+        if (!player.FeetPlaced)
+        {
+            player.FeetPlaced = true;
+            if (runtime.GetSkill("PLAYER_Z") == 0)
+            {
+                player.Position = new Vector3(player.Position.X, player.FloorHeight + player.EyeHeight, player.Position.Z);
+            }
+        }
+
         player.MoveVertical(timeCorrection > 0 ? (float)(runtime.GetSkill("PLAYER_VZ") * VerticalScale(timeCorrection)) : 0);
 
         runtime.SetSkill("IMPACT_VZ", runtime.GetSkill("IMPACT_VZ") + player.ClampEye());
@@ -122,6 +135,15 @@ public static class WdlPlayerMotion
 
         runtime.SetSkill("PLAYER_X", player.Position.X);
         runtime.SetSkill("PLAYER_Y", player.Position.Z);
+        if (!player.FeetPlaced)
+        {
+            // Before the first frame the original has computed no heights (OV-20261110-retail-play):
+            // PLAYER_Z, FLOOR_HGT, CEIL_HGT and PLAYER_HGT read 0 through IF_START. A script's own
+            // PLAYER_Z stands.
+            runtime.SetSkill("PLAYER_REGION", player.Region);
+            return;
+        }
+
         runtime.SetSkill("PLAYER_Z", player.Position.Y);
         runtime.SetSkill("PLAYER_REGION", player.Region);
         // While a flic shows, the view's heights are not refreshed: CEIL_HGT stayed 0 from PLAY_FLICFILE

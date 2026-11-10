@@ -3979,6 +3979,7 @@ public sealed class WdlRuntime :
             return;
         }
 
+
         // OV-20261020-view-activity rounds 6-9 (re-read 2026-11-03): an actor without a speed makes no
         // move, so its skip count is not consumed and it stays due. The standing way actors given a
         // speed in the trace window's first cycle all moved in that cycle (arriving at the point they
@@ -3995,8 +3996,14 @@ public sealed class WdlRuntime :
         // walkers placed on and 0.5 from the room's edge stood 1.049 from it after their first move, an
         // arrival, while one exactly 1.0 from it and ones 0.07 and 0.55 from the pad's step border walked on
         // (OV-20261103-careful-stop north-3-35, north-4-45, south-2-3, north-2-25).
+        // OV-20261110-retail-play: the walls held off are those of the region the actor counts as in. A
+        // script's beam (SET X, SET Y) leaves that region as it was, so Apathy's head beamed to the stage
+        // walks to its VERTEX past rock walls 4.0 to 4.6 from its path, inside its hold radius of 4.67,
+        // untouched and without an IF_ARRIVED.
         if (actor["CAREFULLY"] > 0 &&
-            LevelTopology.LocateRegion(_level, actor.X, actor.Y) is { } standingRegion &&
+            actor.Region is var standingRegion &&
+            (uint)standingRegion < (uint)_level.Regions.Count &&
+            LevelTopology.LocateRegion(_level, actor.X, actor.Y) is not null &&
             !IsSolidRegion(standingRegion) &&
             TryCarefulHoldPosition(actor, standingRegion, out Vector2 heldPosition))
         {
@@ -4382,7 +4389,7 @@ public sealed class WdlRuntime :
             {
                 _carefulHold = null;
                 HoldCarefulActorAt(actor, start, hold.At, step);
-                if (actor.Region != previousRegion)
+                if (actor.Region != previousRegion && ArrivesAtBorders(actor))
                 {
                     TriggerObjectActionHook(actor, "IF_ARRIVED");
                 }
@@ -4527,11 +4534,25 @@ public sealed class WdlRuntime :
                          Math.Abs(actor.Y - (y - requestedY)) > 0.000001
             ? 1
             : 0;
-        if (carefully && actor.Region != previousRegion)
+        if (carefully && actor.Region != previousRegion && ArrivesAtBorders(actor))
         {
             TriggerObjectActionHook(actor, "IF_ARRIVED");
         }
     }
+
+    /// <summary>
+    /// Whether a <c>CAREFULLY</c> actor's <c>IF_ARRIVED</c> fires at each region border it crosses: for
+    /// <c>MOVE</c> and <c>BULLET</c> (manual p.65) and <c>FOLLOW</c> and <c>REPEL</c> (p.66), measured with
+    /// <c>MOVE</c> in OV-20261029-actor-events move-border. A <c>VERTEX</c>, way or object target
+    /// arrives at its target only: Apathy's beamed head walks to its <c>VERTEX</c> across two borders
+    /// without one (OV-20261110-retail-play apathy-nosave).
+    /// </summary>
+    private static bool ArrivesAtBorders(Actor actor) =>
+        actor.Target is { } target &&
+        (target.Equals("MOVE", StringComparison.OrdinalIgnoreCase) ||
+         target.Equals("BULLET", StringComparison.OrdinalIgnoreCase) ||
+         target.Equals("FOLLOW", StringComparison.OrdinalIgnoreCase) ||
+         target.Equals("REPEL", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// How much further than its half width a wall stops a <c>CAREFULLY</c> actor: 50/1024, which

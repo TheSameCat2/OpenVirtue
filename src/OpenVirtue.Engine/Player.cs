@@ -65,6 +65,12 @@ public sealed class Player : AcknexObject
     public float EyeHeight { get; set; } = 3f;
 
     /// <summary>
+    /// Whether the first frame has stood the player on its floor (OV-20261110-retail-play). Until then
+    /// the height skills read 0, as the original's do through <c>IF_START</c>.
+    /// </summary>
+    public bool FeetPlaced { get; set; } = true;
+
+    /// <summary>
     /// <c>PLAYER_WIDTH</c>: the minimum distance kept from solid walls and objects. A move that would
     /// end this close to a solid wall (or a region border the player cannot enter), or closer, is
     /// stopped <see cref="WallClearance"/> further away.

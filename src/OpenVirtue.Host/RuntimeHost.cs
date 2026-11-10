@@ -559,7 +559,9 @@ public sealed partial class RuntimeHost : IDisposable
 
     private void PlaceCameraAtStart()
     {
-        _player = new Player(_level);
+        // A level's player stands on its floor at the first frame, and reads no heights before it
+        // (OV-20261110-retail-play).
+        _player = new Player(_level) { FeetPlaced = false };
         SpawnInLargestRoom();
         _runtime.RegisterObject("player", _player);
         _camera.Position = RenderSpace.FromMap(_player.Position);
