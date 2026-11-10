@@ -62,6 +62,26 @@ public sealed class CarrierFrameTests
         }
     }
 
+    private static bool RanAtSlowFrames(string work)
+    {
+        string caseJson = Path.Combine(Path.GetDirectoryName(work) ?? work, "case.json");
+        string? traceFile = null;
+        if (File.Exists(caseJson))
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(caseJson));
+            if (document.RootElement.TryGetProperty("trace_file", out System.Text.Json.JsonElement trace) &&
+                trace.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                traceFile = trace.GetString();
+            }
+        }
+
+        string? path = traceFile is null ? null : Directory.EnumerateFiles(work)
+            .FirstOrDefault(file => Path.GetFileName(file).Equals(traceFile, StringComparison.OrdinalIgnoreCase));
+        return path is not null &&
+            OracleTrace.RanAtSlowFrames(OracleTrace.Parse(File.ReadAllText(path, System.Text.Encoding.Latin1)));
+    }
+
     private void Run(string work, string target, SdlPlatform platform, GlRenderBackend graphics)
     {
         if (Directory.Exists(target))
@@ -80,7 +100,10 @@ public sealed class CarrierFrameTests
         try
         {
             using RuntimeHost host = RuntimeHost.OpenArchive(archive, "TITLE.WDL", platform, new RetailSmokeTests.ScriptedInput(), new NullAudioSink(), graphics);
-            host.FrameClock = static () => 1.0 / 60;
+            // A carrier the original ran at 8 ticks a frame throughout is run so too, as `ovtool oracle
+            // diff` replays it, so its SCREENSHOT comes in the same cycle.
+            double frameSeconds = RanAtSlowFrames(work) ? OracleTrace.SlowFrameTicks / 16 : 1.0 / 60;
+            host.FrameClock = () => frameSeconds;
             host.Boot();
             int frames = 0;
             while (!host.ExitRequested && frames < FrameBudget)

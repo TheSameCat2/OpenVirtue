@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="OpenVirtue.Tools.Tests" />
+    <InternalsVisibleTo Include="OpenVirtue.App.Tests" />
   </ItemGroup>
 
   <ItemGroup>

@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\OpenVirtue.Host\OpenVirtue.Host.csproj" />
     <ProjectReference Include="..\..\src\OpenVirtue.Engine\OpenVirtue.Engine.csproj" />
     <ProjectReference Include="..\..\src\OpenVirtue.Formats\OpenVirtue.Formats.csproj" />
+    <ProjectReference Include="..\..\tools\OpenVirtue.Tools\OpenVirtue.Tools.csproj" />
   </ItemGroup>
 
 </Project>
