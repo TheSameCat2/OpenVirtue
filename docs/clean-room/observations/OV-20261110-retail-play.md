@@ -92,7 +92,16 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 - `STEPS`, which drives the walking bob through `WALK`: the original's counts nothing in a walk's first three
   cycles and then about 0.003 to 0.013 less than the distance moved each cycle, a cycle late; OpenVirtue
   counts the distance in the cycle it is moved. No simple rule fitted, and the eye's bob drifts from it.
-- apathy-walk from line 238: a velocity component diverges, probably where the player first meets a wall.
+- apathy-walk from line 241: the player walks up to a 2-step border (floor −4 to −2) with `PLAYER_CLIMB` 2.5.
+  The original takes the step to 0.861 from it and pushes the player back to `PLAYER_WIDTH` + 0.049 the next
+  cycle, keeping `PLAYER_VY`; OpenVirtue refuses the step itself and writes the velocity back, so the player
+  bounces. The climb test compares the floor with the feet, `PLAYER_Z − PLAYER_SIZE`, and Apathy sets
+  `PLAYER_SIZE` to its size plus 0.3·`WALK`, so the bob decides a step this close to the limit: `STEPS` (and
+  so `WALK`) is the cause to settle first. Keeping the velocity on every wall stop loses four contact-clock
+  carriers, so the original does write it back after a solid wall.
+- `STEPS` raw, from the walk's start: the original adds 0, 0, 0, then 32, 45, 45, 71, 71, 78, 101, 96, 106
+  while the player moves 15.8, 25.3, 36.7, 53.5, 57.6, 76.5, 76.5, 85.1, 105, 101.8, 108.2, 130 (all 1/1024);
+  neither the distance, the speed nor either times `TIME_CORR`, a cycle or two late, fits the pairs.
 - `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
   took, and a long first step changes where an actor walks.
 - actor-width: in the cycle a careful actor is held off a wall, the original moves it along the wall by
