@@ -105,7 +105,9 @@ public static class LevelLoader
 
         WdlDeclarations declarations = WdlDeclarations.Index(program);
 
-        double defaultRegionClipDistance = FindNumber(program, "CLIP_DIST") ?? DefaultRegionClipDistance;
+        // OV-20261106-clip-view: V3.963 takes neither a top-level CLIP_DIST nor a skill of that name; a
+        // region without its own value keeps the default.
+        const double defaultRegionClipDistance = DefaultRegionClipDistance;
         var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
         StackBelowRegions(regions, declarations, defaultRegionClipDistance);

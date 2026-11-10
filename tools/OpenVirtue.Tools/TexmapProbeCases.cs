@@ -25,6 +25,27 @@ internal static class TexmapProbeCases
         "BMAP tm_sw,<PRBPAL.PCX>;\nTEXTURE tm_tex { SCALE_X 2; SCALE_Y 2; BMAPS tm_sw; }\nWALL tm_wall { TEXTURE tm_tex; }\n" +
         $"BMAP tm_cm,<{CellFile}>;\nTEXTURE tm_cell {{ SCALE_X 4; SCALE_Y 4; BMAPS tm_cm; }}\n";
 
+    /// <summary>Round 2: the bitmap sizes floors and ceilings are tried at; retail has all but the smallest.</summary>
+    public static readonly (int Width, int Height)[] SurfaceSizes =
+    [
+        (16, 16), (32, 32), (63, 63), (64, 64), (65, 65), (100, 100), (128, 128), (129, 128), (129, 129), (256, 256), (257, 257),
+        (512, 512), (128, 64), (64, 128), (128, 257), (320, 128), (324, 132),
+    ];
+
+    public static string SizeFile(int width, int height) => $"S{width}X{height}.PCX";
+
+    /// <summary>Index 16 + (x + y) mod 200 away from the room's inks, so a texel reads as its position.</summary>
+    public static byte SizePixel(int x, int y) => (byte)(16 + (((x / 4) + (y / 4)) % 200));
+
+    private static TraceProbeCase SizeCase(int width, int height)
+    {
+        string map = $"BMAP tz_m,<{SizeFile(width, height)}>;\nTEXTURE tz_t {{ SCALE_X 4; SCALE_Y 4; BMAPS tz_m; }}\n";
+        return Case(
+            $"sz-{width}x{height}",
+            $"Round 2. A {width}×{height} bitmap as both floor and ceiling at SCALE 4: drawn, or entry 0, and how does it repeat?",
+            new TraceProbeMap(Textures: map, RoomFloor: "tz_t", RoomCeiling: "tz_t"));
+    }
+
     private static TraceProbeCase Case(string label, string question, TraceProbeMap map, string run = "", params (string, string)[] predictions) => new(
         label,
         question,
@@ -35,6 +56,7 @@ internal static class TexmapProbeCases
 
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        .. SurfaceSizes.Select(static size => SizeCase(size.Width, size.Height)),
         Case(
             "floor",
             "The swatch as the room's FLOOR_TEX: at which map point does texel 0, 0 lie, and do the columns run along +x or +y (facing +x, +y is to the left)?",

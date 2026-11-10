@@ -271,7 +271,7 @@ public sealed class ShadeFrameTests : IDisposable
                 new WrsFile("TITLE.WDL", Encoding.ASCII.GetBytes(Declarations(playerLight, lightDistance, eyeX))),
                 new WrsFile("m.wmp", Encoding.ASCII.GetBytes(map)),
                 new WrsFile("LEVEL.PCX", Pcx(palette, 16)),
-                new WrsFile("WALL.PCX", Pcx(palette, 16)),
+                new WrsFile("WALL.PCX", Pcx64(palette, 16)),
             ]);
         using RuntimeHost host = RuntimeHost.OpenArchive(archive, "TITLE.WDL", platform, platform, new NullAudioSink(), graphics);
         host.Boot();
@@ -322,6 +322,24 @@ public sealed class ShadeFrameTests : IDisposable
         }
 
         return rgb;
+    }
+
+    /// <summary>A 64×64 PCX of one palette index, the smallest bitmap a floor shows (OV-20261104-texmap round 2).</summary>
+    private static byte[] Pcx64(byte[] palette, byte index)
+    {
+        byte[] buffer = new byte[128 + (64 * 64) + 1 + (256 * 3)];
+        buffer[0] = 0x0A;
+        buffer[1] = 5;
+        buffer[2] = 1;
+        buffer[3] = 8;
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(8), 63);
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(10), 63);
+        buffer[65] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(66), 64);
+        buffer.AsSpan(128, 64 * 64).Fill(index);
+        buffer[128 + (64 * 64)] = 0x0C;
+        palette.CopyTo(buffer, 128 + (64 * 64) + 1);
+        return buffer;
     }
 
     /// <summary>A 1×1 PCX of one palette index carrying the given palette, as a PALFILE and a texture.</summary>

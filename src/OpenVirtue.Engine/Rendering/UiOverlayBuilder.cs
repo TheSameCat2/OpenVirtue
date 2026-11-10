@@ -461,7 +461,8 @@ public static class UiOverlayBuilder
             : null;
     }
 
-    private static bool HasFlag(WdlUiElement element, string flag) =>
+    /// <summary>Whether a UI element's <c>FLAGS</c> carry <paramref name="flag"/>.</summary>
+    public static bool HasFlag(WdlUiElement element, string flag) =>
         element.Properties.Any(property =>
             property.Keyword.Equals("FLAGS", StringComparison.OrdinalIgnoreCase) &&
             property.Values.Any(value => value.Text.Equals(flag, StringComparison.OrdinalIgnoreCase)));

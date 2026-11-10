@@ -32,6 +32,17 @@ public sealed partial class RuntimeHost : IDisposable
     private readonly Camera _camera = new();
     private readonly Stopwatch _frameClock = new();
     private readonly List<CachedBatch> _batches = [];
+    private readonly List<RenderVertex> _clipFill = [];
+    private readonly Dictionary<(string Element, int Place), (int Signature, int Frames)> _uiDirty = [];
+    private readonly Dictionary<string, int> _uiPieceIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<(string Element, int Place)> _uiSeen = [];
+    private RenderVertex[] _occluders = [];
+    private IReadOnlySet<string>? _blankSurfaces;
+    private ViewClip? _viewClip;
+    private (int Width, int Height) _screenSize;
+
+    /// <summary>The frames a panel without <c>REFRESH</c> redraws a changed piece on (OV-20261106-screen-frame).</summary>
+    private const int PanelRedrawFrames = 2;
     private readonly List<SpriteBillboard> _sprites = [];
     private readonly HashSet<int> _hostedChannels = [];
     private readonly Dictionary<AcknexObject, SpatialLoopSound> _spatialLoopSounds = [];
@@ -267,6 +278,10 @@ public sealed partial class RuntimeHost : IDisposable
         }
 
         SyncPlayerRuntimeState();
+
+        // OV-20261106-screen-frame: the first picture is drawn before IF_START runs, whole-window;
+        // a border the script opens around a smaller window then shows it.
+        DrawWorld();
         try
         {
             _startupRan = _runtime.RunStartup();
@@ -304,6 +319,10 @@ public sealed partial class RuntimeHost : IDisposable
         }
 
         TickRuntime();
+
+        // OV-20261106-screen-frame: SCREENSHOT saves the screen as it stands when the instruction
+        // runs, that is, the last frame drawn, and an EXIT in the same cycle does not lose it.
+        FlushPendingScreenshots();
         if (!_window.IsOpen || _exitRequested)
         {
             return;
@@ -318,7 +337,6 @@ public sealed partial class RuntimeHost : IDisposable
             DrawWorld();
         }
 
-        FlushPendingScreenshots();
         if (present)
         {
             _graphics.Present();
@@ -410,6 +428,21 @@ public sealed partial class RuntimeHost : IDisposable
         _mainWdlName = mainWdlName;
         _mapOverrideName = mapOverrideName;
         _level = level;
+        // Only a level read from an archive has its real bitmaps; tests hand in stand-ins of any size.
+        if (archive is not null)
+        {
+            _blankSurfaces = TextureLoader.BlankSurfaceTextures(level, textures);
+            var withBlank = new Dictionary<string, TextureImage>(textures, StringComparer.OrdinalIgnoreCase)
+            {
+                [MeshBuilder.BlankSurface] = TextureLoader.BlankSurfaceImage,
+            };
+            textures = withBlank;
+        }
+        else
+        {
+            _blankSurfaces = null;
+        }
+
         _textureImages = textures;
         _uiImages = uiImages;
         _fontImages = fontImages;
@@ -735,7 +768,9 @@ public sealed partial class RuntimeHost : IDisposable
     private void BuildGeometry()
     {
         _batches.Clear();
-        LevelMesh mesh = MeshBuilder.Build(_level);
+        _occluders = MeshBuilder.BuildOccluders(_level);
+        _viewClip = new ViewClip(_level);
+        LevelMesh mesh = MeshBuilder.Build(_level, _blankSurfaces);
         foreach (MeshBatch batch in mesh.Batches)
         {
             _batches.Add(new CachedBatch(

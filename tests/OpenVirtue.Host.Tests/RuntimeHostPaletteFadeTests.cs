@@ -47,8 +47,8 @@ public sealed class RuntimeHostPaletteFadeTests : IDisposable
         byte[] shown = Assert.IsType<byte[]>(host.ShownPalette);
         Assert.All(shown, static b => Assert.Equal((byte)0, b));
         Assert.Equal(shown, render.LastPalette);
-        Assert.Equal(1f, render.LastFrame!.Batches[0].Fade.CurrentWeight);
-        Assert.Equal(Vector3.Zero, render.LastFrame.Batches[0].Fade.Current);
+        Assert.Equal(1f, render.LastFrame!.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade.CurrentWeight);
+        Assert.Equal(Vector3.Zero, render.LastFrame.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade.Current);
     }
 
     [Fact]
@@ -61,20 +61,20 @@ public sealed class RuntimeHostPaletteFadeTests : IDisposable
         host.Frame(present: false);
         byte[] level = Assert.IsType<byte[]>(host.ShownPalette);
         Assert.Equal((byte)121, level[32 * 3]); // entry 32 is 120: 30 on the DAC, widened to 121
-        Assert.Equal(PaletteFadeTint.None, render.LastFrame!.Batches[0].Fade);
+        Assert.Equal(PaletteFadeTint.None, render.LastFrame!.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade);
 
         host.Runtime.RunAction("half_black");
         host.Frame(present: false);
         byte[] half = Assert.IsType<byte[]>(host.ShownPalette);
         Assert.Equal((byte)60, half[32 * 3]); // 30 halves to 15: 60
         Assert.Equal(half, render.LastPalette);
-        Assert.Equal(0.5f, render.LastFrame!.Batches[0].Fade.Factor);
-        Assert.Equal(Vector3.Zero, render.LastFrame.Batches[0].Fade.Target);
+        Assert.Equal(0.5f, render.LastFrame!.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade.Factor);
+        Assert.Equal(Vector3.Zero, render.LastFrame.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade.Target);
 
         host.Runtime.RunAction("no_fade");
         host.Frame(present: false);
         Assert.Equal(level, host.ShownPalette);
-        Assert.Equal(PaletteFadeTint.None, render.LastFrame!.Batches[0].Fade);
+        Assert.Equal(PaletteFadeTint.None, render.LastFrame!.Batches.First(static b => b.Solid is null && !b.DepthOnly).Fade);
     }
 
     [Fact]

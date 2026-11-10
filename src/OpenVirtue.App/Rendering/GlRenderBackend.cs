@@ -26,6 +26,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         layout(location = 3) in vec4 aWall;
         uniform mat4 uViewProjection;
         uniform float uColumns;
+        uniform int uSprite;
         out vec2 vUv;
         out float vAmbient;
         out float vDepth;
@@ -37,6 +38,15 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             // glUniformMatrix4fv transpose=false, so GL reads that memory as column-major.
             // That is the same implicit transpose the D3D11 constant buffer applied.
             gl_Position = uViewProjection * vec4(aPos, 1.0);
+
+            // OV-20261106-clip-view p-wide: a sprite is hidden as if at aWall.x when its own region's
+            // walls would otherwise cut it: the depth test reads that depth, the picture stays. The
+            // constant is the projection's z term for near 1 and far 200000.
+            if (uSprite > 0 && aWall.x > 0.0) {
+                const float m = 200000.0 / (1.0 - 200000.0);
+                gl_Position.z = gl_Position.w * m * ((1.0 / aWall.x) - 1.0);
+            }
+
             vUv = aUv;
             vAmbient = aAmbient;
             // The perspective w is the depth along the line of sight.
@@ -49,7 +59,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             // right there; the first visible column is then the window's left edge.
             vec4 clipA = uViewProjection * vec4(aWall.x, 0.0, aWall.y, 1.0);
             vec4 clipB = uViewProjection * vec4(aWall.z, 0.0, aWall.w, 1.0);
-            vIsWall = (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0) ? 1.0 : 0.0;
+            vIsWall = (uSprite <= 0 && (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0)) ? 1.0 : 0.0;
             if (vIsWall > 0.5) {
                 // The slope of 1/w per column, written without dividing by w so an end on the eye
                 // plane (w = 0) stays finite: with N the columns,
@@ -96,8 +106,13 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform float uPhi;
         uniform float uColumns;
         uniform vec2 uViewport;
+        uniform vec4 uSolid;
         out vec4 fragColor;
         void main() {
+            if (uSolid.a > 0.5) {
+                fragColor = vec4(uSolid.rgb, 1.0);
+                return;
+            }
             // OV-20261104-blend: GHOST shows its texels where the screen pixel's x + y (from the top
             // left) is odd; gl_FragCoord counts rows from the bottom, so the sum's parity flips with the
             // height's. uBlend 3 draws palette entry 0 (black) for DIAPHANOUS without a BLUR palette.
@@ -173,6 +188,12 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _phiLocation;
     private readonly int _columnsLocation;
     private readonly int _viewportLocation;
+    private readonly int _solidLocation;
+    private uint _screenFramebuffer;
+    private uint _screenColor;
+    private uint _screenDepth;
+    private int _screenWidth;
+    private int _screenHeight;
     private readonly Dictionary<string, uint> _worldIndices = new(StringComparer.OrdinalIgnoreCase);
     private uint _palette;
     private uint _shade;
@@ -231,6 +252,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _phiLocation = _gl.GetUniformLocation(_program, "uPhi");
         _columnsLocation = _gl.GetUniformLocation(_program, "uColumns");
         _viewportLocation = _gl.GetUniformLocation(_program, "uViewport");
+        _solidLocation = _gl.GetUniformLocation(_program, "uSolid");
         _gl.UseProgram(_program);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uPalette"), 1);
@@ -299,16 +321,26 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         Height = Math.Max(1, frame.Height);
         _gl.BindVertexArray(_vao);
         _gl.UseProgram(_program);
+        EnsureScreen();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _screenFramebuffer);
         _gl.DepthMask(true);
-        _gl.ClearColor(frame.ClearColor.X, frame.ClearColor.Y, frame.ClearColor.Z, frame.ClearColor.W);
-        uint mask = (uint)ClearBufferMask.ColorBufferBit;
+        _gl.ColorMask(true, true, true, true);
+        if (frame.PaintColor)
+        {
+            PixelRect display = frame.Display.Width > 0 ? frame.Display : PixelRect.Full(Width, Height);
+            _gl.Enable(EnableCap.ScissorTest);
+            _gl.Scissor(display.X, Height - (display.Y + display.Height), (uint)display.Width, (uint)display.Height);
+            _gl.ClearColor(frame.ClearColor.X, frame.ClearColor.Y, frame.ClearColor.Z, frame.ClearColor.W);
+            _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
+            _gl.Disable(EnableCap.ScissorTest);
+        }
+
         if (frame.ClearDepth)
         {
             _gl.ClearDepth(1.0);
-            mask |= (uint)ClearBufferMask.DepthBufferBit;
+            _gl.Clear((uint)ClearBufferMask.DepthBufferBit);
         }
 
-        _gl.Clear(mask);
         foreach (DrawBatch batch in frame.Batches)
         {
             if (batch.Vertices.Length == 0)
@@ -318,6 +350,23 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
 
             int glY = Height - (batch.Viewport.Y + batch.Viewport.Height);
             _gl.Viewport(batch.Viewport.X, glY, (uint)batch.Viewport.Width, (uint)batch.Viewport.Height);
+            _gl.ColorMask(!batch.DepthOnly, !batch.DepthOnly, !batch.DepthOnly, !batch.DepthOnly);
+            if (batch.PullForward || batch.DepthOnly)
+            {
+                _gl.Enable(EnableCap.PolygonOffsetFill);
+                _gl.PolygonOffset(batch.DepthOnly ? 1f : -1f, batch.DepthOnly ? 4f : -4f);
+            }
+            else
+            {
+                _gl.Disable(EnableCap.PolygonOffsetFill);
+            }
+
+            _gl.Uniform4(
+                _solidLocation,
+                batch.Solid?.X ?? 0f,
+                batch.Solid?.Y ?? 0f,
+                batch.Solid?.Z ?? 0f,
+                batch.Solid.HasValue || batch.DepthOnly ? 1f : 0f);
             if (batch.DepthTest)
             {
                 _gl.Enable(EnableCap.DepthTest);
@@ -372,6 +421,56 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.BufferData(BufferTargetARB.ArrayBuffer, batch.Vertices.AsSpan(), BufferUsageARB.DynamicDraw);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, (uint)batch.Vertices.Length);
         }
+
+        _gl.ColorMask(true, true, true, true);
+        _gl.Disable(EnableCap.PolygonOffsetFill);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
+    /// <summary>
+    /// The screen is one picture that lasts from frame to frame (OV-20261106-screen-frame), so it
+    /// lives in its own framebuffer: a swap chain's back buffer keeps nothing dependable. A changed
+    /// window size starts a new, black one.
+    /// </summary>
+    private void EnsureScreen()
+    {
+        if (_screenFramebuffer != 0 && _screenWidth == Width && _screenHeight == Height)
+        {
+            return;
+        }
+
+        DeleteScreen();
+        _screenWidth = Width;
+        _screenHeight = Height;
+        _screenFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _screenFramebuffer);
+        _screenColor = _gl.GenTexture();
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, _screenColor);
+        _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8, (uint)Width, (uint)Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        _gl.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _screenColor, 0);
+        _screenDepth = _gl.GenRenderbuffer();
+        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _screenDepth);
+        _gl.RenderbufferStorage(RenderbufferTarget.Renderbuffer, InternalFormat.DepthComponent24, (uint)Width, (uint)Height);
+        _gl.FramebufferRenderbuffer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, RenderbufferTarget.Renderbuffer, _screenDepth);
+        _gl.ClearColor(0f, 0f, 0f, 1f);
+        _gl.ClearDepth(1.0);
+        _gl.Clear((uint)(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit));
+    }
+
+    private void DeleteScreen()
+    {
+        if (_screenFramebuffer == 0)
+        {
+            return;
+        }
+
+        _gl.DeleteFramebuffer(_screenFramebuffer);
+        _gl.DeleteTexture(_screenColor);
+        _gl.DeleteRenderbuffer(_screenDepth);
+        _screenFramebuffer = 0;
     }
 
     public RgbaImage ReadRgba()
@@ -379,8 +478,11 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         int width = Math.Max(1, Width);
         int height = Math.Max(1, Height);
         byte[] raw = new byte[width * height * 4];
+        EnsureScreen();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _screenFramebuffer);
         _gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
         _gl.ReadPixels(0, 0, (uint)width, (uint)height, PixelFormat.Rgba, PixelType.UnsignedByte, raw);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         byte[] flipped = new byte[raw.Length];
         int stride = width * 4;
         for (int y = 0; y < height; y++)
@@ -391,7 +493,15 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         return new RgbaImage(width, height, flipped);
     }
 
-    public void Present() => _present();
+    public void Present()
+    {
+        EnsureScreen();
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _screenFramebuffer);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, 0);
+        _gl.BlitFramebuffer(0, 0, Width, Height, 0, 0, Width, Height, ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _present();
+    }
 
     public void Dispose()
     {
@@ -401,6 +511,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         }
 
         _disposed = true;
+        DeleteScreen();
         DeleteAll(_world);
         DeleteAll(_worldIndices);
         if (_palette != 0)

@@ -13,8 +13,18 @@ public sealed class HostFrame
 
     public int Height { get; init; }
 
-    /// <summary>Clear color in 0..1 RGBA. Depth is cleared to the far plane when <see cref="ClearDepth"/> is set.</summary>
+    /// <summary>
+    /// The screen's colour in 0..1 RGBA, painted only when <see cref="PaintColor"/> is set: the
+    /// screen is one persistent picture (OV-20261106-screen-frame) and what no frame repaints stays.
+    /// Depth is cleared to the far plane when <see cref="ClearDepth"/> is set.
+    /// </summary>
     public Vector4 ClearColor { get; init; }
+
+    /// <summary>Paint <see cref="ClearColor"/> over the virtual screen before the batches.</summary>
+    public bool PaintColor { get; init; }
+
+    /// <summary>The virtual screen in framebuffer pixels, the rectangle a paint covers.</summary>
+    public PixelRect Display { get; init; }
 
     public bool ClearDepth { get; init; }
 
@@ -74,6 +84,18 @@ public sealed class DrawBatch
     /// steps them. The value itself means nothing.
     /// </summary>
     public int SpriteMarker { get; init; }
+
+    /// <summary>
+    /// When set, the batch draws this colour instead of any texture (a clip fill, the view's blank
+    /// first row).
+    /// </summary>
+    public Vector4? Solid { get; init; }
+
+    /// <summary>Writes depth only, pushed a hair away from the eye: the occluders of OV-20261106-clip-view.</summary>
+    public bool DepthOnly { get; init; }
+
+    /// <summary>Pulls the batch a hair toward the eye, so a clip fill wins over its own wall.</summary>
+    public bool PullForward { get; init; }
 
     /// <summary>Added to each vertex's ambient, then saturated. This is the D3D constant <c>TintAndLight.a</c>.</summary>
     public float Ambient { get; init; }

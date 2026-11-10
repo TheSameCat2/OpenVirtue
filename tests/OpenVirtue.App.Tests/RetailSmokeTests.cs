@@ -162,7 +162,20 @@ public sealed partial class RetailSmokeTests
                 _output.WriteLine($"{name}: {session.TimingSummary()}");
                 Assert.False(host.ExitRequested, $"{name} asked to exit: {host.StatusText}");
                 Assert.Contains("IF_START ran", host.StatusText, StringComparison.Ordinal);
-                session.Capture($"archive-{name.ToLowerInvariant()}");
+                // HEART, LEGALISM and NEWAGE hold RENDER_MODE 0 through their start-up, so this frame
+                // may be black, in the original as well.
+                session.Capture($"archive-{name.ToLowerInvariant()}", minimumColors: 1);
+
+                // Past the three-second start-up countdown, with the HUD and the intro text up,
+                // for comparing against the original's frames (OV-20261106-retail-levels). The
+                // text's own timeout is over only much later, so that frame is on request.
+                session.Run(360);
+                session.Capture($"archive-{name.ToLowerInvariant()}-hud");
+                if (Environment.GetEnvironmentVariable("OV_RETAIL_LONG") is not null)
+                {
+                    session.Run(1200);
+                    session.Capture($"archive-{name.ToLowerInvariant()}-clear");
+                }
             }
         }
     }
@@ -343,7 +356,7 @@ public sealed partial class RetailSmokeTests
             output.WriteLine($"[{Frames}] {what}");
         }
 
-        public void Capture(string name)
+        public void Capture(string name, int minimumColors = 16)
         {
             RgbaImage image = graphics.ReadRgba();
             string dir = Path.Combine(Path.GetTempPath(), "ov-retail-smoke");
@@ -353,7 +366,7 @@ public sealed partial class RetailSmokeTests
             int colors = DistinctColors(image);
             output.WriteLine($"[{Frames}] {name}: {colors} colours -> {path}");
             output.WriteLine($"    {host.StatusText}");
-            Assert.True(colors >= 16, $"{name} drew only {colors} colours: {host.StatusText}");
+            Assert.True(colors >= minimumColors, $"{name} drew only {colors} colours: {host.StatusText}");
         }
 
         private void Step()
@@ -389,7 +402,7 @@ public sealed partial class RetailSmokeTests
     }
 
     /// <summary>Keyboard edges fed one frame at a time; the pointer stays still.</summary>
-    private sealed class ScriptedInput : IInputSource
+    internal sealed class ScriptedInput : IInputSource
     {
         private readonly Queue<HostKey> _queued = new();
         private readonly List<HostKey> _pressed = [];

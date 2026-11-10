@@ -180,6 +180,14 @@ public sealed class Wall : AcknexObject
 
     protected override bool TrySetTyped(string name, double value)
     {
+        // A wall's INVISIBLE and TRANSPARENT decide whether its pieces are drawn and whether they hide
+        // what is behind them, so a script's change rebuilds the mesh; the value stays in the table.
+        if ((name.Equals("INVISIBLE", StringComparison.OrdinalIgnoreCase) || name.Equals("TRANSPARENT", StringComparison.OrdinalIgnoreCase)) &&
+            this[name] != value)
+        {
+            GeometryInvalidated?.Invoke(this);
+        }
+
         switch (LowerInvariant(name, stackalloc char[8]))
         {
             case "offsx": OffsetX = value; return true;

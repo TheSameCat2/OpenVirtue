@@ -889,7 +889,7 @@ public class LevelLoaderTests
     }
 
     [Fact]
-    public void LoadCore_TopLevelClipDistance_DefaultsRegionsUnlessOverridden()
+    public void LoadCore_TopLevelClipDistance_DoesNotReachTheRegions()
     {
         var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -899,7 +899,9 @@ public class LevelLoaderTests
 
         Level level = LevelLoader.LoadCore("x", main, n => resources.GetValueOrDefault(Path.GetFileName(n)));
 
-        Assert.Equal(777, level.Regions[0]["clip_dist"]);
+        // OV-20261106-clip-view: V3.963 draws by the region's own value and the default, whatever a
+        // top-level CLIP_DIST or a skill of that name says.
+        Assert.Equal(1000, level.Regions[0]["clip_dist"]);
         Assert.Equal(256, level.Regions[1]["clip_dist"]);
     }
 

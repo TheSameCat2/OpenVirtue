@@ -22,6 +22,33 @@ public readonly record struct TextureImage(int Width, int Height, byte[] Rgba, b
 /// </summary>
 public static class TextureLoader
 {
+    /// <summary>
+    /// OV-20261104-texmap round 2: a floor or ceiling shows a bitmap of exactly 64×64, 128×128 or
+    /// 256×256 and draws palette entry 0 for any other size (16, 32, 63, 65, 100, 129, 257, 512 were
+    /// read). Retail has 65×65 and 129×129 surfaces, black in the original too. A sky is a panorama
+    /// and no surface.
+    /// </summary>
+    public static IReadOnlySet<string> BlankSurfaceTextures(Level level, IReadOnlyDictionary<string, TextureImage> images)
+    {
+        ArgumentNullException.ThrowIfNull(level);
+        ArgumentNullException.ThrowIfNull(images);
+        var blank = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, LevelTexture texture) in level.Textures)
+        {
+            if (!texture.IsSky &&
+                images.TryGetValue(name, out TextureImage image) &&
+                !(image.Width == image.Height && image.Width is 64 or 128 or 256))
+            {
+                blank.Add(name);
+            }
+        }
+
+        return blank;
+    }
+
+    /// <summary>A texel of palette entry 0, what <see cref="BlankSurfaceTextures"/>' surfaces draw.</summary>
+    public static TextureImage BlankSurfaceImage { get; } = new(1, 1, [0, 0, 0, 255], [0]);
+
     /// <summary>Loads every resolvable texture in the level into a name → image map.</summary>
     public static IReadOnlyDictionary<string, TextureImage> Load(WrsArchive archive, Level level)
     {

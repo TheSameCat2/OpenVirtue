@@ -88,6 +88,41 @@ internal static class Cli
         }
     }
 
+    /// <summary>The walls out of <c>CLIP_DIST</c> reach from the start, the view's arc first (OV-20261106-clip-view).</summary>
+    private static void PrintClippedWalls(OpenVirtue.Engine.Level level, OpenVirtue.Engine.Map.PlayerStart start)
+    {
+        var clip = new OpenVirtue.Engine.Rendering.ViewClip(level);
+        Console.WriteLine($"  start ({start.X}, {start.Y}) angle {start.Angle} region {start.Region}");
+        int count = 0;
+        foreach (OpenVirtue.Engine.Map.Wall wall in level.Walls)
+        {
+            if (!clip.IsWallOutOfReach(wall, (float)start.X, (float)start.Y))
+            {
+                continue;
+            }
+
+            count++;
+            OpenVirtue.Engine.Map.Vertex a = level.Vertices[wall.Vertex1];
+            OpenVirtue.Engine.Map.Vertex b = level.Vertices[wall.Vertex2];
+            double mid = Math.Atan2(((a.Y + b.Y) / 2) - start.Y, ((a.X + b.X) / 2) - start.X) - start.Angle;
+            mid = Math.Atan2(Math.Sin(mid), Math.Cos(mid));
+            if (Math.Abs(mid) < 0.6)
+            {
+                double near = Math.Min(Math.Abs(a.X - start.X) + Math.Abs(a.Y - start.Y), Math.Abs(b.X - start.X) + Math.Abs(b.Y - start.Y));
+                string Name(int i) => (uint)i < (uint)level.Regions.Count ? $"{i} {level.Regions[i].Name} clip {level.Regions[i]["CLIP_DIST"]}" : i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                double dx = b.X - a.X;
+                double dy = b.Y - a.Y;
+                double length = Math.Sqrt((dx * dx) + (dy * dy));
+                double hx = ((a.X + b.X) / 2) - (dy / length * 0.01);
+                double hy = ((a.Y + b.Y) / 2) + (dx / length * 0.01);
+                double cross = (dx * (start.Y - a.Y)) - (dy * (start.X - a.X));
+                Console.WriteLine($"    {wall.Texture}: ({a.X:F0},{a.Y:F0})-({b.X:F0},{b.Y:F0}) near {near:F0} bearing {mid:F2} L[{Name(wall.LeftRegion)}] R[{Name(wall.RightRegion)}] leftside: inL {OpenVirtue.Engine.LevelTopology.RegionContains(level, wall.LeftRegion, hx, hy)} inR {OpenVirtue.Engine.LevelTopology.RegionContains(level, wall.RightRegion, hx, hy)} eye on {(cross >= 0 ? "left" : "right")}");
+            }
+        }
+
+        Console.WriteLine($"  {count} of {level.Walls.Count} walls out of reach");
+    }
+
     private static int Pcx(string[] args)
     {
         if (args.Length < 2)
@@ -441,6 +476,11 @@ internal static class Cli
                     $"  {level.Vertices.Count} vertices, {level.Regions.Count} regions, {level.Walls.Count} walls, " +
                     $"{level.Things.Count} things, {level.Actors.Count} actors");
                 Console.WriteLine($"  {level.Skills.Count} global skills, {level.Textures.Count} textures");
+                if (Environment.GetCommandLineArgs().Contains("--clip", StringComparer.Ordinal) && level.PlayerStart is { } clipStart)
+                {
+                    PrintClippedWalls(level, clipStart);
+                }
+
                 int soundTextures = level.Textures.Values.Count(static texture => texture.SoundName is not null);
                 int loopingSoundTextures = level.Textures.Values.Count(
                     static texture => texture.SoundName is not null && texture.IsSoundLoop);
@@ -769,7 +809,7 @@ internal static class Cli
               ovtool oracle prepare scheduler-if-start-cycle [output-dir] [--runtime-dir <dir>] [--carrier-dir <dir>] [--dosbox-x <exe>]
               ovtool oracle prepare projection-fov|pixel-aspect|tilt-model [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--arcs|--aspects|--tilts a,b,c] [--videos m1,m2]
               ovtool oracle prepare shoot-mapping [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>] [--shoot-x a,b] [--shoot-y a,b] [--tilts a,b] [--videos m1,m2]
-              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope|audio|autorange|save-body|below-view|wall-sides|below-beam|actor-step|inkey|ui-layout|ui-widgets|ui-text|overlap|startup|contact-clock|careful-stop|instructions|move-mode|strings|level|fade-pal|attach|texmap|blend|genius|sprite-shade|wall-pieces|wall-light|shade-global [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
+              ovtool oracle prepare branch-semantics|each-sec-cadence|flic-play|flic-detail|proximity-events|wall-distance|wall-pass-clip|clip-contact|border-climb|eye-clamp|actor-contact|border-kinds|clip-detail|view-activity|distance-refresh|scheduler-order|actor-events|numeric-edge|motion-timing|save-format|sky|shading|slope|audio|autorange|save-body|below-view|wall-sides|below-beam|actor-step|inkey|ui-layout|ui-widgets|ui-text|overlap|startup|contact-clock|careful-stop|instructions|move-mode|strings|level|fade-pal|attach|texmap|blend|genius|sprite-shade|wall-pieces|wall-light|shade-global|screen-frame|clip-view [output-dir] [--runtime <VRUN-patched.EXE>] [--dosbox-x <exe>]
               ovtool oracle replay <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--extra-ticks n] [--max-ticks n]
               ovtool oracle diff   <carrier-or-probe-dir> [--timing TOKEN:COL | --time-corr x] [--tolerance x] [--context n] [--dump-clock]
               ovtool oracle run    <carrier-or-probe-dir> [--rerun] [--visible] [--timeout s]
