@@ -920,7 +920,7 @@ public class WdlRuntimeTests
     [Fact]
     public void Runtime_Walk_FollowsTheStepsThroughEachWalkPeriod()
     {
-        // OV-20261110-retail-play round 4: WALK = 1 − 2·sin(trunc(a·3216/period)/1024), the sine cut
+        // OV-20261110-retail-play round 4: WALK = 1 − 2·sin(trunc(a·3216/period + 1/16)/1024), the sine cut
         // to 1/1024, a the distance since the last whole period; the cycle reaching the period and the
         // next keep WALK.
         var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>; SKILL WALK_PERIOD { VAL 8; }"));
@@ -943,7 +943,7 @@ public class WdlRuntimeTests
 
         static double Expected(long a)
         {
-            long angle = a * 3216 / 8192;
+            long angle = ((a * 3216) + 512) / 8192;
             return (1024 - (2 * (long)Math.Floor(1024 * Math.Abs(Math.Sin(angle / 1024.0))))) / 1024.0;
         }
 
