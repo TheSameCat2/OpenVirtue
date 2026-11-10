@@ -111,5 +111,6 @@ public static class WdlFixed
             : unchecked((int)(long)Math.IEEERemainder(raw, 4294967296.0));
     }
 
-    private static double FromRaw(long raw) => unchecked((int)raw) / Scale;
+    /// <summary>A raw 22.10 value, wrapped to 32 bits, as a number.</summary>
+    public static double FromRaw(long raw) => unchecked((int)raw) / Scale;
 }

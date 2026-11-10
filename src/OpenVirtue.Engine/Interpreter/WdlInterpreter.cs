@@ -984,13 +984,25 @@ public sealed class WdlInterpreter(IWdlContext context)
             inertia = 1;
         }
 
-        double value = WdlFixed.Quantize(velocity);
-        for (double left = timeCorrection; left > 0; left -= 1)
+        // OV-20261110-retail-play apathy-walk: in the engine's 22.10 numbers, every product cut toward
+        // zero: v' = trunc(v·(1 − trunc(t·FRICTION / INERTIA))) + trunc(t·a / INERTIA) for each tick t of
+        // the cycle. Apathy's walk, its force −63/1024, fits 59 cycles exactly this way (0 → −15 → −31
+        // → −44 …); the same in doubles stepped −16, −32, −48.
+        long raw = WdlFixed.ToRaw(velocity);
+        long accelerationRaw = WdlFixed.ToRaw(acceleration);
+        long frictionRaw = WdlFixed.ToRaw(friction);
+        long inertiaRaw = Math.Max(1, WdlFixed.ToRaw(inertia));
+        long left = WdlFixed.ToRaw(timeCorrection);
+        while (left > 0)
         {
-            value += Math.Min(1, left) * (acceleration - (friction * value)) / inertia;
+            long tick = Math.Min(1024, left);
+            left -= tick;
+            long damping = tick * frictionRaw / 1024 * 1024 / inertiaRaw;
+            long gain = tick * accelerationRaw / 1024 * 1024 / inertiaRaw;
+            raw = (raw * (1024 - damping) / 1024) + gain;
         }
 
-        Assign(item.Header, 0, comma, "=", WdlFixed.Result(value));
+        Assign(item.Header, 0, comma, "=", WdlFixed.FromRaw(raw));
     }
 
     private void ExecuteAdd(WdlItem item, bool timeCorrected)

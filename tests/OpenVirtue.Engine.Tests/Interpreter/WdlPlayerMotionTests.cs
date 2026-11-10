@@ -108,7 +108,7 @@ public sealed class WdlPlayerMotionTests
     [InlineData(0.2, 0.25, 51)]
     [InlineData(0.05, 0.25, 13)] // 51 x 256/1024 = 12.75
     [InlineData(0.05, 0.28125, 14)]
-    [InlineData(-0.1, 0.25, -26)] // -25.5, away from zero
+    [InlineData(-0.1, 0.25, -25)] // -25.5, half up (OV-20261110-retail-play apathy-walk: -46.5 stepped -46)
     public void Apply_HorizontalStep_IsTheProductOfVelocityAndTimeCorrectionRoundedTo1024ths(
         double velocity, double timeCorrection, int expectedRaw)
     {
@@ -142,8 +142,8 @@ public sealed class WdlPlayerMotionTests
     }
 
     [Theory]
-    [InlineData(1290, 1264, false)] // ends 1264 from the wall: inside the 1279 hold, not stopped
-    [InlineData(1254, 1279, true)] // ends exactly PLAYER_WIDTH (1228) from it: stopped
+    [InlineData(1290, 1265, false)] // a step of −25 (−25.5 half up) ends 1265 from the wall: inside the 1279 hold, not stopped
+    [InlineData(1253, 1279, true)] // ends exactly PLAYER_WIDTH (1228) from it: stopped
     public void Apply_StepTowardASolidWall_IsStoppedOnlyWithinPlayerWidth(int startRaw, int expectedRaw, bool stopped)
     {
         // OV-20261019-eye-clamp stop-border: the 0.05 walk came on to 11049 (1239 from the wall) before
