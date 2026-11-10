@@ -323,10 +323,22 @@ public sealed class Player : AcknexObject
         long py = (long)Math.Round(start.Y * 1024.0);
         long qx = px + (long)Math.Round(dx * 1024.0);
         long qy = py + (long)Math.Round(dz * 1024.0);
+
+        // The wall's ends first, each like a thing of no width; then the line (w45-s02 cycle 187: an end
+        // 1185 from the step's end pushed it to (19369, 8803), and the line to (19325, 8846)).
+        foreach ((long ex, long ey) in new[] { (ax, ay), (bx, by) })
+        {
+            if (LevelCollisionWorld.StepOffPoint(start, new Vector2(qx / 1024f, qy / 1024f), new Vector2(ex / 1024f, ey / 1024f), Width) is { } off)
+            {
+                qx = (long)Math.Round(off.X * 1024.0);
+                qy = (long)Math.Round(off.Y * 1024.0);
+            }
+        }
+
         double along = (((qx - ax) * (double)(bx - ax)) + ((qy - ay) * (double)(by - ay))) / (length * length);
         if (along <= 0 || along >= 1)
         {
-            return null;
+            return new Vector2(qx / 1024f, qy / 1024f);
         }
 
         long nx = (long)Math.Round(-(by - ay) * 1024 / length);
@@ -337,11 +349,13 @@ public sealed class Player : AcknexObject
             ny = -ny;
         }
 
+        // As along an axis, the line stops only an end within PLAYER_WIDTH of it (w45-s02 cycle 189: the
+        // end's push left the step 1248 from the line, and the line let it be).
         long distance = FloorDiv(((qx - ax) * nx) + ((qy - ay) * ny), 1024);
         long hold = (long)Math.Round((Width + WallClearance) * 1024.0);
-        if (distance >= hold)
+        if (distance > Math.Round(Width * 1024.0))
         {
-            return null;
+            return new Vector2(qx / 1024f, qy / 1024f);
         }
 
         long push = hold - distance;

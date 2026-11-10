@@ -383,6 +383,7 @@ public class PlayerTests
     [InlineData(4, -8, 20, 8, 10854, 376, 10958, 479)] // wall-slide w45-s02: y = x − 12, steps (204, 4)
     [InlineData(4, -8, 20, 8, 10958, 479, 11061, 583)]
     [InlineData(-4, -12, 28, 4, 18520, 450, 18684, 532)] // w27-s02: y = x/2 − 10
+    [InlineData(4, -8, 20, 8, 19238, 8759, 19325, 8846)] // w45-s02 cycle 188: the wall's end, then the line
     public void MoveHorizontal_AlongDiagonalWall_SlidesAsTheOriginalIn1024ths(
         int x1, int y1, int x2, int y2, int fromX, int fromY, int toX, int toY)
     {
