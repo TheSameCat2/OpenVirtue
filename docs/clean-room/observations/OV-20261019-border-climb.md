@@ -217,3 +217,16 @@ and `climb-1`, `climb-2` and `climb-4` differ by it before their first stop. bor
 `actor-climb-2`, `actor-climb-2d` and `imp-border` gain 27, 27 and 18 lines and now differ first at
 the actor's position. wall-pass-clip `solid-dist0` (`68337dd4`)
 now alternates 22.751 and 22.755 as the original, after a start-up that still differs.
+
+## Addendum: a step just under the climb, standing still (2026-11-10)
+Runtime: SaintsX-patched V3.963 under DOSBox-X, the carrier `edge-2` (`_research/oracle-runs/OV-20261110-climb-edge`,
+`OVBCX0.TXT`). Pad floor 2, `PLAYER_CLIMB` 2.5, `PLAYER_SIZE` 8, the eye held at 7.501, 7.502, 7.504, 7.508,
+7.512, 7.516 and 7.523, so the step from the feet is 1 to 24 1024ths under the climb. The question came from
+Apathy's walk (OV-20261110-retail-play round 4): it was held at one border and climbed others, all with
+steps within 0.03 of 2.5, which a small margin under the climb could also have explained.
+
+- All seven walks enter the pad (`AW` reads region 2 at y 15.74–15.79) and walk back out. A step 1/1024 under
+  `PLAYER_CLIMB` is climbed: the strict `<` holds with no margin, and the eye stays where the script set it.
+- So the walk's hold came from where the eye is measured, not from the limit: the test takes the eye
+  after the frame's `PLAYER_VZ` has moved it (OV-20261110-retail-play round 4).
+

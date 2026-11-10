@@ -57,6 +57,13 @@ public static class WdlPlayerMotion
         // An actor that stepped into the player this cycle holds a step toward it, and otherwise
         // pushes the player out from where its step ends (WdlRuntime.ResolveActorPushes).
         bool held = timeCorrection > 0 && runtime.IsHeldByActorPush(player, new Vector2((float)stepX, (float)stepY));
+        // OV-20261110-retail-play round 4: the climb test sees the eye this frame's PLAYER_VZ moves it
+        // to. Apathy's walk, its eye rising 0.031 a frame, climbed a 2-step border with the feet 2.497
+        // below it after that move (2.521 before it) and was held at 2.502; standing still, a step
+        // 1/1024 under PLAYER_CLIMB enters (border-climb edge-2).
+        player.ClimbEyeRise = player.FeetPlaced && timeCorrection > 0
+            ? (float)(runtime.GetSkill("PLAYER_VZ") * VerticalScale(timeCorrection))
+            : 0;
         bool wallStopped = false;
         Vector2 displacement = timeCorrection > 0 && !held
             ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
@@ -76,6 +83,7 @@ public static class WdlPlayerMotion
             }
         }
 
+        player.ClimbEyeRise = 0;
         bool pushed = runtime.ResolveActorPushes(player, held, start);
 
         // Neither the minimum's addition nor an object's push-back counts toward the speed the player moved.
@@ -83,7 +91,11 @@ public static class WdlPlayerMotion
         // A step taken whole keeps the script's velocity to the last 1/1024: Apathy's walk set −15/1024
         // and read it back, where dividing the step by TIME_CORR again gave −16 (OV-20261110-retail-play
         // apathy-walk). Only a step a wall or an object cut changes it.
-        bool whole = Math.Abs(displacement.X - nudgeX - stepX) < 1e-6 && Math.Abs(displacement.Y - nudgeY - stepY) < 1e-6;
+        // A region border the player could not climb holds the step back and keeps the velocity too:
+        // Apathy's walk, held at a 2-step border, read PLAYER_VY 0.902 on and walked up to it again
+        // (OV-20261110-retail-play round 4). A solid wall writes the cut step back.
+        bool whole = (wallStopped && player.StoppedAtBorderOnly && !pushed) ||
+            (Math.Abs(displacement.X - nudgeX - stepX) < 1e-6 && Math.Abs(displacement.Y - nudgeY - stepY) < 1e-6);
         double actualVelocityX = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
         double actualVelocityY = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
@@ -107,6 +119,7 @@ public static class WdlPlayerMotion
             }
         }
 
+        runtime.PlayerPlaced = true;
         player.MoveVertical(timeCorrection > 0 ? (float)(runtime.GetSkill("PLAYER_VZ") * VerticalScale(timeCorrection)) : 0);
 
         runtime.SetSkill("IMPACT_VZ", runtime.GetSkill("IMPACT_VZ") + player.ClampEye());

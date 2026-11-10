@@ -237,6 +237,18 @@ internal static class BorderClimbProbeCases
                 ("the step (strict)", "A, B, C enter"),
                 ("PLAYER_SIZE against the headroom", "A, B blocked; C enters")),
             Map: Map(0, ceiling: 4)),
+        new TraceProbeCase(
+            "edge-2",
+            "Round 4. Apathy's walk was blocked by a 2-step border with its feet 2.498 below it (PLAYER_CLIMB 2.5) and climbed one at 2.479. Standing still, pad floor 2, climb 2.5, PLAYER_SIZE 8: is a step 1, 2, 4, 8, 12, 16 or 24 1024ths short of the climb enough?",
+            Declarations(""),
+            Run(
+                Probe("A", 2.5, z: 7.501), Probe("B", 2.5, z: 7.502), Probe("C", 2.5, z: 7.504),
+                Probe("D", 2.5, z: 7.508), Probe("E", 2.5, z: 7.512), Probe("F", 2.5, z: 7.516),
+                Probe("G", 2.5, z: 7.524)),
+            Predict(
+                ("step < PLAYER_CLIMB", "all enter"),
+                ("step < PLAYER_CLIMB less a margin of 0.002 to 0.021", "A blocked, G enters, the margin between")),
+            Map: Map(2)),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

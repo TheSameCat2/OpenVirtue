@@ -98,6 +98,12 @@ public sealed class Player : AcknexObject
     /// </summary>
     public float StepUp { get; set; } = 1.5f;
 
+    /// <summary>
+    /// How far this frame's vertical move will raise the eye; the climb test of the horizontal move
+    /// that comes first measures the feet from the raised eye.
+    /// </summary>
+    public float ClimbEyeRise { get; set; }
+
     /// <summary>Downward acceleration applied per tick.</summary>
     public float Gravity { get; set; } = 2f;
 
@@ -270,6 +276,7 @@ public sealed class Player : AcknexObject
         LastObjectPush = result.ObjectPush;
         Vector2 end = result.Position;
         wallStopped = blocking.Count > 0;
+        StoppedAtBorderOnly = wallStopped && blocking.TrueForAll(IsClimbBorder);
         if (wallStopped)
         {
             end = new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
@@ -284,6 +291,43 @@ public sealed class Player : AcknexObject
 
         _position = new Vector3(end.X, _position.Y, end.Y);
         return end - start;
+    }
+
+    /// <summary>
+    /// Whether the last horizontal move was stopped only by region borders the player could not climb:
+    /// walls between two regions, not <c>IMPASSABLE</c>, whose other region has the eye between its
+    /// floor and ceiling but its floor <see cref="StepUp"/> or more above the feet. Such a stop keeps
+    /// the script's velocity (OV-20261110-retail-play round 4); a solid wall, or a border to a region
+    /// the eye does not fit, writes the cut step back (OV-20261103-contact-clock).
+    /// </summary>
+    public bool StoppedAtBorderOnly { get; private set; }
+
+    private bool IsClimbBorder(AcknexObject blocker)
+    {
+        if (blocker is not Wall wall || wall["IMPASSABLE"] > 0 ||
+            (uint)wall.LeftRegion >= (uint)_level.Regions.Count ||
+            (uint)wall.RightRegion >= (uint)_level.Regions.Count)
+        {
+            return false;
+        }
+
+        int footprint = LevelTopology.Footprint(_level, _region);
+        int left = LevelTopology.Footprint(_level, wall.LeftRegion);
+        int right = LevelTopology.Footprint(_level, wall.RightRegion);
+        if (left == right)
+        {
+            return false;
+        }
+
+        int other = StoreyFor(left == footprint ? wall.RightRegion : wall.LeftRegion);
+        if ((uint)other >= (uint)_level.Regions.Count)
+        {
+            return false;
+        }
+
+        float eye = _position.Y;
+        float floor = FloorOf(other);
+        return eye > floor && eye < CeilingOf(other) && floor - (eye + ClimbEyeRise - EyeHeight) >= StepUp;
     }
 
     /// <summary>
@@ -736,7 +780,8 @@ public sealed class Player : AcknexObject
     /// and the eye must lie above its floor and below its ceiling. The step is taken from the feet,
     /// not from the current floor, so a raised eye climbs higher and a stepping-down player who has
     /// not sunk walks back up. Neither <c>PLAYER_SIZE</c> nor the region's headroom count otherwise:
-    /// a player taller than the headroom enters as long as the eye fits.
+    /// a player taller than the headroom enters as long as the eye fits. The feet are measured from the
+    /// eye this frame's vertical move gives (<see cref="ClimbEyeRise"/>, OV-20261110-retail-play round 4).
     /// </summary>
     private bool Enterable(int region)
     {
@@ -746,7 +791,7 @@ public sealed class Player : AcknexObject
         }
 
         float eye = _position.Y;
-        float feet = eye - EyeHeight;
+        float feet = eye + ClimbEyeRise - EyeHeight;
         float floor = FloorOf(region);
         return floor - feet < StepUp && eye > floor && eye < CeilingOf(region);
     }

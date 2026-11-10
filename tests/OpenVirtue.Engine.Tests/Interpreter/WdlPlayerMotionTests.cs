@@ -103,6 +103,28 @@ public sealed class WdlPlayerMotionTests
         Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2);
     }
 
+    [Fact]
+    public void Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity()
+    {
+        // OV-20261110-retail-play round 4: Apathy's walk, held at a 2-step border, read PLAYER_VY 0.902 on.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 10 0 0;#1\nVERTEX 0 -20 0;#2\n" +
+            "REGION a 0 20;#0\nREGION b 4 20;#1\nREGION solid 0 0;#2\n" +
+            "WALL portal 1 0 0 1 0 0;#0\nWALL solidw 0 2 0 2 0 0;#1\n" +
+            "PLAYER_START 5 -5 0 0;#3";
+        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>;");
+        runtime.SetSkill("PLAYER_SIZE", 5);
+        player.Position = new System.Numerics.Vector3(5, 5, -5); // the feet on the floor, the eye above b's
+        runtime.SetSkill("PLAYER_VY", 10);
+
+        WdlPlayerMotion.Apply(runtime, player, 1);
+
+        Assert.Equal(0, player.Region);
+        Assert.Equal(-(player.Width + Player.WallClearance), player.Position.Z, 3);
+        Assert.Equal(10, runtime.GetSkill("PLAYER_VY"));
+        Assert.Equal(0, runtime.GetSkill("IMPACT_VY"));
+    }
+
     [Theory]
     [InlineData(0.2, 0.28125, 57)] // 204 raw x 288/1024 = 57.375
     [InlineData(0.2, 0.25, 51)]

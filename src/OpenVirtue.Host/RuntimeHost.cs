@@ -109,7 +109,7 @@ public sealed partial class RuntimeHost : IDisposable
     private int _textureSoundRegion = -1;
     private int _ceilingSoundChannel = -1;
     private Vector2 _lastTextureSoundPosition;
-    private double _walkSoundDistance;
+    private long _lastWalkPeriods;
     private long _lastWaveSoundCycle;
     private Vector2 _pendingMickey;
     private Vector2 _frameMickey;
@@ -490,7 +490,7 @@ public sealed partial class RuntimeHost : IDisposable
         StopActiveSounds();
         _textureSoundRegion = -1;
         _ceilingSoundChannel = -1;
-        _walkSoundDistance = 0;
+        _lastWalkPeriods = 0;
         _lastWaveSoundCycle = 0;
         _spatialLoopSounds.Clear();
         _batches.Clear();
