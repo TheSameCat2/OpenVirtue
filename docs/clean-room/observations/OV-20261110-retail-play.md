@@ -83,25 +83,48 @@ cycles, `FORCE_ROT` 0.5 for 60, then both for 200, and prints the velocities and
 After these the walk's x, y and velocities match the original through line 238 (y) and 317 (x), and
 `PLAYER_VROT` on all 600 lines.
 
+## Round 4: STEPS, WALK and the climb in the walk
+Read from the same `apathy-walk` trace (`STEPS` raw, `WALK`, `PLAYER_Z`, the floor) and the `border-climb`
+probe's new `edge-2` case (OV-20261019-border-climb, 2026-11-10 addendum). Apathy's `move.wdl` sets
+`WALK_PERIOD` 8, `WALK_TIME` 6 and `PLAYER_SIZE = my_size + 0.3·WALK` (capped at `my_size` 5).
+
+- **`STEPS` adds each move a cycle late, in 22.10: each component's square cut to 1/1024, their sum, the
+  square root cut to 1/1024.** A move of (−11, 35)/1024 adds 32 (0 + 1 → √1·32), (−16, 51) adds 45 (0 + 2 →
+  trunc(32·√2)), (−5, 15) and (−8, 24) add 0 (both squares under 1/1024), each in the cycle after the
+  move. A player who creeps less than 32/1024 a component counts nothing. The save-format beam (5, 3) still
+  gives trunc(1024·√34). All 239 lines before the step border match.
+- **`WALK` is 1 − 2·|sin|, not a cosine**: with `a` the distance `STEPS` added since the last whole
+  `WALK_PERIOD`, the angle is trunc(a·3216/period) in 1/1024 radians (π cut to 3216/1024) and `WALK` is
+  (1024 − 2·trunc(1024·sin))/1024: 1 at a period's start, −1 at its middle, a sharp top and a round bottom.
+  The cycle in which `a` reaches the period keeps `WALK`, the next keeps it too and drops its distance, and
+  `a` starts again from 0 (the three equal values at each top, 0.852, 0.938, 0.906, 0.906 …). A cycle that
+  adds nothing keeps `WALK` (−0.078 for 25 cycles while the player turned in place). `WALK` reads 0 until
+  the cycle after the one that first sees the player standing on its floor, then 1. The rule gives 590 of 600
+  lines to the printed digit; the ten others are 2/1024 off, one angle step on a rounding edge.
+  `WALK_TIME` played no part in this walk.
+- **The climb test measures the feet from the eye this frame's `PLAYER_VZ` moves it to.** OpenVirtue moved the
+  player across first and then the eye. With the eye rising 0.02 to 0.03 a frame, Apathy climbed from floor
+  −6 to −4 with the feet 2.478, 2.479 and 2.484 below the new floor after the rise, and from −4 toward −2
+  2.497. It was held at 2.502. Measured before the rise those were 2.509 to 2.527, which a strict
+  `PLAYER_CLIMB` 2.5 would have blocked. Standing still, `edge-2` enters a step 1/1024 under the climb.
+- **A region border held only by the climb keeps the script's velocity**: held 0.826 back at the −2 border,
+  the player read `PLAYER_VY` 0.902 on, walked up to it again and climbed it 9 cycles later, its eye
+  higher. OpenVirtue wrote the cut step back, −3.3, and the player bounced. A border to a region the eye does
+  not fit (the trace room's outer walls) and a solid wall still write it back: keeping it there loses four
+  `contact-clock` carriers.
+
+After round 4 `apathy-walk`'s y matches to line 312, its velocities to 308 and `STEPS` to 330.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).
 
 ## Open Questions
 - `PLAYER_Z` drifts up to 0.02 from the fifth frame on.
-- `STEPS`, which drives the walking bob through `WALK`: the original's counts nothing in a walk's first three
-  cycles and then about 0.003 to 0.013 less than the distance moved each cycle, a cycle late; OpenVirtue
-  counts the distance in the cycle it is moved. No simple rule fitted, and the eye's bob drifts from it.
-- apathy-walk from line 241: the player walks up to a 2-step border (floor −4 to −2) with `PLAYER_CLIMB` 2.5.
-  The original takes the step to 0.861 from it and pushes the player back to `PLAYER_WIDTH` + 0.049 the next
-  cycle, keeping `PLAYER_VY`; OpenVirtue refuses the step itself and writes the velocity back, so the player
-  bounces. The climb test compares the floor with the feet, `PLAYER_Z − PLAYER_SIZE`, and Apathy sets
-  `PLAYER_SIZE` to its size plus 0.3·`WALK`, so the bob decides a step this close to the limit: `STEPS` (and
-  so `WALK`) is the cause to settle first. Keeping the velocity on every wall stop loses four contact-clock
-  carriers, so the original does write it back after a solid wall.
-- `STEPS` raw, from the walk's start: the original adds 0, 0, 0, then 32, 45, 45, 71, 71, 78, 101, 96, 106
-  while the player moves 15.8, 25.3, 36.7, 53.5, 57.6, 76.5, 76.5, 85.1, 105, 101.8, 108.2, 130 (all 1/1024);
-  neither the distance, the speed nor either times `TIME_CORR`, a cycle or two late, fits the pairs.
+- apathy-walk from line 309: while the player turns in place without `FORCE_AHEAD`, `PLAYER_VX` and
+  `PLAYER_VY` come out 1/1024 nearer zero than the original's (−12 against −13, 60 against 61): an `ACCEL`
+  rounding at small speeds.
+- The ten `WALK` values 2/1024 off: one angle step, from where the product a·3216/period is cut.
 - `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
   took, and a long first step changes where an actor walks.
 - actor-width, settled for the first move: **on its first move since it was placed, an actor standing in its
@@ -116,4 +139,12 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 `WdlRuntime.MoveActorTowardTarget` holds a careful actor off the walls of its recorded region;
 `WdlRuntime.ArrivesAtBorders`; `Player.FeetPlaced`, set false by `RuntimeHost` for a loaded level and
 used by `WdlPlayerMotion.Apply` and `Synchronize`; the host's pose snapshot keeps the published
-`PLAYER_Z`; `WdlInterpreter.ExecuteAccel` and `WdlRuntime.EngineProduct` for round 3; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`.
+`PLAYER_Z`; `WdlInterpreter.ExecuteAccel` and `WdlRuntime.EngineProduct` for round 3;
+`WdlRuntime.CountPlayerSteps`, `WdlRuntime.AdvanceWalk` (with `PlayerPlaced` and `WalkPeriods`, which
+`RuntimeHost` plays the floor's footstep from), `Player.ClimbEyeRise` and `Player.StoppedAtBorderOnly`,
+both set and read by `WdlPlayerMotion.Apply`, for round 4; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`;
+`WdlRuntimeTests.Runtime_Steps_SquaresEachComponentIn1024thsAndCountsTheMoveACycleLate`,
+`WdlRuntimeTests.Runtime_Walk_FollowsTheStepsThroughEachWalkPeriod`,
+`PlayerTests.MoveHorizontal_IntoRegionBorder_MeasuresTheFeetFromTheEyeThisFrameRisesTo`,
+`PlayerTests.MoveHorizontal_StoppedAtRegionBorder_ReportsWhetherOnlyTheClimbHeldIt` and
+`WdlPlayerMotionTests.Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity`.

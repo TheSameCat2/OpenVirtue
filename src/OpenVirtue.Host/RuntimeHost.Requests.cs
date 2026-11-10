@@ -316,7 +316,7 @@ public sealed partial class RuntimeHost
             _textureSoundRegion = _player.Region;
             _ceilingSoundChannel = -1;
             _lastTextureSoundPosition = position;
-            _walkSoundDistance = 0;
+            _lastWalkPeriods = _runtime.WalkPeriods;
             _lastWaveSoundCycle = WaveSoundCycle();
             StartCeilingTextureSound(region);
         }
@@ -325,20 +325,20 @@ public sealed partial class RuntimeHost
         UpdateSpatialTextureSounds();
         float moved = Vector2.Distance(position, _lastTextureSoundPosition);
         _lastTextureSoundPosition = position;
-        // WAVE follows the runtime's wave phase (WdlRuntime.AdvanceWave). A player who has not walked
-        // reads WALK 1 in every save the original made (OV-20261029-save-body round 20).
+        // WALK, and the footstep each whole WALK_PERIOD, come from the runtime's step count
+        // (WdlRuntime.AdvanceWalk, OV-20261110-retail-play round 4). WAVE follows the runtime's wave
+        // phase (WdlRuntime.AdvanceWave).
+        long walkPeriods = _runtime.WalkPeriods;
+        bool footstep = walkPeriods != _lastWalkPeriods;
+        _lastWalkPeriods = walkPeriods;
         if (!_player.Grounded || moved <= 0.0001f ||
             !TryTexture(region.FloorTexture, out LevelTexture floorTexture) ||
             string.IsNullOrWhiteSpace(floorTexture.SoundName))
         {
-            _runtime.SetSkill("WALK", 1);
             _lastWaveSoundCycle = WaveSoundCycle();
             return;
         }
 
-        _walkSoundDistance += moved;
-        double walkPeriod = Math.Max(0.001, _runtime.GetSkill("WALK_PERIOD"));
-        _runtime.SetSkill("WALK", Math.Cos(Math.Tau * _walkSoundDistance / walkPeriod)); // not measured in step
         bool trigger;
         if (floorTexture.IsSoundLoop)
         {
@@ -348,11 +348,7 @@ public sealed partial class RuntimeHost
         }
         else
         {
-            trigger = _walkSoundDistance >= walkPeriod;
-            if (trigger)
-            {
-                _walkSoundDistance %= walkPeriod;
-            }
+            trigger = footstep;
         }
 
         if (trigger)

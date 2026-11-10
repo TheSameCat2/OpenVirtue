@@ -282,6 +282,11 @@ public sealed class WdlRuntime :
     private int _wavePhaseRaw;
     private int _lastTimeCorrectionRaw;
     private (int X, int Y)? _lastStepPosition;
+    private long _pendingStepRaw;
+    private bool _walkStartPending;
+    private bool _walkStarted;
+    private long _walkDistanceRaw;
+    private bool _walkHold;
     private int _printNumber;
     private int _callDepth;
     private int _nextInputRequestId;
@@ -509,6 +514,7 @@ public sealed class WdlRuntime :
         ArgumentNullException.ThrowIfNull(snapshot);
         RestoreSkills(snapshot.Skills);
         _lastStepPosition = null; // a LOAD is not a step
+        _pendingStepRaw = 0;
         for (int channel = 0; channel < 8; channel++)
         {
             SetSkill($"CHANNEL_{channel}", 0);
@@ -2131,6 +2137,7 @@ public sealed class WdlRuntime :
         ArgumentNullException.ThrowIfNull(skills);
         ArgumentNullException.ThrowIfNull(accept);
         _lastStepPosition = null; // a LOAD is not a step
+        _pendingStepRaw = 0;
         int restored = 0;
         foreach (SaveSkill skill in skills)
         {
@@ -2707,22 +2714,98 @@ public sealed class WdlRuntime :
     }
 
     /// <summary>
-    /// Adds the distance the player moved since the last cycle to <c>STEPS</c> (manual p.118), cut to
-    /// 1/1024: the original's saves hold trunc(1024·√34) after a script set the player from (0, 0) to
-    /// (5, 3), so a beam counts too (OV-20261029-save-format, round 2).
+    /// Set once the host has stood the player on its floor (the first frame of a loaded level);
+    /// <c>WALK</c> starts at 1 the cycle after the count that first sees it.
+    /// </summary>
+    public bool PlayerPlaced { get; set; }
+
+    /// <summary>
+    /// How many times the walk has passed a whole <c>WALK_PERIOD</c>: the floor texture's footstep
+    /// sound plays once each time (manual p.118).
+    /// </summary>
+    public long WalkPeriods { get; private set; }
+
+    /// <summary>
+    /// Adds the distance the player moved to <c>STEPS</c> (manual p.118) one cycle late: each cycle adds
+    /// the move it measured the cycle before. The distance is in 22.10 fixed point: each component's
+    /// square cut to 1/1024, their sum, then the square root cut to 1/1024. The original's saves hold
+    /// trunc(1024·√34) after a script set the player from (0, 0) to (5, 3), so a beam counts too
+    /// (OV-20261029-save-format, round 2); the walk adds 0 for moves of 5 and 15/1024, 32 for 11 and
+    /// 35/1024, 45 for 16 and 51/1024 (OV-20261110-retail-play, round 4). The same added distance moves
+    /// <c>WALK</c> (<see cref="AdvanceWalk"/>).
     /// </summary>
     private void CountPlayerSteps()
     {
+        if (_walkStartPending)
+        {
+            _walkStartPending = false;
+            _walkStarted = true;
+            _skills["WALK"] = 1;
+        }
+
+        long added = _pendingStepRaw;
+        _pendingStepRaw = 0;
+        if (added != 0)
+        {
+            _skills["STEPS"] = WdlFixed.Add(GetSkill("STEPS"), added / 1024.0);
+        }
+
+        if (_walkStarted)
+        {
+            AdvanceWalk(added);
+        }
+
         (int x, int y) = (WdlFixed.ToRaw(GetSkill("PLAYER_X")), WdlFixed.ToRaw(GetSkill("PLAYER_Y")));
         if (_lastStepPosition is { } last && (last.X != x || last.Y != y))
         {
-            double dx = x - (double)last.X;
-            double dy = y - (double)last.Y;
-            double moved = Math.Truncate(Math.Sqrt((dx * dx) + (dy * dy))) / 1024;
-            _skills["STEPS"] = WdlFixed.Add(GetSkill("STEPS"), moved);
+            long dx = x - (long)last.X;
+            long dy = y - (long)last.Y;
+            long squares = ((dx * dx) >> 10) + ((dy * dy) >> 10);
+            _pendingStepRaw = (long)Math.Sqrt(squares * 1024.0);
         }
 
         _lastStepPosition = (x, y);
+        if (!_walkStarted && PlayerPlaced)
+        {
+            _walkStartPending = true;
+        }
+    }
+
+    /// <summary>
+    /// Moves <c>WALK</c> by the distance <c>STEPS</c> just added (OV-20261110-retail-play, round 4):
+    /// the distance since the last whole <c>WALK_PERIOD</c>, <c>a</c>, gives the angle
+    /// trunc(a · 3216 / period) in 1/1024 radians (π cut to 3216/1024), and <c>WALK</c> is 1 − 2·sin of
+    /// it, the sine cut to 1/1024: 1 at each period's start, −1 at its middle, a sharp top and a round
+    /// bottom. The cycle in which <c>a</c> reaches the period keeps <c>WALK</c>, and so does the next,
+    /// whose distance is dropped; <c>a</c> starts again from 0 after it. A cycle the player stood still
+    /// keeps <c>WALK</c> as well.
+    /// </summary>
+    private void AdvanceWalk(long addedRaw)
+    {
+        if (_walkHold)
+        {
+            _walkHold = false;
+            _walkDistanceRaw = 0;
+            return;
+        }
+
+        long period = WdlFixed.ToRaw(GetSkill("WALK_PERIOD"));
+        if (addedRaw == 0 || period <= 0)
+        {
+            return;
+        }
+
+        _walkDistanceRaw += addedRaw;
+        if (_walkDistanceRaw >= period)
+        {
+            _walkHold = true;
+            WalkPeriods++;
+            return;
+        }
+
+        long angle = _walkDistanceRaw * 3216 / period;
+        long sine = (long)Math.Floor(1024 * Math.Abs(Math.Sin(angle / 1024.0)));
+        _skills["WALK"] = (1024 - (2 * sine)) / 1024.0;
     }
 
     /// <summary>

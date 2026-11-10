@@ -898,6 +898,71 @@ public class WdlRuntimeTests
         Assert.Equal(hitX, Math.Floor((raw * 1000 / 1024) + 0.5) / 1000, 3);
     }
 
+    [Theory]
+    [InlineData(11, 35, 32)] // 121 / 1024 + 1225 / 1024 = 0 + 1: √(1/1024) = 32/1024
+    [InlineData(16, 51, 45)] // 0 + 2: trunc(32·√2)
+    [InlineData(5, 15, 0)] // both squares under 1/1024
+    public void Runtime_Steps_SquaresEachComponentIn1024thsAndCountsTheMoveACycleLate(int dx, int dy, int added)
+    {
+        // OV-20261110-retail-play round 4, apathy-walk's STEPS.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>;"));
+        runtime.Tick(0.25 / 16);
+        runtime.SetSkill("PLAYER_X", dx / 1024.0);
+        runtime.SetSkill("PLAYER_Y", dy / 1024.0);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(0, runtime.GetSkill("STEPS")); // measured, not yet added
+
+        runtime.Tick(0.25 / 16);
+
+        Assert.Equal(added / 1024.0, runtime.GetSkill("STEPS"));
+    }
+
+    [Fact]
+    public void Runtime_Walk_FollowsTheStepsThroughEachWalkPeriod()
+    {
+        // OV-20261110-retail-play round 4: WALK = 1 − 2·sin(trunc(a·3216/period)/1024), the sine cut
+        // to 1/1024, a the distance since the last whole period; the cycle reaching the period and the
+        // next keep WALK.
+        var runtime = new WdlRuntime(Load("MAPFILE <m.wmp>; SKILL WALK_PERIOD { VAL 8; }"));
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(0, runtime.GetSkill("WALK"));
+        runtime.PlayerPlaced = true;
+        runtime.Tick(0.25 / 16); // sees the player placed
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(1, runtime.GetSkill("WALK"));
+
+        var walk = new List<double>();
+        double y = runtime.GetSkill("PLAYER_Y");
+        for (int cycle = 0; cycle < 40; cycle++)
+        {
+            y += 0.25;
+            runtime.SetSkill("PLAYER_Y", y);
+            runtime.Tick(0.25 / 16);
+            walk.Add(runtime.GetSkill("WALK"));
+        }
+
+        static double Expected(long a)
+        {
+            long angle = a * 3216 / 8192;
+            return (1024 - (2 * (long)Math.Floor(1024 * Math.Abs(Math.Sin(angle / 1024.0))))) / 1024.0;
+        }
+
+        Assert.Equal(1, walk[0]); // the first move is added a cycle late
+        Assert.Equal(Expected(256), walk[1]);
+        Assert.Equal(Expected(16 * 256), walk[16]); // −1 at the middle of the period
+        Assert.Equal(Expected(31 * 256), walk[31]);
+        Assert.Equal(walk[31], walk[32]); // the period is reached: WALK holds
+        Assert.Equal(walk[31], walk[33]); // and the next cycle's distance is dropped
+        Assert.Equal(Expected(256), walk[34]);
+        Assert.Equal(1, runtime.WalkPeriods);
+
+        runtime.Tick(0.25 / 16); // adds the last move
+        double last = runtime.GetSkill("WALK");
+        runtime.Tick(0.25 / 16);
+        runtime.Tick(0.25 / 16);
+        Assert.Equal(last, runtime.GetSkill("WALK")); // a player standing still keeps WALK
+    }
+
     [Fact]
     public void Runtime_Steps_AddsEachCyclesMoveCutTo1024ths()
     {

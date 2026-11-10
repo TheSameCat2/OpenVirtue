@@ -128,6 +128,47 @@ public class PlayerTests
     }
 
     [Theory]
+    [InlineData(0f, 0)] // a step equal to PLAYER_CLIMB blocks
+    [InlineData(1f / 1024, 1)] // the eye this frame rises to puts the feet 1/1024 up
+    public void MoveHorizontal_IntoRegionBorder_MeasuresTheFeetFromTheEyeThisFrameRisesTo(float rise, int expectedRegion)
+    {
+        // OV-20261110-retail-play round 4: the climb test sees the eye after this frame's PLAYER_VZ.
+        (Player player, _) = PadPlayer(padFloor: 1, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1);
+        player.ClimbEyeRise = rise;
+
+        player.MoveHorizontal(0, 10);
+
+        Assert.Equal(expectedRegion, player.Region);
+        Assert.Equal(8f, player.Position.Y); // the rise itself is the vertical move's
+    }
+
+    [Theory]
+    [InlineData(4, 16, 8f, 1.5f, true)] // a floor too high to climb, the eye between floor and ceiling
+    [InlineData(16, 16, 8f, 20f, false)] // a closed region
+    [InlineData(10, 16, 9.9f, 1.5f, false)] // the eye below the new floor
+    public void MoveHorizontal_StoppedAtRegionBorder_ReportsWhetherOnlyTheClimbHeldIt(
+        int padFloor, int padCeiling, float eye, float climb, bool expected)
+    {
+        (Player player, _) = PadPlayer(padFloor, padCeiling, eye, eyeHeight: 8, climb);
+
+        player.MoveHorizontal(0, 10, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.Equal(expected, player.StoppedAtBorderOnly);
+    }
+
+    [Fact]
+    public void MoveHorizontal_StoppedBySolidWall_IsNotABorderStop()
+    {
+        (Player player, _) = PadPlayer(padFloor: 0, padCeiling: 16, eye: 8, eyeHeight: 8, climb: 1.5f);
+
+        player.MoveHorizontal(0, -10, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.False(player.StoppedAtBorderOnly);
+    }
+
+    [Theory]
     [InlineData(10, 16, 9.9f, 1f, 1.5f, 0)] // the eye must be above the new floor
     [InlineData(10, 16, 10.5f, 1f, 1.5f, 1)]
     [InlineData(10, 16, 11f, 8f, 7.5f, 1)] // taller than the headroom of 6, but the eye fits
