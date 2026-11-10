@@ -80,8 +80,12 @@ public static class WdlPlayerMotion
 
         // Neither the minimum's addition nor an object's push-back counts toward the speed the player moved.
         displacement -= held ? Vector2.Zero : player.LastObjectPush;
-        double actualVelocityX = timeCorrection > 0 && !pushed && !held ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
-        double actualVelocityY = timeCorrection > 0 && !pushed && !held ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
+        // A step taken whole keeps the script's velocity to the last 1/1024: Apathy's walk set −15/1024
+        // and read it back, where dividing the step by TIME_CORR again gave −16 (OV-20261110-retail-play
+        // apathy-walk). Only a step a wall or an object cut changes it.
+        bool whole = Math.Abs(displacement.X - nudgeX - stepX) < 1e-6 && Math.Abs(displacement.Y - nudgeY - stepY) < 1e-6;
+        double actualVelocityX = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.X - nudgeX) / timeCorrection : requestedVelocityX;
+        double actualVelocityY = timeCorrection > 0 && !pushed && !held && !whole ? (displacement.Y - nudgeY) / timeCorrection : requestedVelocityY;
         runtime.SetSkill("PLAYER_VX", actualVelocityX);
         runtime.SetSkill("PLAYER_VY", actualVelocityY);
         runtime.SetSkill("IMPACT_VX", runtime.GetSkill("IMPACT_VX") + actualVelocityX - requestedVelocityX);

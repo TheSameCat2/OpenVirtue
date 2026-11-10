@@ -67,12 +67,32 @@ level's four commonest actor kinds:
   48.16 in the original and 47.47, 47.44 and 48.16 in OpenVirtue: the seconds clock, which runs on real time
   (OV-20261103-contact-clock), within a tick, and New Age's to the line.
 
+## Round 3: the player walked by its own script
+`apathy-walk` (`OVSTR0.TXT` `99f4c9a5`) drives Apathy's own movement action from the tracer, `FORCE_AHEAD` 1 for 200
+cycles, `FORCE_ROT` 0.5 for 60, then both for 200, and prints the velocities and the action's force raw
+(× 1024), which a fixed-point rule needs.
+
+- **`ACCEL` is the engine's 22.10 arithmetic, every product cut toward zero: `v′ = trunc(v·(1 − trunc(t·F/I)))
+  + trunc(t·a/I)`** for each tick `t` of the cycle. With the action's force −63/1024 and `FRICTION` 0.2 it
+  fits 59 cycles exactly (0, −15, −31, −44, −56 …). OpenVirtue's doubles stepped −16, −32, −48.
+- **A step taken whole leaves `PLAYER_VX`/`PLAYER_VY` as the script set them.** OpenVirtue wrote them back as
+  the step over `TIME_CORR`, which turned −15 into −16. Only a step a wall or an object cut changes them.
+- **The engine's own step products round a half up, toward +∞**: −186 raw at `TIME_CORR` 0.25 stepped −46, not
+  −47. Every earlier carrier agrees (none had a negative half).
+
+After these the walk's x, y and velocities match the original through line 238 (y) and 317 (x), and
+`PLAYER_VROT` on all 600 lines.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).
 
 ## Open Questions
 - `PLAYER_Z` drifts up to 0.02 from the fifth frame on.
+- `STEPS`, which drives the walking bob through `WALK`: the original's counts nothing in a walk's first three
+  cycles and then about 0.003 to 0.013 less than the distance moved each cycle, a cycle late; OpenVirtue
+  counts the distance in the cycle it is moved. No simple rule fitted, and the eye's bob drifts from it.
+- apathy-walk from line 238: a velocity component diverges, probably where the player first meets a wall.
 - `apathy-idle`'s 8-tick frame after the `SAVE`: the replay cannot know how long the original's disk write
   took, and a long first step changes where an actor walks.
 - actor-width: in the cycle a careful actor is held off a wall, the original moves it along the wall by
@@ -84,4 +104,4 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 `WdlRuntime.MoveActorTowardTarget` holds a careful actor off the walls of its recorded region;
 `WdlRuntime.ArrivesAtBorders`; `Player.FeetPlaced`, set false by `RuntimeHost` for a loaded level and
 used by `WdlPlayerMotion.Apply` and `Synchronize`; the host's pose snapshot keeps the published
-`PLAYER_Z`; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`.
+`PLAYER_Z`; `WdlInterpreter.ExecuteAccel` and `WdlRuntime.EngineProduct` for round 3; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`.

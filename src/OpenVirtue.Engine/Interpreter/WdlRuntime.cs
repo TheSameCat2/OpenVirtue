@@ -4227,8 +4227,12 @@ public sealed class WdlRuntime :
     /// <c>PLAYER_VX·TIME_CORR</c>: rounded to 1/1024, where a WDL <c>*</c> cuts toward zero
     /// (OV-20261029-actor-step round 6, OV-20261019-eye-clamp).
     /// </summary>
+    /// <remarks>
+    /// A half rounds up, toward +∞: Apathy's walk stepped −186 raw at <c>TIME_CORR</c> 0.25 by −46, not −47
+    /// (OV-20261110-retail-play apathy-walk).
+    /// </remarks>
     internal static double EngineProduct(double left, double right) =>
-        Math.Round(WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024, MidpointRounding.AwayFromZero) / 1024;
+        Math.Floor((WdlFixed.ToRaw(left) * (double)WdlFixed.ToRaw(right) / 1024) + 0.5) / 1024;
 
     /// <summary>
     /// How close (in |dx| + |dy|) an actor counts as arrived without standing on its point: 0.1 as a
