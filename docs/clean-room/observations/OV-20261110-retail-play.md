@@ -47,10 +47,25 @@ the vertical skills for 80 cycles. `actor-width` walks a careful actor 2 wide be
   walls, so a head beamed far from its placed region meets none of the walls it passes.
 - **A careful actor's `IF_ARRIVED` at a region border is for `MOVE`, `BULLET`, `FOLLOW` and `REPEL` only**
   (manual p.65–66). A `VERTEX`, way or object target arrives at its target.
+- **The start position and heading are cut toward zero to 1/1024.**
 - **The player's heights read 0 until the first frame, which stands the feet on the floor**: the eye then
   is the floor plus `PLAYER_SIZE`, before `PLAYER_VZ` moves it 4·`PLAYER_VZ` a frame. A `PLAYER_Z` the
   script set before then stands.
 - `ACTOR_WIDTH` scales the distance a careful actor keeps from a wall, as OpenVirtue had it.
+
+## Round 2: Heart, Legalism and New Age
+The same tracer on the other three levels (`heart-idle` `2b0b019e`, `legalism-idle` `ac0fb390`, `newage-idle` `ad1f75f0`,
+900 cycles each, the start's `SAVE` commented out), printing the player and the first placement of each
+level's four commonest actor kinds:
+
+- Every actor column matches on all 900 lines of all three.
+- **The start's position and heading are cut toward zero to 1/1024**: Heart's start y 168.031 reads 168.030
+  and its 135° reads 2.355 (2412/1024); OpenVirtue printed 168.031 and 2.356.
+- A frame after the start's `WAIT 4` takes 6.6 to 6.8 ticks in the original (a disk load), as the `SAVE`
+  did in Apathy; the replay's clock cannot know it, so the lines run 6.6 ticks apart after it.
+- Matched by `TICKS` instead of by line, the player's eye starts its countdown bob at 47.97, 48.25 and
+  48.16 in the original and 47.47, 47.44 and 48.16 in OpenVirtue: the seconds clock, which runs on real time
+  (OV-20261103-contact-clock), within a tick, and New Age's to the line.
 
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
@@ -69,4 +84,4 @@ the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` round
 `WdlRuntime.MoveActorTowardTarget` holds a careful actor off the walls of its recorded region;
 `WdlRuntime.ArrivesAtBorders`; `Player.FeetPlaced`, set false by `RuntimeHost` for a loaded level and
 used by `WdlPlayerMotion.Apply` and `Synchronize`; the host's pose snapshot keeps the published
-`PLAYER_Z`. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`.
+`PLAYER_Z`; `LevelLoader` and `PlayerStart.AngleRadians` cut the start to 1/1024. Tests: `WdlActorMotionTests.Tick_CarefulActorCrossingRegionBorder_DispatchesArrivalForMoveButNotForAVertex`.

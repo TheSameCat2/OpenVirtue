@@ -55,7 +55,8 @@ public class LevelLoaderTests
         Assert.Equal(Math.PI, guard.FacingAngleRadians, precision: 12);
         Assert.NotNull(level.PlayerStart);
         Assert.Equal(45, level.PlayerStart!.Value.Angle);
-        Assert.Equal(Math.PI / 4, level.PlayerStart!.Value.AngleRadians, precision: 12);
+        // Cut to 1/1024 as the original holds it (OV-20261110-retail-play): 804/1024.
+        Assert.Equal(804.0 / 1024, level.PlayerStart!.Value.AngleRadians, precision: 12);
 
         // Skills come from both the main script and the INCLUDEd module.
         Assert.Equal(100, level.Skills["energy"]);
