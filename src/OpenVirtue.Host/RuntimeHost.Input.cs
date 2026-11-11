@@ -346,7 +346,6 @@ public sealed partial class RuntimeHost
         WdlPlayerMotion.Synchronize(_runtime, _player);
         double runtimeAngle = RenderSpace.PlayerAngleFromYaw(_camera.Yaw);
         _runtime.SetSkill("PLAYER_ANGLE", runtimeAngle);
-        WdlPlayerMotion.SetHeading(_runtime);
         double runtimeTilt = Math.Tan(_camera.Pitch);
         _runtime.SetSkill("PLAYER_TILT", runtimeTilt);
         // Without the pointer MOUSE_ANGLE is the script's to set and keeps its value: 0 at start, 1

@@ -212,6 +212,19 @@ and so on. OpenVirtue follows that a unit apart, until line 427, where the origi
 every small y part after a wall stop, as the step's own rule does, makes line 424 worse. Which y part stands
 there is open.
 
+## Round 9 (2026-11-11): the heading's sine and cosine, and PLAYER_SPEED
+No launch.
+- **`PLAYER_SIN` and `PLAYER_COS` follow `PLAYER_ANGLE` only in the player's move, in a frame with time.**
+  Apathy's start sets `PLAYER_ANGLE` 1.899, but both lines at `TICKS` 0 read the map start's `PLAYER_COS`
+  −0.706. The first frame with time reads −0.322. OpenVirtue's host set them whenever it took over the angle.
+  Now only `WdlPlayerMotion.Apply` does, when `TIME_CORR` is above 0. Apathy's walk first parts at line 404, not 3.
+- **`PLAYER_SPEED` is the velocity seen along the heading the frame started with.** The cosine and sine are cut
+  toward zero to 1/1024, and each product is rounded as the engine's are. That is 2057 of the four walks' 2158
+  moving lines. Over the variants tried (current or earlier heading; sine and cosine cut, rounded or exact;
+  products and sum cut, rounded or floored), the turned heading fits at most 1766. This settles round 5's open
+  `PLAYER_SPEED` item for most lines.
+- The replay summary is 1072/1258: nothing lost. Texmap gains its five round-5 carriers.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

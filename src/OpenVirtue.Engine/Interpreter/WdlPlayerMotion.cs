@@ -142,13 +142,21 @@ public static class WdlPlayerMotion
 
         // The turn steps by the engine's rounded product like the move (OV-20261110-retail-play round 4:
         // cut toward zero, Apathy's turn fell 0.006 behind in 32 cycles at the same PLAYER_VROT).
+        double heading = runtime.GetSkill("PLAYER_ANGLE");
         double angle = NormalizeAngle(
-            runtime.GetSkill("PLAYER_ANGLE") + WdlRuntime.EngineProduct(runtime.GetSkill("PLAYER_VROT"), Math.Max(0, timeCorrection)));
+            heading + WdlRuntime.EngineProduct(runtime.GetSkill("PLAYER_VROT"), Math.Max(0, timeCorrection)));
         runtime.SetSkill("PLAYER_ANGLE", angle);
-        SetHeading(runtime);
+        if (timeCorrection > 0)
+        {
+            SetHeading(runtime);
+        }
 
         double previousSpeed = runtime.GetSkill("PLAYER_SPEED");
-        double speed = (actualVelocityX * Math.Cos(angle)) + (actualVelocityY * Math.Sin(angle));
+        // OV-20261110-retail-play round 9: the velocity seen along the heading before this frame's turn, its
+        // cosine and sine cut toward zero to 1/1024 and each product rounded as the engine's are: 2057 of the four
+        // walks' 2158 moving lines, where the turned heading and exact products fit 1766 at best.
+        double speed = WdlRuntime.EngineProduct(actualVelocityX, CutTowardZero(Math.Cos(heading))) +
+            WdlRuntime.EngineProduct(actualVelocityY, CutTowardZero(Math.Sin(heading)));
         runtime.SetSkill("PLAYER_SPEED", speed);
         runtime.SetSkill(
             "ACCELERATION",
