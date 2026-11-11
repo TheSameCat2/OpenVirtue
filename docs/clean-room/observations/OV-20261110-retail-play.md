@@ -191,7 +191,13 @@ after a shot took 1.563 `TICKS`.
   the wall's line, so the wall counted as seen from "border" and out of reach. Its fill, pulled forward,
   won over the corner's occluder in that one column. The original shows the corridor there. Implemented in
   `ViewClip`: a closed region is never the seeing region. The nine probes are unchanged.
-- Still open: New Age's shots, whose replay leaves the original at line 9 (a 7.6-tick first cycle there).
+- New Age's shots run took 7.875 `TICKS` over one disk load early on. Its screenshots added eleven single frames of
+  1.03 to 1.56 ticks. That is more long gaps than the replay clock's limit of one in a hundred allowed for a
+  sampler that prints every cycle, so the clock ran the load as one typical frame and left the original at
+  line 9. The limit is now one in fifty, and the replay holds to line 158, the open `ACCEL` cycle. The replay
+  summary is unchanged apart from the new carriers: 1067/1253. New Age's shots now differ by 80 599 to
+  105 956 pixels, apart from the last.
+- Still open:
   Apathy's fourth shot, pressed against the curtain, is darker and differs in its texels. The rest is mostly
   texels one shade off.
 

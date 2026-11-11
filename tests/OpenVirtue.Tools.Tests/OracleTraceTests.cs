@@ -424,6 +424,31 @@ public sealed class OracleTraceTests
     }
 
     [Fact]
+    public void ReplayClock_EveryCycleSamplerWithAFewLongFrames_KeepsTheDiskLoadAsOneFrame()
+    {
+        // OV-20261110-retail-play round 7: newage-shots' 899 cycles had a 7.875-tick disk load and eleven single frames
+        // of about a tick (its SCREENSHOTs): 12 gaps over four typical steps, more than one in a hundred.
+        List<double> ticks = [0, 0.25, 0.5, 0.75, 1.0, 1.25];
+        double t = 9.125;
+        for (int i = 0; i < 893; i++)
+        {
+            ticks.Add(t);
+            t += i % 80 == 40 ? 1.0625 : 0.25;
+        }
+
+        var clock = new OracleReplay.ReplayClock(ticks, fallbackTicks: 0.25);
+        clock.Anchor(ticks[0]);
+        double now = ticks[0];
+        for (int i = 1; i < 6; i++)
+        {
+            now += clock.Next(now) * 16;
+        }
+
+        Assert.Equal(1.25, now, 9);
+        Assert.Equal(7.875 / 16, clock.Next(now), 9);
+    }
+
+    [Fact]
     public void ReplayClock_AfterTheLastSample_WithoutACadence_TakesTheRecentMedian()
     {
         // Steps of 2, then 1.5 and 1.625 and 1.875: no cadence of two neighbouring sizes, and the run's
