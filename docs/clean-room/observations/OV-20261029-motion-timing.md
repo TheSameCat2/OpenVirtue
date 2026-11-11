@@ -135,3 +135,25 @@ quantisation). The original's generator is seeded from something that differs be
 (the clock), so its draws cannot be replayed; `RANDOM`'s distribution can still be measured from
 the phases, its sequence not. The carrier stays a line-count residual.
 
+
+## Round 4 (2026-11-11): ACCEL over a cycle longer than a tick
+New Age's ground spring made `PLAYER_VZ` 350/1024 after a cycle of 1.031 ticks. OpenVirtue's rule, a tick at a time
+then the rest, gives 343 (OV-20261110-retail-play). The carrier `round4/accel-long` resets
+v to −21/1024 every cycle and calls `ACCEL v, 344/1024` with `FRICTION` 0.98 (1003/1024) and `INERTIA` 1. Two
+`SCREENSHOT`s every third cycle and three every seventh stretch the cycles. A `WHILE` loop of up to 120 000 steps
+in one cycle stretched nothing, and one `SCREENSHOT` reached 0.5 to 0.8 ticks. `OVMOT0.TXT` hash `3df13379`.
+
+| `TIME_CORR` (ticks) | 0.25 | 0.281 | 0.5 | 0.531 | 0.781 | 0.813 | 1.031 | 1.063 | 1.313 | 1.563 | 1.844 | 2.094 | 2.344 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| v after (1/1024) | 71 | 82 | 162 | 173 | 264 | 275 | 350 | 350 | 350 | 350 | 351 | 351 | 351 |
+
+- **New Age's 350 is reproduced, and it is not an accident of that level.** Up to a tick, the rule of round 1 holds:
+  v' = trunc(v · (1 − t·F)) + t·a in 22.10.
+- **Above a tick, v lands within a unit of a/F (351.2/1024).** It is 350 from 1.031 to 1.563 ticks and 351 from
+  1.844. None of these fits all 13 samples:
+  - a tick and then the rest, in either order and with the products cut, floored, rounded or raised;
+  - steps of at most a half or a quarter of a tick;
+  - equal steps of t/⌈t⌉ or t/⌈2t⌉;
+  - the exact exponential.
+
+  The rule above a tick is open, and OpenVirtue keeps a tick at a time.
