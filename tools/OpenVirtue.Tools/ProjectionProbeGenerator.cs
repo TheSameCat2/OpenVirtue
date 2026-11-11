@@ -1216,7 +1216,7 @@ internal static class ProjectionProbeGenerator
         }
 
         var sb = new StringBuilder();
-        var vertices = new List<(int X, int Y)>
+        var vertices = new List<(double X, double Y)>
         {
             (-room.BackDepth, -room.HalfWidth),
         };
@@ -1242,7 +1242,7 @@ internal static class ProjectionProbeGenerator
         int padFirst = vertices.Count;
         if (map?.PadBody is not null)
         {
-            vertices.AddRange(PadCorners);
+            vertices.AddRange(PadCorners.Select(static corner => ((double)corner.X, (double)corner.Y)));
         }
 
         int extraFirst = vertices.Count;
@@ -1257,7 +1257,7 @@ internal static class ProjectionProbeGenerator
             double z = map?.PadZ is { } padZ && map.PadBody is not null && i >= padFirst && i < padFirst + PadCorners.Length
                 ? padZ[i - padFirst]
                 : 0;
-            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {vertices[i].X} {vertices[i].Y} {Num(z)};#{i}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {Num(vertices[i].X)} {Num(vertices[i].Y)} {Num(z)};#{i}\r\n");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $"REGION room 0 {room.CeilingHeight};#0\r\n");
@@ -1277,8 +1277,8 @@ internal static class ProjectionProbeGenerator
         int halfTarget = room.TargetWidth / 2;
         for (int v = farStart; v < farEnd; v++)
         {
-            int y0 = vertices[v].Y;
-            int y1 = vertices[v + 1].Y;
+            int y0 = (int)vertices[v].Y;
+            int y1 = (int)vertices[v + 1].Y;
             bool isTarget = room.TargetWidth > 0 && y0 == -halfTarget && y1 == halfTarget;
             int segmentIndex = v - farStart;
             string wallName = isTarget ? "yel_wall" : (segmentIndex % 2 == 0 ? "red_wall" : "grn_wall");

@@ -36,7 +36,7 @@ internal static class WallSlideProbeCases
     private static readonly string Prelude =
         "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "ws_n", "TIME_CORR") + "    SET EACH_TICK.1, ws_tick;\n";
 
-    private static TraceProbeCase Slide(string label, (int X1, int Y1, int X2, int Y2) wall, double sx, double sy, string question, double? width = null) => new(
+    private static TraceProbeCase Slide(string label, (double X1, double Y1, double X2, double Y2) wall, double sx, double sy, string question, double? width = null) => new(
         label,
         question,
         Skills + Sampler,
@@ -59,6 +59,14 @@ internal static class WallSlideProbeCases
         Slide("w63-s02", (8, -8, 16, 8), 0.2, 0, "A wall of slope 2 (y = 2x − 24) at 0.2 a cycle."),
         Slide("w37-s03", (0, -9, 24, 9), 0.3, 0, "A wall of slope 3/4 (y = 3x/4 − 9) at 0.3 a cycle."),
         Slide("w45-s02-w14", (4, -8, 20, 8), 0.2, 0, "The 45° wall at 0.2 a cycle with PLAYER_WIDTH 1.4, as Apathy sets it.", 1.4),
+        // Round 2: corners off the 1/1024 grid (4.154 is 4253.696 units, −7.9 is −8089.6), so a corner
+        // rounded, cut toward zero or floored lands on a different unit (Apathy's and Heart's walls).
+        Slide("round2/f45-s02", (4.154, -7.9, 20.154, 8.1), 0.2, 0,
+            "Round 2. The 45° wall with corners off the 1/1024 grid: rounded, cut toward zero or floored to 1/1024?"),
+        Slide("round2/f37-s03", (0.154, -9.1, 24.154, 8.9), 0.3, 0,
+            "Round 2. A 3:4 wall with corners off the 1/1024 grid, at 0.3 a cycle."),
+        Slide("round2/f45-s02-w14", (4.154, -7.9, 20.154, 8.1), 0.2, 0,
+            "Round 2. The off-grid 45° wall with PLAYER_WIDTH 1.4.", 1.4),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

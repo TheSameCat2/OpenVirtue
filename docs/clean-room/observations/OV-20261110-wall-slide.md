@@ -70,15 +70,25 @@ simply to the nearest unit.
 
 ## Open Questions
 - w63-s02's first contact, from 1053.8: a unit off.
-- Retail walls with corner points that are not whole steps (Apathy's (−1.447, 42.397), Heart's
-  (−8.481, 181.039), Legalism's (−1195.154, 944.359)). Truncating the corners to 1/1024 instead of
-  rounding them keeps Apathy's walk right 4 cycles longer and Heart's 6, but Legalism's 3 shorter. On
-  Legalism's walk at line 370 the original stops a step that OpenVirtue's rounded corners put 1434.24
-  from the line, against the 1.4 width's 1433. Truncated corners give 1433.88. The width is 1433,
-  not 1434: 1434 loses Apathy's climb border at line 242. OpenVirtue's stop is decided by its float
-  solver, not in 22.10, so neither reading is tried yet.
-- The point push's last unit at a wall's end.
-- Two or more walls at once (corners): still OpenVirtue's float solver, rounded to the nearest unit.
+- Legalism's walk parts at line 367, at the first stop on a long maze wall: there the original's push
+  is along y alone, (253, −98) on a step of (253, 4), which points to another wall or an end.
+
+## Round 2 (2026-11-10): corners off the 1/1024 grid
+`round2/f45-s02`, `f45-s02-w14` and `f37-s03`: the 45° and 3:4 walls with corners such as (4.154, −7.9),
+4253.696 and −8089.6 units, so that rounding, cutting toward zero and flooring give different units.
+Hashes of `OVWSL0.TXT` are in the carriers' folders.
+
+| Corners | Cycles off, of 129, 96 and 128 in the middle of the wall |
+|---|---|
+| rounded | 76, 10, 77 |
+| floored | 1, 27, 0 |
+| exact decimals | 1, 10, 39 |
+| **cut toward zero** | **0, 2, 0** |
+
+- **A map vertex's x and y are cut toward zero to 1/1024**, as the player start's are
+  (OV-20261110-retail-play). Implemented when the map loads (`LevelLoader`). With it the three carriers match
+  to lines 192, 124 and 193. Apathy's walk holds to line 403 (400 before) and Heart's to 295 (289), but
+  Legalism's to 367 (370).
 
 ## Implementation
 `Player.HoldOffWall`, used by `Player.MoveHorizontal` when exactly one wall stops the step, and
