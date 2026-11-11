@@ -60,7 +60,9 @@ internal sealed record TraceProbeMap(
     string? PaletteBody = null,
     IReadOnlyList<double>? PadZ = null,
     string? WallTextureBody = null,
-    string? RoomFloor = null);
+    string? RoomFloor = null,
+    double OffsetX = 0,
+    double OffsetY = 0);
 
 /// <summary>
 /// A free-standing wall from (<c>X1</c>, <c>Y1</c>) to (<c>X2</c>, <c>Y2</c>) with the room on both
