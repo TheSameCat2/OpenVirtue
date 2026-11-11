@@ -1257,7 +1257,7 @@ internal static class ProjectionProbeGenerator
             double z = map?.PadZ is { } padZ && map.PadBody is not null && i >= padFirst && i < padFirst + PadCorners.Length
                 ? padZ[i - padFirst]
                 : 0;
-            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {Num(vertices[i].X)} {Num(vertices[i].Y)} {Num(z)};#{i}\r\n");
+            sb.Append(CultureInfo.InvariantCulture, $"VERTEX {Num(vertices[i].X + (map?.OffsetX ?? 0))} {Num(vertices[i].Y + (map?.OffsetY ?? 0))} {Num(z)};#{i}\r\n");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $"REGION room 0 {room.CeilingHeight};#0\r\n");
@@ -1324,7 +1324,7 @@ internal static class ProjectionProbeGenerator
             }
         }
 
-        sb.Append(CultureInfo.InvariantCulture, $"PLAYER_START 0 0 0 0;#{placement}\r\n");
+        sb.Append(CultureInfo.InvariantCulture, $"PLAYER_START {Num(map?.OffsetX ?? 0)} {Num(map?.OffsetY ?? 0)} 0 0;#{placement}\r\n");
         return sb.ToString();
     }
 

@@ -36,7 +36,7 @@ internal static class WallSlideProbeCases
     private static readonly string Prelude =
         "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "ws_n", "TIME_CORR") + "    SET EACH_TICK.1, ws_tick;\n";
 
-    private static TraceProbeCase Slide(string label, (double X1, double Y1, double X2, double Y2) wall, double sx, double sy, string question, double? width = null) => new(
+    private static TraceProbeCase Slide(string label, (double X1, double Y1, double X2, double Y2) wall, double sx, double sy, string question, double? width = null, double offsetX = 0, double offsetY = 0) => new(
         label,
         question,
         Skills + Sampler,
@@ -47,7 +47,7 @@ internal static class WallSlideProbeCases
         Predict(
             ("the whole step projected onto the wall, held at PLAYER_WIDTH + 51/1024", "each cycle moves by the step's part along the wall, the distance stays at the hold"),
             ("the step cut at contact, then the rest slid", "the first cycle at the wall moves less along it than the later ones")),
-        Map: new TraceProbeMap(Walls: [new TraceProbeWall("ws_wall", wall.X1, wall.Y1, wall.X2, wall.Y2)]),
+        Map: new TraceProbeMap(Walls: [new TraceProbeWall("ws_wall", wall.X1, wall.Y1, wall.X2, wall.Y2)], OffsetX: offsetX, OffsetY: offsetY),
         Prelude: Prelude);
 
     public static readonly IReadOnlyList<TraceProbeCase> All =
@@ -77,6 +77,12 @@ internal static class WallSlideProbeCases
             "Round 3. The long wall with its vertices swapped, so the first vertex is the near one.", 1.4),
         Slide("round3/short", (5, -1, 25, 3), 0.2, 0,
             "Round 3. The control: 20 steps of the same line.", 1.4),
+        // Round 4: Legalism's maze lies 1226 steps out, where a product of absolute coordinates passes 32 bits, and its
+        // first contact came out a unit from the hold that fits every probe near the origin. The same walls, moved out.
+        Slide("round4/w45-far", (4, -8, 20, 8), 0.2, 0, "Round 4. The 45° wall with the whole map moved by (−1200, 950).", 1.4, -1200, 950),
+        Slide("round4/w27-far", (-4, -12, 28, 4), 0.2, 0, "Round 4. The slope-1/2 wall moved by (−1200, 950).", 1.4, -1200, 950),
+        Slide("round4/w37-far", (0, -9, 24, 9), 0.3, 0, "Round 4. The 3:4 wall moved by (−1200, 950).", 1.4, -1200, 950),
+        Slide("round4/w45-mid", (4, -8, 20, 8), 0.2, 0, "Round 4. The 45° wall moved by (−300, 200).", 1.4, -300, 200),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

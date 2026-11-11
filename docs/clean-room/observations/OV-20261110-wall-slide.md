@@ -128,3 +128,18 @@ put the line out of the walk's reach. Its runs are kept under `_stale-round3/v1`
   (4236, 148), matches now. In the replay the probe's carriers match 1827 lines, up from 1773 (the short
   wall to line 184, up from 76; f37-s03 180 lines, up from 124). w37-s03 and w45-s02-w14 each lose their
   last line.
+
+## Round 4 (2026-11-11): far from the origin, and first contacts
+Legalism's first stop (line 367) came out a unit from the hold, `y` 971780 where the rule gives 971779. Its
+maze lies 1226 steps out, where products of absolute coordinates would pass 32 bits. Four carriers move
+the map with `TraceProbeMap`'s new `OffsetX`/`OffsetY`. `w45-far`, `w27-far` and `w37-far` move it by
+(−1200, 950), and `w45-mid` by (−300, 200). All have `PLAYER_WIDTH` 1.4. `OVWSL0.TXT` hashes: w45-far `9a0c4168`, w27-far `efb95fbc`, w37-far `b5ee5f2f`, w45-mid `fdc02910`.
+
+- **The slide does not depend on where the map lies.** Shifted back, w45-far and w45-mid equal w45-s02-w14 on
+  all 162 samples.
+- The first contacts of the near-origin probes, re-read: a step that ends beyond `PLAYER_WIDTH` is not held,
+  as w27-s02, w63-s02 and f45-s02 show. A hold that leaves an axis part under 4/1024 takes the minimum: w63-s02's
+  (+1, +105) became (+4, +105). OpenVirtue does both.
+- Legalism's stop starts 1435.9 out (`PLAYER_WIDTH` 1433, hold 1484). Only the distance left unfloored (1385.40)
+  gives its (−1255787, 971780). Over all the probes' cycles, though, the floored distance misses 29 and the
+  unfloored one 256. So this first contact is still open.
