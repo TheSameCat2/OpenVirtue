@@ -215,6 +215,38 @@ public sealed class WdlPlayerMotionTests
     }
 
     [Fact]
+    public void Apply_Speed_IsTheVelocityAlongTheHeadingBeforeTheTurnIn1024ths()
+    {
+        // OV-20261110-retail-play round 9: PLAYER_SPEED is the velocity seen along the heading the frame
+        // started with, its cosine and sine cut toward zero, each product rounded. PLAYER_VY 513/1024 at
+        // heading 1.570 (sine 1023/1024) reads 512/1024, and a turn this frame does not count yet.
+        (WdlRuntime runtime, Player player) = Create();
+        runtime.SetSkill("PLAYER_ANGLE", 1.5703125);
+        runtime.SetSkill("PLAYER_VY", 513.0 / 1024);
+        runtime.SetSkill("PLAYER_VROT", 1);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+
+        Assert.Equal(512.0 / 1024, runtime.GetSkill("PLAYER_SPEED"), 9);
+    }
+
+    [Fact]
+    public void Apply_NoTimePassed_KeepsTheStoredSineAndCosine()
+    {
+        // OV-20261110-retail-play round 9: Apathy's start sets PLAYER_ANGLE 1.899 in IF_START; the cycles at
+        // TICKS 0 still read the map start's PLAYER_COS −0.706, and the first frame with time reads −0.322.
+        (WdlRuntime runtime, Player player) = Create();
+        runtime.SetSkill("PLAYER_COS", -0.706);
+        runtime.SetSkill("PLAYER_ANGLE", 1.899);
+
+        WdlPlayerMotion.Apply(runtime, player, 0);
+        Assert.Equal(-0.706, runtime.GetSkill("PLAYER_COS"), 3);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.1875);
+        Assert.Equal(Math.Truncate(Math.Cos(runtime.GetSkill("PLAYER_ANGLE")) * 1024) / 1024, runtime.GetSkill("PLAYER_COS"));
+    }
+
+    [Fact]
     public void Apply_RotationVelocity_NormalizesAngleAndUpdatesDirection()
     {
         (WdlRuntime runtime, Player player) = Create();
