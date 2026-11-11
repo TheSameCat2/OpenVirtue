@@ -407,6 +407,28 @@ public class PlayerTests
     }
 
     [Fact]
+    public void MoveHorizontal_IntoACornerOfTwoWalls_HoldsOffTheNearerFirst()
+    {
+        // OV-20261110-retail-play round 6: Heart's walk into the corner of two swamp walls, 160 steps lower. Both are
+        // within PLAYER_WIDTH of the step's end; the original held it off the nearer (1339/1024 from it), and the
+        // other then let it be. Held off the other first, the player came out at (−7120, 22045).
+        string map =
+            "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 48 0;#2\nVERTEX -16 48 0;#3\n" +
+            "VERTEX -6.472 36.141 0;#4\nVERTEX -8.481 21.039 0;#5\nVERTEX 4.15 4.202 0;#6\n" +
+            "REGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL a 4 5 0 0 0 0;#4\nWALL b 5 6 0 0 0 0;#5\n" +
+            "PLAYER_START 0 0 0 0;#7";
+        var player = new Player(Load(map)) { Width = 1433f / 1024 }; // PLAYER_WIDTH 1.4 in 22.10
+        player.Position = new Vector3(-7099f / 1024, 8, 21846f / 1024);
+
+        player.MoveHorizontal(-171f / 1024, 171f / 1024);
+
+        Assert.Equal(-7127, player.Position.X * 1024, 3);
+        Assert.Equal(21997, player.Position.Z * 1024, 3);
+    }
+
+    [Fact]
     public void MoveHorizontal_DiagonallyIntoSolidWall_SlidesAlongWall()
     {
         var player = new Player(Load());

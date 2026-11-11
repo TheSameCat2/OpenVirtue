@@ -414,7 +414,9 @@ public sealed class LevelCollisionWorld
     /// wall's end) is put: as a thing of no width pushes the player out, from the point to
     /// (c − 1)²/1024 + <see cref="PushSlackSquaredRaw"/> in 22.10 (OV-20261110-wall-slide: a player 1.2
     /// wide rounded a wall's end 1268.7 to 1269.5/1024 from it, 1.4 wide 1467.5 to 1468.5; the step's
-    /// c²/1024 + 98 left w45-s02's cycle 188 a unit off). Null when the end is not inside
+    /// c²/1024 + 98 left w45-s02's cycle 188 a unit off). The step's offset from the point is scaled to that
+    /// length exactly and each part rounded: over the wall-slide carriers' 2000-odd cycles that misses 66, where
+    /// the floored square root of the things' push misses 84 (round 3). Null when the end is not inside
     /// (c − 1)²/1024, or the point lies ahead of where the step started.
     /// </summary>
     public static Vector2? StepOffPoint(Vector2 from, Vector2 desired, Vector2 point, float radius)
@@ -431,9 +433,15 @@ public sealed class LevelCollisionWorld
         }
 
         bool ahead = (dx * ((long)Math.Round(from.X * 1024.0) - ax)) + (dy * ((long)Math.Round(from.Y * 1024.0) - ay)) >= 0;
-        return ahead && ScaleToContact(dx, dy, lengthSquared, PushTargetSquared(contact)) is (double ox, double oy)
-            ? new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024))
-            : null;
+        if (!ahead)
+        {
+            return null;
+        }
+
+        double scale = Math.Sqrt(PushTargetSquared(contact) * 1024.0 / ((dx * dx) + (dy * dy)));
+        double ox = Math.Floor((dx * scale) + 0.5);
+        double oy = Math.Floor((dy * scale) + 0.5);
+        return new Vector2((float)((ax + ox) / 1024), (float)((ay + oy) / 1024));
     }
 
     private static (double X, double Y)? ScaleToContact(long dx, long dy, long lengthSquared, long contactSquared)

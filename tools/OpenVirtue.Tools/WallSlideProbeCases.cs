@@ -67,6 +67,16 @@ internal static class WallSlideProbeCases
             "Round 2. A 3:4 wall with corners off the 1/1024 grid, at 0.3 a cycle."),
         Slide("round2/f45-s02-w14", (4.154, -7.9, 20.154, 8.1), 0.2, 0,
             "Round 2. The off-grid 45° wall with PLAYER_WIDTH 1.4.", 1.4),
+        // Round 3: a long wall. Legalism's player stopped 2/1024 nearer a 70-step maze wall than the exact normal
+        // holds it, as if the wall's length came out 0.04 to 0.1 % short; 70825² overflows 32 bits. The same line,
+        // y = x/5 − 2, met at x ≈ 8 and slid along for the rest of the walk; 61 steps long from either end, and 20
+        // steps long as the control.
+        Slide("round3/long-a", (-15, -5, 45, 7), 0.2, 0,
+            "Round 3. A 61-step wall of slope 1/5 met 23 steps from its first vertex: held as the exact normal holds it?", 1.4),
+        Slide("round3/long-b", (45, 7, -15, -5), 0.2, 0,
+            "Round 3. The long wall with its vertices swapped, so the first vertex is the near one.", 1.4),
+        Slide("round3/short", (5, -1, 25, 3), 0.2, 0,
+            "Round 3. The control: 20 steps of the same line.", 1.4),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

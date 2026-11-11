@@ -1,6 +1,6 @@
 # OV-20261110-wall-slide: The player sliding along a diagonal wall
 Date: 2026-11-10
-Status: confirmed for the middle of a wall and its ends, implemented; one deep first contact open
+Status: confirmed for the middle of a wall, long walls, corners and its ends, implemented; Legalism's unit open
 Observer: Claude Code (Opus 5.5)
 Implementer: same
 
@@ -99,3 +99,32 @@ With the rule (exact normal since 2026-11-10's second batch), the probe's carrie
 203 (1:2), 205 (2:1), 109 (45°, 0.5), 156 (3:4) and 191 (45°, width 1.4), up from 108, 146, 112, 76, 89
 and 107. Apathy's walk matches 400 lines (396 before). Heart's walk meets the same kind of 3:4 wall,
 with vertices that are not whole steps. The replay summary keeps all its carriers.
+
+## Round 3 (2026-11-11): long walls, corners and the ends' push
+Legalism's walk stopped against a 70-step maze wall 1/1024 nearer than the exact normal holds it, and
+Heart's walked into the corner of two walls (OV-20261110-retail-play round 6). Three carriers, all with
+`PLAYER_WIDTH` 1.4, walk the player at 0.2 a cycle into the line y = x/5 − 2:
+- `round3/long-a` has a 61-step wall from (−15, −5) to (45, 7). The components of its length overflow a
+  32-bit square.
+- `round3/long-b` is the same wall with its vertices swapped.
+- `round3/short` has 20 steps of the same line, from (5, −1) to (25, 3), which the walk rounds at its first
+  vertex.
+
+Hashes of `OVWSL0.TXT` (sha256, first 8): long-a `4dfb787c`, long-b `3b14f33d`, short `52a56929`. The first prepare
+put the line out of the walk's reach. Its runs are kept under `_stale-round3/v1`.
+
+- **The long wall is held with the exact normal.** All 68 held cycles match on both carriers. Scaling the
+  normal by 1.0001 already misses one, so the wall's length comes out exact and the vertex order does not
+  matter. Legalism's extra unit is not the length. It stays open.
+- **At a corner the walls hold the step one after the other, the nearer line first.** Heart's corner
+  is at (−8.481, 181.039). The step (−171, 171) ended 1339/1024 from one wall and 1415 from the
+  other, both within 1433. Held off the nearer to (−7126, 185837), it is 1518 from the other, which then
+  lets it be. The original stood at (−7127, 185837). Taken the other way round, the holds give
+  (−7119, 185886), where OpenVirtue stood. Implemented (`Player.HoldOffWalls`): Heart's walk now
+  matches to line 354, up from 314, and stays within a unit to line 413.
+- **A wall end's push scales the offset to the push length exactly and rounds each part.** The push
+  length is still (c − 1)²/1024 + 102. Over the twelve carriers' cycles this misses 66, against 84 for
+  the floored square root of the things' push (OV-20261103-contact-clock). The short wall's first contact,
+  (4236, 148), matches now. In the replay the probe's carriers match 1827 lines, up from 1773 (the short
+  wall to line 184, up from 76; f37-s03 180 lines, up from 124). w37-s03 and w45-s02-w14 each lose their
+  last line.
