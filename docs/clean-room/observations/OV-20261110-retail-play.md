@@ -132,6 +132,24 @@ probe's new `edge-2` case (OV-20261019-border-climb, 2026-11-10 addendum). Apath
 After round 4 `apathy-walk` matches to line 398. From there its x and y are 1/1024 off while it slides
 along the wall. Its angle, `PLAYER_VROT`, velocities and the action's force match on all 600 lines.
 
+## Round 5 (2026-11-11): Heart, Legalism and New Age walked
+`heart-walk`, `legalism-walk` and `newage-walk` drive each level's movement action with the apathy-walk
+tracer for 900 cycles, the walk starting at cycle 220 after the start-up countdown.
+
+- **The 4/1024 minimum raises a small x part but not a small y part.** New Age's player coming to rest
+  stepped 4, then 3, 2, 2, 1 along y, its velocity 14/1024 down to 3/1024, with its x part of 0 made +4.
+  Apathy's x parts of −3 to −1 were made −4. A part of 0 becomes +4 on either axis, as the wall-slide
+  carriers' y parts show. A step that rounds to nothing on both axes moves nothing: at `PLAYER_VY` 2/1024
+  and 1/1024 (0.5 and 0.25 a step) the player stood. OpenVirtue raised the y part and moved (4, 4).
+  New Age's walk then matches its x and y on all 900 lines.
+- The other two parts on walls: Heart's at line 295 by one unit, healed two lines on, and Legalism's at
+  367 (OV-20261110-wall-slide). Over the whole walks the position stays within 81/1024.
+- `PLAYER_SPEED` reads 1/1024 off on a third of the lines. With `PLAYER_VY` 513/1024 at heading 1.570 the
+  original reads 512, as 513·1023/1024 (the cut sine) cut toward zero gives. No single form fits every
+  line, though: a cut sum of the products with the cut sine and cosine fits most, and better with the
+  heading before the frame's turn. Not changed.
+- `PLAYER_Z` parts with the start-up countdown's bob, as in the idle runs: the seconds clock's phase.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

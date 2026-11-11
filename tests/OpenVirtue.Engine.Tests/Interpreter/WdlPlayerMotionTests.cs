@@ -105,6 +105,25 @@ public sealed class WdlPlayerMotionTests
         Assert.Equal(6.25, runtime.GetSkill("IMPACT_VX"), 2); // the step cut to −3.75: PLAYER_WIDTH is 1228/1024
     }
 
+    [Theory]
+    [InlineData(0, 12, 4, 3)] // a y part of 3/1024 is taken as it is; the x part of 0 becomes +4
+    [InlineData(-12, 40, -4, 10)] // an x part of −3/1024 becomes −4
+    [InlineData(0, 1, 0, 0)] // a step that rounds to nothing on both axes moves nothing
+    public void Apply_SmallStep_RaisesOnlyTheXPartAndAZeroPartTo4(int vxRaw, int vyRaw, int dxRaw, int dyRaw)
+    {
+        // OV-20261110-retail-play: New Age's player coming to rest stepped 3, 2 and 1 along y, x +4;
+        // Apathy's x parts of −3 to −1 were made −4; PLAYER_VY 1/1024 left the player where it stood.
+        (WdlRuntime runtime, Player player) = Create();
+        player.Position = new System.Numerics.Vector3(5, player.Position.Y, -5);
+        runtime.SetSkill("PLAYER_VX", vxRaw / 1024.0);
+        runtime.SetSkill("PLAYER_VY", vyRaw / 1024.0);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+
+        Assert.Equal(5 + (dxRaw / 1024.0), player.Position.X, 6);
+        Assert.Equal(-5 + (dyRaw / 1024.0), player.Position.Z, 6);
+    }
+
     [Fact]
     public void Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity()
     {
