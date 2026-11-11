@@ -303,6 +303,29 @@ public class WdlRuntimeEachSecTests
     }
 
     [Fact]
+    public void Tick_SecondsSchedule_RaisesSecsInTheScheduledCyclesOnly()
+    {
+        // The oracle replay's stand-in for the host's real-time clock (OV-20261110-retail-play round 6): SECS rises in
+        // the cycle whose TICKS reaches each scheduled time, shifted by the replay clock's offset, and the clock is idle.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = MinimalMap };
+        Level level = LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+        var runtime = new WdlRuntime(level) { SecondsSchedule = [2.5, 3.0], SecondsScheduleOffset = 0.5 };
+        runtime.RunStartup();
+        runtime.Tick(OneTick);
+
+        Ticks(runtime, 11, OneTick / 4); // TICKS 2.75 (the first cycle counts none)
+        Assert.Equal(0, runtime.GetSkill("SECS"));
+        Ticks(runtime, 1, OneTick / 4); // 3.0, at 2.5 + 0.5
+        Assert.Equal(1, runtime.GetSkill("SECS"));
+        Ticks(runtime, 1, OneTick / 4);
+        Assert.Equal(1, runtime.GetSkill("SECS"));
+        Ticks(runtime, 1, OneTick / 4); // 3.5
+        Assert.Equal(2, runtime.GetSkill("SECS"));
+        Ticks(runtime, 200, OneTick / 4);
+        Assert.Equal(2, runtime.GetSkill("SECS"));
+    }
+
+    [Fact]
     public void RetailWorlds_WithAnEachSecFadeIn_ShowTheirControlPanelAfterIt()
     {
         // Guarded on the user's own archives under _research/ (a no-op otherwise). HEART, LEGALISM
