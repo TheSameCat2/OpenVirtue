@@ -1117,6 +1117,32 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_CaptureOriginalSave_EachTickWaitsGoInTheLastListWithoutTheirObject()
+    {
+        // OV-20261029-save-body round 17 (my-you): a wait an object's EACH_TICK reached is saved in the action
+        // section's last list as action, wait left and place, not in the second list with its MY.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION r 0 10;#0\n" +
+            "WALL w 0 1 0 0 0 0;#0\nTHING t 5 7 0 0;#1\nPLAYER_START 0 0 0 0;#2";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; WALL w { } THING t { EACH_TICK go; } ACTION go { SET MY.EACH_TICK, NULL; WAITT 20; }");
+        var runtime = new WdlRuntime(level);
+        runtime.RunStartup();
+        for (int i = 0; i < 4; i++)
+        {
+            runtime.Tick(1.0 / 16);
+        }
+
+        FullSave save = runtime.CaptureOriginalSave("T.WDL", "m.wmp", "T.WRS");
+
+        int go = level.ActionOrder.ToList().IndexOf("go") + 11;
+        SaveAction running = Assert.Single(save.Actions);
+        Assert.True(running.Running);
+        SaveObjectAction waiting = Assert.Single(save.ObjectActions);
+        Assert.Equal(go, waiting.Action);
+        Assert.InRange(waiting.Remaining, 1, 20 * 1024);
+    }
+
+    [Fact]
     public void Runtime_PlaySound_RecordsObjectEmitter()
     {
         const string map =

@@ -295,6 +295,12 @@ public sealed class WdlRuntime :
     private AcknexObject? _activeActionTarget;
     private bool _dispatchingGlobalEachTick;
 
+    /// <summary>
+    /// Whether the action now running was started by an object's <c>EACH_TICK</c>: a wait it reaches is saved
+    /// in the action section's last list, without its object (OV-20261029-save-body round 17).
+    /// </summary>
+    private bool _runningObjectEachTick;
+
     public WdlRuntime(
         Level level,
         string? printDirectory = null,
@@ -900,6 +906,7 @@ public sealed class WdlRuntime :
 
         // The action running the SAVE opens the second list: the waiting action being resumed, with its MY.
         List<SaveAction> actions = [];
+        List<SaveObjectAction> objectActions = [];
         if (_resumedRecord is { } resumed)
         {
             actions.Add(resumed.Action.Scope.HasMy && resumed.Action.Scope.My is { } runningMy
@@ -928,7 +935,13 @@ public sealed class WdlRuntime :
                 // cycles earlier as 100 less four cycles' TIME_CORR (round 8).
                 double step = action.Mode == WdlWaitMode.FrameCycles ? 1 : GetSkill(Timing.TimeCorrectionSkill);
                 int remaining = Raw(Math.Max(0, action.Remaining - step));
-                if (action.Scope.HasMy && action.Scope.My is { } my)
+                if (action.Scope.EachTick)
+                {
+                    // An action an object's EACH_TICK started, and what it CALLed, goes in the last list: action,
+                    // wait left and place, no object (round 17: my-you's thing and wall, 3 words each).
+                    objectActions.Add(new SaveObjectAction(ActionNumber(name), remaining, position));
+                }
+                else if (action.Scope.HasMy && action.Scope.My is { } my)
                 {
                     // An action an object's event started goes in the section's second list, with MY as the
                     // object's map number (a thing's IF_NEAR action read 14 for the 14th object) and YOU 0
@@ -1036,6 +1049,7 @@ public sealed class WdlRuntime :
 
         return new FullSave(wdlName, wmpName, wrsName, entities, walls, slots, synonyms, skills, actions)
         {
+            ObjectActions = objectActions,
             ScreenElements = screen,
             Textures = saveTextures,
             Regions = regions,
@@ -3457,7 +3471,7 @@ public sealed class WdlRuntime :
     {
         bool hasMy = _objects.TryGetValue("my", out AcknexObject? my);
         bool hasThere = _objects.TryGetValue("there", out AcknexObject? there);
-        return new ActionScope(hasMy, my, hasThere, there, _activeActionTarget);
+        return new ActionScope(hasMy, my, hasThere, there, _activeActionTarget, _runningObjectEachTick);
     }
 
     private void ApplyActionScope(ActionScope scope)
@@ -5259,7 +5273,15 @@ public sealed class WdlRuntime :
         }
 
         PrepareActorTickSkills(target);
-        RunForActionTarget(target, actionName);
+        _runningObjectEachTick = true;
+        try
+        {
+            RunForActionTarget(target, actionName);
+        }
+        finally
+        {
+            _runningObjectEachTick = false;
+        }
     }
 
     private void AdvanceAnimationCycle(AcknexObject target, double timeCorrection)
@@ -7352,7 +7374,8 @@ public sealed class WdlRuntime :
         AcknexObject? My,
         bool HasThere,
         AcknexObject? There,
-        AcknexObject? Target);
+        AcknexObject? Target,
+        bool EachTick = false);
 
     private sealed class ActiveAction(WdlExecutionState state, WdlWaitRequest wait, ActionScope scope)
     {
