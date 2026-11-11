@@ -136,6 +136,21 @@ internal static class TexmapProbeCases
             $"Round 5. The swatch on {w.Question}: how far along are its texel columns against the exact u?",
             new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", w.X1, w.Y1, w.X2, w.Y2)]),
             predictions: [("the lead of round 4's oblique walls, about 1.8 columns", "the same lead at every angle and distance")])),
+        // Round 6: the lead switched off between slope 4 (76°) and slope 8 (83°). Slopes 5, 6 and 7, and slope 4 seen
+        // with the player turned 0.3 (the wall then 59° to the line of sight): does the switch go by the view or the map?
+        .. new (string Label, double X1, double Y1, double X2, double Y2, string Run, string Question)[]
+        {
+            ("round6/wall-s5", 30.4, -8, 33.6, 8, "", "a wall of slope 5 (79°)"),
+            ("round6/wall-s6", 30.667, -8, 33.333, 8, "", "a wall of slope 6 (81°)"),
+            ("round6/wall-s7", 30.857, -8, 33.143, 8, "", "a wall of slope 7 (82°)"),
+            ("round6/wall-s8-turned", 26, -2, 28, 14, "    SET PLAYER_ANGLE, 0.3;\n", "the slope-8 wall seen with the player turned 0.3, 54° to the line of sight"),
+            ("round6/wall-s4-turned", 25, 0, 29, 16, "    SET PLAYER_ANGLE, 0.3;\n", "the slope-4 wall seen with the player turned 0.3, 59° to the line of sight"),
+        }.Select(static w => Case(
+            w.Label,
+            $"Round 6. The swatch on {w.Question}: lead or none?",
+            new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", w.X1, w.Y1, w.X2, w.Y2)]),
+            w.Run,
+            ("the switch by the angle to the line of sight", "a lead below about 80°"))),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

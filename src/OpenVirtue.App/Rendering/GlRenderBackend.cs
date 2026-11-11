@@ -28,7 +28,9 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         uniform mat4 uViewProjection;
         uniform float uColumns;
         uniform int uSprite;
+        uniform vec2 uForward;
         out vec2 vUv;
+        flat out float vWallLead;
         out float vAmbient;
         out float vDepth;
         flat out float vIsWall;
@@ -67,7 +69,18 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             vec4 clipA = uViewProjection * vec4(aWall.x, 0.0, aWall.y, 1.0);
             vec4 clipB = uViewProjection * vec4(aWall.z, 0.0, aWall.w, 1.0);
             vIsWall = (uSprite <= 0 && aPlane.x < 0.5 && (aWall.x != 0.0 || aWall.y != 0.0 || aWall.z != 0.0 || aWall.w != 0.0)) ? 1.0 : 0.0;
+            vWallLead = 0.0;
             if (vIsWall > 0.5) {
+                vec2 along = vec2(aWall.z - aWall.x, aWall.w - aWall.y);
+                float span = length(along);
+                // OV-20261104-texmap rounds 4-6: the original takes a wall's texel column about two screen columns
+                // further along when the wall's depth changes by more than an eighth of its width across the view
+                // (slope 7 and below), than when it faces the view (slope 8 and up, at any distance and from
+                // either side, by the view and not the map). A fit, not the mechanism: +0.9 and -1.0 of a column
+                // brought the probes' and the retail shots' pictures closest.
+                if (span > 1e-6) {
+                    vWallLead = abs(dot(along / span, uForward)) > 0.1240 ? 0.9 : -1.0;
+                }
                 // The slope of 1/w per column, written without dividing by w so an end on the eye
                 // plane (w = 0) stays finite: with N the columns,
                 // colA - colB = 0.5*N*(xA*wB - xB*wA)/(wA*wB) and 1/wA - 1/wB = (wB - wA)/(wA*wB),
@@ -107,6 +120,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         in float vDepth;
         flat in float vIsWall;
         flat in float vWallSlope;
+        flat in float vWallLead;
         flat in float vWallStart;
         in vec3 vWorld;
         flat in vec2 vPlane;
@@ -145,6 +159,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             // OV-20261106-clip-view p-top: an INVISIBLE step's rows show the far floor's plane
             // continued: the texel and the depth where the line of sight meets that plane.
             vec2 uv = vUv;
+            uv.x += dFdx(vUv.x) * vWallLead;
             float sightDepth = vDepth;
             if (vPlane.x > 0.5) {
                 float rise = vWorld.y - uEye.y;
@@ -228,6 +243,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
     private readonly int _solidLocation;
     private readonly int _lightDistLocation;
     private readonly int _eyeLocation;
+    private readonly int _forwardLocation;
     private uint _screenFramebuffer;
     private uint _screenColor;
     private uint _screenDepth;
@@ -297,6 +313,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
         _viewportLocation = _gl.GetUniformLocation(_program, "uViewport");
         _solidLocation = _gl.GetUniformLocation(_program, "uSolid");
         _eyeLocation = _gl.GetUniformLocation(_program, "uEye");
+        _forwardLocation = _gl.GetUniformLocation(_program, "uForward");
         _gl.UseProgram(_program);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
         _gl.Uniform1(_gl.GetUniformLocation(_program, "uPalette"), 1);
@@ -455,6 +472,7 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
             _gl.Uniform1(_phiLocation, frame.Zones.Z);
             _gl.Uniform1(_lightDistLocation, frame.LightDistance);
             _gl.Uniform3(_eyeLocation, frame.Eye.X, frame.Eye.Y, frame.Eye.Z);
+            _gl.Uniform2(_forwardLocation, frame.Forward.X, frame.Forward.Z);
             _gl.Uniform1(_columnsLocation, frame.Columns);
             _gl.Uniform2(_viewportLocation, (float)batch.Viewport.X, (float)batch.Viewport.Width);
             UploadMatrix(batch.Transform);

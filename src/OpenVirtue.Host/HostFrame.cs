@@ -51,6 +51,9 @@ public sealed class HostFrame
     /// <summary>The eye in render space, for the quads that continue a floor's plane (<c>RenderVertex.PlaneFill</c>).</summary>
     public Vector3 Eye { get; init; }
 
+    /// <summary>The view's level forward direction in render space, for the walls' texel lead.</summary>
+    public Vector3 Forward { get; init; }
+
     public List<DrawBatch> Batches { get; } = [];
 }
 
