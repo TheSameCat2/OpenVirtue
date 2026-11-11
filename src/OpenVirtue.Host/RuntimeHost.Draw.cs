@@ -51,6 +51,7 @@ public sealed partial class RuntimeHost
             Zones = Zones(),
             LightDistance = (float)Math.Max(0, _runtime.GetSkill("LIGHT_DIST")),
             Eye = _camera.Position,
+            Forward = _camera.LevelForward,
             Columns = WorldColumns(display),
         };
 
