@@ -233,6 +233,12 @@ public sealed class Player : AcknexObject
     /// </summary>
     public Vector2 LastObjectPush { get; private set; }
 
+    /// <summary>
+    /// Set by the player's move while the step's y part is only the 4/1024 minimum (the script asked for no y
+    /// velocity): a wall's hold then cuts the y part of its push toward zero (OV-20261110-wall-slide round 5).
+    /// </summary>
+    public bool YStepIsMinimum { get; set; }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null, out _);
 
@@ -409,9 +415,13 @@ public sealed class Player : AcknexObject
             return new Vector2(qx / 1024f, qy / 1024f);
         }
 
+        // OV-20261110-wall-slide round 5: the y part of the push is cut toward zero when the step's y part is only the
+        // 4/1024 minimum, and floored otherwise, as the x part always is. Legalism's maze wall, its stop rebuilt in a
+        // probe, took the cut y in 135 of 150 cycles with the minimum's y step (36 floored), and the floored one with
+        // a y step of +20 or −20 raw (15 and 16 of 150 off, against 148 and 83 cut).
         long push = hold - distance;
         qx += (long)Math.Floor(push * nx);
-        qy += (long)Math.Floor(push * ny);
+        qy += YStepIsMinimum ? (long)Math.Truncate(push * ny) : (long)Math.Floor(push * ny);
         return new Vector2(qx / 1024f, qy / 1024f);
     }
 

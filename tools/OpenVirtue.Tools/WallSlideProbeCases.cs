@@ -89,6 +89,9 @@ internal static class WallSlideProbeCases
         Slide("round5/legalism-stop", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, 0,
             "Round 5. Legalism's first wall stop rebuilt: does the step from (−1256010, 971873) end at (−1255787, 971780) as there, or a unit off?",
             1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n"),
+        .. new[] { ("up", 20), ("down", -20) }.Select(static v => Slide($"round5/legalism-stop-{v.Item1}", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, v.Item2 / 1024.0,
+            $"Round 5. Legalism's stop with a y step of {v.Item2} raw, so the 4/1024 minimum plays no part: is y still a unit above OpenVirtue's hold?",
+            1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n")),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

@@ -75,9 +75,11 @@ public static class WdlPlayerMotion
             ? (float)(runtime.GetSkill("PLAYER_VZ") * VerticalScale(timeCorrection))
             : 0;
         bool wallStopped = false;
+        player.YStepIsMinimum = nudgeY != 0 && WdlRuntime.EngineProduct(requestedVelocityY, timeCorrection) == 0;
         Vector2 displacement = timeCorrection > 0 && !held
             ? player.MoveHorizontal((float)stepX, (float)stepY, out wallStopped)
             : Vector2.Zero;
+        player.YStepIsMinimum = false;
         if (timeCorrection > 0 && !held)
         {
             // As for a CAREFULLY actor (OV-20261029-actor-events), a part a wall stopped takes the

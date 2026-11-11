@@ -161,4 +161,14 @@ the map with `TraceProbeMap`'s new `OffsetX`/`OffsetY`. `w45-far`, `w27-far` and
 - The difference left: Legalism's step has a y part only from the 4/1024 minimum. The probes do too, but they
   push y upward.
 
-Not implemented; the probe is kept for the next fit.
+Two variants, `legalism-stop-up` and `legalism-stop-down`, step 20 raw up or down in y as well, so the minimum
+plays no part. With them, flooring the y part fits again (3 and 0 off of 150). Implemented:
+- **A step's end is in contact while its distance from the line is under `PLAYER_WIDTH` + 1 unit** (floored, then
+  compared). `LevelCollisionWorld` took half a unit and let a step at 1433.53 through. legalism-stop then
+  matches 217 of 219 lines (140 before).
+- **When the step's y part is only the 4/1024 minimum, the hold cuts the y part of the push toward zero**
+  (`Player.YStepIsMinimum`).
+
+The replay summary went to 1081/1273, nothing lost. Still open: Legalism's walk at line 369 (step 273 raw)
+wants that y part floored. Over the probe and the walk, a distance taken with the minimum's y, the push
+floored in x and rounded in y fits 15 of 150 and 0 of 34 off. It is not tried against the other probes yet.
