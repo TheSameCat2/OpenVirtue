@@ -143,3 +143,22 @@ the map with `TraceProbeMap`'s new `OffsetX`/`OffsetY`. `w45-far`, `w27-far` and
 - Legalism's stop starts 1435.9 out (`PLAYER_WIDTH` 1433, hold 1484). Only the distance left unfloored (1385.40)
   gives its (−1255787, 971780). Over all the probes' cycles, though, the floored distance misses 29 and the
   unfloored one 256. So this first contact is still open.
+
+## Round 5 (2026-11-11): Legalism's stop rebuilt
+`round5/legalism-stop` puts Legalism's maze wall in a probe room at its corners as the map gives them,
+(−1195.154, 944.359) and (−1264.319, 957.931). The far corner lies outside the room. The player is beamed to
+(−1256010, 971873) raw, where the walk stood a cycle before its first stop, and steps 243 raw a cycle along x.
+`OVWSL0.TXT` hash `afcf60f6`.
+
+- **The probe gives Legalism's stop exactly**: (−1255787, 971780). It then slides along the wall for about 150
+  cycles. So the unit is the hold's, not the walk's.
+- With OpenVirtue's hold (distance floored, both parts of the push floored), 101 of the 150 cycles are a unit
+  off, all of them in y, the original one higher. Cutting the push's y part toward zero instead fits 148 of
+  150 and changes no earlier probe; those all pushed y upward, where cut and floor agree. But Apathy's curtain
+  slide (y pushed down, the larger part of the normal) and Heart's corner (y pushed down, the smaller part) both
+  need y floored: 23 of 23 and 1 of 1 off with it cut. Neither the sign of y nor the larger part of the normal
+  tells Legalism's wall from theirs.
+- The difference left: Legalism's step has a y part only from the 4/1024 minimum. The probes do too, but they
+  push y upward.
+
+Not implemented; the probe is kept for the next fit.
