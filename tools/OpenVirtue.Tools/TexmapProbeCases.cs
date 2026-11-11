@@ -122,6 +122,20 @@ internal static class TexmapProbeCases
             "Round 4. The baseline wall with corners off the grid, (32, −4.3) to (32, 4.61): is the column origin the corner cut toward zero, rounded, or exact?",
             new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", 32, -4.3, 32, 4.61)]),
             predictions: [("the corner cut toward zero, as the map's vertices are", "column 0 at y 4.6094")]),
+        // Round 5: on round 4's oblique walls the texel columns came about 1.8 screen columns further along than on
+        // walls along an axis. How does that lead go with the wall's angle and distance?
+        .. new (string Label, double X1, double Y1, double X2, double Y2, string Question)[]
+        {
+            ("round5/wall-s8", 30, -8, 32, 8, "a nearly facing wall, slope 8"),
+            ("round5/wall-s2", 26, -8, 34, 8, "a wall of slope 2"),
+            ("round5/wall-d45n", 12, -6, 24, 6, "the 45° wall nearer, about 18 ahead"),
+            ("round5/wall-d45f", 36, -6, 48, 6, "the 45° wall farther, about 42 ahead"),
+            ("round5/wall-d45m", 24, 6, 36, -6, "the 45° wall of the other sense, from (24, 6) to (36, −6)"),
+        }.Select(static w => Case(
+            w.Label,
+            $"Round 5. The swatch on {w.Question}: how far along are its texel columns against the exact u?",
+            new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", w.X1, w.Y1, w.X2, w.Y2)]),
+            predictions: [("the lead of round 4's oblique walls, about 1.8 columns", "the same lead at every angle and distance")])),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
