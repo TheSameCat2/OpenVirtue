@@ -278,7 +278,7 @@ public sealed class Player : AcknexObject
         wallStopped = blocking.Count > 0;
         if (wallStopped)
         {
-            end = blocking.Count == 1 && blocking[0] is Wall stopWall && HoldOffWall(stopWall, start, dx, dz) is { } held
+            end = HoldOffWalls(blocking, start, dx, dz) is { } held
                 ? held
                 : new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
             foreach (AcknexObject wall in blocking)
@@ -295,6 +295,57 @@ public sealed class Player : AcknexObject
     }
 
     /// <summary>
+    /// Where the walls that stopped a step hold it: each in turn (<see cref="HoldOffWall"/>), the one whose line is
+    /// nearest the step's end first. Heart's walk into a corner of two walls, both within <see cref="Width"/> of the
+    /// step's end, was held off the nearer (1339/1024) and then left by the other, 1518 from it after that hold
+    /// (OV-20261110-retail-play round 6). Null unless every stopper is a wall the hold can measure.
+    /// </summary>
+    private Vector2? HoldOffWalls(List<AcknexObject> blocking, Vector2 start, float dx, float dz)
+    {
+        if (blocking.Count == 0 || blocking.Any(static o => o is not Wall))
+        {
+            return null;
+        }
+
+        long qx = (long)Math.Round(start.X * 1024.0) + (long)Math.Round(dx * 1024.0);
+        long qy = (long)Math.Round(start.Y * 1024.0) + (long)Math.Round(dz * 1024.0);
+        var walls = new List<(Wall Wall, double Distance)>();
+        foreach (Wall wall in blocking.Cast<Wall>())
+        {
+            if (LineDistance(wall, qx, qy) is not { } distance)
+            {
+                return null;
+            }
+
+            walls.Add((wall, distance));
+        }
+
+        Vector2 held = new(qx / 1024f, qy / 1024f);
+        foreach ((Wall wall, _) in walls.OrderBy(static w => w.Distance))
+        {
+            held = HoldOffWall(wall, start, (long)Math.Round(held.X * 1024.0), (long)Math.Round(held.Y * 1024.0))!.Value;
+        }
+
+        return held;
+    }
+
+    /// <summary>The distance in 1/1024 from a point in 1/1024 to a wall's line, or null for a wall the hold cannot measure.</summary>
+    private double? LineDistance(Wall wall, long qx, long qy)
+    {
+        if ((uint)wall.Vertex1 >= (uint)_level.Vertices.Count || (uint)wall.Vertex2 >= (uint)_level.Vertices.Count)
+        {
+            return null;
+        }
+
+        double ax = Math.Round(_level.Vertices[wall.Vertex1].X * 1024.0);
+        double ay = Math.Round(_level.Vertices[wall.Vertex1].Y * 1024.0);
+        double bx = Math.Round(_level.Vertices[wall.Vertex2].X * 1024.0);
+        double by = Math.Round(_level.Vertices[wall.Vertex2].Y * 1024.0);
+        double length = Math.Sqrt(((bx - ax) * (bx - ax)) + ((by - ay) * (by - ay)));
+        return length < 1 ? null : Math.Abs(((qx - ax) * -(by - ay)) + ((qy - ay) * (bx - ax))) / length;
+    }
+
+    /// <summary>
     /// Where one wall holds a step, in 22.10 (OV-20261110-wall-slide): the whole step is taken, first
     /// pushed off the wall's ends like things of no width; then, if it is within <see cref="Width"/> of
     /// the line, its distance is measured with the wall's exact unit normal and cut down, and it is
@@ -302,7 +353,7 @@ public sealed class Player : AcknexObject
     /// part cut down. Walls of slope 1/2, 3/4, 1 and 2 slid to the unit this way. Null for a wall with
     /// a missing vertex or no length.
     /// </summary>
-    private Vector2? HoldOffWall(Wall wall, Vector2 start, float dx, float dz)
+    private Vector2? HoldOffWall(Wall wall, Vector2 start, long qx, long qy)
     {
         if ((uint)wall.Vertex1 >= (uint)_level.Vertices.Count || (uint)wall.Vertex2 >= (uint)_level.Vertices.Count)
         {
@@ -321,8 +372,6 @@ public sealed class Player : AcknexObject
 
         long px = (long)Math.Round(start.X * 1024.0);
         long py = (long)Math.Round(start.Y * 1024.0);
-        long qx = px + (long)Math.Round(dx * 1024.0);
-        long qy = py + (long)Math.Round(dz * 1024.0);
 
         // The wall's ends first, each like a thing of no width; then the line (w45-s02 cycle 187: an end
         // 1185 from the step's end pushed it to (19369, 8803), and the line to (19325, 8846)).

@@ -167,7 +167,8 @@ column, and `WdlRuntime.SecondsSchedule` raises `SECS` in the same cycles. The t
 a resumed wait runs before the second rises in its cycle. So the second rose in the cycle of the last line
 that still shows the old value. With this, `SECS` matches on every line of the three walks. Legalism's walk
 first parts at line 368 (204 before, on `SECS`), at its wall slide, Heart's at 314, and New Age's at 160 on the open
-`ACCEL` cycle. Harness test: `OracleTraceTests.SecondsSteps_WaitLoopTracer_GivesTheCycleOfTheLastOldSecond`.
+`ACCEL` cycle. Heart's corner, which parted it at 313, is two walls held one after the other, the nearer first
+(OV-20261110-wall-slide round 3); Heart now matches to line 354. Harness test: `OracleTraceTests.SecondsSteps_WaitLoopTracer_GivesTheCycleOfTheLastOldSecond`.
 
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
