@@ -1165,7 +1165,7 @@ internal static class OracleReplay
         // at 8 ticks a cycle, then at 60 Hz).
         private readonly double _shortest = ShortestGap(cycleTicks) ?? fallbackTicks;
 
-        // A sampler that printed every cycle: at least 100 samples, all but one in a hundred a typical
+        // A sampler that printed every cycle: at least 100 samples, all but one in fifty a typical
         // frame apart. Its rare long gaps are long frames of the original's (a retail level's disk load
         // after its start, 6.8 ticks: OV-20261110-retail-play), not skipped cycles.
         private readonly bool _everyCycle = consecutive || EveryCycle(cycleTicks);
@@ -1347,7 +1347,9 @@ internal static class OracleReplay
                 }
             }
 
-            return longGaps * 100 <= ticks.Count;
+            // One in fifty: a retail walk with SCREENSHOTs had a 7.9-tick disk load and eleven single frames of 1.03 to
+            // 1.56 ticks in 899 cycles (OV-20261110-retail-play round 7).
+            return longGaps * 50 <= ticks.Count;
         }
 
         private static double? Median(IReadOnlyList<double> ticks)
