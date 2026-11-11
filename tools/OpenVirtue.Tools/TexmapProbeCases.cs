@@ -105,6 +105,23 @@ internal static class TexmapProbeCases
             new TraceProbeMap(Textures: Textures, RoomCeiling: "tm_tex"),
             $"    SET PLAYER_SIZE, {eye};\n    SET PLAYER_Z, {eye};\n",
             [("ceiling + 8", "the far wall's top at height 24"), ("mirror of the eye in the ceiling", $"at {32 - eye}"), ("ceiling + eye", $"at {16 + eye}")])),
+        // Round 4: the retail levels' walls run at all angles from off-grid corners, and Heart's showed every texel
+        // column a few pixels off. Is a wall's distance from its second vertex the straight-line one?
+        Case(
+            "round4/wall-diag45",
+            "Round 4. The swatch on a 45° wall from (24, −6) to (36, 6): does the column grow by one every half step of straight-line distance from the second vertex, or of |dx| + |dy|, or of the larger part?",
+            new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", 24, -6, 36, 6)]),
+            predictions: [("straight-line distance", "the column at the wall's far end is 16.97 · 2 mod 16"), ("|dx| + |dy|", "the columns come 1.41 times as narrow")]),
+        Case(
+            "round4/wall-diag4",
+            "Round 4. A steep wall from (30, −8) to (34, 8): the same question at slope 4.",
+            new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", 30, -8, 34, 8)]),
+            predictions: [("straight-line distance", "16.49 steps from end to end")]),
+        Case(
+            "round4/wall-frac",
+            "Round 4. The baseline wall with corners off the grid, (32, −4.3) to (32, 4.61): is the column origin the corner cut toward zero, rounded, or exact?",
+            new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", 32, -4.3, 32, 4.61)]),
+            predictions: [("the corner cut toward zero, as the map's vertices are", "column 0 at y 4.6094")]),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

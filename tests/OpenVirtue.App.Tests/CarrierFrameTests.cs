@@ -56,7 +56,15 @@ public sealed class CarrierFrameTests
                 using (platform)
                 using (graphics)
                 {
-                    Run(work, Path.Combine(output, Path.GetFileName(probe.TrimEnd('/')), Path.GetFileName(carrier)), platform, graphics);
+                    string target = Path.Combine(output, Path.GetFileName(probe.TrimEnd('/')), Path.GetFileName(carrier));
+                    if (OracleReplay.HasOriginalOutputs(carrier))
+                    {
+                        Replay(carrier, target, graphics);
+                    }
+                    else
+                    {
+                        Run(work, target, platform, graphics);
+                    }
                 }
             }
         }
@@ -80,6 +88,40 @@ public sealed class CarrierFrameTests
             .FirstOrDefault(file => Path.GetFileName(file).Equals(traceFile, StringComparison.OrdinalIgnoreCase));
         return path is not null &&
             OracleTrace.RanAtSlowFrames(OracleTrace.Parse(File.ReadAllText(path, System.Text.Encoding.Latin1)));
+    }
+
+    /// <summary>
+    /// A carrier with a trace is replayed as <c>ovtool oracle diff</c> replays it, on the clock its trace gives, so
+    /// each <c>SCREENSHOT</c> comes in the cycle and at the <c>TICKS</c> the original took it: on a fixed 60 Hz
+    /// clock Heart's walk took its first at <c>TICKS</c> 52.8, not 63.5, the player still rising from the start.
+    /// </summary>
+    private void Replay(string carrier, string target, GlRenderBackend graphics)
+    {
+        if (Directory.Exists(target))
+        {
+            Directory.Delete(target, recursive: true);
+        }
+
+        string shots = Path.Combine(target, "screenshots");
+        Directory.CreateDirectory(shots);
+        try
+        {
+            string replayed = OracleReplay.RenderCarrier(carrier, graphics);
+            string source = Path.Combine(replayed, "screenshots");
+            if (Directory.Exists(source))
+            {
+                foreach (string file in Directory.EnumerateFiles(source))
+                {
+                    File.Copy(file, Path.Combine(shots, Path.GetFileName(file)), overwrite: true);
+                }
+            }
+
+            _output.WriteLine($"{target}: replayed");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException or IOException or ArgumentException)
+        {
+            _output.WriteLine($"{target}: {ex.GetType().Name} {ex.Message}");
+        }
     }
 
     private void Run(string work, string target, SdlPlatform platform, GlRenderBackend graphics)
