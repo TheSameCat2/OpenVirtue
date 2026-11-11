@@ -311,7 +311,7 @@ internal static class OracleReplay
             // 1.0 to 1.35 ticks by the first cycle (OV-20261103-contact-clock).
             if (slowFrames is null)
             {
-                host.Runtime.SecondsClockRate = SecondsClockRate;
+                host.Runtime.SecondsClockRate = carrierCase.SecondsRate ?? SecondsClockRate;
                 host.Runtime.SecondsClockStartTicks = carrierCase.SecondsOffset ?? SecondsClockStartTicks;
             }
             audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
@@ -986,11 +986,13 @@ internal static class OracleReplay
     /// fixed frames (<c>"time_corr": 0.28125</c>) when no column prints <c>TICKS</c> and detection
     /// would take a coordinate for it. It may give where the original's seconds clock stood at the first
     /// cycle (<c>"seconds_offset": 1.3</c>, ticks), read off its <c>SECS</c> or <c>EACH_SEC</c> lines, which
-    /// differs from launch to launch (OV-20261103-contact-clock).
+    /// differs from launch to launch (OV-20261103-contact-clock), and how fast it runs against
+    /// <c>TICKS</c> (<c>"seconds_rate": 0.9898</c>; 0.991 otherwise), read off the same lines: the retail
+    /// walks' seconds came 16.14 to 16.16 <c>TICKS</c> apart (OV-20261110-retail-play round 5).
     /// </summary>
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
-        double? TimeCorrection = null, double? SecondsOffset = null, string? HookToken = null)
+        double? TimeCorrection = null, double? SecondsOffset = null, string? HookToken = null, double? SecondsRate = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -1021,7 +1023,10 @@ internal static class OracleReplay
                 ? so.GetDouble()
                 : null;
             string? hookToken = root.TryGetProperty("hook_token", out JsonElement hk) && hk.ValueKind == JsonValueKind.String ? hk.GetString() : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken);
+            double? secondsRate = root.TryGetProperty("seconds_rate", out JsonElement sr) && sr.ValueKind == JsonValueKind.Number
+                ? sr.GetDouble()
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken, secondsRate);
         }
     }
 

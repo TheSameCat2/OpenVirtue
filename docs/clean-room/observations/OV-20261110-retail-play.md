@@ -148,7 +148,16 @@ tracer for 900 cycles, the walk starting at cycle 220 after the start-up countdo
   original reads 512, as 513·1023/1024 (the cut sine) cut toward zero gives. No single form fits every
   line, though: a cut sum of the products with the cut sine and cosine fits most, and better with the
   heading before the frame's turn. Not changed.
-- `PLAYER_Z` parts with the start-up countdown's bob, as in the idle runs: the seconds clock's phase.
+- **The seconds clock, read off `SECS`.** The walks now print `SECS` too. In all three a second takes
+  16.14 to 16.16 `TICKS` (rate 0.987), not the 16.15 of contact-clock's 60 Hz carriers (0.991), and the
+  clock stands 1.1 to 1.5 ticks in at the first cycle (Heart 1.3, Legalism 1.1, New Age 1.5). That is
+  the launch-dependent phase OV-20261103-contact-clock noted. With `seconds_rate` and `seconds_offset`
+  in the carriers' `case.json`, `SECS` matches on all but one or two lines. `PLAYER_Z` then matches
+  Heart's walk to line 317 and Legalism's to 403, where each follows its wall-slide position.
+- New Age's `PLAYER_Z` still parts at line 159, after a cycle of 1.031 ticks: the ground spring's
+  `ACCEL` on `PLAYER_VZ` gives 343/1024 in OpenVirtue, a tick and then the 32/1024 left, and 350 in the
+  original. Neither one long step nor two halves gives 350. How `ACCEL` takes a cycle longer than a tick
+  is open; it shows only after such a frame.
 
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
