@@ -754,3 +754,18 @@ declared `FLAGS SAVE, FLOOR_ASCEND` before the save, wdist-print printing
   an unplaced wall). So +106 is not the frame's `DELAY` as read then; what it counts, and what +26
   is, stay open (OpenVirtue writes the `DELAY` at +106 and 5 at +26: the save differs at +26).
 
+
+## Addendum (2026-11-11): my-you's last list, and when objects start their EACH_TICK
+No launch. Read again, `round17/my-you`'s action section (68 bytes in the original) holds: no global
+waiting action; the second list with only the action running the `SAVE`; and the last list with two
+3-word records, (19, 188800, 1) and (18, 203776, 1). Those are the thing's `sb_go` and the wall's `sb_gw`,
+each at its `WAITT 200`. OpenVirtue wrote all three objects' waits into the second list with their `MY`,
+116 bytes. It now marks an action an object's `EACH_TICK` started, and anything it `CALL`s, and saves its
+wait in the last list (`WdlRuntime`, `ActionScope.EachTick`; test
+`Runtime_CaptureOriginalSave_EachTickWaitsGoInTheLastListWithoutTheirObject`). The section is now 80 bytes.
+
+Still open, the timing behind the other 12 bytes. Their times left date the waits: the thing's began at
+about `TICKS` 0.7, the wall's at about 15.3, a tick before the save, and the actor's not at all. Its record
+still holds `EACH_TICK` 19 at +332, read as the actor's slot 162 in a thing–actor–wall order. OpenVirtue
+starts all three in the first cycle. What holds back a wall's and an actor's first `EACH_TICK` is not
+measured.
