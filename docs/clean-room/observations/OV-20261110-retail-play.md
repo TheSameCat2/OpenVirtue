@@ -224,6 +224,11 @@ No launch.
   products and sum cut, rounded or floored), the turned heading fits at most 1766. This settles round 5's open
   `PLAYER_SPEED` item for most lines.
 - The replay summary is 1072/1258: nothing lost. Texmap gains its five round-5 carriers.
+- **The idle runs match.** `heart-idle` and `legalism-idle` were relaunched with `SECS` added to their tracers
+  (`"seconds_column": "C:13"`). With the replay's seconds schedule they match on all 901 lines, up from 159:
+  the eye's countdown bob had waited on the second. The schedule now accepts a cycle within 1.5/1024 of a
+  printed time, since Heart's 225.6875 printed as 225.688. All four retail idle runs now match the
+  original line for line.
 
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
