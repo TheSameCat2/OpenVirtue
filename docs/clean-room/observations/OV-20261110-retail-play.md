@@ -170,6 +170,31 @@ first parts at line 368 (204 before, on `SECS`), at its wall slide, Heart's at 3
 `ACCEL` cycle. Heart's corner, which parted it at 313, is two walls held one after the other, the nearer first
 (OV-20261110-wall-slide round 3); Heart now matches to line 354. Harness test: `OracleTraceTests.SecondsSteps_WaitLoopTracer_GivesTheCycleOfTheLastOldSecond`.
 
+## Round 7 (2026-11-11): screenshots of the four walks
+`apathy-shots`, `heart-shots`, `legalism-shots` and `newage-shots` are the walk carriers with `SCREENSHOT`s in
+the tracer at cycles 200, 260, 330, 420, 470, 560 and 690. Apathy's tracer ends at 600, so it took six. A
+second launch of each also printed `PLAYER_TILT`, and New Age's printed `SCREEN_HGT`, `SCREEN_Y`,
+`SCREEN_WIDTH`, `PLAYER_ARC`, `ASPECT` and `PLAYER_SIZE`. The screenshots stretch some cycles: Heart's cycle
+after a shot took 1.563 `TICKS`.
+
+- **The frame comparison ran on the wrong clock.** `CarrierFrameTests` stepped 60 Hz frames, so Heart's first
+  shot came at `TICKS` 52.8, not 63.469. The player was still rising from the start-up there (eye 4.414,
+  not 4.605), and every row sat 7 to 9 rows off. The test now replays each traced carrier as
+  `ovtool oracle diff` does, through the GL backend (`OracleReplay.RenderCarrier`). Apathy's first shot then
+  differs by 51 824 pixels (158 208 before), and Heart's by 66 509 (179 022). Over nine rendering probes the
+  clock leaves every screen the same except view-activity, which goes from 21 990 to 18 854.
+- `PLAYER_TILT` stays 0 throughout. `SCREEN_HGT` (420 from the first frame), `PLAYER_ARC` 1 and `ASPECT` 1 agree
+  with OpenVirtue's.
+- **A wall is never seen from a closed region.** Legalism's shots showed a dark column down the whole 3-D
+  window in OpenVirtue at the corner of two maze walls, 39 to 63 steps ahead. The wall past the corner
+  borders the closed "border" region, floor 40 on ceiling 40, `CLIP_DIST 0`. The eye lay on that side of
+  the wall's line, so the wall counted as seen from "border" and out of reach. Its fill, pulled forward,
+  won over the corner's occluder in that one column. The original shows the corridor there. Implemented in
+  `ViewClip`: a closed region is never the seeing region. The nine probes are unchanged.
+- Still open: New Age's shots, whose replay leaves the original at line 9 (a 7.6-tick first cycle there).
+  Apathy's fourth shot, pressed against the curtain, is darker and differs in its texels. The rest is mostly
+  texels one shade off.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

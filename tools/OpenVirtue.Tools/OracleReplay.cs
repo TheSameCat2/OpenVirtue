@@ -173,6 +173,14 @@ internal static class OracleReplay
     private static bool IsCarrier(string directory) =>
         File.Exists(Path.Combine(directory, "work", WorldName + ".WDL"));
 
+    /// <summary>
+    /// Replays one carrier as <c>ovtool oracle diff</c> does, on its clock read off the original's trace, but drawn
+    /// through <paramref name="graphics"/>: the frame comparison's way to take each <c>SCREENSHOT</c> in the cycle
+    /// the original took it. Returns the directory the replay wrote, with its <c>screenshots</c>.
+    /// </summary>
+    internal static string RenderCarrier(string carrier, IRenderBackend graphics) =>
+        ReplayCarrier(Path.GetFullPath(carrier), ReplayOptions.Parse([]) with { Graphics = graphics }).ReplayDirectory;
+
     private static CarrierResult ReplayCarrier(string carrier, ReplayOptions options)
     {
         string work = Path.Combine(carrier, "work");
@@ -287,7 +295,7 @@ internal static class OracleReplay
         int frames = 0;
         double ticks;
         var audio = new TimedAudioSink();
-        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, input, audio, new HeadlessRender(), RandomSeed))
+        using (RuntimeHost host = RuntimeHost.OpenArchive(archive, WorldName + ".WDL", window, input, audio, options.Graphics ?? new HeadlessRender(), RandomSeed))
         {
             input.Ticks = () => host.Runtime.GetSkill(Timing.TicksSkill);
             host.FrameClock = () => clock.Next(host.Runtime.GetSkill(Timing.TicksSkill));
@@ -1087,7 +1095,8 @@ internal static class OracleReplay
         int MaxFrames,
         int Context,
         string? Error,
-        bool DumpClock = false)
+        bool DumpClock = false,
+        IRenderBackend? Graphics = null)
     {
         public static ReplayOptions Parse(string[] args)
         {

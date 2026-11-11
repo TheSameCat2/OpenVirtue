@@ -279,8 +279,11 @@ public sealed class ViewClip
             return false;
         }
 
+        // A closed region, floor on ceiling (retail's "border" with CLIP_DIST 0), is never walked through: a wall
+        // whose line puts the eye on that side is not seen from there. Legalism's maze wall past a corner was,
+        // and its fill showed down the corner's column (OV-20261110-retail-play round 7).
         Region? seeing = SeeingRegion(wall, v1, v2, x, y);
-        if (seeing is null || seeing.BelowRegion >= 0)
+        if (seeing is null || seeing.BelowRegion >= 0 || seeing.FloorHeight >= seeing.CeilHeight)
         {
             return false;
         }

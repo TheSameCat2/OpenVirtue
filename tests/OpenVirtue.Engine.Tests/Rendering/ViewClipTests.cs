@@ -75,6 +75,32 @@ public sealed class ViewClipTests
     }
 
     [Fact]
+    public void IsWallOutOfReach_SeenFromAClosedRegion_KeepsTheWall()
+    {
+        // OV-20261110-retail-play round 7: the region past x = 48 closed, floor on ceiling, with CLIP_DIST 0, as
+        // retail's "border". Its wall at x = 60 puts the eye on that region's side of its line, but no column is
+        // walked through a closed region, so the wall is not out of reach (Legalism's maze wall past a corner
+        // filled the corner's column down the screen).
+        string main = """
+            MAPFILE <m.wmp>;
+            BMAP wm,<W.PCX>;
+            TEXTURE wt { SCALE_X 4; SCALE_Y 4; BMAPS wm; }
+            WALL plain { TEXTURE wt; }
+            WALL inner { TEXTURE wt; }
+            REGION room { FLOOR_HGT 0; CEIL_HGT 16; FLOOR_TEX wt; CEIL_TEX wt; }
+            REGION far { FLOOR_HGT 16; CEIL_HGT 16; FLOOR_TEX wt; CEIL_TEX wt; CLIP_DIST 0; }
+            """;
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = Map.Replace("WALLNAME", "inner", StringComparison.Ordinal).Replace("REGION far 4 16", "REGION far 16 16", StringComparison.Ordinal),
+        };
+        Level level = LevelLoader.LoadCore("x", main, name => resources.GetValueOrDefault(Path.GetFileName(name)));
+        Wall outer = level.Walls.Single(static wall => wall.Vertex1 == 6);
+
+        Assert.False(new ViewClip(level).IsWallOutOfReach(outer, 0, 0));
+    }
+
+    [Fact]
     public void IsWallOutOfReach_FarFlag_KeepsTheWall()
     {
         Level level = Load(20, "FLAGS FAR;");
