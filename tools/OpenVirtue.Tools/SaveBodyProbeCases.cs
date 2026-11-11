@@ -249,6 +249,25 @@ internal static class SaveBodyProbeCases
             "ACTION sb_go\n{\n    SET MY.EACH_TICK, NULL;\n    RULE sb_n = 3;\n    WAITT 200;\n}\n" +
             "ACTION sb_gw\n{\n    SET MY.EACH_TICK, NULL;\n    CALL sb_sub;\n    WAITT 200;\n}\n"),
         Declared(
+            "round22/tick-start",
+            "Round 22. my-you's scene, each object's EACH_TICK printing TICKS and its Y the first time it runs: my-you's waits began at " +
+            "about TICKS 0.7 (the thing), 15.3 (the wall) and not by 16.3 (the actor). When does each object's EACH_TICK first run?",
+            "EACH_TICK sb_gw;",
+            "EACH_TICK sb_go;",
+            "ACTION sb_go\n{\n    PRINT_STRING \"G \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \" \";\n    PRINT_VALUE MY.Y;\n    PRINT_STRING \"\\n\";\n" +
+            "    SET MY.EACH_TICK, NULL;\n}\n" +
+            "ACTION sb_gw\n{\n    PRINT_STRING \"W \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \"\\n\";\n    SET MY.EACH_TICK, NULL;\n}\n"),
+        Declared(
+            "round22/tick-wait",
+            "Round 22. As tick-start, each object's action then waits WAITT 4 and prints again: my-you's wall wait had counted down " +
+            "about 1 tick and the thing's 15.6 by the SAVE. Does a wait an object's EACH_TICK started count down every cycle?",
+            "EACH_TICK sb_gw;",
+            "EACH_TICK sb_go;",
+            "ACTION sb_go\n{\n    SET MY.EACH_TICK, NULL;\n    PRINT_STRING \"G \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \" \";\n    PRINT_VALUE MY.Y;\n    PRINT_STRING \"\\n\";\n" +
+            "    WAITT 4;\n    PRINT_STRING \"G2 \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \" \";\n    PRINT_VALUE MY.Y;\n    PRINT_STRING \"\\n\";\n}\n" +
+            "ACTION sb_gw\n{\n    SET MY.EACH_TICK, NULL;\n    PRINT_STRING \"W \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \"\\n\";\n" +
+            "    WAITT 4;\n    PRINT_STRING \"W2 \";\n    PRINT_VALUE TICKS;\n    PRINT_STRING \"\\n\";\n}\n"),
+        Declared(
             "my-you",
             "Round 17. The thing, the actor and the wall each start a waiting action from EACH_TICK (WAITT 200): how do the " +
             "waiting actions' MY words name them? (V3.963 rejects SET YOU.)",
