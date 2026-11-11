@@ -52,10 +52,14 @@ public static class WdlPlayerMotion
         const float Nudge = 4f / 1024;
         double nudgeX = 0;
         double nudgeY = 0;
-        if (timeCorrection > 0 && (requestedVelocityX != 0 || requestedVelocityY != 0))
+        // OV-20261110-retail-play New Age walk: a y part under 4/1024 but not 0 is taken as it is (the
+        // player coming to rest stepped 3, 2 and 1 along y with its x part of 0 made +4), where Apathy's
+        // x parts of −3 to −1 were made −4; and a step that rounds to nothing on both axes moves nothing
+        // (PLAYER_VY 1/1024 left the player where it stood).
+        if (timeCorrection > 0 && (requestedVelocityX != 0 || requestedVelocityY != 0) && (stepX != 0 || stepY != 0))
         {
             nudgeX = MinimumStep(stepX, Nudge) - stepX;
-            nudgeY = MinimumStep(stepY, Nudge) - stepY;
+            nudgeY = (stepY != 0 ? stepY : MinimumStep(stepY, Nudge)) - stepY;
             stepX += nudgeX;
             stepY += nudgeY;
         }
