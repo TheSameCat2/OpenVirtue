@@ -70,6 +70,13 @@ simply to the nearest unit.
 
 ## Open Questions
 - w63-s02's first contact, from 1053.8: a unit off.
+- Retail walls with corner points that are not whole steps (Apathy's (−1.447, 42.397), Heart's
+  (−8.481, 181.039), Legalism's (−1195.154, 944.359)). Truncating the corners to 1/1024 instead of
+  rounding them keeps Apathy's walk right 4 cycles longer and Heart's 6, but Legalism's 3 shorter. On
+  Legalism's walk at line 370 the original stops a step that OpenVirtue's rounded corners put 1434.24
+  from the line, against the 1.4 width's 1433. Truncated corners give 1433.88. The width is 1433,
+  not 1434: 1434 loses Apathy's climb border at line 242. OpenVirtue's stop is decided by its float
+  solver, not in 22.10, so neither reading is tried yet.
 - The point push's last unit at a wall's end.
 - Two or more walls at once (corners): still OpenVirtue's float solver, rounded to the nearest unit.
 
