@@ -2875,6 +2875,19 @@ public sealed class WdlRuntime :
     public double SecondsClockRate { get; set; } = 1;
 
     /// <summary>
+    /// The <c>TICKS</c> at which <c>SECS</c> rises, in place of the seconds clock, or <c>null</c> to run the clock.
+    /// The oracle replay sets it from the original's own trace: there the clock is the host's real time, whose
+    /// seconds came 15.5 to 16.8 <c>TICKS</c> apart in one launch (OV-20261110-retail-play round 6), which no rate
+    /// and offset reproduce. <see cref="SecondsScheduleOffset"/> is added to each.
+    /// </summary>
+    public IReadOnlyList<double>? SecondsSchedule { get; set; }
+
+    /// <summary>What the runtime's <c>TICKS</c> run ahead of the times in <see cref="SecondsSchedule"/>.</summary>
+    public double SecondsScheduleOffset { get; set; }
+
+    private int _secondsScheduleIndex;
+
+    /// <summary>
     /// Where the seconds clock stands, in ticks, when the first cycle runs (0 natively). The original's
     /// had already run about 1.0 to 1.35 ticks, varying from launch to launch with the start-up
     /// (OV-20261103-contact-clock). Set before the first cycle.
@@ -2891,6 +2904,19 @@ public sealed class WdlRuntime :
 
     private bool AdvanceSecond(double deltaSeconds)
     {
+        if (SecondsSchedule is { } schedule)
+        {
+            if (_secondsScheduleIndex >= schedule.Count ||
+                GetSkill(Timing.TicksSkill) < schedule[_secondsScheduleIndex] + SecondsScheduleOffset - (1.0 / 2048))
+            {
+                return false;
+            }
+
+            _secondsScheduleIndex++;
+            _skills[Timing.SecondsSkill] = GetSkill(Timing.SecondsSkill) + 1;
+            return true;
+        }
+
         _secondFraction += Timing.EffectiveFrameSeconds(deltaSeconds) * SecondsClockRate;
         if (_secondFraction < 1)
         {

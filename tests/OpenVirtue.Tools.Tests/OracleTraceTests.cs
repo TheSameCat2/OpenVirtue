@@ -627,4 +627,17 @@ public sealed class OracleTraceTests
         Assert.False(OracleTrace.IsFrameStep(1.09375));
         Assert.True(OracleTrace.IsFrameStep(0.28125));
     }
+
+    [Fact]
+    public void SecondsSteps_WaitLoopTracer_GivesTheCycleOfTheLastOldSecond()
+    {
+        // OV-20261110-retail-play round 6: a WAIT 1 tracer prints before SECS rises in its cycle, so the new second
+        // started in the cycle of the last line still showing the old one. Other tokens are skipped.
+        IReadOnlyList<OracleTraceLine> lines = OracleTrace.Parse(
+            "BEGIN\nC 15.219 0.000\nX 15.300 7.000\nC 15.469 1.000\nC 15.750 1.000\nC 31.469 1.000\nC 31.719 3.000\n");
+
+        IReadOnlyList<double> steps = OracleReplay.SecondsSteps(lines, new OracleTimingColumn("C", 1), new OracleTimingColumn("C", 0));
+
+        Assert.Equal([15.219, 31.469, 31.469], steps);
+    }
 }

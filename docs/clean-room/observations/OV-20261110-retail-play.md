@@ -159,6 +159,16 @@ tracer for 900 cycles, the walk starting at cycle 220 after the start-up countdo
   original. Neither one long step nor two halves gives 350. How `ACCEL` takes a cycle longer than a tick
   is open; it shows only after such a frame.
 
+## Round 6 (2026-11-11): the seconds clock taken from the trace
+No new launch. The walks' `SECS` rose at irregular gaps: 16.25, 16.78, 15.47 and 16.25 `TICKS` apart in Legalism's
+walk, for example. Each launch's seconds follow the host's real time, so no rate and offset gives every one. The
+replay now takes them from the original's trace: `"seconds_column": "C:31"` in `case.json` names the `SECS`
+column, and `WdlRuntime.SecondsSchedule` raises `SECS` in the same cycles. The tracer loops on `WAIT 1`, and
+a resumed wait runs before the second rises in its cycle. So the second rose in the cycle of the last line
+that still shows the old value. With this, `SECS` matches on every line of the three walks. Legalism's walk
+first parts at line 368 (204 before, on `SECS`), at its wall slide, Heart's at 314, and New Age's at 160 on the open
+`ACCEL` cycle. Harness test: `OracleTraceTests.SecondsSteps_WaitLoopTracer_GivesTheCycleOfTheLastOldSecond`.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).
