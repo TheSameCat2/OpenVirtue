@@ -769,3 +769,14 @@ about `TICKS` 0.7, the wall's at about 15.3, a tick before the save, and the act
 still holds `EACH_TICK` 19 at +332, read as the actor's slot 162 in a thing–actor–wall order. OpenVirtue
 starts all three in the first cycle. What holds back a wall's and an actor's first `EACH_TICK` is not
 measured.
+
+Round 22 measured it (`round22/tick-start`, `round22/tick-wait`; `OVSTA0.TXT` hashes in the carriers).
+- **Every object's `EACH_TICK` first runs in the first cycle, at `TICKS` 0**: the actor's, then the thing's,
+  then the wall's. Nothing holds them back.
+- **The difference is the waits, which the manual forbids in an `EACH_TICK` action (p.80).** In tick-wait the
+  actor's `sb_go` waits `WAITT 4` and the thing's `EACH_TICK` cannot start `sb_go` at 0. At 1.563 the waiting
+  `sb_go` goes on early, with the thing's `MY`. The thing then starts it anew at 2.094. The wall's `sb_gw`
+  never came out of its wait in the 16 ticks traced.
+- **So the action section's timings in my-you belong to this undefined case.** An action seems to run as one
+  instance, and a second start takes over its wait. OpenVirtue does not model it: retail scripts follow the
+  manual. The last-list layout above holds whatever the timings.
