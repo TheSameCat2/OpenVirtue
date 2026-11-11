@@ -201,6 +201,17 @@ after a shot took 1.563 `TICKS`.
   Apathy's fourth shot, pressed against the curtain, is darker and differs in its texels. The rest is mostly
   texels one shade off.
 
+## Round 8 (2026-11-11): Apathy's walk pressed into the curtain
+No launch. Over lines 380 to 446, the slide along Apathy's curtain wall (15 steps, from (−1481, 43414) to (−12288, 33280) in
+units) takes OpenVirtue's step rule: the velocity after the cycle's `ACCEL`, times `TIME_CORR`, rounded. Of
+the hold variants tried, the current one fits best: 51 of 65 cycles. The variants were the distance and the push
+rounded, cut or floored, and the normal from a whole-unit length or quantized to 1/4096 to 1/65536. Three single
+misses of a unit (lines 404, 408 and 410) are left. From line 421 the
+step points almost straight into the wall, and the original moves by the 4/1024 minimum: (−4, +4), (+4, −4)
+and so on. OpenVirtue follows that a unit apart, until line 427, where the original moves (+4, +1). Keeping
+every small y part after a wall stop, as the step's own rule does, makes line 424 worse. Which y part stands
+there is open.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).
