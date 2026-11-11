@@ -2878,7 +2878,8 @@ public sealed class WdlRuntime :
     /// The <c>TICKS</c> at which <c>SECS</c> rises, in place of the seconds clock, or <c>null</c> to run the clock.
     /// The oracle replay sets it from the original's own trace: there the clock is the host's real time, whose
     /// seconds came 15.5 to 16.8 <c>TICKS</c> apart in one launch (OV-20261110-retail-play round 6), which no rate
-    /// and offset reproduce. <see cref="SecondsScheduleOffset"/> is added to each.
+    /// and offset reproduce. <see cref="SecondsScheduleOffset"/> is added to each. The times are printed to three
+    /// decimals, so a cycle within 1.5/1024 of one counts (Heart's 225.6875 printed 225.688).
     /// </summary>
     public IReadOnlyList<double>? SecondsSchedule { get; set; }
 
@@ -2907,7 +2908,7 @@ public sealed class WdlRuntime :
         if (SecondsSchedule is { } schedule)
         {
             if (_secondsScheduleIndex >= schedule.Count ||
-                GetSkill(Timing.TicksSkill) < schedule[_secondsScheduleIndex] + SecondsScheduleOffset - (1.0 / 2048))
+                GetSkill(Timing.TicksSkill) < schedule[_secondsScheduleIndex] + SecondsScheduleOffset - (1.5 / 1024))
             {
                 return false;
             }
