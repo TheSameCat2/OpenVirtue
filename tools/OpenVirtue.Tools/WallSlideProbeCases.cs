@@ -36,11 +36,11 @@ internal static class WallSlideProbeCases
     private static readonly string Prelude =
         "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "ws_n", "TIME_CORR") + "    SET EACH_TICK.1, ws_tick;\n";
 
-    private static TraceProbeCase Slide(string label, (double X1, double Y1, double X2, double Y2) wall, double sx, double sy, string question, double? width = null, double offsetX = 0, double offsetY = 0) => new(
+    private static TraceProbeCase Slide(string label, (double X1, double Y1, double X2, double Y2) wall, double sx, double sy, string question, double? width = null, double offsetX = 0, double offsetY = 0, string setup = "") => new(
         label,
         question,
         Skills + Sampler,
-        (width is { } w ? string.Create(CultureInfo.InvariantCulture, $"    SET PLAYER_WIDTH, {w};\n") : "") +
+        (width is { } w ? string.Create(CultureInfo.InvariantCulture, $"    SET PLAYER_WIDTH, {w};\n") : "") + setup +
         string.Create(CultureInfo.InvariantCulture, $"    RULE ws_sx = {sx};\n    RULE ws_sy = {sy};\n    RULE ws_go = 1;\n") +
         V("GO", "TICKS", "ws_n") +
         "    WAIT 150;\n    RULE ws_go = 0;\n    SET PLAYER_VX, 0;\n    SET PLAYER_VY, 0;\n" + P("RET"),
@@ -83,6 +83,12 @@ internal static class WallSlideProbeCases
         Slide("round4/w27-far", (-4, -12, 28, 4), 0.2, 0, "Round 4. The slope-1/2 wall moved by (−1200, 950).", 1.4, -1200, 950),
         Slide("round4/w37-far", (0, -9, 24, 9), 0.3, 0, "Round 4. The 3:4 wall moved by (−1200, 950).", 1.4, -1200, 950),
         Slide("round4/w45-mid", (4, -8, 20, 8), 0.2, 0, "Round 4. The 45° wall moved by (−300, 200).", 1.4, -300, 200),
+        // Round 5: Legalism's first stop itself. Its maze wall's corners as the map gives them, (−1195.154, 944.359) and
+        // (−1264.319, 957.931) (the second outside the room), the player beamed to where that walk stood one cycle before
+        // (−1256010 and 971873 raw), stepping 243 raw a cycle along x as it did.
+        Slide("round5/legalism-stop", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, 0,
+            "Round 5. Legalism's first wall stop rebuilt: does the step from (−1256010, 971873) end at (−1255787, 971780) as there, or a unit off?",
+            1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
