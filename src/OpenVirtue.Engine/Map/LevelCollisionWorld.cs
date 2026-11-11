@@ -97,8 +97,11 @@ public sealed class LevelCollisionWorld
         float wallContact = clearanceOnContact ? radius : wallRadius;
         if (stopAtContact)
         {
-            // Positions are on the 1/1024 grid, so half a unit takes in exactly the contact distance.
-            wallContact += 0.5f / 1024;
+            // The original floors the step end's distance from the wall's line to 1/1024 before it compares it with
+            // PLAYER_WIDTH, so a distance under one unit more is in contact: Legalism's maze wall held a step that
+            // ended 1433.53 units from it with PLAYER_WIDTH 1433 (OV-20261110-wall-slide round 5). Along an axis,
+            // where the distance is a whole number of units, this is the same as half a unit.
+            wallContact += 0.999f / 1024;
         }
 
         // A move that starts inside a thing's or actor's contact circle (an actor stepped into the
