@@ -547,6 +547,24 @@ public class LevelLoaderTests
     }
 
     [Fact]
+    public void LoadCore_VertexCoordinates_AreCutTowardZeroTo1024ths()
+    {
+        // OV-20261110-wall-slide round 2: 4.154 is 4253.696 units and −7.9 is −8089.6; the player slid
+        // along a wall with those corners as if they stood at 4253 and −8089.
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["m.wmp"] = "VERTEX 4.154 -7.9 2.3;#0\nREGION room 0 10;#0\nPLAYER_START 0 0 0 0;#1",
+        };
+
+        Level level = LevelLoader.LoadCore("x", "MAPFILE <m.wmp>;", n => resources.GetValueOrDefault(Path.GetFileName(n)));
+
+        Vertex vertex = Assert.Single(level.Vertices);
+        Assert.Equal(4253 / 1024f, vertex.X);
+        Assert.Equal(-8089 / 1024f, vertex.Y);
+        Assert.Equal(2.3f, vertex.Z); // a height is not touched
+    }
+
+    [Fact]
     public void LoadCore_ActionOrder_NumbersAnActionWhereItsNameFirstAppears()
     {
         // OV-20261029-save-body round 13: a reference ahead of the declaration takes the number.

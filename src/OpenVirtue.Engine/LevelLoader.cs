@@ -108,7 +108,10 @@ public static class LevelLoader
         // OV-20261106-clip-view: V3.963 takes neither a top-level CLIP_DIST nor a skill of that name; a
         // region without its own value keeps the default.
         const double defaultRegionClipDistance = DefaultRegionClipDistance;
-        var vertices = map.Vertices.Select(v => new Vertex(v.X, v.Y, v.Z)).ToList();
+        // OV-20261110-wall-slide round 2: a vertex's map x and y are cut toward zero to 1/1024 too; the
+        // player slid along walls with off-grid corners as if they were (0, 2 and 0 cycles of 353 off,
+        // where rounded corners missed 163).
+        var vertices = map.Vertices.Select(v => new Vertex(Cut(v.X), Cut(v.Y), v.Z)).ToList();
         var regions = map.Regions.Select(r => BuildRegion(r, declarations, defaultRegionClipDistance)).ToList();
         StackBelowRegions(regions, declarations, defaultRegionClipDistance);
         var walls = map.Walls.Select(w => BuildWall(w, declarations, placed: true)).ToList();

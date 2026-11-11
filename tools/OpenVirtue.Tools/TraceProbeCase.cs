@@ -68,7 +68,7 @@ internal sealed record TraceProbeMap(
 /// region 2), so a wall standing inside the pad island spans that region's heights rather than
 /// the room's.
 /// </summary>
-internal sealed record TraceProbeWall(string Keyword, int X1, int Y1, int X2, int Y2, int OffsetX = 0, int OffsetY = 0, int Region = 0);
+internal sealed record TraceProbeWall(string Keyword, double X1, double Y1, double X2, double Y2, int OffsetX = 0, int OffsetY = 0, int Region = 0);
 
 /// <summary>
 /// A trace probe: its name, the <c>PRINTFILE</c> base name of its trace (written as
