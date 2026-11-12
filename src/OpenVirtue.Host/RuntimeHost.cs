@@ -690,6 +690,15 @@ public sealed partial class RuntimeHost : IDisposable
             break;
         }
 
+        // With no RANGE anywhere, the original still draws a bitmap's raw indices through the shown palette, unshaded:
+        // Legalism's floor bitmap in a probe palette showed the probe palette's colours, where OpenVirtue showed the
+        // bitmap's own (OV-20261104-texmap round 8). The identity table draws each index as itself.
+        if (!_shading && _palettes.Count > 0 && _palettes[^1].Rgb is { } shown)
+        {
+            _shadeTable = PaletteShading.BuildTable(shown, [], autoRange: false);
+            _shading = true;
+        }
+
         RefreshPaletteFade();
     }
 

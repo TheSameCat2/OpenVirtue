@@ -168,6 +168,12 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 uv = vec2(-hit.x * vPlaneMap.x + vPlaneMap.y, -hit.z * vPlaneMap.z + vPlaneMap.w);
                 sightDepth = vDepth * s;
             }
+            // OV-20261104-texmap round 8: a floor pixel shows the texel of the screen column one to its left. Legalism's
+            // 256 x 256 floor bitmap at SCALE_XY 32 lay one column right of OpenVirtue's in every band and row, at eye
+            // heights 8 and 4.594; ceilings showed no such shift.
+            if (vIsWall < 0.5 && uSprite == 0 && vWorld.y < uEye.y) {
+                uv -= vec2(dFdx(uv.x), dFdx(uv.y));
+            }
             if (uShaded > 0.5) {
                 // OV-20261105-shade-global: level = 2*floor((30 + phi - 32*A - 2*m)/2), m the light's
                 // zones at the texel: ceil(Qf/d) for a surface, floor(Qw/d) for a sprite, and ceil of
