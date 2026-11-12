@@ -354,7 +354,7 @@ internal static class OracleReplay
 
             if (carrierCase.SecondsColumn is { } secondsColumn && timing is { } secondsTiming)
             {
-                host.Runtime.SecondsSchedule = SecondsSteps(timingSource, secondsColumn, secondsTiming);
+                host.Runtime.SecondsSchedule = SecondsSteps(timingSource, secondsColumn, secondsTiming, carrierCase.SecondsRiseOnNewLine);
             }
             audio.Now = () => host.Runtime.GetSkill(Timing.TicksSkill) / 16;
             host.Boot();
@@ -654,7 +654,7 @@ internal static class OracleReplay
     /// wait runs before the second rises in its cycle, so the second rose in the cycle of the last line still
     /// showing the old value.
     /// </summary>
-    internal static IReadOnlyList<double> SecondsSteps(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn seconds, OracleTimingColumn timing)
+    internal static IReadOnlyList<double> SecondsSteps(IReadOnlyList<OracleTraceLine> lines, OracleTimingColumn seconds, OracleTimingColumn timing, bool risesOnNewLine = false)
     {
         List<double> steps = [];
         double? last = null;
@@ -671,7 +671,7 @@ internal static class OracleReplay
             {
                 for (int i = 0; i < (int)Math.Round(value - previous); i++)
                 {
-                    steps.Add(lastTicks);
+                    steps.Add(risesOnNewLine ? line.Value(timing.Column)!.Value : lastTicks);
                 }
             }
 
@@ -1073,7 +1073,7 @@ internal static class OracleReplay
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
         double? TimeCorrection = null, double? SecondsOffset = null, string? HookToken = null, double? SecondsRate = null,
-        OracleTimingColumn? SecondsColumn = null, TracedInputColumns? Input = null)
+        OracleTimingColumn? SecondsColumn = null, TracedInputColumns? Input = null, bool SecondsRiseOnNewLine = false)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -1114,7 +1114,12 @@ internal static class OracleReplay
             TracedInputColumns? input = root.TryGetProperty("input_columns", out JsonElement ic) && ic.ValueKind == JsonValueKind.Object
                 ? TracedInputColumns.Read(ic)
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken, secondsRate, secondsColumn, input);
+            // "seconds_rise": "new" for a seconds column that counts EACH_SEC actions printed by an EACH_TICK sampler: the
+            // count is already up on the line of the cycle in which the second rose (OV-20261104-move-mode), where a
+            // tracer's own SECS shows it a cycle later.
+            bool riseOnNew = root.TryGetProperty("seconds_rise", out JsonElement rise) && rise.ValueKind == JsonValueKind.String &&
+                string.Equals(rise.GetString(), "new", StringComparison.Ordinal);
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken, secondsRate, secondsColumn, input, riseOnNew);
         }
     }
 

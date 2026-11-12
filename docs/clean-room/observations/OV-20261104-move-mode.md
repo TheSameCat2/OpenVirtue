@@ -47,3 +47,10 @@ skips the player's motion and the contact events at 0 and below. Test
 `WdlRuntimeTests.Tick_MoveMode_FreezesObjectsAtAHalfAndEverythingButTicksAndHooksBelowZero`.
 half and zero replay 179 of 180 lines (one `EACH_SEC` count at the seconds clock's start offset),
 control and minus to the way actor's launch-phase X (0.002 off, the clock family).
+
+## Replay note (2026-11-12)
+The last column counts `EACH_SEC` actions, so it follows the original's seconds clock, which differs from launch to launch.
+With `"seconds_column": "C:10"` and `"seconds_rise": "new"` in `case.json`, the replay raises `SECS` in the cycles
+where the count went up. The count shows on the line of the cycle in which the second rose, a cycle earlier than a
+tracer's own `SECS`. `half` and `zero` then match on all 180 lines. `control` parts at its first line by 3/1024 in the
+way actor's x. `minus` parts on the replay's clock (an 8-tick gap the replay does not place).
