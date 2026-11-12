@@ -353,6 +353,16 @@ public sealed class ViewTest
         return false;
     }
 
+    /// <summary>
+    /// Whether some of a wall's face is drawn: a wall not <c>INVISIBLE</c> that is solid or a step
+    /// (<see cref="HasFace"/>), on the screen (<see cref="IsWallVisible"/>).
+    /// </summary>
+    public bool IsWallFaceVisible(Viewer viewer, Wall wall)
+    {
+        ArgumentNullException.ThrowIfNull(wall);
+        return wall["INVISIBLE"] <= 0 && HasFace(_level, wall) && IsWallVisible(viewer, wall);
+    }
+
     /// <summary>Whether a wall shows a face: a solid wall, or a step in the floor or ceiling between its regions.</summary>
     private static bool HasFace(Level level, Wall wall) =>
         !TryGetRegion(level, wall.LeftRegion, out Region? left) ||

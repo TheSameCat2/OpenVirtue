@@ -151,8 +151,14 @@ public sealed class WdlRuntime :
     private readonly List<WdlShakeRequest> _shakeRequests = [];
 
     // OV-20261104-instructions: a SHIFT, ROTATE or LIFT applies once; the region takes no further one
-    // until a SHAKE of one of its walls, things or actors (shift, shift-shake-wall, shift-shake-thing).
+    // until a SHAKE (shift, shift-shake-wall, shift-shake-thing) of any wall, thing or actor, not only
+    // its own (round 7 shift-shake-other): Apathy's secret door slides on its raindrops' SHAKEs.
     private readonly HashSet<int> _unshakenRegions = [];
+
+    // Where each thing and actor stood when last drawn: a drawn object that has moved since releases
+    // the regions as a SHAKE does (round 5 shift-visible, round 8 shift-mover-ahead; not an object
+    // that moved out of view, shift-mover-behind, nor one drawn standing, shift-thing-ahead).
+    private readonly Dictionary<MapEntity, (double X, double Y)> _drawnPositions = [];
 
     // Objects SET_ALL moved: out of the run for good (set-all-near, set-all-shake).
     private readonly HashSet<AcknexObject> _retiredObjects = [];
@@ -1686,15 +1692,14 @@ public sealed class WdlRuntime :
         ArgumentNullException.ThrowIfNull(target);
         switch (target)
         {
-            case Wall wall:
-                _unshakenRegions.Remove(wall.LeftRegion);
-                _unshakenRegions.Remove(wall.RightRegion);
+            case Wall:
+                _unshakenRegions.Clear();
                 break;
             case MapEntity entity:
                 // shake-thing: the thing lands on its floor, and its DISTANCE reads the straight-line
                 // distance to the player until the next cycle's refresh (|dx| + |dy| again). Its region
                 // stays whatever it was.
-                _unshakenRegions.Remove(entity.Region);
+                _unshakenRegions.Clear();
                 entity.FootZ = LevelTopology.FloorHeightAt(_level, entity.Region, entity.X, entity.Y);
                 if (GetObject("player") is Player shaker)
                 {
@@ -4066,7 +4071,17 @@ public sealed class WdlRuntime :
     /// </summary>
     private void AdvanceActorTarget(Actor actor, double cycleCorrection)
     {
+        (double X, double Y) before = (actor.X, actor.Y);
+        bool skipping = _skippedCycles.ContainsKey(actor);
         MoveActorTowardTarget(actor, cycleCorrection);
+        if (!skipping && (actor.X, actor.Y) != before)
+        {
+            // An actor walked on its target in its own cycle releases the regions as a SHAKE does,
+            // seen or not (round 8 shift-mover-ahead); the catch-up step of one skipping cycles out of
+            // view does not (shift-mover-behind).
+            _unshakenRegions.Clear();
+        }
+
         _longSkippedStep = false;
         if (_carefulHold is { } hold && ReferenceEquals(hold.Actor, actor))
         {
@@ -6249,6 +6264,7 @@ public sealed class WdlRuntime :
                 if (viewer is not null)
                 {
                     entity["SEEN"] = 1;
+                    NoteDrawnPosition(entity);
                 }
 
                 _inView.Add(entity);
@@ -6260,6 +6276,8 @@ public sealed class WdlRuntime :
         {
             return;
         }
+
+        ReleaseDrawnShiftedRegions(viewer.Value);
 
         foreach (Wall wall in _level.Walls)
         {
@@ -6512,6 +6530,41 @@ public sealed class WdlRuntime :
             (int)Math.Round(GetSkill("SCREEN_WIDTH")),
             (int)Math.Round(GetSkill("SCREEN_HGT")));
         return new Viewer(player.Position.X, player.Position.Z, player.Position.Y, GetSkill("PLAYER_ANGLE"), projection);
+    }
+
+    /// <summary>
+    /// A region a SHIFT, ROTATE or LIFT holds takes the next one once a face of one of its walls is
+    /// drawn: Apathy's secret door, a block, slid on in every cycle it was in view, and the pad as a
+    /// block in round 9 shift-block-facing, but not facing away (shift-block-away) nor through walls
+    /// that draw nothing (round 5 shift-visible-empty).
+    /// </summary>
+    private void ReleaseDrawnShiftedRegions(Viewer viewer)
+    {
+        if (_unshakenRegions.Count == 0 || _viewTest is null)
+        {
+            return;
+        }
+
+        foreach (Wall wall in _level.Walls)
+        {
+            if ((_unshakenRegions.Contains(wall.LeftRegion) || _unshakenRegions.Contains(wall.RightRegion)) &&
+                _viewTest.IsWallFaceVisible(viewer, wall))
+            {
+                _unshakenRegions.Clear();
+                return;
+            }
+        }
+    }
+
+    private void NoteDrawnPosition(MapEntity entity)
+    {
+        (double X, double Y) position = (entity.X, entity.Y);
+        if (_drawnPositions.TryGetValue(entity, out (double X, double Y) drawn) && drawn != position)
+        {
+            _unshakenRegions.Clear();
+        }
+
+        _drawnPositions[entity] = position;
     }
 
     private bool IsVisible(ViewTest test, Viewer viewer, MapEntity entity)

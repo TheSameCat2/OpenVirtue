@@ -11,9 +11,9 @@ namespace OpenVirtue.Host.Tests.TestSupport;
 
 internal sealed class FakeWindow : IPlatformWindow
 {
-    public int Width { get; } = 640;
+    public int Width { get; init; } = 640;
 
-    public int Height { get; } = 480;
+    public int Height { get; init; } = 480;
 
     public string Title { get; set; } = "test";
 

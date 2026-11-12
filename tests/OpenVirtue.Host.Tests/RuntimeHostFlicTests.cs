@@ -63,6 +63,22 @@ public sealed class RuntimeHostFlicTests : IDisposable
     }
 
     [Fact]
+    public void Frame_FlicInATallWindow_FillsTheLetterboxedDisplayOnly()
+    {
+        // A flic drawn over the whole window left its edges in the letterbox, where nothing paints
+        // later (the Cactus logo above and below Apathy's view).
+        using RuntimeHost host = Open(frameDelayMs: 10_000, out _, out FakeRender render, window: new FakeWindow { Width = 600, Height = 900 });
+        host.Boot();
+
+        host.Frame(present: false);
+
+        HostFrame frame = Assert.IsType<HostFrame>(render.LastFrame);
+        DrawBatch flic = Assert.Single(frame.Batches, static batch => batch.DynamicImage is not null);
+        Assert.Equal(new PixelRect(0, 225, 600, 450), flic.Viewport);
+        Assert.Equal(new PixelRect(0, 225, 600, 450), frame.Display);
+    }
+
+    [Fact]
     public void Frame_KeyDuringFlic_RunsTheHookAndStopFlicEndsTheFlic()
     {
         using RuntimeHost host = Open(frameDelayMs: 10_000, out FakeInput input, out FakeRender render);
@@ -231,7 +247,7 @@ public sealed class RuntimeHostFlicTests : IDisposable
         }
     }
 
-    private RuntimeHost Open(int frameDelayMs, out FakeInput input, out FakeRender render, string main = Main)
+    private RuntimeHost Open(int frameDelayMs, out FakeInput input, out FakeRender render, string main = Main, FakeWindow? window = null)
     {
         Directory.CreateDirectory(_directory);
         string archive = Path.Combine(_directory, "TITLE.WRS");
@@ -244,7 +260,7 @@ public sealed class RuntimeHostFlicTests : IDisposable
             ]);
         input = new FakeInput();
         render = new FakeRender();
-        return RuntimeHost.OpenArchive(archive, "TITLE.WDL", new FakeWindow(), input, new NullAudioSink(), render);
+        return RuntimeHost.OpenArchive(archive, "TITLE.WDL", window ?? new FakeWindow(), input, new NullAudioSink(), render);
     }
 
     private static bool DrewFlic(FakeRender render) =>

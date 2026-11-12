@@ -3090,6 +3090,23 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ShiftInstruction_IsReleasedByAShakeAnywhere()
+    {
+        // A SHAKE of a wall of another region lets the next SHIFT through (OV-20261104-instructions
+        // round 7 shift-shake-other); Apathy's secret door slides on its raindrops' SHAKEs.
+        Level level = LoadWithMap(TwoRoomMap, "MAPFILE <m.wmp>; ACTION moveLeft { SHIFT left, 0, 0.25; } ACTION shakeOther { SHAKE right_side; }");
+        var runtime = new WdlRuntime(level);
+
+        Assert.True(runtime.RunAction("moveLeft"));
+        Assert.True(runtime.RunAction("moveLeft"));
+        Assert.Equal(0.25, level.Vertices[0].Y);
+
+        Assert.True(runtime.RunAction("shakeOther"));
+        Assert.True(runtime.RunAction("moveLeft"));
+        Assert.Equal(0.5, level.Vertices[0].Y);
+    }
+
+    [Fact]
     public void Runtime_LiftInstruction_MovesRegionVerticesOnly()
     {
         Level level = LoadWithMap(TwoRoomMap, "MAPFILE <m.wmp>; ACTION liftLeft { LIFT left, 3; }");

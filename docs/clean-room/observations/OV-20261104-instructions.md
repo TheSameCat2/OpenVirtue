@@ -120,14 +120,52 @@ they do to the skills a script can read — positions, the walls' ends, `DISTANC
   30.837: the hit lies as if the angle were 0.1974 and −0.3045. Facing +Y the north wall read
   21.979 for 22. Not modelled.
 
+### Rounds 5-9 (2026-11-12): what releases a held region
+Apathy's secret door (`lonely.wdl`) is a block region (`CEIL_HGT` = `FLOOR_HGT`) whose `EACH_TICK`
+runs `SHIFT THERE, 0, 0.25` for 24 cycles with no `SHAKE`. OpenVirtue held it after the first shift,
+so the door moved 0.25 and the player could not get past. Carriers `round5` to `round9` of this probe
+(`InstructionProbeCases.cs`) shift the pad with `SHIFT pad, 0, 0.25` or the round 1 run. A separate
+carrier, `_research/oracle-runs/OV-20261112-secret-door/`, is retail Apathy with its trace action
+swapped out: the player is beamed to (−93.7, 155) in front of the door, then the door's skills are
+set as `pushLonelyDoor` sets them, or a `SHOOT` fires it.
+
+| Carrier (trace sha256, first 8) | Reading |
+|---|---|
+| secret-door face `7e9eadce`, shoot `cf75f183` | the door's wall `Y1` 158.544 → 164.544, 0.25 in each of the 24 cycles |
+| secret-door away `b62f616f` | facing away: 22 of the 24 (none in the second and third cycles) |
+| round 9 shift-block-facing `3c28a92d` | the pad as a block (`PadCeiling` 0), its solid wall drawn whole, the player facing it from the origin: every shift applies |
+| round 9 shift-block-away `e501de80` | the same, facing away: only the first |
+| round 5 shift-visible `3466b8e5` | the pad's wall visible but level with the room, so it draws nothing; the pad's thing and actor (moved by the shifts) are in view: every shift applies |
+| round 5 shift-visible-empty `dc46f0a7`, shift-empty `d674dc23`, shift-visible-away `633cfed3`; round 6 (five carriers) | no objects on the pad, or facing away, or a solid/passable/invisible pad wall 1.5 from the player facing away: only the first |
+| round 7 shift-tick-only `fa1699c8`, shift-small `e501de80` | only from the pad's `EACH_TICK`, or 0.25 from the action without the big first shift: only the first |
+| round 7 shift-shake-other `00819a39` | `SHAKE` of a thing of the room (not the pad) after each shift: every shift applies |
+| round 7 shift-actor-ahead, shift-thing-ahead `d6e0fbf2` | a standing actor or thing of the room drawn ahead: only the first |
+| round 8 shift-mover-ahead `3083ac46` | an actor of the room walking on `TARGET MOVE` ahead, 12.8 away and not `VISIBLE`, moving each cycle: every shift applies |
+| round 8 shift-mover-behind `df44f27b` | the same walker behind the player, 18.9 away, skipping cycles (one step in six): only the first |
+
+- **Any `SHAKE` releases a held region, not only one of its own walls or objects.** So does an
+  actor walking on its target in its own cycle (not a skipped-cycle step), seen or not.
+- **A held region is also released when a frame draws one of its walls' faces** (a solid wall or a
+  step, not `INVISIBLE`), **or draws a thing or actor that has moved since it was last drawn.** A
+  standing object, or a wall level with both sides, releases nothing.
+- Open: facing away, Apathy's door was released in 22 of 24 cycles. Nothing in OpenVirtue's replay
+  of that carrier releases it after the first shift, so something else in the retail level does
+  (its view down the tunnel, its actors). Not found.
+- Implemented: `WdlRuntime.Shake` clears every hold; `AdvanceActorTarget` clears them when an actor
+  not skipping cycles moves; `RefreshView` clears them through `ReleaseDrawnShiftedRegions`
+  (`ViewTest.IsWallFaceVisible`) and `NoteDrawnPosition`. Test
+  `WdlRuntimeTests.Runtime_ShiftInstruction_IsReleasedByAShakeAnywhere`. Round 5's shift-visible,
+  round 9 and the secret-door face carrier replay as the original; shift-mover-ahead's walker
+  covers slightly different ground in OpenVirtue (−7.875 for −7.895 at its first print), so its
+  trace differs though every shift applies.
+
 ## Open
 - `NEXT_THERE`: `THERE` is a region synonym in V3.963 — `SET THERE, in_m` on a thing and
   `SET in_th, THERE` on a `THING` synonym are type errors (66: `REGION` against `ACTOR/THING`) —
   and the retail loops walk regions of one name with `IF_EQUAL THERE, NULL` as the end. Whether
   `NEXT_THERE` wraps (manual p.89) or goes `NULL` after the last needs a room with several regions
   of one name, which the trace room cannot stage; unprobed.
-- Which `SHAKE`s release a region: a wall or a thing of the region do; an object of another region,
-  or the region itself, is untested.
+- Which `SHAKE`s release a region: answered in rounds 5-9 (any `SHAKE` does).
 - `LIFT`'s raised vertices never showed in the floor under the player; the 20 cycles measured may
   be short of a refresh, and a sloped region is untested.
 - `SET_ALL` on a position: whether the objects are gone from drawing and contact too.

@@ -92,6 +92,10 @@ public sealed partial class RuntimeHost
     {
         int width = Math.Max(1, _window.Width);
         int height = Math.Max(1, _window.Height);
+        // The flic fills the 4:3 display as every other picture does: drawn over the whole window, its
+        // edges outside the display stayed in the letterbox for good, as nothing later paints there
+        // (Saints of Virtue's Cactus logo above and below the 3-D view).
+        PixelRect letterbox = PixelRect.From(DisplayLayout().PhysicalDisplay, width, height);
         var source = playback.Animation.Frames[playback.FrameIndex];
         var frame = new HostFrame
         {
@@ -99,14 +103,14 @@ public sealed partial class RuntimeHost
             Height = height,
             ClearColor = new Vector4(0, 0, 0, 1),
             PaintColor = true,
-            Display = PixelRect.Full(width, height),
+            Display = letterbox,
             ClearDepth = false,
         };
         AddBatch(
             frame,
             UnitQuad(),
             Matrix4x4.CreateOrthographicOffCenter(0, 1, 1, 0, 0, 1),
-            PixelRect.Full(width, height),
+            letterbox,
             texture: null,
             TextureSlot.World,
             alphaTest: false,

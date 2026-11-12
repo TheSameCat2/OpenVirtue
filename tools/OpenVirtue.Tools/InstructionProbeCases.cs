@@ -188,6 +188,54 @@ internal static class InstructionProbeCases
 
     // ---- round 3 variants -----------------------------------------------------------------------
 
+    // Round 5: Apathy's secret door (lonely.wdl) shifts its region 24 times, 0.25 a cycle, from the
+    // region's EACH_TICK without a SHAKE, and the door opens in the original. The pad of rounds 1-3 had
+    // an INVISIBLE wall and objects; these carriers take each away.
+    private const string VisiblePadWallDeclaration = "WALL in_pw { TEXTURE red_tex; FLAGS PASSABLE; }\n";
+
+    private static readonly string ShiftVisibleDeclarations =
+        Skills + VisiblePadWallDeclaration + PadTick("SHIFT pad, 0.1, 0;") +
+        "THING in_t { TEXTURE in_tex; }\nACTOR in_a { TEXTURE in_tex; SPEED 0; }\n";
+
+    private static readonly string[] EmptyShiftSkills = ["PLAYER_X", "PLAYER_Y", "in_pw.X1", "in_pw.Y1", "in_pw.X2", "in_pw.Y2"];
+
+    private static string ShiftFacingRun(double angle, string[] skills) =>
+        FormattableString.Invariant($"    SET PLAYER_ANGLE, {angle};\n    WAIT 2;\n") + L("S0", skills) +
+        "    SHIFT pad, 1.5, -0.25;\n" + L("S1", skills) + Cycles("C1", 2, skills) +
+        Repeated("SHIFT pad, in_v, in_v;", skills) +
+        "    SHIFT pad, 20, 0;\n" + L("S5", skills) + Cycles("C5", 2, skills) + P("RET");
+
+    private static string ShiftWallDeclarations(string flags) =>
+        Skills + $"WALL in_pw {{ TEXTURE red_tex;{flags} }}\n" + PadTick("SHIFT pad, 0.1, 0;");
+
+    private static string ShiftFromRun(double x, double y, double angle, string[] skills) =>
+        Beam(x, y, "B") + ShiftFacingRun(angle, skills);
+
+    private static readonly string ShiftTickOnlyRun =
+        "    WAIT 2;\n" + L("S0", EmptyShiftSkills) + "    RULE in_n = 1;\n" + Cycles("E", 6, ["in_n", .. EmptyShiftSkills]) + "    RULE in_n = 0;\n    WAIT 1;\n" + L("S5", EmptyShiftSkills) + P("RET");
+
+    private static readonly string ShiftSmallRun =
+        "    WAIT 2;\n" + L("S0", EmptyShiftSkills) +
+        "    RULE in_c = 0;\n    WHILE (in_c < 6)\n    {\n        SHIFT pad, 0, 0.25;\n        RULE in_c = in_c + 1;\n" + Indent(L("L", ["in_c", .. EmptyShiftSkills])) + "        WAIT 1;\n    }\n" + P("RET");
+
+    private static string ShiftSmallThenRun(string after, string[]? skills = null)
+    {
+        skills ??= EmptyShiftSkills;
+        return "    WAIT 2;\n" + L("S0", skills) +
+            "    RULE in_c = 0;\n    WHILE (in_c < 6)\n    {\n        SHIFT pad, 0, 0.25;\n" + after + "        RULE in_c = in_c + 1;\n" + Indent(L("L", ["in_c", .. skills])) + "        WAIT 1;\n    }\n" + P("RET");
+    }
+
+    private static readonly string[] MoverShiftSkills = ["in_v", "in_mv.X", "in_mv.Y", "in_pw.X1", "in_pw.Y1", "in_pw.X2", "in_pw.Y2"];
+
+    private static readonly string ShiftOtherDeclarations =
+        ShiftWallDeclarations("") + "THING in_o { TEXTURE in_tex; }\nACTOR in_oa { TEXTURE in_tex; SPEED 0; }\n";
+
+    private static readonly string ShiftMoverDeclarations =
+        ShiftWallDeclarations("") + "ACTOR in_mv { TEXTURE in_tex; SPEED 0.2; ANGLE 1.5708; }\n";
+
+    private static string ShiftFacingSmallRun(double angle) =>
+        FormattableString.Invariant($"    SET PLAYER_ANGLE, {angle};\n") + ShiftSmallThenRun("");
+
     private static string ShiftShakeOnlyRun(string shaken) =>
         Beam(-10, 14, "B") + L("S0", ShiftSkills) +
         $"    SHIFT pad, 1.5, -0.25;\n    SHAKE {shaken};\n" + L("S1", ShiftSkills) + Cycles("C1", 2, ShiftSkills) +
@@ -271,6 +319,138 @@ internal static class InstructionProbeCases
                 ("HIT_DIST is the ray's length", "A02 12.245, A03 12.574"),
                 ("HIT_X/HIT_Y are the hit's map position", "A0 HIT_X 22 HIT_Y 0")),
             Map: WallHitMap),
+
+        new TraceProbeCase(
+            "shift-visible",
+            "Round 5. The shift-out case with the pad's wall visible (red_tex, PASSABLE) and the player at the origin facing the pad (2.03 rad): do later shifts apply once the wall is drawn?",
+            ShiftVisibleDeclarations,
+            ShiftFacingRun(2.03, ShiftSkills),
+            Predict(("a drawn region takes every shift", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["THING in_t -8 16 0 2", "ACTOR in_a -6 18 0 2"])),
+        new TraceProbeCase(
+            "shift-visible-away",
+            "Round 5. shift-visible with the player facing away from the pad (5.17 rad): is it the drawing or the wall's flags?",
+            ShiftVisibleDeclarations,
+            ShiftFacingRun(5.17, ShiftSkills),
+            Predict(("only a drawn region takes later shifts", "L, E, S5 as S1"), ("a visible-flagged wall is enough", "L lines +0.3 a cycle")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["THING in_t -8 16 0 2", "ACTOR in_a -6 18 0 2"])),
+        new TraceProbeCase(
+            "shift-empty",
+            "Round 5. The shift-out case (invisible wall, player at the origin facing 0) with no thing or actor on the pad: is it the region's objects that hold later shifts back?",
+            ShiftDeclarations,
+            ShiftFacingRun(0, EmptyShiftSkills),
+            Predict(("an empty region takes every shift", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-visible-empty",
+            "Round 5. Apathy's door as near as the pad comes: a visible wall, no objects, the player facing the pad.",
+            ShiftVisibleDeclarations,
+            ShiftFacingRun(2.03, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+
+        new TraceProbeCase(
+            "shift-near-solid",
+            "Round 6. Apathy's secret door shifts every cycle with the player close by facing away. The empty pad with a solid visible wall, the player 1.5 below it facing away.",
+            ShiftWallDeclarations(""),
+            ShiftFromRun(-8, 10.5, 4.71, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-near-passable",
+            "Round 6. As shift-near-solid with the wall PASSABLE.",
+            ShiftWallDeclarations(" FLAGS PASSABLE;"),
+            ShiftFromRun(-8, 10.5, 4.71, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-near-invisible",
+            "Round 6. As shift-near-solid with the wall INVISIBLE (solid).",
+            ShiftWallDeclarations(" FLAGS INVISIBLE;"),
+            ShiftFromRun(-8, 10.5, 4.71, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-far-solid",
+            "Round 6. As shift-near-solid with the player at the origin facing away (5.17).",
+            ShiftWallDeclarations(""),
+            ShiftFromRun(0, 0, 5.17, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-far-solid-facing",
+            "Round 6. As shift-far-solid facing the pad (2.03).",
+            ShiftWallDeclarations(""),
+            ShiftFromRun(0, 0, 2.03, EmptyShiftSkills),
+            Predict(("every shift applies", "L lines +0.3 a cycle, E +0.1, S5 +20"), ("still only the first", "L, E, S5 as S1")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+
+        new TraceProbeCase(
+            "shift-tick-only",
+            "Round 7. The empty pad (solid visible wall) shifted only by its own EACH_TICK (0.1, 0) for six cycles, with no SHIFT from an action before.",
+            ShiftWallDeclarations(""),
+            ShiftTickOnlyRun,
+            Predict(("every shift applies", "y +0.25 or x +0.1 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+        new TraceProbeCase(
+            "shift-small",
+            "Round 7. The empty pad shifted by SHIFT pad, 0, 0.25 from the action six cycles running, as Apathy's door, without the first big shift.",
+            ShiftWallDeclarations(""),
+            ShiftSmallRun,
+            Predict(("every shift applies", "y +0.25 or x +0.1 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw")),
+
+        new TraceProbeCase(
+            "shift-shake-other",
+            "Round 7. shift-small with SHAKE of a thing in the room (not the pad's) after every SHIFT: is the release global?",
+            ShiftOtherDeclarations,
+            ShiftSmallThenRun("        SHAKE in_o;\n"),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["THING in_o 20 0 0 0"])),
+        new TraceProbeCase(
+            "shift-actor-ahead",
+            "Round 7. shift-small with an actor (SPEED 0) of the room straight ahead at (10, 0) in view: does a drawn actor elsewhere release it?",
+            ShiftOtherDeclarations,
+            ShiftSmallThenRun(""),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["ACTOR in_oa 10 0 0 0"])),
+        new TraceProbeCase(
+            "shift-thing-ahead",
+            "Round 7. shift-small with a thing of the room straight ahead at (10, 0) in view.",
+            ShiftOtherDeclarations,
+            ShiftSmallThenRun(""),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["THING in_o 10 0 0 0"])),
+
+        new TraceProbeCase(
+            "shift-mover-ahead",
+            "Round 8. shift-small with an actor of the room walking on TARGET MOVE (SPEED 0.2) straight ahead at (10, -8): does an engine-moved actor release the region?",
+            ShiftMoverDeclarations,
+            "    SET in_mv.TARGET, MOVE;\n" + ShiftSmallThenRun("        IF (in_mv.VISIBLE == 1) { RULE in_v = 1; } ELSE { RULE in_v = 0; }\n", MoverShiftSkills),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["ACTOR in_mv 10 -8 0 0"])),
+        new TraceProbeCase(
+            "shift-mover-behind",
+            "Round 8. As shift-mover-ahead with the walker behind the player at (-10, -16), out of view.",
+            ShiftMoverDeclarations,
+            "    SET in_mv.TARGET, MOVE;\n" + ShiftSmallThenRun("        IF (in_mv.VISIBLE == 1) { RULE in_v = 1; } ELSE { RULE in_v = 0; }\n", MoverShiftSkills),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", Placements: ["ACTOR in_mv -10 -16 0 0"])),
+
+        new TraceProbeCase(
+            "shift-block-facing",
+            "Round 9. Apathy's door is a block (CEIL_HGT = FLOOR_HGT): the pad as a block, its solid wall drawn whole, the player at the origin facing it, SHIFT pad, 0, 0.25 six cycles running.",
+            ShiftWallDeclarations(""),
+            ShiftFacingSmallRun(2.03),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", PadCeiling: 0)),
+        new TraceProbeCase(
+            "shift-block-away",
+            "Round 9. shift-block-facing with the player facing away (5.17).",
+            ShiftWallDeclarations(""),
+            ShiftFacingSmallRun(5.17),
+            Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
+            Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", PadCeiling: 0)),
 
         new TraceProbeCase(
             "shift-shake-wall",
