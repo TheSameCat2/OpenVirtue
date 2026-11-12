@@ -63,6 +63,20 @@ SCHEDULES["walk"] = [
     ("mouse-forward", [], 0, -10, 90, 1 / 60),
     ("up-mouse-r3", ["up"], 3, 0, 120, 1 / 60),
 ]
+# The same kinds of input without much ground covered, so no wall is met (apathy-keys2).
+SCHEDULES["turns"] = [
+    ("mouse-r8", [], 8, 0, 60, 1 / 60),
+    ("left", ["left"], 0, 0, 1, 1.0),
+    ("mouse-l5", [], -5, 0, 60, 1 / 60),
+    ("alt-right", ["alt", "right"], 0, 0, 1, 0.5),
+    ("comma", ["comma"], 0, 0, 1, 0.5),
+    ("down", ["down"], 0, 0, 1, 0.5),
+    ("mouse-forward", [], 0, -6, 30, 1 / 60),
+    ("alt-mouse-r6", ["alt"], 6, 0, 30, 1 / 60),
+    ("up-mouse-l6", ["up"], -6, 0, 40, 1 / 60),
+    ("pageup", ["pageup"], 0, 0, 1, 0.5),
+    ("home", ["home"], 0, 0, 1, 0.3),
+]
 SCHEDULES["order"] = [
     ("up", ["up"], 0, 0, 1, 1.5),
     ("shift-then-up", ["shift", "up"], 0, 0, 1, 1.5, 0.5),

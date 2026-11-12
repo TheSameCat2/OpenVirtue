@@ -256,6 +256,18 @@ cursor key) and feeds them through `RuntimeHost`.
 - The replay then matches the original on 920 of 2401 lines, first parting at line 921, a 1/1024 wall hold
   (OV-20261110-wall-slide). Walking, turning, running and the movement script all go through OpenVirtue's own input path.
 
+## Round 12 (2026-11-12): turning, strafing and jumping with real keys
+`apathy-keys2` (`OVSTR0.TXT` `9ce3b4ae`) is apathy-keys with the "turns" schedule, which covers little ground: mouse turns,
+cursor turn, Alt strafe, [,], backing, mouse walking, Alt with the mouse, walking while turning by mouse, Pg up, Home.
+The original breaks a print line after about 42 values, so Pg up, Pg dn, Home and End are packed into the `depth` column
+(1, 2, 4, 8; `"key_bits"`).
+- Every segment up to Home matches line for line through OpenVirtue's host.
+- **A legacy IF without a comma compares its two operands.** Every level's `move.wdl` guards the jump with
+  `IF_ABOVE PLAYER_HGT 20;`. The original jumped from `PLAYER_HGT` −0.415. OpenVirtue took the header as one expression
+  (−0.415, true) and skipped every jump, from Home and from the game's own X key alike. It is the only comma-less IF
+  in the retail scripts. With the operands split (`WdlInterpreter.ExecuteLegacyIf`) the jump matches through its rise to
+  13.97, and the replay goes to line 1495 of 2401, parting at a 1/1024 wall hold on the way down.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

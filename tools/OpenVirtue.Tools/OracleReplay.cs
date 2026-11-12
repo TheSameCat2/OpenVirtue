@@ -1637,6 +1637,13 @@ internal static class OracleReplay
             ("shift", HostKey.LeftShift), ("alt", HostKey.LeftAlt),
         ];
 
+        // "key_bits": one column holding KEY_PGUP + 2·KEY_PGDN + 4·KEY_HOME + 8·KEY_END, since the original breaks a
+        // print line past its length limit.
+        private static readonly (int Bit, HostKey Key)[] KeyBits =
+        [
+            (1, HostKey.PageUp), (2, HostKey.PageDown), (4, HostKey.Home), (8, HostKey.End),
+        ];
+
         public static TracedInputColumns Read(JsonElement element)
         {
             string token = element.TryGetProperty("token", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : "";
@@ -1667,6 +1674,17 @@ internal static class OracleReplay
                     if (Get(line, name) is > 0)
                     {
                         keys.Add(key);
+                    }
+                }
+
+                if (Get(line, "key_bits") is { } bits)
+                {
+                    foreach ((int bit, HostKey key) in KeyBits)
+                    {
+                        if (((int)bits & bit) != 0)
+                        {
+                            keys.Add(key);
+                        }
                     }
                 }
 

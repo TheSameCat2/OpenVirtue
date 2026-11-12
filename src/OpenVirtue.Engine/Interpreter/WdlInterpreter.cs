@@ -1071,16 +1071,39 @@ public sealed class WdlInterpreter(IWdlContext context)
         };
 
         int comma = IndexOfKind(item.Header, WdlTokenKind.Comma);
-        if (comma < 0)
+        // Retail move.wdl writes "IF_ABOVE PLAYER_HGT 20;" with no comma, and the original compares the two operands:
+        // Apathy's player at PLAYER_HGT −0.415 jumped (OV-20261110-retail-play apathy-keys2), where taking the header as
+        // one expression read −0.415, true, and skipped every jump.
+        int split = comma >= 0 ? comma : AdjacentOperandSplit(item.Header);
+        if (split < 0)
         {
             return WdlExpressionParser.Parse(item.Header).Evaluate(context) != 0;
         }
 
-        List<WdlToken> comparison = Slice(item.Header, 0, comma);
-        WdlToken commaToken = item.Header[comma];
+        List<WdlToken> comparison = Slice(item.Header, 0, split);
+        WdlToken commaToken = item.Header[split];
         comparison.Add(new WdlToken(WdlTokenKind.Operator, op, commaToken.Line, commaToken.Column));
-        comparison.AddRange(Slice(item.Header, comma + 1, item.Header.Count));
+        comparison.AddRange(Slice(item.Header, comma >= 0 ? split + 1 : split, item.Header.Count));
         return WdlExpressionParser.Parse(comparison).Evaluate(context) != 0;
+    }
+
+    /// <summary>
+    /// Where a comma-less legacy IF's second operand starts: the first token that begins an operand right after one
+    /// that ends one (an identifier or number, then an identifier, number or "("), or −1 when there is no such place.
+    /// </summary>
+    private static int AdjacentOperandSplit(IReadOnlyList<WdlToken> header)
+    {
+        for (int i = 1; i < header.Count; i++)
+        {
+            bool ends = header[i - 1].Kind is WdlTokenKind.Identifier or WdlTokenKind.Number or WdlTokenKind.RParen;
+            bool starts = header[i].Kind is WdlTokenKind.Identifier or WdlTokenKind.Number or WdlTokenKind.LParen;
+            if (ends && starts)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private bool ExecuteIfMin(WdlItem item) =>

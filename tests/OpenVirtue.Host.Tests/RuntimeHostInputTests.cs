@@ -109,6 +109,20 @@ public sealed class RuntimeHostInputTests
         Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
     }
 
+    [Theory]
+    [InlineData(HostKey.Home, "FORCE_UP", 0.25)]
+    [InlineData(HostKey.End, "FORCE_UP", -0.25)]
+    [InlineData(HostKey.PageUp, "FORCE_TILT", -204.0 / 1024)]
+    [InlineData(HostKey.Down, "FORCE_AHEAD", -0.25)]
+    public void Frame_ManualKeyHeld_RampsItsForce(HostKey key, string force, double expected)
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(key);
+        host.Frame(present: false);
+
+        Assert.Equal(expected, host.Runtime.GetSkill(force), 6);
+    }
+
     [Fact]
     public void Frame_KeyAndMouseOnOneAxis_TheKeyWins()
     {

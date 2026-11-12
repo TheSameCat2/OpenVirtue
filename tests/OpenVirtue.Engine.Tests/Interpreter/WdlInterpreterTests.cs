@@ -342,6 +342,17 @@ public class WdlInterpreterTests
         Assert.Equal(2, context.GetSkill("y"));
     }
 
+    [Theory]
+    [InlineData(-0.415, 0)]
+    [InlineData(25, 1)]
+    public void LegacyIf_WithoutComma_ComparesTheTwoOperands(double height, double expected)
+    {
+        // Retail move.wdl: "IF_ABOVE PLAYER_HGT 20;" guards the jump; the original jumped at −0.415.
+        TestContext context = Run($"SET h, {height.ToString(System.Globalization.CultureInfo.InvariantCulture)}; SET y, 0; IF_ABOVE h 20; SET y, 1;");
+
+        Assert.Equal(expected, context.GetSkill("y"));
+    }
+
     [Fact]
     public void LegacyIf_SkipsThenBranchWhenNoElseExists()
     {
