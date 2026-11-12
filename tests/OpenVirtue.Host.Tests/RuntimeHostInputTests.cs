@@ -18,7 +18,8 @@ public sealed class RuntimeHostInputTests
         input.Motion = new Vector2(32, 0);
         host.Frame(present: false);
 
-        Assert.Equal(-1, host.Runtime.GetSkill("FORCE_ROT"), 6);
+        // OV-20261112-input-forces: −16/1024 a mickey at MOUSE_SENSE 1.
+        Assert.Equal(-0.5, host.Runtime.GetSkill("FORCE_ROT"), 6);
     }
 
     [Fact]
@@ -77,13 +78,56 @@ public sealed class RuntimeHostInputTests
     }
 
     [Fact]
-    public void Frame_CursorUpHeld_SetsForceAheadToKeySense()
+    public void Frame_CursorUpHeld_RampsForceAheadAQuarterACycleToKeySense()
     {
+        // OV-20261112-input-forces: 256, 512, 768, then 1024 (KEY_SENSE starts at 1 on V3.963).
         using RuntimeHost host = Open(out FakeInput input, out _);
         input.Down.Add(HostKey.Up);
+        var readings = new List<double>();
+        for (int i = 0; i < 5; i++)
+        {
+            host.Frame(present: false);
+            readings.Add(host.Runtime.GetSkill("FORCE_AHEAD"));
+        }
+
+        Assert.Equal(new[] { 0.25, 0.5, 0.75, 1, 1 }, readings);
+        input.Down.Remove(HostKey.Up);
+        host.Frame(present: false);
+        Assert.Equal(0, host.Runtime.GetSkill("FORCE_AHEAD"));
+    }
+
+    [Fact]
+    public void Frame_KeyAndMouseOnOneAxis_TheKeyWins()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(HostKey.Left);
+        input.Motion = new Vector2(32, 0);
         host.Frame(present: false);
 
-        Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6); // KEY_SENSE starts at 1 on V3.963
+        Assert.Equal(204.0 / 1024, host.Runtime.GetSkill("FORCE_ROT"), 6);
+    }
+
+    [Fact]
+    public void Frame_CommaHeld_StrafesLeftAsAPositiveForce()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(HostKey.Comma);
+        host.Frame(present: false);
+
+        Assert.Equal(0.25, host.Runtime.GetSkill("FORCE_STRAFE"), 6);
+    }
+
+    [Fact]
+    public void Frame_AltWithCursorRight_StrafesRightAndLeavesForceRot()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        host.Runtime.SetSkill("FORCE_ROT", 0.375);
+        input.Down.Add(HostKey.LeftAlt);
+        input.Down.Add(HostKey.Right);
+        host.Frame(present: false);
+
+        Assert.Equal(-204.0 / 1024, host.Runtime.GetSkill("FORCE_STRAFE"), 6);
+        Assert.Equal(0.375, host.Runtime.GetSkill("FORCE_ROT"), 6);
     }
 
     [Theory]
@@ -113,7 +157,7 @@ public sealed class RuntimeHostInputTests
         input.Motion = new Vector2(0, -32);
         host.Frame(present: false);
 
-        Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        Assert.Equal(0.5, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
         Assert.Equal(0, host.Runtime.GetSkill("FORCE_TILT"), 6);
     }
 
@@ -126,7 +170,7 @@ public sealed class RuntimeHostInputTests
         host.Frame(present: false);
 
         Assert.Equal(0, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
-        Assert.Equal(-1, host.Runtime.GetSkill("FORCE_TILT"), 6);
+        Assert.Equal(-0.5, host.Runtime.GetSkill("FORCE_TILT"), 6);
     }
 
     [Fact]
@@ -138,19 +182,25 @@ public sealed class RuntimeHostInputTests
         input.Motion = new Vector2(32, 0);
         host.Frame(present: false);
 
-        Assert.Equal(1, host.Runtime.GetSkill("FORCE_STRAFE"), 6);
+        Assert.Equal(-0.5, host.Runtime.GetSkill("FORCE_STRAFE"), 6); // to the right
         Assert.Equal(0, host.Runtime.GetSkill("FORCE_ROT"), 6);
     }
 
     [Fact]
-    public void Frame_CursorUpWithShift_RunsAtShiftSense()
+    public void Frame_CursorUpWithShift_RampsToShiftSense()
     {
+        // Shift held first: 512, 1536, 2048 (SHIFT_SENSE 2).
         using RuntimeHost host = Open(out FakeInput input, out _);
         input.Down.Add(HostKey.Up);
         input.Down.Add(HostKey.LeftShift);
-        host.Frame(present: false);
+        var readings = new List<double>();
+        for (int i = 0; i < 3; i++)
+        {
+            host.Frame(present: false);
+            readings.Add(host.Runtime.GetSkill("FORCE_AHEAD"));
+        }
 
-        Assert.Equal(host.Runtime.GetSkill("SHIFT_SENSE"), host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        Assert.Equal(new[] { 0.5, 1.5, 2 }, readings);
     }
 
     [Fact]

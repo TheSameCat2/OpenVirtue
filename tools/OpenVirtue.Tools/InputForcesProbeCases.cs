@@ -36,6 +36,8 @@ internal static class InputForcesProbeCases
                 "KEY_SHIFT", "KEY_ALT", "KEY_CUU", "KEY_CUR", "MOUSE_MOVING", "MOUSE_X", "MOUSE_Y")) +
         "    }\n");
 
+    private static readonly string Boost = Action("in_boost", "    RULE FORCE_AHEAD = FORCE_AHEAD * 1.3;\n");
+
     private static readonly string Prelude =
         "    PRINTFILE \"" + TraceFile + "\", 0;\n" + V("S0", "TICKS", "in_n", "TIME_CORR", "KEY_SENSE", "SHIFT_SENSE", "MOUSE_SENSE", "MOUSE_CALM", "MOUSE_TIME") +
         "    SET EACH_TICK.1, in_tick;\n";
@@ -43,7 +45,7 @@ internal static class InputForcesProbeCases
     private static TraceProbeCase Forces(string label, string setup, string question) => new(
         label,
         question,
-        Skills + Sampler,
+        Skills + Sampler + Boost,
         setup + V("GO", "TICKS", "in_n", "KEY_SENSE", "SHIFT_SENSE", "MOUSE_SENSE") +
         "    WAIT " + (Cycles + 20).ToString(CultureInfo.InvariantCulture) + ";\n" + P("RET"),
         Predict(
@@ -57,6 +59,10 @@ internal static class InputForcesProbeCases
             "The forces with the runtime's own KEY_SENSE, SHIFT_SENSE and MOUSE_SENSE, keys held and the mouse moved from outside."),
         Forces("sense", "    SET KEY_SENSE, 0.5;\n    SET SHIFT_SENSE, 3;\n    SET MOUSE_SENSE, 2;\n",
             "The same input with KEY_SENSE 0.5, SHIFT_SENSE 3 and MOUSE_SENSE 2: which of them scale which force?"),
+        // Driven with the "order" schedule: keys pressed one after the other, a key and the mouse on one axis, and
+        // FORCE_AHEAD multiplied by 1.3 after each sample, as Apathy's movement action does.
+        Forces("feedback", "    SET EACH_TICK.2, in_boost;\n",
+            "Does a held key's ramp go on from the skill as a script left it (FORCE_AHEAD × 1.3 each cycle), and how do keys pressed in turn and a key with the mouse on one axis combine?"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>

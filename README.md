@@ -98,7 +98,8 @@ What works today:
   captured, virtual pixels while it is shown), leaves active
   `MOUSE_X/Y` coordinates under script control, tracks `MOUSE_MOVING`, dispatches
   `IF_MSTOP`, and hides the native cursor over the custom pointer surface. In
-  mouse modes 0/1, bounded `MOUSE_SENSE`-scaled deltas feed the retail movement
+  mouse modes 0/1, `MOUSE_SENSE`-scaled deltas (16/1024 a mickey, measured in
+  OV-20261112-input-forces, as are the held keys' per-cycle ramps) feed the retail movement
   action as the manual maps them: sideways through `FORCE_ROT` (`FORCE_STRAFE` with Alt),
   forward and back through `FORCE_AHEAD` (`FORCE_TILT` with `--mouselook`); mode 2 remains
   cursor-only. The keys are the manual's (cursor keys, `,`/`.`, PgUp/PgDn, Home/End), so

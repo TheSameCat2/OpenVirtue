@@ -114,6 +114,11 @@ public sealed partial class RuntimeHost : IDisposable
     private Vector2 _pendingMickey;
     private Vector2 _frameMickey;
     private bool _pointerCaptured;
+    private readonly KeyAxis _aheadKeys = new();
+    private readonly KeyAxis _turnKeys = new();
+    private readonly KeyAxis _strafeKeys = new();
+    private readonly KeyAxis _tiltKeys = new();
+    private readonly KeyAxis _upKeys = new();
     private Vector2 _mouseMotionWindow;
     private double _mouseMotionTicks;
     private bool _mouseWasMoving;

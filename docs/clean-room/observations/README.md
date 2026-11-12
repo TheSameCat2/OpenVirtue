@@ -562,3 +562,11 @@ implemented in `OpenVirtue.Engine.Rendering.ProjectionModel`:
 - `OV-20261110-wall-slide.md` — the player sliding along diagonal walls: the whole step, pushed back along
   the wall's normal in 1/1024 to `PLAYER_WIDTH` + 51/1024, each part cut down. Six carriers; the 3:4 wall,
   deep first contacts and wall ends stay open.
+
+## Keys and mouse (2026-11-12 — confirmed and implemented)
+
+- `OV-20261112-input-forces.md` — held keys and mouse motion, sent to the original through XTest on its own
+  Xvfb display. A held key ramps its force by 256/1024 a cycle (204 for turning and tilting) up to `KEY_SENSE`,
+  with Shift multiplying the running force by `SHIFT_SENSE`. The mouse gives 16/1024 a mickey times
+  `MOUSE_SENSE`, unbounded, on an axis no key holds. [,] strafes left as a positive force, and Alt with the
+  cursor or the mouse strafes. Three carriers.

@@ -25,8 +25,10 @@ KEYSYMS = {
     "comma": 0x2C, "period": 0x2E,
 }
 
-# (label, keys held, mouse dx and dy per step, steps, seconds per step); a gap of no input follows each.
-SCHEDULE = [
+# (label, keys held, mouse dx and dy per step, steps, seconds per step[, seconds between key presses]); a
+# gap of no input follows each.
+SCHEDULES = {}
+SCHEDULES["basic"] = [
     ("up", ["up"], 0, 0, 1, 1.5),
     ("up-shift", ["shift", "up"], 0, 0, 1, 1.5),
     ("right", ["right"], 0, 0, 1, 1.5),
@@ -46,6 +48,19 @@ SCHEDULE = [
     ("alt-mouse-r8", ["alt"], 8, 0, 60, 1 / 60),
     ("up-mouse-r8", ["up"], 8, 0, 60, 1 / 60),
     ("mouse-burst40", [], 40, 0, 1, 0.5),
+]
+SCHEDULES["order"] = [
+    ("up", ["up"], 0, 0, 1, 1.5),
+    ("shift-then-up", ["shift", "up"], 0, 0, 1, 1.5, 0.5),
+    ("up-then-shift", ["up", "shift"], 0, 0, 1, 1.5, 0.5),
+    ("right-then-shift", ["right", "shift"], 0, 0, 1, 1.5, 0.5),
+    ("up-then-down", ["up", "down"], 0, 0, 1, 1.5, 0.5),
+    ("right-mouse-r8", ["right"], 8, 0, 90, 1 / 60),
+    ("right-mouse-l8", ["right"], -8, 0, 90, 1 / 60),
+    ("up-mouse-up8", ["up"], 0, -8, 90, 1 / 60),
+    ("mouse-r8-then-alt", [], 8, 0, 60, 1 / 60),
+    ("alt-hold", ["alt"], 0, 0, 1, 1.0),
+    ("comma-then-period", ["comma", "period"], 0, 0, 1, 1.5, 0.5),
 ]
 
 
@@ -109,6 +124,7 @@ def main():
     ap.add_argument("--start-after", type=float, default=20.0, help="seconds after the window appears")
     ap.add_argument("--gap", type=float, default=1.0)
     ap.add_argument("--log", required=True)
+    ap.add_argument("--schedule", default="basic", choices=sorted(SCHEDULES))
     args = ap.parse_args()
     x11, xtst, Attrs = load()
     display = x11.XOpenDisplay(None)
@@ -143,12 +159,16 @@ def main():
     x11.XSync(display, 0)
     note("click (lock)")
     time.sleep(2.0)
-    for label, keys, dx, dy, steps, period in SCHEDULE:
+    for label, keys, dx, dy, steps, period, *rest in SCHEDULES[args.schedule]:
+        stagger = rest[0] if rest else 0.0
         codes = [x11.XKeysymToKeycode(display, KEYSYMS[k]) for k in keys]
         note(f"begin {label}")
-        for code in codes:
+        for n, code in enumerate(codes):
+            if n and stagger:
+                time.sleep(stagger)
+                note(f"  press {keys[n]}")
             xtst.XTestFakeKeyEvent(display, code, 1, 0)
-        x11.XSync(display, 0)
+            x11.XSync(display, 0)
         start = time.monotonic()
         for i in range(steps):
             if dx or dy:

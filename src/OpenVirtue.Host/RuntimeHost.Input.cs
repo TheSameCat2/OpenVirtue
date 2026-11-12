@@ -410,58 +410,78 @@ public sealed partial class RuntimeHost
         _runtime.SetSkill("MOUSE_MIDDLE", _input.IsDown(MouseButton.Middle) ? 1 : 0);
         _runtime.SetSkill("MOUSE_RIGHT", _input.IsDown(MouseButton.Right) ? 1 : 0);
 
-        double sensitivity = _runtime.GetSkill("KEY_SENSE");
-        if (IsDown(HostKey.LeftShift) || IsDown(HostKey.RightShift))
-        {
-            sensitivity *= _runtime.GetSkill("SHIFT_SENSE");
-        }
-
-        // The keys of the manual (p.119-120): cursor up/down walk, cursor left/right turn, [,] and [.]
-        // strafe, PgUp/PgDn tilt, Home/End move up and down. No other key moves the player: Saints of
-        // Virtue binds S, D and Space to its own actions (scrolls, drop, open).
-        int ahead = (IsDown(HostKey.Up) ? 1 : 0) - (IsDown(HostKey.Down) ? 1 : 0);
-        int strafe = (IsDown(HostKey.Period) ? 1 : 0) - (IsDown(HostKey.Comma) ? 1 : 0);
-        int vertical = (IsDown(HostKey.Home) ? 1 : 0) - (IsDown(HostKey.End) ? 1 : 0);
-        double mouseRotation = 0;
-        double mouseStrafe = 0;
-        double mouseAhead = 0;
-        double mouseTilt = 0;
         if (includeMouse)
         {
-            double mouseSensitivity = _runtime.GetSkill("MOUSE_SENSE");
-            double mouseMode = _runtime.GetSkill("MOUSE_MODE");
-            // Sideways the mouse turns, or with [Alt] held strafes (manual p.120). Cursor-left is positive
-            // FORCE_ROT (PLAYER_ANGLE grows, a left turn), so a rightward mickey is a negative one, and a
-            // positive FORCE_STRAFE, as [.] gives.
-            double sideways = WdlInputForces.MouseAxis(_frameMickey.X, mouseSensitivity, mouseMode);
-            if (IsDown(HostKey.LeftAlt) || IsDown(HostKey.RightAlt))
-            {
-                mouseStrafe = sideways;
-            }
-            else
-            {
-                mouseRotation = -sideways;
-            }
-
-            // Forward and back the mouse walks (FORCE_AHEAD, p.119); a forward mickey is negative Y. With
-            // MouseLook it tilts instead: positive PLAYER_TILT looks down, so forward is a negative FORCE_TILT.
-            double forward = WdlInputForces.MouseAxis(-_frameMickey.Y, mouseSensitivity, mouseMode);
-            if (MouseLook)
-            {
-                mouseTilt = -forward;
-            }
-            else
-            {
-                mouseAhead = forward;
-            }
+            UpdateMovementForces();
         }
+    }
 
-        // Walking and strafing keep the keys' force unbounded, so [Shift] runs at SHIFT_SENSE.
-        _runtime.SetSkill("FORCE_AHEAD", (sensitivity * ahead) + mouseAhead);
-        _runtime.SetSkill("FORCE_STRAFE", (sensitivity * strafe) + mouseStrafe);
-        _runtime.SetSkill("FORCE_ROT", WdlInputForces.Combine(sensitivity * Axis(HostKey.Left, HostKey.Right), mouseRotation));
-        _runtime.SetSkill("FORCE_TILT", WdlInputForces.Combine(sensitivity * Axis(HostKey.PageDown, HostKey.PageUp), mouseTilt));
-        _runtime.SetSkill("FORCE_UP", sensitivity * vertical);
+    /// <summary>
+    /// The movement forces, once a frame, as patched V3.963 sets them (OV-20261112-input-forces). The keys are the
+    /// manual's (p.119-120): cursor up/down walk, cursor left/right turn, [,] and [.] strafe ([,] positive, to the
+    /// left), [Alt] with cursor left/right strafes too, [Pg up]/[Pg dn] tilt ([Pg up] negative, looking up),
+    /// [Home]/[End] move up and down. A held key ramps its force each cycle (<see cref="WdlInputForces.KeyRamp"/>) and
+    /// overrides the mouse on its axis; on an axis no key holds, the mouse gives its mickeys times 16/1024 times
+    /// <c>MOUSE_SENSE</c>: sideways it turns, or strafes with [Alt], forward and back it walks (or, with
+    /// <see cref="MouseLook"/>, tilts). While [Alt] is down the runtime leaves <c>FORCE_ROT</c> as it was. No other key
+    /// moves the player: Saints of Virtue binds S, D and Space to its own actions (scrolls, drop, open).
+    /// </summary>
+    private void UpdateMovementForces()
+    {
+        double keySense = _runtime.GetSkill("KEY_SENSE");
+        double shift = IsDown(HostKey.LeftShift) || IsDown(HostKey.RightShift) ? _runtime.GetSkill("SHIFT_SENSE") : 1;
+        bool alt = IsDown(HostKey.LeftAlt) || IsDown(HostKey.RightAlt);
+        double mouseSense = _runtime.GetSkill("MOUSE_SENSE");
+        double mouseMode = _runtime.GetSkill("MOUSE_MODE");
+        double mouseSideways = -WdlInputForces.Mouse(_frameMickey.X, mouseSense, mouseMode);
+        double mouseForward = -WdlInputForces.Mouse(_frameMickey.Y, mouseSense, mouseMode);
+
+        double? ahead = _aheadKeys.Step(KeyDirection(HostKey.Up, HostKey.Down, _aheadKeys.Force), WdlInputForces.WalkStep, keySense, shift);
+        double? tilt = _tiltKeys.Step(KeyDirection(HostKey.PageDown, HostKey.PageUp, _tiltKeys.Force), WdlInputForces.TurnStep, keySense, shift);
+        double? up = _upKeys.Step(KeyDirection(HostKey.Home, HostKey.End, _upKeys.Force), WdlInputForces.WalkStep, keySense, shift);
+        int strafeDirection = KeyDirection(HostKey.Comma, HostKey.Period, _strafeKeys.Force);
+        int turnDirection = KeyDirection(HostKey.Left, HostKey.Right, alt ? _strafeKeys.Force : _turnKeys.Force);
+        double? strafe = strafeDirection != 0 || !alt
+            ? _strafeKeys.Step(strafeDirection, WdlInputForces.WalkStep, keySense, shift)
+            : _strafeKeys.Step(turnDirection, WdlInputForces.TurnStep, keySense, shift);
+
+        _runtime.SetSkill("FORCE_AHEAD", ahead ?? (MouseLook ? 0 : mouseForward));
+        _runtime.SetSkill("FORCE_TILT", tilt ?? (MouseLook ? -mouseForward : 0));
+        _runtime.SetSkill("FORCE_UP", up ?? 0);
+        if (alt)
+        {
+            _runtime.SetSkill("FORCE_STRAFE", strafe ?? mouseSideways);
+        }
+        else
+        {
+            double? turn = _turnKeys.Step(turnDirection, WdlInputForces.TurnStep, keySense, shift);
+            _runtime.SetSkill("FORCE_STRAFE", strafe ?? 0);
+            _runtime.SetSkill("FORCE_ROT", turn ?? mouseSideways);
+        }
+    }
+
+    /// <summary>
+    /// +1 for the first key, −1 for the second, 0 for neither; with both down the force keeps the way it was going
+    /// (cursor up then down, or [,] then [.], held their first key's 1024), or the first key's from rest.
+    /// </summary>
+    private int KeyDirection(HostKey positive, HostKey negative, double current)
+    {
+        bool plus = IsDown(positive);
+        bool minus = IsDown(negative);
+        return plus && minus ? (current < 0 ? -1 : 1) : plus ? 1 : minus ? -1 : 0;
+    }
+
+    /// <summary>One axis's key force, kept by the host as the runtime keeps it, apart from the skill a script may change.</summary>
+    private sealed class KeyAxis
+    {
+        public double Force { get; private set; }
+
+        /// <summary>The axis's force this cycle, or null when no key holds it (the mouse may then set it).</summary>
+        public double? Step(int direction, double step, double keySense, double shift)
+        {
+            Force = WdlInputForces.KeyRamp(Force, direction, step, keySense, shift);
+            return direction == 0 ? null : Force;
+        }
     }
 
     /// <summary>
@@ -577,9 +597,6 @@ public sealed partial class RuntimeHost
 
         return false;
     }
-
-    private int Axis(HostKey positive, HostKey negative) =>
-        (IsDown(positive) ? 1 : 0) - (IsDown(negative) ? 1 : 0);
 
     private void ApplyRuntimePlayerState()
     {
