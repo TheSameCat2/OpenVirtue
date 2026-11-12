@@ -197,3 +197,11 @@ anything else, with the global slot printing `Y` (`FLIC_FRAME`, `TICKS`, `TIME_C
   (`hook_token` `KEY:1`), key-before and retail-order replay 17 of 24 lines (were 5): the rest is
   the 0.094 of the grid above and the press one cycle after it; the other flic carriers are
   unchanged.
+
+## Replay note (2026-11-12): a dense flic trace
+`round3d/dense` is retail-order without the key, its sampler printing `FLIC_FRAME`, `TICKS` and `TIME_CORR` every cycle
+for 89 cycles (`OVFLC0.TXT` `3490be5d`). After `PLAY_FLICFILE` at 13.438, frame 1 shows for two cycles: the PLAY cycle, and the
+first flic cycle at 14.750 (`TIME_CORR` 1.313). Frame 2 comes at 15.625 (0.875), back on the 1.094 grid counted from PLAY,
+and 1.094 a frame follows. OpenVirtue replays all 93 lines. The 3/32-tick offset of the sparse retail-order and key-before
+traces is therefore the first flic cycle's lateness (here 7/32), which the host sets and those traces do not show. It is not
+a difference in the engine.
