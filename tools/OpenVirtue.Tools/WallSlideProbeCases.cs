@@ -107,6 +107,13 @@ internal static class WallSlideProbeCases
             (-10, 6 - (18 * k), 26, 6 + (18 * k)), -0.1, 0.25,
             FormattableString.Invariant($"Round 10. The slope-{k} wall stepped (−0.1, 0.25): is the push's negative larger part still biased?"),
             1.4, setup: "    SET PLAYER_X, 8;\n    SET PLAYER_Y, 0;\n    WAIT 2;\n")),
+        // Round 11: Apathy's curtain, from (−1.447, 42.397) to (−12, 32.5), rebuilt with the map moved by (0, 32) so it
+        // lies in the probe room, the player beamed to where Apathy's walk stood a cycle before its slide (−5220, 37656 raw)
+        // and stepping along the curtain at four lengths in Apathy's direction (−180, 156 raw a cycle) and two others.
+        .. new (string Label, int X, int Y)[] { ("c180", -180, 156), ("c90", -90, 78), ("c240", -240, 208), ("c45", -45, 39), ("c-steep", -120, 200), ("c-flat", -200, 100) }
+            .Select(static v => Slide($"round11/{v.Label}", (-1.447, 10.397, -12, 0.5), v.X / 1024.0, v.Y / 1024.0,
+                $"Round 11. Apathy's curtain stepped ({v.X}, {v.Y}) raw a cycle: does the push's negative larger part take the bias?",
+                1.4, 0, 32, "    SET PLAYER_X, -5.09765625;\n    SET PLAYER_Y, 36.7734375;\n    WAIT 2;\n")),
         // Round 8: Legalism's walk took the hold's y part floored at x steps of 273, where its stop rebuilt in a probe at
         // 243 wanted it cut toward zero (round 5). The same stop, the x step varied, y left to the 4/1024 minimum.
         .. new[] { 213, 258, 273, 303 }.Select(static sx => Slide($"round8/legalism-x{sx}", (30.846, -4.641, -38.319, 8.931), sx / 1024.0, 0,

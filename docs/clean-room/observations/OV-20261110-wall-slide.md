@@ -258,3 +258,23 @@ wall does, so the wall's kind does not tell them apart. Over the retail cycles t
 Four carriers (`round10/k*n`) step round 9's walls at (−0.1, 0.25) to tell these apart. They give 0 or 1 cycles off
 under every variant. The one telling cycle (kp5n) wants the bias where all three conditions would turn it off. So no
 condition is taken, and the curtain stays open.
+
+## Round 11 (2026-11-12): Apathy's curtain rebuilt, at six step lengths
+`round11/c*`: the curtain from (−1.447, 42.397) to (−12, 32.5), with the map moved by (0, 32). The player is beamed to where
+Apathy's walk stood before its slide (−5220, 37656 raw) and steps a constant amount a cycle.
+
+| Case | Step (raw) | Pushes | Held cycles off with the bias | Without the bias |
+|---|---|---|---|---|
+| c45 | (−45, 39) | 59–79 | **2** | 94 |
+| c90 | (−90, 78) | 79–119 | 89 | **10** |
+| c180 | (−180, 156) | 79–237 | 8 | 8 |
+| c240 | (−240, 208) | 158–317 | 5 | 5 |
+| c-steep | (−120, 200) | 70–230 | 27 | **5** |
+| c-flat | (−200, 100) | 52–778 | 2 | 2 |
+
+**On one wall, the bias comes and goes with the step.** c45 wants it and c90 does not. c240 rounded up even at a fraction of
+0.49. So no constant added to the push can be the mechanism, and the 0.15 of round 8 only fits the walls and steps it was
+fitted on. Rejected as well, over all probe and retail cycles: a slide from the start point, the step's component along the
+wall plus a correction from the start's distance (any rounding, joint or per term; 1958 off and more against the bias rule's
+420). OpenVirtue keeps the bias rule. The hold's exact arithmetic is open. The next lever is how the original orders and
+rounds the step, contact and push: a probe with a constant push and varied step, or the reverse.
