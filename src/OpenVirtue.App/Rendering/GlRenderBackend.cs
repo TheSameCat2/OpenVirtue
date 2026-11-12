@@ -76,10 +76,12 @@ public sealed unsafe class GlRenderBackend : IRenderBackend, IDisposable
                 // OV-20261104-texmap rounds 4-6: the original takes a wall's texel column about two screen columns
                 // further along when the wall's depth changes by more than an eighth of its width across the view
                 // (slope 7 and below), than when it faces the view (slope 8 and up, at any distance and from
-                // either side, by the view and not the map). A fit, not the mechanism: +0.9 and -1.0 of a column
-                // brought the probes' and the retail shots' pictures closest.
+                // either side, by the view and not the map). Facing walls take the column to the left, as floors
+                // and ceilings do (round 8), and oblique walls the column to the right: +1.0 and -1.0 of a column.
+                // With the floors' column in place, +1.0 brought the retail shots 22 736 pixels closer than the earlier
+                // fit of +0.9, at a cost of 65 on the synthetic wall probes.
                 if (span > 1e-6) {
-                    vWallLead = abs(dot(along / span, uForward)) > 0.1240 ? 0.9 : -1.0;
+                    vWallLead = abs(dot(along / span, uForward)) > 0.1240 ? 1.0 : -1.0;
                 }
                 // The slope of 1/w per column, written without dividing by w so an end on the eye
                 // plane (w = 0) stays finite: with N the columns,
