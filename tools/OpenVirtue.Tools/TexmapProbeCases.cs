@@ -151,6 +151,23 @@ internal static class TexmapProbeCases
             new TraceProbeMap(Textures: Textures, Walls: [new TraceProbeWall("tm_wall", w.X1, w.Y1, w.X2, w.Y2)]),
             w.Run,
             ("the switch by the angle to the line of sight", "a lead below about 80°"))),
+        // Round 7: the retail floors sit off from OpenVirtue's by a sideways offset fixed in the world (about 1/32 unit
+        // near the player), where the floor carrier at the origin, facing +x, matches. The same floor far from the origin
+        // (Legalism's maze lies near (−1226, 949)), turned to a retail heading, and both.
+        Case(
+            "round7/floor-far",
+            "Round 7. The floor swatch with the map moved by (−1200, 950): does the texel grid stay where it was against the room?",
+            new TraceProbeMap(Textures: Textures, RoomFloor: "tm_tex", OffsetX: -1200, OffsetY: 950)),
+        Case(
+            "round7/floor-turned",
+            "Round 7. The floor swatch seen with the player turned to 1.899, a retail heading: does the grid lie where the exact mapping puts it?",
+            new TraceProbeMap(Textures: Textures, RoomFloor: "tm_tex"),
+            "    SET PLAYER_ANGLE, 1.899;\n"),
+        Case(
+            "round7/floor-far-turned",
+            "Round 7. Both: far from the origin and turned to 1.899.",
+            new TraceProbeMap(Textures: Textures, RoomFloor: "tm_tex", OffsetX: -1200, OffsetY: 950),
+            "    SET PLAYER_ANGLE, 1.899;\n"),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
