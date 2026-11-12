@@ -159,6 +159,23 @@ set as `pushLonelyDoor` sets them, or a `SHOOT` fires it.
   covers slightly different ground in OpenVirtue (−7.875 for −7.895 at its first print), so its
   trace differs though every shift applies.
 
+### Round 10 (2026-11-12): SHOOT_ANGLE's range
+`shoot-angle` (`ec016319`): actors at (20, 0), (0, 20), (0, −20), (−10, 0) and (14, 14) each `SHOOT` with the
+player at the origin, facing 0 and then π.
+
+| Actor | `SHOOT_ANGLE` | `HIT_DIST` | `RESULT` |
+|---|---|---|---|
+| (20, 0), (0, 20), (0, −20) | 3.141, 4.711, 1.570 | 0 | 0 |
+| (−10, 0) | 0.000 | 10 | 0.950 |
+| (14, 14) | 3.927 | 28 | 0.860 |
+
+- **`SHOOT_ANGLE` reads 0..2π.** OpenVirtue gave −π..π. Apathy's monsters (`enemy_faceToAttack`,
+  `turnToAttack`) turn their `ANGLE`, kept in 0..6.28, by 0.4 a tick until within 0.6 of it, so on
+  a negative angle they spun for good and never attacked. Implemented in `WdlRuntime.Shoot`; test
+  `WdlRuntimeTests.Runtime_ShootInstructionWithObject_GivesTheAngleInZeroToTwoPi`.
+- Open, not implemented: the actor's `HIT_DIST` reads |dx| + |dy| (28 for the diagonal, where
+  OpenVirtue gives 19.799), and the three actors 20 away on the axes saw nothing, in either facing.
+
 ## Open
 - `NEXT_THERE`: `THERE` is a region synonym in V3.963 — `SET THERE, in_m` on a thing and
   `SET in_th, THERE` on a `THING` synonym are type errors (66: `REGION` against `ACTOR/THING`) —

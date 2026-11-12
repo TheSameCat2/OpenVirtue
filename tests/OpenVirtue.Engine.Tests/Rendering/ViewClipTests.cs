@@ -252,6 +252,51 @@ public sealed class ViewClipTests
         Assert.InRange(hiding, 30, 45);
     }
 
+    [Fact]
+    public void SpriteHidingDepth_BehindAPillarOfItsOwnRegion_KeepsItsDepth()
+    {
+        // A closed pillar standing in the room between the eye and a thing still hides it: Apathy's
+        // monsters showed through the pillars of the room they shared with the player.
+        var clip = new ViewClip(LoadPillarRoom());
+
+        float hiding = clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 30, 0, 2);
+
+        Assert.Equal(30, hiding);
+    }
+
+    private static Level LoadPillarRoom()
+    {
+        const string map = """
+            VERTEX 0 -24 0;#0
+            VERTEX 48 -24 0;#1
+            VERTEX 48 24 0;#2
+            VERTEX 0 24 0;#3
+            VERTEX 10 -5 0;#4
+            VERTEX 20 -5 0;#5
+            VERTEX 20 5 0;#6
+            VERTEX 10 5 0;#7
+            REGION room 0 16;#0
+            REGION solid 16 16;#1
+            WALL plain 0 1 0 1 0 0;#0
+            WALL plain 1 2 0 1 0 0;#1
+            WALL plain 2 3 0 1 0 0;#2
+            WALL plain 3 0 0 1 0 0;#3
+            WALL plain 4 5 1 0 0 0;#4
+            WALL plain 5 6 1 0 0 0;#5
+            WALL plain 6 7 1 0 0 0;#6
+            WALL plain 7 4 1 0 0 0;#7
+            PLAYER_START 1 0 0 0;
+            """;
+        const string main = """
+            MAPFILE <m.wmp>;
+            BMAP wm,<W.PCX>;
+            TEXTURE wt { SCALE_X 4; SCALE_Y 4; BMAPS wm; }
+            WALL plain { TEXTURE wt; }
+            """;
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        return LevelLoader.LoadCore("x", main, name => resources.GetValueOrDefault(Path.GetFileName(name)));
+    }
+
     private static Level LoadPadRoom()
     {
         const string map = """

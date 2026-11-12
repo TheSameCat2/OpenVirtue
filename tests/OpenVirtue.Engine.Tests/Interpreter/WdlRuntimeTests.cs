@@ -2960,6 +2960,26 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Runtime_ShootInstructionWithObject_GivesTheAngleInZeroToTwoPi()
+    {
+        // OV-20261104-instructions round 10 shoot-angle: 4.711 for the player straight below the actor,
+        // not -1.571. Apathy's monsters turn their 0..6.28 ANGLE toward it and spun on a negative one.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 20 20 0;#2\nVERTEX 0 20 0;#3\n" +
+            "REGION room 0 10;#0\n" +
+            "WALL bottom 0 1 0 -1 0 0;#0\nWALL right 1 2 0 -1 0 0;#1\n" +
+            "WALL top 2 3 0 -1 0 0;#2\nWALL left 3 0 0 -1 0 0;#3\n" +
+            "ACTOR guard 5 15 0 0;#4\nPLAYER_START 5 5 0 0;#5";
+        Level level = LoadWithMap(map, "MAPFILE <m.wmp>; ACTION look { SET SHOOT_RANGE, 50; SHOOT guard; }");
+        var runtime = new WdlRuntime(level);
+        runtime.RegisterObject("player", new Player(level));
+
+        Assert.True(runtime.RunAction("look"));
+
+        Assert.Equal(3 * Math.PI / 2, runtime.GetSkill("SHOOT_ANGLE"), 2);
+    }
+
+    [Fact]
     public void Runtime_ShootInstructionWithObject_SeesPlayerThroughOpenPortal()
     {
         const string map =

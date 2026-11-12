@@ -1873,7 +1873,10 @@ public sealed class WdlRuntime :
         double dy = player.Position.Z - entity.Y;
         double distance = Math.Sqrt((dx * dx) + (dy * dy));
         double angle = Math.Atan2(dy, dx);
-        SetSkill("SHOOT_ANGLE", angle);
+        // SHOOT_ANGLE reads 0..2pi (OV-20261104-instructions round 10 shoot-angle: 4.711 and 3.927
+        // where atan2 gives -1.571 and -2.356). Apathy's monsters turn toward it with their ANGLE kept
+        // in 0..6.28, and spun for good on a negative one.
+        SetSkill("SHOOT_ANGLE", angle < 0 ? angle + (2 * Math.PI) : angle);
 
         double range = GetSkill("SHOOT_RANGE");
         double sector = GetSkill("SHOOT_SECTOR");

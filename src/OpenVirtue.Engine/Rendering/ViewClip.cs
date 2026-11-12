@@ -190,8 +190,18 @@ public sealed class ViewClip
         float from = (lateral - halfWidth) / depth;
         float to = (lateral + halfWidth) / depth;
         float nearest = depth;
+        // The sprite's centre on the map: a wall the line of sight to it crosses stands between, and
+        // hides it as any wall does (Apathy's pillars, holes in the player's own region, hid the
+        // monsters behind them in the original).
+        float centreX = x + (forwardX * depth) + (forwardY * lateral);
+        float centreY = y + (forwardY * depth) - (forwardX * lateral);
         foreach (Wall wall in walls)
         {
+            if (CrossesSightLine(wall, x, y, centreX, centreY))
+            {
+                continue;
+            }
+
             if (WallDepthInColumns(wall, x, y, forwardX, forwardY, from, to) is { } near)
             {
                 nearest = MathF.Min(nearest, near);
@@ -199,6 +209,21 @@ public sealed class ViewClip
         }
 
         return nearest < depth ? MathF.Max(NearDepth, nearest - 0.05f) : depth;
+    }
+
+    /// <summary>Whether <paramref name="wall"/> crosses the segment from the eye to a map point.</summary>
+    private bool CrossesSightLine(Wall wall, float x, float y, float px, float py)
+    {
+        Vertex a = _level.Vertices[wall.Vertex1];
+        Vertex b = _level.Vertices[wall.Vertex2];
+        float d1 = Side(a.X, a.Y, b.X, b.Y, x, y);
+        float d2 = Side(a.X, a.Y, b.X, b.Y, px, py);
+        float d3 = Side(x, y, px, py, a.X, a.Y);
+        float d4 = Side(x, y, px, py, b.X, b.Y);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+
+        static float Side(float ax, float ay, float bx, float by, float px, float py) =>
+            ((bx - ax) * (py - ay)) - ((by - ay) * (px - ax));
     }
 
     /// <summary>

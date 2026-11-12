@@ -236,6 +236,20 @@ internal static class InstructionProbeCases
     private static string ShiftFacingSmallRun(double angle) =>
         FormattableString.Invariant($"    SET PLAYER_ANGLE, {angle};\n") + ShiftSmallThenRun("");
 
+    // Round 10: the range of SHOOT_ANGLE after an actor's SHOOT. Apathy's monsters turn 0.4 a tick
+    // toward it until within 0.6, their own ANGLE kept in 0..6.28.
+    private static readonly string ShootAngleDeclarations =
+        Skills + "ACTOR in_s1 { TEXTURE in_tex; }\nACTOR in_s2 { TEXTURE in_tex; }\nACTOR in_s3 { TEXTURE in_tex; }\nACTOR in_s4 { TEXTURE in_tex; }\nACTOR in_s5 { TEXTURE in_tex; }\n";
+
+    private static string ShootFrom(string actor, string token) =>
+        $"    SHOOT {actor};\n" + L(token, "SHOOT_ANGLE", "HIT_DIST", "RESULT");
+
+    private static readonly string ShootAngleRun =
+        "    SET SHOOT_RANGE, 200;\n    SET SHOOT_FAC, 1;\n    WAIT 2;\n" +
+        ShootFrom("in_s1", "A1") + ShootFrom("in_s2", "A2") + ShootFrom("in_s3", "A3") + ShootFrom("in_s4", "A4") + ShootFrom("in_s5", "A5") +
+        "    SET PLAYER_ANGLE, 3.1416;\n    WAIT 2;\n" +
+        ShootFrom("in_s1", "B1") + ShootFrom("in_s2", "B2") + ShootFrom("in_s3", "B3") + ShootFrom("in_s4", "B4") + ShootFrom("in_s5", "B5") + P("RET");
+
     private static string ShiftShakeOnlyRun(string shaken) =>
         Beam(-10, 14, "B") + L("S0", ShiftSkills) +
         $"    SHIFT pad, 1.5, -0.25;\n    SHAKE {shaken};\n" + L("S1", ShiftSkills) + Cycles("C1", 2, ShiftSkills) +
@@ -451,6 +465,14 @@ internal static class InstructionProbeCases
             ShiftFacingSmallRun(5.17),
             Predict(("every shift applies", "y +0.25 a cycle"), ("only the first", "constant after the first")),
             Map: new TraceProbeMap(PadBody: "SKILL1 2;\n    EACH_TICK in_pt;", PadWall: "in_pw", PadCeiling: 0)),
+
+        new TraceProbeCase(
+            "shoot-angle",
+            "Round 10. Actors at (20, 0), (0, 20), (0, -20), (-10, 0) and (14, 14) SHOOT from the player at the origin, facing 0 then pi: what range does SHOOT_ANGLE (the angle from the actor to the player) read in?",
+            ShootAngleDeclarations,
+            ShootAngleRun,
+            Predict(("0..2pi", "A1 3.141, A2 4.712, A3 1.570, A4 0, A5 3.927"), ("-pi..pi", "A2 -1.570, A5 -2.356")),
+            Map: new TraceProbeMap(Placements: ["ACTOR in_s1 20 0 0 0", "ACTOR in_s2 0 20 0 0", "ACTOR in_s3 0 -20 0 0", "ACTOR in_s4 -10 0 0 0", "ACTOR in_s5 14 14 0 0"])),
 
         new TraceProbeCase(
             "shift-shake-wall",

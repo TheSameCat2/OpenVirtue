@@ -133,3 +133,11 @@ border-kinds, border-climb, texmap, attach and blend (220 screens) the total goe
   room's back wall. A single hiding depth per sprite cannot give both. Tests:
   `ViewClipTests.SpriteHidingDepth_BeyondAnOpenPad_KeepsItsDepth` and
   `ViewClipTests.SpriteHidingDepth_WideBesideItsRegionsWalls_ComesAheadOfThem`.
+- **A wall of the sprite's own region that its line of sight crosses still hides it (2026-11-12).** The
+  p-wide rule pulled the hiding depth ahead of every wall bounding the sprite's region within its
+  columns, so in Apathy a monster or pickup behind a pillar (a hole in the region the player stood in)
+  was drawn over the pillar. A user reported it, and it is plainly not what the original shows.
+  `ViewClip.SpriteHidingDepth` now skips walls that the segment from the eye to the sprite's centre
+  crosses. Clip-view, below-view, below-beam, sprite-shade and view-activity give the same pixels before
+  and after (536 996 differing over 115 screens). Test
+  `ViewClipTests.SpriteHidingDepth_BehindAPillarOfItsOwnRegion_KeepsItsDepth`.
