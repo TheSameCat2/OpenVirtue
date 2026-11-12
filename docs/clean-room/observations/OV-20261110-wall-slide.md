@@ -249,3 +249,12 @@ push's larger part is negative on most of them.
   cycles worse (353 against 244). So the rule stays as it is, with its constant unexplained.
 - What is left in retail is Apathy's curtain (78 of 261 held cycles, mostly the original 1/1024 lower in y) and Heart's swamp
   border (141 of 583), a region border rather than a solid wall.
+
+## Round 10 (2026-11-12): the curtain without the bias
+On Apathy's curtain the bias is wrong every time: every held cycle whose push fraction lies at 0.85 or above was floored by
+the original, 28 of the curtain's misses. The curtain borders a closed region (floor and ceiling 40), as Legalism's maze
+wall does, so the wall's kind does not tell them apart. Over the retail cycles the bias conditioned on a positive x step
+(or step along the minor axis, or a negative minor push) cuts the misses from 244 to 202, with the probes unchanged.
+Four carriers (`round10/k*n`) step round 9's walls at (−0.1, 0.25) to tell these apart. They give 0 or 1 cycles off
+under every variant. The one telling cycle (kp5n) wants the bias where all three conditions would turn it off. So no
+condition is taken, and the curtain stays open.

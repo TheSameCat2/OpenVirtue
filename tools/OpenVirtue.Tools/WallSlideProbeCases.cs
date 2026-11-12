@@ -100,6 +100,13 @@ internal static class WallSlideProbeCases
             (-10, 6 - (18 * k), 26, 6 + (18 * k)), 0.1, 0.25,
             FormattableString.Invariant($"Round 9. A wall of slope {k} through (8, 6), met from below: how is the push's negative larger part rounded?"),
             1.4, setup: "    SET PLAYER_X, 8;\n    SET PLAYER_Y, 0;\n    WAIT 2;\n")),
+        // Round 10: Apathy's curtain took no bias where Legalism's wall did; its steps ran −x. Round 9's walls stepped
+        // (−0.1, 0.25): does the bias follow the step's x sign or the push's?
+        .. new[] { -0.9, -0.5, 0.5, 0.9 }.Select(static k => Slide(
+            FormattableString.Invariant($"round10/k{(k < 0 ? "m" : "p")}{Math.Abs(k) * 10:0}n"),
+            (-10, 6 - (18 * k), 26, 6 + (18 * k)), -0.1, 0.25,
+            FormattableString.Invariant($"Round 10. The slope-{k} wall stepped (−0.1, 0.25): is the push's negative larger part still biased?"),
+            1.4, setup: "    SET PLAYER_X, 8;\n    SET PLAYER_Y, 0;\n    WAIT 2;\n")),
         // Round 8: Legalism's walk took the hold's y part floored at x steps of 273, where its stop rebuilt in a probe at
         // 243 wanted it cut toward zero (round 5). The same stop, the x step varied, y left to the 4/1024 minimum.
         .. new[] { 213, 258, 273, 303 }.Select(static sx => Slide($"round8/legalism-x{sx}", (30.846, -4.641, -38.319, 8.931), sx / 1024.0, 0,
