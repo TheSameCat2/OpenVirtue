@@ -268,3 +268,11 @@ already matched the original.
   the gaps along it puts `WB16` at 17.594, `S2` at 146.813, `S4` at 166.219 and `S6` at 183.25 as
   in the original. waits-control matches in full (was 23/45); round2 near-control 28/29 (was 14),
   walk-control 7/28, missing 20/25. `tools/README.md` describes the rules.
+
+## Replay note (2026-11-12): the PLAY_FLICFILE cycle pauses the world at once
+In `world`, the actor's `EACH_TICK` count (`fd_an`), the room's (`fd_rn`) and the actor's position read the same from the
+line of `PLAY_FLICFILE`'s own cycle to the flic's end. OpenVirtue ran the object pass and the region and proximity events
+in that cycle after the action that requested the flic, so its counts rose by one inside the flic. A flic requested by a
+cycle's actions now leaves the rest of that cycle's world out (`WdlRuntime.Tick`). The counts then stand still through the
+flic, as in the original. They stay one above the original's from before the `PLAY`, from the start-up cycles the replay
+cannot place.

@@ -2623,6 +2623,7 @@ public sealed class WdlRuntime :
         RefreshView();
         RefreshWallDistances();
         UpdateHere();
+        int flicRequestsBefore = _nextFlicRequestId;
         ResumeWaitingActions();
         DispatchQueuedHooks();
         ResetGlobalSchedulerDiagnostics();
@@ -2632,13 +2633,17 @@ public sealed class WdlRuntime :
         }
 
         DispatchGlobalEachTickActions();
-        if (GetSkill("MOVE_MODE") > 0)
+        // OV-20261015-flic-scheduler-detail world: a flic requested by this cycle's actions pauses the world at once.
+        // The actor's EACH_TICK count read 47 from PLAY_FLICFILE's own cycle to the end of the flic, where OpenVirtue
+        // ran one more object pass in that cycle.
+        bool flicStarted = _nextFlicRequestId != flicRequestsBefore;
+        if (GetSkill("MOVE_MODE") > 0 && !flicStarted)
         {
             DispatchPlayerRegionEvents();
             DispatchProximityEvents();
         }
 
-        if (GetSkill("MOVE_MODE") >= 1)
+        if (GetSkill("MOVE_MODE") >= 1 && !flicStarted)
         {
             RunObjectPass(timeCorrection);
         }

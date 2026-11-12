@@ -3668,6 +3668,31 @@ public class WdlRuntimeTests
     }
 
     [Fact]
+    public void Tick_CycleWhoseActionsRequestAFlic_LeavesTheObjectPassOut()
+    {
+        // OV-20261015-flic-scheduler-detail world: the counts of the objects' EACH_TICK stood still from
+        // PLAY_FLICFILE's own cycle on.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 1 0 0;#1\nREGION room 0 10;#0\nREGION old_room 5 15;#1\n" +
+            "WALL gate 0 1 0 -1 0 0;#0\nPLAYER_START 0 0 0 0;#1";
+        Level level = LoadWithMap(
+            map,
+            "MAPFILE <m.wmp>; SKILL region_ticks { VAL 0; } SKILL n { VAL 0; } " +
+            "REGION room { EACH_TICK region_tick; } " +
+            "ACTION region_tick { RULE region_ticks += 1; } " +
+            "ACTION global_tick { RULE n += 1; IF (n == 2) { PLAY_FLICFILE <INTRO.FLC>; } } " +
+            "ACTION arm { SET EACH_TICK.1, global_tick; } IF_START arm;");
+        var runtime = new WdlRuntime(level);
+        runtime.RunStartup();
+
+        runtime.Tick(1.0 / 16);
+        runtime.Tick(1.0 / 16);
+
+        Assert.Single(runtime.FlicRequests);
+        Assert.Equal(1, runtime.GetSkill("region_ticks"));
+    }
+
+    [Fact]
     public void Tick_DispatchesDocumentedWallAndRegionEachTickActions_WithDocumentedReferences()
     {
         const string map =
