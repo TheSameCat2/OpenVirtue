@@ -458,13 +458,18 @@ public sealed class Player : AcknexObject
             return new Vector2(qx / 1024f, qy / 1024f);
         }
 
-        // OV-20261110-wall-slide round 5: the y part of the push is cut toward zero when the step's y part is only the
-        // 4/1024 minimum, and floored otherwise, as the x part always is. Legalism's maze wall, its stop rebuilt in a
-        // probe, took the cut y in 135 of 150 cycles with the minimum's y step (36 floored), and the floored one with
-        // a y step of +20 or −20 raw (15 and 16 of 150 off, against 148 and 83 cut).
+        // OV-20261110-wall-slide round 8: each part of the push is floored, but the part along the normal's larger
+        // component takes 0.15/1024 more first when it is negative. Legalism's maze wall (normal mostly -y) took its y
+        // part cut toward zero only where the push's fraction lay above 0.85 (x steps 243 and 258), floored below 0.69
+        // (213, 273, 303). Over every probe and retail cycle this fits 22 and 244 off, where round 5's rule (y cut for a
+        // minimum-only y step) left 322 and 302.
         long push = hold - distance;
-        qx += (long)Math.Floor(push * nx);
-        qy += YStepIsMinimum ? (long)Math.Truncate(push * ny) : (long)Math.Floor(push * ny);
+        double pushX = push * nx;
+        double pushY = push * ny;
+        const double Bias = 0.15;
+        bool yMajor = Math.Abs(ny) >= Math.Abs(nx);
+        qx += (long)Math.Floor(pushX + (!yMajor && pushX < 0 ? Bias : 0));
+        qy += (long)Math.Floor(pushY + (yMajor && pushY < 0 ? Bias : 0));
         return new Vector2(qx / 1024f, qy / 1024f);
     }
 

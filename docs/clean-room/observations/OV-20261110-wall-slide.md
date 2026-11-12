@@ -219,3 +219,20 @@ only 243. 258 splits about evenly. Neither rule is the mechanism. Also tried and
   more).
 
 Open. OpenVirtue keeps round 5's rule (`Player.YStepIsMinimum`).
+
+### Round 8 resolved in part (2026-11-12): a bias on the normal's larger part
+Per cycle, the cut and floored readings sort by the push's y part. Cut toward zero wins only where its fraction above
+the floor is 0.85 or more (x steps 243 and 258). Floored wins at 0.69 and below (213, 273, 303). So the y part is
+floor(v + c), with c between 0.147 and 0.316. Scored over every probe and retail held cycle (2754 and 1440):
+
+| Rule | Probe cycles off | Retail cycles off |
+|---|---|---|
+| round 5 (y cut for a minimum-only y step) | 322 | 302 |
+| bias 0.15 on y when negative | 22 | 289 |
+| **bias 0.15 on the normal's larger part when negative** | **22** | **244** |
+| bias on both parts | 188 | 306 |
+| a normal cut to 1/1024 to 1/16384, any rounding | 110 or more | 270 or more |
+
+Implemented (`Player.HoldOffWall`), in place of round 5's minimum-step rule. Legalism's walk now matches to line 494
+(833 of 901 lines), up from 368. Legalism's shots gain a line and Apathy's shots lose two (394 to 392). The other
+carriers are unchanged. The constant is a fit: the mechanism behind 0.15 is not known.
