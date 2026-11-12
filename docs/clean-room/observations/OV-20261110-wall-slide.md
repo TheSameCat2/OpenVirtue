@@ -197,3 +197,25 @@ Implemented in `Player.HoldOffWalls` (`CrossesLine`) and `Player.PushOutOfObject
 Most part at the room's west wall by 1/1024, and in-e on its 2648. Tests:
 `PlayerTests.MoveHorizontal_FromInsideTheHold_HalvesAStepThatWouldCrossTheLine`,
 `WdlPlayerMotionTests.Apply_FromInsideAWallsHold_HalvesAStepThatWouldCrossItsLine`.
+
+## Round 8 (2026-11-12): Legalism's stop at other x steps
+Legalism's walk parts at line 368 by one unit of y on its maze wall. The original floors the hold's y part there (x step
+273), where the stop rebuilt in round 5 (x step 243, y the 4/1024 minimum) wanted it cut toward zero. Four carriers repeat
+the rebuilt stop with x steps of 213, 258, 273 and 303 raw (`round8/legalism-x*`; `OVWSL0.TXT` x213 `a56f8667`, x258 `350b5afc`, x273 `dedde719`, x303 `cf395467`).
+
+| x step | y cut toward zero: cycles off | y floored: cycles off |
+|---|---|---|
+| 213 | 68 of 69 | 2 of 69 |
+| 243 (round 5) | 1 of 89 | 89 of 89 |
+| 258 | 53 of 114 | 61 of 114 |
+| 273 | 105 of 108 | 3 of 108 |
+| 303 | 89 of 97 | 8 of 97 |
+
+**The y part's rounding depends on the x step, not on the y minimum.** Floored fits three steps and cut toward zero
+only 243. 258 splits about evenly. Neither rule is the mechanism. Also tried and rejected over every probe and retail cycle:
+- a window keeping the result 1484 to 1485 from the line (209 and 577 off, against the current rule's 7 and 302 before
+  this round);
+- x pushed and floored with y solved from the line equation, or the other way about, with every rounding (1556 off and
+  more).
+
+Open. OpenVirtue keeps round 5's rule (`Player.YStepIsMinimum`).

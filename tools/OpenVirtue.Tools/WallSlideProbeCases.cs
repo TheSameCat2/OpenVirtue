@@ -92,6 +92,11 @@ internal static class WallSlideProbeCases
         .. new[] { ("up", 20), ("down", -20) }.Select(static v => Slide($"round5/legalism-stop-{v.Item1}", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, v.Item2 / 1024.0,
             $"Round 5. Legalism's stop with a y step of {v.Item2} raw, so the 4/1024 minimum plays no part: is y still a unit above OpenVirtue's hold?",
             1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n")),
+        // Round 8: Legalism's walk took the hold's y part floored at x steps of 273, where its stop rebuilt in a probe at
+        // 243 wanted it cut toward zero (round 5). The same stop, the x step varied, y left to the 4/1024 minimum.
+        .. new[] { 213, 258, 273, 303 }.Select(static sx => Slide($"round8/legalism-x{sx}", (30.846, -4.641, -38.319, 8.931), sx / 1024.0, 0,
+            $"Round 8. Legalism's stop with an x step of {sx} raw: is the hold's y part floored or cut toward zero?",
+            1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n")),
         // Round 6: a step that starts inside the hold. Apathy's player, jumping over a border it then could not climb,
         // started 398/1024 from the wall's line (PLAYER_WIDTH 1.4) and was put back at the hold with half its x step
         // (−72 of −144; OV-20261110-retail-play apathy-keys3 line 1018). A free wall along y = 4, the player beamed
