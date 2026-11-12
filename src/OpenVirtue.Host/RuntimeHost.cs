@@ -154,6 +154,12 @@ public sealed partial class RuntimeHost : IDisposable
     public int? RandomSeed => _randomSeed;
 
     /// <summary>
+    /// Whether moving the mouse forward and back tilts the view (a modern mouse look) instead of walking, as the
+    /// original's mouse did (<c>FORCE_AHEAD</c>, manual p.119). Off by default.
+    /// </summary>
+    public bool MouseLook { get; set; }
+
+    /// <summary>
     /// Whether a fatal script error (a division by zero) halts the runtime and drops the unflushed
     /// print text, as the original's shutdown does (<see cref="WdlRuntime.FatalErrors"/>), on every
     /// level. Off by default; the oracle replay turns it on.

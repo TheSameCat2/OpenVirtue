@@ -77,13 +77,80 @@ public sealed class RuntimeHostInputTests
     }
 
     [Fact]
-    public void Frame_WHeld_SetsForceAheadToKeySense()
+    public void Frame_CursorUpHeld_SetsForceAheadToKeySense()
     {
         using RuntimeHost host = Open(out FakeInput input, out _);
-        input.Down.Add(HostKey.W);
+        input.Down.Add(HostKey.Up);
         host.Frame(present: false);
 
         Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6); // KEY_SENSE starts at 1 on V3.963
+    }
+
+    [Theory]
+    [InlineData(HostKey.W)]
+    [InlineData(HostKey.S)]
+    [InlineData(HostKey.A)]
+    [InlineData(HostKey.D)]
+    [InlineData(HostKey.Space)]
+    public void Frame_KeyTheManualGivesNoMovement_LeavesTheForcesAtZero(HostKey key)
+    {
+        // Saints of Virtue binds S, D and Space to its own actions; only the manual's keys move the player.
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(key);
+        host.Frame(present: false);
+
+        foreach (string force in new[] { "FORCE_AHEAD", "FORCE_STRAFE", "FORCE_ROT", "FORCE_UP" })
+        {
+            Assert.Equal(0, host.Runtime.GetSkill(force), 6);
+        }
+    }
+
+    [Fact]
+    public void Frame_ForwardMouse_WalksAhead()
+    {
+        // FORCE_AHEAD is "entered by mouse, joystick or keyboard" (manual p.119); a forward mickey is negative Y.
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Motion = new Vector2(0, -32);
+        host.Frame(present: false);
+
+        Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        Assert.Equal(0, host.Runtime.GetSkill("FORCE_TILT"), 6);
+    }
+
+    [Fact]
+    public void Frame_ForwardMouseWithMouseLook_TiltsUp()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        host.MouseLook = true;
+        input.Motion = new Vector2(0, -32);
+        host.Frame(present: false);
+
+        Assert.Equal(0, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        Assert.Equal(-1, host.Runtime.GetSkill("FORCE_TILT"), 6);
+    }
+
+    [Fact]
+    public void Frame_RightwardMouseWithAltHeld_StrafesRight()
+    {
+        // FORCE_STRAFE: "[,] and [.] keys or by pressing [Alt] and moving the mouse ... sidewards" (p.120).
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(HostKey.LeftAlt);
+        input.Motion = new Vector2(32, 0);
+        host.Frame(present: false);
+
+        Assert.Equal(1, host.Runtime.GetSkill("FORCE_STRAFE"), 6);
+        Assert.Equal(0, host.Runtime.GetSkill("FORCE_ROT"), 6);
+    }
+
+    [Fact]
+    public void Frame_CursorUpWithShift_RunsAtShiftSense()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(HostKey.Up);
+        input.Down.Add(HostKey.LeftShift);
+        host.Frame(present: false);
+
+        Assert.Equal(host.Runtime.GetSkill("SHIFT_SENSE"), host.Runtime.GetSkill("FORCE_AHEAD"), 6);
     }
 
     [Fact]

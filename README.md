@@ -94,11 +94,15 @@ What works today:
   visible text with `IF_KLICK` uses its live rendered glyph bounds for hit testing.
   `MSPRITE` metadata is preserved separately from its overlay and follows the
   documented `MOUSE_MODE` visibility and mouse-position/hotspot behavior. The
-  app publishes per-frame virtual-pixel `MICKEY_X/Y` deltas, leaves active
+  app publishes per-frame `MICKEY_X/Y` deltas (the device's motion while the pointer is
+  captured, virtual pixels while it is shown), leaves active
   `MOUSE_X/Y` coordinates under script control, tracks `MOUSE_MOVING`, dispatches
   `IF_MSTOP`, and hides the native cursor over the custom pointer surface. In
   mouse modes 0/1, bounded `MOUSE_SENSE`-scaled deltas feed the retail movement
-  action through `FORCE_ROT`/`FORCE_TILT`; mode 2 remains cursor-only.
+  action as the manual maps them: sideways through `FORCE_ROT` (`FORCE_STRAFE` with Alt),
+  forward and back through `FORCE_AHEAD` (`FORCE_TILT` with `--mouselook`); mode 2 remains
+  cursor-only. The keys are the manual's (cursor keys, `,`/`.`, PgUp/PgDn, Home/End), so
+  the game's own letter and Space bindings no longer also move the player.
   An eight-voice software mixer feeding an SDL3 audio stream plays overlapping retail WAV effects with immediate
   `CHANNEL`/`CHANNEL_0..7` state, global and per-sound volume, numeric stereo pan,
   and first-pass object-relative `SDIST`/`SVDIST` attenuation. Texture `SOUND`,

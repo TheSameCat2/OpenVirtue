@@ -54,8 +54,10 @@ dotnet test  tests/OpenVirtue.Formats.Tests       # run one test project
 dotnet test --filter "FullyQualifiedName~WrsArchiveTests"   # run one class/test by name
 
 # Run the viewer (point at one of YOUR OWN .WRS files):
-dotnet run --project src/OpenVirtue.App -- path/to/apathy.wrs [MAIN.WDL]
-#   Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, move the mouse to look.
+dotnet run --project src/OpenVirtue.App -- path/to/apathy.wrs [MAIN.WDL] [--mouselook]
+#   Controls (the manual's, p.119-120): cursor keys walk and turn, [,]/[.] strafe, PgUp/PgDn tilt,
+#   Home/End jump/duck, Shift runs; the mouse turns and walks (Alt + mouse strafes).
+#   --mouselook puts the mouse's forward/back on the tilt instead.
 
 # Inspect game files with the `ovtool` CLI:
 dotnet run --project tools/OpenVirtue.Tools -- wrs list    <archive.wrs>

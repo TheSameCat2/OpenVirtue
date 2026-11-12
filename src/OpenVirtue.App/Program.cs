@@ -11,15 +11,19 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        if (args.Length < 1)
+        bool mouseLook = args.Contains("--mouselook", StringComparer.OrdinalIgnoreCase);
+        string[] positional = args.Where(static a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+        if (positional.Length < 1)
         {
-            Console.Error.WriteLine("Usage: OpenVirtue.App <archive.wrs> [main.wdl]");
-            Console.Error.WriteLine("Controls: WASD walk, Space jump, hold Shift to run, hold Ctrl to creep, move the mouse to look.");
+            Console.Error.WriteLine("Usage: OpenVirtue.App <archive.wrs> [main.wdl] [--mouselook]");
+            Console.Error.WriteLine("Controls (as the original's): cursor keys walk and turn, [,] and [.] strafe, PgUp/PgDn look up and down,");
+            Console.Error.WriteLine("Home/End jump and duck, hold Shift to run. The mouse turns and walks; hold Alt to strafe with it.");
+            Console.Error.WriteLine("--mouselook makes moving the mouse forward and back look up and down instead of walking.");
             return 1;
         }
 
-        string archivePath = args[0];
-        string mainWdl = args.Length >= 2 ? args[1] : Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
+        string archivePath = positional[0];
+        string mainWdl = positional.Length >= 2 ? positional[1] : Path.GetFileNameWithoutExtension(archivePath) + ".WDL";
         SdlPlatform? platform = null;
         SdlAudioSink? audioDevice = null;
         IAudioSink? audio = null;
@@ -50,6 +54,7 @@ internal static class Program
 
             graphics = new GlRenderBackend(SdlPlatform.GetProcAddress, platform.Swap, platform.Width, platform.Height);
             host = RuntimeHost.OpenArchive(archivePath, mainWdl, platform, platform, audio, graphics);
+            host.MouseLook = mouseLook;
             host.Boot();
             while (platform.IsOpen && !host.ExitRequested)
             {

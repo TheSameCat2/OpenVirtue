@@ -416,24 +416,49 @@ public sealed partial class RuntimeHost
             sensitivity *= _runtime.GetSkill("SHIFT_SENSE");
         }
 
-        int ahead = (IsDown(HostKey.Up) || IsDown(HostKey.W) ? 1 : 0) - (IsDown(HostKey.Down) || IsDown(HostKey.S) ? 1 : 0);
-        int strafe = (IsDown(HostKey.Period) || IsDown(HostKey.D) ? 1 : 0) - (IsDown(HostKey.Comma) || IsDown(HostKey.A) ? 1 : 0);
-        int vertical = (IsDown(HostKey.Home) || IsDown(HostKey.Space) ? 1 : 0) - (IsDown(HostKey.End) ? 1 : 0);
+        // The keys of the manual (p.119-120): cursor up/down walk, cursor left/right turn, [,] and [.]
+        // strafe, PgUp/PgDn tilt, Home/End move up and down. No other key moves the player: Saints of
+        // Virtue binds S, D and Space to its own actions (scrolls, drop, open).
+        int ahead = (IsDown(HostKey.Up) ? 1 : 0) - (IsDown(HostKey.Down) ? 1 : 0);
+        int strafe = (IsDown(HostKey.Period) ? 1 : 0) - (IsDown(HostKey.Comma) ? 1 : 0);
+        int vertical = (IsDown(HostKey.Home) ? 1 : 0) - (IsDown(HostKey.End) ? 1 : 0);
         double mouseRotation = 0;
+        double mouseStrafe = 0;
+        double mouseAhead = 0;
         double mouseTilt = 0;
         if (includeMouse)
         {
             double mouseSensitivity = _runtime.GetSkill("MOUSE_SENSE");
             double mouseMode = _runtime.GetSkill("MOUSE_MODE");
-            // Cursor-left is positive FORCE_ROT (PLAYER_ANGLE grows, a left turn). A rightward
-            // mickey is therefore negative. Positive PLAYER_TILT looks down, so a forward
-            // mickey (negative Y) is a negative FORCE_TILT.
-            mouseRotation = WdlInputForces.MouseAxis(-_frameMickey.X, mouseSensitivity, mouseMode);
-            mouseTilt = WdlInputForces.MouseAxis(_frameMickey.Y, mouseSensitivity, mouseMode);
+            // Sideways the mouse turns, or with [Alt] held strafes (manual p.120). Cursor-left is positive
+            // FORCE_ROT (PLAYER_ANGLE grows, a left turn), so a rightward mickey is a negative one, and a
+            // positive FORCE_STRAFE, as [.] gives.
+            double sideways = WdlInputForces.MouseAxis(_frameMickey.X, mouseSensitivity, mouseMode);
+            if (IsDown(HostKey.LeftAlt) || IsDown(HostKey.RightAlt))
+            {
+                mouseStrafe = sideways;
+            }
+            else
+            {
+                mouseRotation = -sideways;
+            }
+
+            // Forward and back the mouse walks (FORCE_AHEAD, p.119); a forward mickey is negative Y. With
+            // MouseLook it tilts instead: positive PLAYER_TILT looks down, so forward is a negative FORCE_TILT.
+            double forward = WdlInputForces.MouseAxis(-_frameMickey.Y, mouseSensitivity, mouseMode);
+            if (MouseLook)
+            {
+                mouseTilt = -forward;
+            }
+            else
+            {
+                mouseAhead = forward;
+            }
         }
 
-        _runtime.SetSkill("FORCE_AHEAD", sensitivity * ahead);
-        _runtime.SetSkill("FORCE_STRAFE", sensitivity * strafe);
+        // Walking and strafing keep the keys' force unbounded, so [Shift] runs at SHIFT_SENSE.
+        _runtime.SetSkill("FORCE_AHEAD", (sensitivity * ahead) + mouseAhead);
+        _runtime.SetSkill("FORCE_STRAFE", (sensitivity * strafe) + mouseStrafe);
         _runtime.SetSkill("FORCE_ROT", WdlInputForces.Combine(sensitivity * Axis(HostKey.Left, HostKey.Right), mouseRotation));
         _runtime.SetSkill("FORCE_TILT", WdlInputForces.Combine(sensitivity * Axis(HostKey.PageDown, HostKey.PageUp), mouseTilt));
         _runtime.SetSkill("FORCE_UP", sensitivity * vertical);
