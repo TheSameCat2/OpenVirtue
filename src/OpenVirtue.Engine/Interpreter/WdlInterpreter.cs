@@ -973,8 +973,8 @@ public sealed class WdlInterpreter(IWdlContext context)
             return;
         }
 
-        // OV-20261029-motion-timing: each tick adds (a - FRICTION·v) / INERTIA, so the speed settles at
-        // a / FRICTION whatever the inertia; a cycle longer than a tick is taken a tick at a time.
+        // OV-20261029-motion-timing: the cycle adds t·(a - FRICTION·v) / INERTIA, so the speed settles at
+        // a / FRICTION whatever the inertia.
         double acceleration = Evaluate(item.Header, comma + 1, item.Header.Count);
         double timeCorrection = WdlFixed.Quantize(context.GetSkill(Timing.TimeCorrectionSkill));
         double friction = WdlFixed.Quantize(context.GetSkill("FRICTION"));
@@ -985,21 +985,27 @@ public sealed class WdlInterpreter(IWdlContext context)
         }
 
         // OV-20261110-retail-play apathy-walk: in the engine's 22.10 numbers, every product cut toward
-        // zero: v' = trunc(v·(1 − trunc(t·FRICTION / INERTIA))) + trunc(t·a / INERTIA) for each tick t of
-        // the cycle. Apathy's walk, its force −63/1024, fits 59 cycles exactly this way (0 → −15 → −31
-        // → −44 …); the same in doubles stepped −16, −32, −48.
+        // zero: v' = trunc(v·(1 − round(t·FRICTION) / INERTIA)) + trunc(t·a / INERTIA), one step for the
+        // whole cycle t. Apathy's walk, its force −63/1024, fits 59 cycles exactly this way (0 → −15 →
+        // −31 → −44 …); the same in doubles stepped −16, −32, −48.
+        // OV-20261029-motion-timing round 4: once the damping t·FRICTION / INERTIA reaches 1 the old speed
+        // is dropped and the speed is the cycle's gain over its damping, trunc(t·a / I) / round(t·F / I),
+        // a / FRICTION from the cut products. All 119 cycles of accel-long, 0.25 to 2.34 ticks, fit; a
+        // tick at a time and then the rest missed 49.
         long raw = WdlFixed.ToRaw(velocity);
         long accelerationRaw = WdlFixed.ToRaw(acceleration);
         long frictionRaw = WdlFixed.ToRaw(friction);
         long inertiaRaw = Math.Max(1, WdlFixed.ToRaw(inertia));
-        long left = WdlFixed.ToRaw(timeCorrection);
-        while (left > 0)
+        long ticks = WdlFixed.ToRaw(timeCorrection);
+        if (ticks > 0)
         {
-            long tick = Math.Min(1024, left);
-            left -= tick;
-            long damping = tick * frictionRaw / 1024 * 1024 / inertiaRaw;
-            long gain = tick * accelerationRaw / 1024 * 1024 / inertiaRaw;
-            raw = (raw * (1024 - damping) / 1024) + gain;
+            // The damping product rounds a half up, as the engine's step products do: New Age's ground
+            // spring, v 131, a 160, F 1003 at 0.25 ticks, took 251 (250.75), not 250, to reach 138.
+            long damping = (long)Math.Floor((ticks * frictionRaw / 1024.0) + 0.5) * 1024 / inertiaRaw;
+            long gain = ticks * accelerationRaw / 1024 * 1024 / inertiaRaw;
+            raw = damping >= 1024
+                ? gain * 1024 / damping
+                : (raw * (1024 - damping) / 1024) + gain;
         }
 
         Assign(item.Header, 0, comma, "=", WdlFixed.FromRaw(raw));

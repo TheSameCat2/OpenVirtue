@@ -45,6 +45,46 @@ public class WdlInterpreterTests
         Assert.Equal(10.375, context.GetSkill("PLAYER_VX"), 9);
     }
 
+    [Theory]
+    [InlineData(1056, 350)] // 1.031 ticks: 354·1024 / 1034
+    [InlineData(1344, 350)] // 1.313
+    [InlineData(1600, 350)] // 1.563
+    [InlineData(1888, 351)] // 1.844
+    [InlineData(2400, 351)] // 2.344
+    public void Accel_DampingReachesATick_SetsGainOverDampingAndDropsTheOldSpeed(int ticksRaw, int expectedRaw)
+    {
+        // OV-20261029-motion-timing round 4 (accel-long): v −20/1024, a 344/1024, FRICTION 1003/1024.
+        // trunc(t·a) / round(t·F) in 22.10; a tick at a time and then the rest gave 343 at 1.031.
+        TestContext context = Run(
+            $"SET TIME_CORR, {ticksRaw}/1024; SET FRICTION, 1003/1024; SET INERTIA, 1; " +
+            "SET v, -20/1024; ACCEL v, 344/1024;");
+
+        Assert.Equal(expectedRaw, Math.Round(context.GetSkill("v") * 1024), 9);
+    }
+
+    [Fact]
+    public void Accel_UnderATick_StepsTheWholeCycleAtOnce()
+    {
+        // accel-long at 0.281 ticks: trunc(−20·(1024 − 282)/1024) + trunc(288·344/1024) = −14 + 96.
+        TestContext context = Run(
+            "SET TIME_CORR, 288/1024; SET FRICTION, 1003/1024; SET INERTIA, 1; " +
+            "SET v, -20/1024; ACCEL v, 344/1024;");
+
+        Assert.Equal(82, Math.Round(context.GetSkill("v") * 1024), 9);
+    }
+
+    [Fact]
+    public void Accel_DampingProduct_RoundsAHalfUp()
+    {
+        // OV-20261110-retail-play newage-walk line 369: t·F = 256·1003/1024 = 250.75 takes 251, so
+        // trunc(131·773/1024) + 40 = 138, where a cut damping gave 139.
+        TestContext context = Run(
+            "SET TIME_CORR, 0.25; SET FRICTION, 1003/1024; SET INERTIA, 1; " +
+            "SET v, 131/1024; ACCEL v, 160/1024;");
+
+        Assert.Equal(138, Math.Round(context.GetSkill("v") * 1024), 9);
+    }
+
     [Fact]
     public void Add_IncrementsSkillAndObjectMember()
     {

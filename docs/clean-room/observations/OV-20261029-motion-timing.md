@@ -62,8 +62,9 @@ it can be compared in an `IF`).
 
 ## Invariant
 - `FRICTION` defaults to 0 and `INERTIA` to 1.
-- `ACCEL v, a` integrates `dv = (a − FRICTION·v) / INERTIA` per tick over the cycle's `TIME_CORR`, one
-  tick at a time: `v ← v + dt·(a − F·v)/I` for steps `dt` of at most 1 tick. With F 0 that adds
+- `ACCEL v, a` adds `TIME_CORR·(a − FRICTION·v) / INERTIA` in one step for the cycle, and once the damping
+  `TIME_CORR·F/I` reaches 1 it sets the speed to a/F from the cycle's cut products (round 4, resolved
+  2026-11-12). With F 0 that adds
   `TIME_CORR·a/I`; the speed tends to `a/F`. The result is a FIXED skill (OV-20261029-numeric-edge).
   Every one of the 247 calls traced fits within 0.0015 (the printed rounding plus one 1/1024 step).
 - `CYCLE` counts phases from 1. An object steps its animation after its `EACH_TICK`; `EACH_CYCLE`
@@ -156,4 +157,20 @@ in one cycle stretched nothing, and one `SCREENSHOT` reached 0.5 to 0.8 ticks. `
   - equal steps of t/⌈t⌉ or t/⌈2t⌉;
   - the exact exponential.
 
-  The rule above a tick is open, and OpenVirtue keeps a tick at a time.
+  The rule above a tick was left open, and OpenVirtue kept a tick at a time.
+
+### Round 4 resolved (2026-11-12, no launch)
+Re-read from the same trace (v is reset to −20/1024, which prints −0.020; −21 does not fit):
+- **`ACCEL` takes the whole cycle in one step.** With `d = round(t·F)/I` (the product rounds a half up)
+  and `g = trunc(t·a)/I`, both in 22.10: `v' = trunc(v·(1 − d)) + g` while `d` is under 1, and
+  **`v' = g / d` once it reaches 1**, the old speed dropped. At 1.031 ticks that is 354·1024/1034 = 350; at
+  1.844, 634·1024/1849 = 351. It fits all 119 cycles, from 0.25 to 2.34 ticks. A tick at a time and then
+  the rest missed 49. Round 1's `FRICTION 1` case (settled at a/F at once, at `TIME_CORR` 8) is the same
+  branch.
+- **The damping rounds, the gain is cut.** New Age's ground spring at 0.25 ticks (v 131, a 160,
+  F 1003, all fixed by the printed digits) gave 138: 251 = round(250.75) damping, where a cut one gives
+  139. accel-long's samples fit either way, but rounding the gain as well misses 66 of them.
+- Replay: accel-long matches to its last line (76 of 122 before), and `newage-walk` matches on all 901 lines.
+  The four `-shots` walks hold to lines 394, 328, 357 and 589 (203, 263, 263 and 158 before). Nothing lost.
+  Implemented in `WdlInterpreter.ExecuteAccel`; tests `WdlInterpreterTests.Accel_DampingReachesATick_…`,
+  `Accel_UnderATick_…`, `Accel_DampingProduct_RoundsAHalfUp`.

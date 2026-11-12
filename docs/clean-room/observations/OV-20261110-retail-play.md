@@ -230,12 +230,17 @@ No launch.
   printed time, since Heart's 225.6875 printed as 225.688. All four retail idle runs now match the
   original line for line.
 
+## Round 10 (2026-11-12): ACCEL over a long cycle
+No launch. Round 5's New Age `PLAYER_Z` at line 159 is `ACCEL`'s long cycle: the damping reached a tick and
+the speed became the cycle's gain over its damping (OV-20261029-motion-timing round 4, resolved). The damping
+product rounds a half up (line 369). `newage-walk` now matches on all 901 lines.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).
 
 ## Open Questions
-- `PLAYER_Z` drifts up to 0.02 from the fifth frame on.
+- `PLAYER_Z` drifts up to 0.02 from the fifth frame on. (New Age's part of this was `ACCEL`'s long cycle, round 10.)
 - apathy-walk from line 399: sliding along the closed region's wall from (−1.447, 42.397) to (−12, 32.5)
   with `PLAYER_WIDTH` 1.4, the original holds the player 1484.2 to 1485.9/1024 from the wall line, and
   OpenVirtue holds it 1483.4 to 1485.2. The original's slide per cycle is about the whole step projected
