@@ -49,6 +49,20 @@ SCHEDULES["basic"] = [
     ("up-mouse-r8", ["up"], 8, 0, 60, 1 / 60),
     ("mouse-burst40", [], 40, 0, 1, 0.5),
 ]
+# A retail walk (OV-20261110-retail-play apathy-keys): walking, turning by key and by mouse, running, strafing.
+SCHEDULES["walk"] = [
+    ("up", ["up"], 0, 0, 1, 3.0),
+    ("up-right", ["up", "right"], 0, 0, 1, 1.0),
+    ("up-shift", ["shift", "up"], 0, 0, 1, 2.0),
+    ("left", ["left"], 0, 0, 1, 1.0),
+    ("mouse-r8", [], 8, 0, 60, 1 / 60),
+    ("up-mouse-l6", ["up"], -6, 0, 90, 1 / 60),
+    ("comma", ["comma"], 0, 0, 1, 1.0),
+    ("alt-right", ["alt", "right"], 0, 0, 1, 1.0),
+    ("down", ["down"], 0, 0, 1, 1.0),
+    ("mouse-forward", [], 0, -10, 90, 1 / 60),
+    ("up-mouse-r3", ["up"], 3, 0, 120, 1 / 60),
+]
 SCHEDULES["order"] = [
     ("up", ["up"], 0, 0, 1, 1.5),
     ("shift-then-up", ["shift", "up"], 0, 0, 1, 1.5, 0.5),
@@ -123,6 +137,8 @@ def main():
     ap.add_argument("--title", required=True)
     ap.add_argument("--start-after", type=float, default=20.0, help="seconds after the window appears")
     ap.add_argument("--gap", type=float, default=1.0)
+    ap.add_argument("--lock-after", type=float, default=None,
+                    help="seconds after the window appears for the lock click (default: just before the schedule)")
     ap.add_argument("--log", required=True)
     ap.add_argument("--schedule", default="basic", choices=sorted(SCHEDULES))
     args = ap.parse_args()
@@ -150,7 +166,8 @@ def main():
     x11.XTranslateCoordinates(display, window, root, attrs.width // 2, attrs.height // 2,
                               ctypes.byref(rx), ctypes.byref(ry), ctypes.byref(child))
     note(f"window {window:#x} {attrs.width}x{attrs.height} centre {rx.value},{ry.value}")
-    time.sleep(args.start_after)
+    lock_after = args.start_after - 2.3 if args.lock_after is None else args.lock_after
+    time.sleep(max(0.0, lock_after))
     xtst.XTestFakeMotionEvent(display, -1, rx.value, ry.value, 0)
     x11.XSync(display, 0)
     time.sleep(0.3)
@@ -158,7 +175,7 @@ def main():
     xtst.XTestFakeButtonEvent(display, 1, 0, 0)
     x11.XSync(display, 0)
     note("click (lock)")
-    time.sleep(2.0)
+    time.sleep(max(0.0, args.start_after - lock_after - 0.3))
     for label, keys, dx, dy, steps, period, *rest in SCHEDULES[args.schedule]:
         stagger = rest[0] if rest else 0.0
         codes = [x11.XKeysymToKeycode(display, KEYSYMS[k]) for k in keys]

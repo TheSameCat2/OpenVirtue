@@ -243,6 +243,19 @@ product rounds a half up (line 369). `newage-walk` now matches on all 901 lines.
   current hold, Legalism's maze wall fits a distance taken unfloored, and Heart's region border fits neither
   (`_research/oracle-runs/_session-20261112/slide.py`, `retail.py`, `family*.py`, local).
 
+## Round 11 (2026-11-12): Apathy walked with real keys
+`apathy-keys` (`OVSTR0.TXT` `cba512f2`) is apathy-walk with the tracer's forces taken out and 2400 cycles traced. It
+prints the cursor keys, Shift, Alt, `MICKEY_X`/`MICKEY_Y`, `FORCE_STRAFE`, `SECS` and the right button too. The input
+came from `tools/oracle/xtest_input.py --schedule walk` on a private Xvfb display: walking, walking and turning, running,
+turning by key and by mouse, strafing, backing, walking by mouse. The replay now takes such a carrier's keys and mickeys
+cycle by cycle from its own trace (`"input_columns"` in `case.json`; [,] and [.] read off a strafe force without Alt or a
+cursor key) and feeds them through `RuntimeHost`.
+- **Shift counts from the cycle after it is first seen down.** Shift and cursor up pressed together read 256, then
+  (256 + 256)·1.9. Held half a second first, it shifts the first cycle (OV-20261112-input-forces round 2).
+- **The ramp's product is the engine's 22.10, rounded a half up**: 512·1945/1024 = 972.5 read 0.950 (973).
+- The replay then matches the original on 920 of 2401 lines, first parting at line 921, a 1/1024 wall hold
+  (OV-20261110-wall-slide). Walking, turning, running and the movement script all go through OpenVirtue's own input path.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

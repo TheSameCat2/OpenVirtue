@@ -429,7 +429,11 @@ public sealed partial class RuntimeHost
     private void UpdateMovementForces()
     {
         double keySense = _runtime.GetSkill("KEY_SENSE");
-        double shift = IsDown(HostKey.LeftShift) || IsDown(HostKey.RightShift) ? _runtime.GetSkill("SHIFT_SENSE") : 1;
+        // [Shift] counts from the cycle after it is first seen down: pressed together with cursor up it gave 256 and then
+        // (256 + 256)·2, held half a second before it 512 at once (OV-20261112-input-forces; apathy-keys line 827).
+        bool shiftDown = IsDown(HostKey.LeftShift) || IsDown(HostKey.RightShift);
+        double shift = shiftDown && _shiftWasDown ? _runtime.GetSkill("SHIFT_SENSE") : 1;
+        _shiftWasDown = shiftDown;
         bool alt = IsDown(HostKey.LeftAlt) || IsDown(HostKey.RightAlt);
         double mouseSense = _runtime.GetSkill("MOUSE_SENSE");
         double mouseMode = _runtime.GetSkill("MOUSE_MODE");

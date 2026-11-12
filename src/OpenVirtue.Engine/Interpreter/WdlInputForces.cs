@@ -40,8 +40,14 @@ public static class WdlInputForces
             return 0;
         }
 
-        double magnitude = Math.Max(0, previous * direction);
-        double target = keySense * shift;
-        return direction * Math.Min((magnitude + step) * shift, target);
+        // In 22.10, the product rounded a half up as the engine's are: Apathy's SHIFT_SENSE 1.9 (1945/1024) took
+        // (256 + 256)·1945/1024 = 972.5 to 973 (OV-20261110-retail-play apathy-keys line 828).
+        long magnitude = Math.Max(0, WdlFixed.ToRaw(previous) * direction);
+        long shiftRaw = WdlFixed.ToRaw(shift);
+        long target = Product(WdlFixed.ToRaw(keySense), shiftRaw);
+        long next = Product(magnitude + WdlFixed.ToRaw(step), shiftRaw);
+        return direction * WdlFixed.FromRaw(Math.Min(next, target));
     }
+
+    private static long Product(long left, long right) => (long)Math.Floor((left * (double)right / 1024) + 0.5);
 }

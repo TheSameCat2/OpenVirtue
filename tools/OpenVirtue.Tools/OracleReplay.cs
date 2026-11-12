@@ -315,6 +315,12 @@ internal static class OracleReplay
             window.KeyDelayPolls = InputEndDelay(timingSource);
         }
 
+        if (carrierCase.Input is { } inputColumns)
+        {
+            input.Frames.AddRange(inputColumns.Frames(timingSource));
+            window.Focused = true;
+        }
+
         int frames = 0;
         double ticks;
         var audio = new TimedAudioSink();
@@ -1067,7 +1073,7 @@ internal static class OracleReplay
     private sealed record CarrierCase(
         string? TraceFile, bool ScriptedInput, string? Autotype = null, OracleTimingColumn? Timing = null, double? StartupStep = null,
         double? TimeCorrection = null, double? SecondsOffset = null, string? HookToken = null, double? SecondsRate = null,
-        OracleTimingColumn? SecondsColumn = null)
+        OracleTimingColumn? SecondsColumn = null, TracedInputColumns? Input = null)
     {
         /// <summary>Reads <c>case.json</c>; a click shows only in <c>run.sh</c>, which starts <c>x11_click.py</c>.</summary>
         public static CarrierCase Read(string carrier)
@@ -1105,7 +1111,10 @@ internal static class OracleReplay
                 OracleTimingColumn.TryParse(sc.GetString() ?? "", out OracleTimingColumn parsedSeconds)
                 ? parsedSeconds
                 : null;
-            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken, secondsRate, secondsColumn);
+            TracedInputColumns? input = root.TryGetProperty("input_columns", out JsonElement ic) && ic.ValueKind == JsonValueKind.Object
+                ? TracedInputColumns.Read(ic)
+                : null;
+            return new CarrierCase(trace, autotype is not null || click, autotype, timing, startup, timeCorrection, secondsOffset, hookToken, secondsRate, secondsColumn, input);
         }
     }
 
@@ -1403,9 +1412,10 @@ internal static class OracleReplay
 
         public bool IsOpen { get; private set; } = true;
 
-        public bool Focused => false;
+        /// <summary>True for a carrier replayed with traced held keys and mickeys, so the host captures the pointer.</summary>
+        public bool Focused { get; set; }
 
-        public bool PointerInside => false;
+        public bool PointerInside => Focused;
 
         public void Close() => IsOpen = false;
 
@@ -1527,12 +1537,63 @@ internal static class OracleReplay
 
         public Func<double> Ticks { get; set; } = static () => 0;
 
-        public IReadOnlyCollection<HostKey> Pressed => [];
+        /// <summary>The original's own input, cycle by cycle, for a carrier with <c>input_columns</c>.</summary>
+        public List<TracedInputFrame> Frames { get; } = [];
+
+        public IReadOnlyCollection<HostKey> Pressed
+        {
+            get
+            {
+                int i = FrameIndex();
+                if (i < 0)
+                {
+                    return [];
+                }
+
+                return [.. Frames[i].Keys.Where(k => i == 0 || !Frames[i - 1].Keys.Contains(k))];
+            }
+        }
 
         public Vector2 PointerPosition => Vector2.Zero;
 
+        /// <summary>
+        /// The frame the host is reading input for: the first traced line after the replay's <c>TICKS</c>, since the
+        /// host reads input before the cycle's <c>TICKS</c> moves on (the line's TICKS is a three-decimal print).
+        /// </summary>
+        private int FrameIndex()
+        {
+            if (Frames.Count == 0)
+            {
+                return -1;
+            }
+
+            double now = Ticks() + 0.002;
+            int lo = 0;
+            int hi = Frames.Count;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (Frames[mid].Ticks > now)
+                {
+                    hi = mid;
+                }
+                else
+                {
+                    lo = mid + 1;
+                }
+            }
+
+            return lo < Frames.Count ? lo : -1;
+        }
+
         public bool IsDown(HostKey key)
         {
+            int frame = FrameIndex();
+            if (frame >= 0 && Frames[frame].Keys.Contains(key))
+            {
+                return true;
+            }
+
             double ticks = Ticks();
             foreach ((HostKey held, double at) in Presses)
             {
@@ -1546,13 +1607,82 @@ internal static class OracleReplay
             return false;
         }
 
-        public bool IsDown(MouseButton button) => false;
+        public bool IsDown(MouseButton button) =>
+            button == MouseButton.Right && FrameIndex() is >= 0 and var i && Frames[i].MouseRight;
 
-        public bool WasPressed(MouseButton button) => false;
+        public bool WasPressed(MouseButton button) =>
+            button == MouseButton.Right && FrameIndex() is > 0 and var i && Frames[i].MouseRight && !Frames[i - 1].MouseRight;
 
-        public bool WasReleased(MouseButton button) => false;
+        public bool WasReleased(MouseButton button) =>
+            button == MouseButton.Right && FrameIndex() is > 0 and var i && !Frames[i].MouseRight && Frames[i - 1].MouseRight;
 
-        public Vector2 ConsumeMotion() => Vector2.Zero;
+        public Vector2 ConsumeMotion() =>
+            FrameIndex() is >= 0 and var i ? new Vector2((float)Frames[i].MickeyX, (float)Frames[i].MickeyY) : Vector2.Zero;
+    }
+
+    /// <summary>One cycle of the original's input as its trace printed it.</summary>
+    internal sealed record TracedInputFrame(double Ticks, HashSet<HostKey> Keys, double MickeyX, double MickeyY, bool MouseRight);
+
+    /// <summary>
+    /// Where a carrier's trace prints the input it was driven with (<c>"input_columns"</c> in <c>case.json</c>): the token,
+    /// and the columns of <c>TICKS</c>, the cursor keys, Shift, Alt, the mickeys, the right button and <c>FORCE_STRAFE</c>,
+    /// from which [,] and [.] are read (no skill shows them: a strafe force without Alt or a cursor key is one of them).
+    /// Held keys and mouse motion sent through XTest leave no other record (OV-20261112-input-forces).
+    /// </summary>
+    internal sealed record TracedInputColumns(string Token, IReadOnlyDictionary<string, int> Columns)
+    {
+        private static readonly (string Name, HostKey Key)[] KeyColumns =
+        [
+            ("up", HostKey.Up), ("down", HostKey.Down), ("left", HostKey.Left), ("right", HostKey.Right),
+            ("shift", HostKey.LeftShift), ("alt", HostKey.LeftAlt),
+        ];
+
+        public static TracedInputColumns Read(JsonElement element)
+        {
+            string token = element.TryGetProperty("token", out JsonElement t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : "";
+            var columns = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (property.Value.ValueKind == JsonValueKind.Number)
+                {
+                    columns[property.Name] = property.Value.GetInt32();
+                }
+            }
+
+            return new TracedInputColumns(token, columns);
+        }
+
+        public IEnumerable<TracedInputFrame> Frames(IReadOnlyList<OracleTraceLine> lines)
+        {
+            foreach (OracleTraceLine line in lines)
+            {
+                if (!string.Equals(line.Token, Token, StringComparison.Ordinal) || Get(line, "ticks") is not { } ticks)
+                {
+                    continue;
+                }
+
+                var keys = new HashSet<HostKey>();
+                foreach ((string name, HostKey key) in KeyColumns)
+                {
+                    if (Get(line, name) is > 0)
+                    {
+                        keys.Add(key);
+                    }
+                }
+
+                bool sideways = keys.Contains(HostKey.LeftAlt) || keys.Contains(HostKey.Left) || keys.Contains(HostKey.Right);
+                double strafe = Get(line, "strafe") ?? 0;
+                if (!sideways && strafe != 0)
+                {
+                    keys.Add(strafe > 0 ? HostKey.Comma : HostKey.Period);
+                }
+
+                yield return new TracedInputFrame(ticks, keys, Get(line, "mickey_x") ?? 0, Get(line, "mickey_y") ?? 0, Get(line, "mouse_right") is > 0);
+            }
+        }
+
+        private double? Get(OracleTraceLine line, string name) =>
+            Columns.TryGetValue(name, out int column) ? line.Value(column) : null;
     }
 
     /// <summary>

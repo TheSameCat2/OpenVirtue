@@ -97,6 +97,19 @@ public sealed class RuntimeHostInputTests
     }
 
     [Fact]
+    public void Frame_ShiftPressedWithTheKey_CountsFromTheNextCycle()
+    {
+        // OV-20261110-retail-play apathy-keys line 827: Shift and cursor up together read 256, then (256 + 256)·2.
+        using RuntimeHost host = Open(out FakeInput input, out _);
+        input.Down.Add(HostKey.Up);
+        input.Down.Add(HostKey.LeftShift);
+        host.Frame(present: false);
+        Assert.Equal(0.25, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+        host.Frame(present: false);
+        Assert.Equal(1, host.Runtime.GetSkill("FORCE_AHEAD"), 6);
+    }
+
+    [Fact]
     public void Frame_KeyAndMouseOnOneAxis_TheKeyWins()
     {
         using RuntimeHost host = Open(out FakeInput input, out _);
@@ -191,8 +204,9 @@ public sealed class RuntimeHostInputTests
     {
         // Shift held first: 512, 1536, 2048 (SHIFT_SENSE 2).
         using RuntimeHost host = Open(out FakeInput input, out _);
-        input.Down.Add(HostKey.Up);
         input.Down.Add(HostKey.LeftShift);
+        host.Frame(present: false);
+        input.Down.Add(HostKey.Up);
         var readings = new List<double>();
         for (int i = 0; i < 3; i++)
         {

@@ -119,6 +119,7 @@ public sealed partial class RuntimeHost : IDisposable
     private readonly KeyAxis _strafeKeys = new();
     private readonly KeyAxis _tiltKeys = new();
     private readonly KeyAxis _upKeys = new();
+    private bool _shiftWasDown;
     private Vector2 _mouseMotionWindow;
     private double _mouseMotionTicks;
     private bool _mouseWasMoving;
