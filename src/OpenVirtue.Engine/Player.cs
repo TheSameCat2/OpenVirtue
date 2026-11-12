@@ -313,8 +313,25 @@ public sealed class Player : AcknexObject
             return null;
         }
 
-        long qx = (long)Math.Round(start.X * 1024.0) + (long)Math.Round(dx * 1024.0);
-        long qy = (long)Math.Round(start.Y * 1024.0) + (long)Math.Round(dz * 1024.0);
+        long sx = (long)Math.Round(start.X * 1024.0);
+        long sy = (long)Math.Round(start.Y * 1024.0);
+        long stepX = (long)Math.Round(dx * 1024.0);
+        long stepY = (long)Math.Round(dz * 1024.0);
+        // OV-20261110-wall-slide round 7: a step whose end would cross a stopping wall's line is halved first. Beamed
+        // 0.4 inside a wall's hold, steps of (−144, 428) and (−300, 428) were held with x −72 and −150, where steps that
+        // stay on the player's side kept their whole x (Apathy's jump onto a border, apathy-keys3 line 1018).
+        // Only a step that starts within PLAYER_WIDTH of the line has been seen halved; a step from outside the hold that
+        // crosses the line keeps the whole-step rule above.
+        for (int halvings = 0;
+             halvings < 8 && blocking.Cast<Wall>().Any(w => LineDistance(w, sx, sy) is { } d && d < Width * 1024.0 && CrossesLine(w, sx, sy, sx + stepX, sy + stepY));
+             halvings++)
+        {
+            stepX /= 2;
+            stepY /= 2;
+        }
+
+        long qx = sx + stepX;
+        long qy = sy + stepY;
         var walls = new List<(Wall Wall, double Distance)>();
         foreach (Wall wall in blocking.Cast<Wall>())
         {
@@ -333,6 +350,32 @@ public sealed class Player : AcknexObject
         }
 
         return held;
+    }
+
+    /// <summary>Whether a step from one point to another (both in 1/1024) passes through a wall to the other side of its line.</summary>
+    private bool CrossesLine(Wall wall, long fromX, long fromY, long toX, long toY)
+    {
+        if ((uint)wall.Vertex1 >= (uint)_level.Vertices.Count || (uint)wall.Vertex2 >= (uint)_level.Vertices.Count)
+        {
+            return false;
+        }
+
+        double ax = Math.Round(_level.Vertices[wall.Vertex1].X * 1024.0);
+        double ay = Math.Round(_level.Vertices[wall.Vertex1].Y * 1024.0);
+        double bx = Math.Round(_level.Vertices[wall.Vertex2].X * 1024.0);
+        double by = Math.Round(_level.Vertices[wall.Vertex2].Y * 1024.0);
+        double from = ((fromX - ax) * (by - ay)) - ((fromY - ay) * (bx - ax));
+        double to = ((toX - ax) * (by - ay)) - ((toY - ay) * (bx - ax));
+        if (!((from < 0 && to > 0) || (from > 0 && to < 0)))
+        {
+            return false;
+        }
+
+        // The step must pass through the wall itself, not the line beyond its ends (New Age's walk at the end of a wall,
+        // newage-shots line 592, stepped across the line's extension and was not halved).
+        double a = ((ax - fromX) * (toY - fromY)) - ((ay - fromY) * (toX - fromX));
+        double b = ((bx - fromX) * (toY - fromY)) - ((by - fromY) * (toX - fromX));
+        return (a <= 0 && b >= 0) || (a >= 0 && b <= 0);
     }
 
     /// <summary>The distance in 1/1024 from a point in 1/1024 to a wall's line, or null for a wall the hold cannot measure.</summary>
@@ -434,7 +477,14 @@ public sealed class Player : AcknexObject
     /// outside since the last one, or the last push fell short of the contact distance
     /// (OV-20261103-startup-clock push-d005).
     /// </summary>
-    public void PushOutOfObjects()
+    public void PushOutOfObjects() => PushOutOfObjects(holdOffWalls: true);
+
+    /// <summary>
+    /// As <see cref="PushOutOfObjects()"/>; <paramref name="holdOffWalls"/> false leaves a beam inside a wall's hold for
+    /// the step to resolve: a player beamed 410/1024 below a wall while walking had its crossing step halved and held
+    /// (OV-20261110-wall-slide round 7), where one standing there was put at the hold with the 4/1024 nudge (round 6).
+    /// </summary>
+    public void PushOutOfObjects(bool holdOffWalls)
     {
         var start = new Vector2(_position.X, _position.Z);
         if (_settled == start && !_pushUnfinished)
@@ -454,7 +504,7 @@ public sealed class Player : AcknexObject
         // there, the other axis nudged 4/1024 as in a push: beamed to (-15, 21), 1.0 from the room's west
         // wall, the player stood at (-14.751, 21.004) in the next cycle (OV-20261020-view-activity
         // view-pillar, 2026-11-03 addendum).
-        Vector2 held = _collisionWorld.HoldOffWalls(end, _region, Width, WallClearance, CanCross);
+        Vector2 held = holdOffWalls ? _collisionWorld.HoldOffWalls(end, _region, Width, WallClearance, CanCross) : end;
         if (held != end)
         {
             const float Nudge = 4f / 1024;

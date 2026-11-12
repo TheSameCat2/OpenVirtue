@@ -31,12 +31,12 @@ public static class WdlPlayerMotion
         player.ThingWidthFactor = (float)Math.Max(0, runtime.GetSkill("THING_WIDTH"));
         player.StepUp = (float)Math.Max(0, runtime.GetSkill("PLAYER_CLIMB"));
 
-        player.PushOutOfObjects();
+        double requestedVelocityX = runtime.GetSkill("PLAYER_VX");
+        double requestedVelocityY = runtime.GetSkill("PLAYER_VY");
+        player.PushOutOfObjects(holdOffWalls: timeCorrection <= 0 || (requestedVelocityX == 0 && requestedVelocityY == 0));
         runtime.SetSkill("PLAYER_LAST_X", player.Position.X);
         runtime.SetSkill("PLAYER_LAST_Y", player.Position.Z);
 
-        double requestedVelocityX = runtime.GetSkill("PLAYER_VX");
-        double requestedVelocityY = runtime.GetSkill("PLAYER_VY");
         // Each axis steps by the engine's own product of the speed and TIME_CORR, rounded to 1/1024:
         // PLAYER_VY 0.2 (204 raw) stepped 57 and 51 units at TIME_CORR 0.281 and 0.25, and 0.05
         // stepped 14 and 13 (OV-20261019-eye-clamp stop-border).

@@ -127,6 +127,29 @@ public sealed class WdlPlayerMotionTests
     }
 
     [Fact]
+    public void Apply_FromInsideAWallsHold_HalvesAStepThatWouldCrossItsLine()
+    {
+        // OV-20261110-wall-slide round 7 in-a: beamed 410/1024 below a free wall, stepping (−144, 428).
+        const string map =
+            "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+            "VERTEX -20 4 0;#4\nVERTEX 20 4 0;#5\n" +
+            "REGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL d 4 5 0 0 0 0;#4\n" +
+            "PLAYER_START 0 0 0 0;#6";
+        (WdlRuntime runtime, Player player) = Create(map, "MAPFILE <m.wmp>;");
+        runtime.SetSkill("PLAYER_WIDTH", 1433 / 1024.0); // 1.4 as WDL stores it
+        player.Position = new System.Numerics.Vector3(2048f / 1024, player.Position.Y, 3686f / 1024);
+        runtime.SetSkill("PLAYER_VX", -576 / 1024.0);
+        runtime.SetSkill("PLAYER_VY", 1712 / 1024.0);
+
+        WdlPlayerMotion.Apply(runtime, player, 0.25);
+
+        Assert.Equal(1976, player.Position.X * 1024, 3);
+        Assert.Equal(2612, player.Position.Z * 1024, 3);
+    }
+
+    [Fact]
     public void Apply_HeldAtABorderItCannotClimb_KeepsTheVelocity()
     {
         // OV-20261110-retail-play round 4: Apathy's walk, held at a 2-step border, read PLAYER_VY 0.902 on.

@@ -172,3 +172,28 @@ plays no part. With them, flooring the y part fits again (3 and 0 off of 150). I
 The replay summary went to 1081/1273, nothing lost. Still open: Legalism's walk at line 369 (step 273 raw)
 wants that y part floored. Over the probe and the walk, a distance taken with the minimum's y, the push
 floored in x and rounded in y fits 15 of 150 and 0 of 34 off. It is not tried against the other probes yet.
+
+## Rounds 6 and 7 (2026-11-12): a step that starts inside the hold
+Apathy's player, jumping with X onto a border it then could not climb, began a cycle 398/1024 from the border's
+line and was put back at the hold with half its x step, −72 of −144 (OV-20261110-retail-play apathy-keys3,
+line 1018). Six carriers put the player 410/1024 below a free wall along y = 4 (`PLAYER_WIDTH` 1.4).
+- Round 6 beamed it there and then began to walk. Standing, it was left inside. At its first cycle the original put
+  it at the hold with x +4, whatever the case's step: the beam's hold of OV-20261020-view-activity.
+- Round 7 (`round7/round6/in-*`; `OVWSL0.TXT` in-a `8487f038`, in-b `2e114abe`, in-c `b1f123f0`, in-d `563d5fc8`, in-e `733a4873`, in-f `35c82afd`) beamed it in while it already walked:
+
+| Step (raw) | Original's move |
+|---|---|
+| (−144, 428), (−300, 428): the end would cross the wall | x −72, −150; y at the hold (2612) |
+| (−144, 4), (200, 100), (−144, −20): the end stays on its side | the whole x; y at the hold |
+| (0, 428) | x +4, y 2648, then 2612 the next cycle (open) |
+
+- **A step that starts within `PLAYER_WIDTH` of a wall and would pass through it is halved before the hold.** A step
+  that crosses only the line's extension beyond the wall's end is not (New Age's walk, newage-shots line 592).
+- **The beam's hold applies to a standing player only.** A walking player beamed inside the hold is left there for the
+  step to resolve.
+
+Implemented in `Player.HoldOffWalls` (`CrossesLine`) and `Player.PushOutOfObjects(holdOffWalls)`, from
+`WdlPlayerMotion.Apply`. apathy-keys3 then matches on all 2401 lines. The round-7 carriers match to lines 114 to 222.
+Most part at the room's west wall by 1/1024, and in-e on its 2648. Tests:
+`PlayerTests.MoveHorizontal_FromInsideTheHold_HalvesAStepThatWouldCrossTheLine`,
+`WdlPlayerMotionTests.Apply_FromInsideAWallsHold_HalvesAStepThatWouldCrossItsLine`.

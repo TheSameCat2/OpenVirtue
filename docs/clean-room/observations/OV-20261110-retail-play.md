@@ -268,6 +268,12 @@ The original breaks a print line after about 42 values, so Pg up, Pg dn, Home an
   in the retail scripts. With the operands split (`WdlInterpreter.ExecuteLegacyIf`) the jump matches through its rise to
   13.97, and the replay goes to line 1495 of 2401, parting at a 1/1024 wall hold on the way down.
 
+## Round 13 (2026-11-12): Saints of Virtue's own keys
+`apathy-keys3` drives X (the game's jump), C (its duck), the right mouse button (its walk), Shift with it, a cursor
+turn, and X while walking; X and C are packed into the key column as 16 and 32. It matched to line 1017 and parted
+where the player, jumping, began a cycle inside a border's hold (OV-20261110-wall-slide rounds 6 and 7). With the
+halved step it **matches the original on all 2401 lines**.
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

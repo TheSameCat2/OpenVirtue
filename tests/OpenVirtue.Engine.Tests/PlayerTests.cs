@@ -406,6 +406,30 @@ public class PlayerTests
         Assert.Equal(toY, player.Position.Z * 1024, 3);
     }
 
+    [Theory]
+    [InlineData(-144, 428, 1976, 2612)] // the step would cross the line: halved, x −72
+    [InlineData(-300, 428, 1898, 2612)]
+    [InlineData(-144, 4, 1904, 2612)] // it stays on the player's side: the whole x
+    [InlineData(200, 100, 2248, 2612)]
+    public void MoveHorizontal_FromInsideTheHold_HalvesAStepThatWouldCrossTheLine(int stepX, int stepY, int toX, int toY)
+    {
+        // OV-20261110-wall-slide round 7: beamed to (2048, 3686), 410/1024 below a free wall along y = 4, PLAYER_WIDTH 1.4.
+        const string map =
+            "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+            "VERTEX -20 4 0;#4\nVERTEX 20 4 0;#5\n" +
+            "REGION room 0 16;#0\n" +
+            "WALL w 0 1 0 -1 0 0;#0\nWALL w 1 2 0 -1 0 0;#1\nWALL w 2 3 0 -1 0 0;#2\nWALL w 3 0 0 -1 0 0;#3\n" +
+            "WALL d 4 5 0 0 0 0;#4\n" +
+            "PLAYER_START 0 0 0 0;#6";
+        var player = new Player(Load(map)) { Width = 1433f / 1024 };
+        player.Position = new Vector3(2048f / 1024, 8, 3686f / 1024);
+
+        player.MoveHorizontal(stepX / 1024f, stepY / 1024f);
+
+        Assert.Equal(toX, player.Position.X * 1024, 3);
+        Assert.Equal(toY, player.Position.Z * 1024, 3);
+    }
+
     [Fact]
     public void MoveHorizontal_IntoACornerOfTwoWalls_HoldsOffTheNearerFirst()
     {

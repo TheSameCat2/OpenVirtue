@@ -22,8 +22,11 @@ KEYSYMS = {
     "up": 0xFF52, "down": 0xFF54, "left": 0xFF51, "right": 0xFF53,
     "pageup": 0xFF55, "pagedown": 0xFF56, "home": 0xFF50, "end": 0xFF57,
     "shift": 0xFFE1, "alt": 0xFFE9, "ctrl": 0xFFE3,
-    "comma": 0x2C, "period": 0x2E,
+    "comma": 0x2C, "period": 0x2E, "x": 0x78, "c": 0x63,
 }
+
+# Mouse buttons held like keys in a schedule.
+BUTTONS = {"rmb": 3}
 
 # (label, keys held, mouse dx and dy per step, steps, seconds per step[, seconds between key presses]); a
 # gap of no input follows each.
@@ -76,6 +79,16 @@ SCHEDULES["turns"] = [
     ("up-mouse-l6", ["up"], -6, 0, 40, 1 / 60),
     ("pageup", ["pageup"], 0, 0, 1, 0.5),
     ("home", ["home"], 0, 0, 1, 0.3),
+]
+# Saints of Virtue's own bindings: X jumps, C ducks, the right button walks (apathy-keys3).
+SCHEDULES["game"] = [
+    ("x", ["x"], 0, 0, 1, 0.3),
+    ("wait", [], 0, 0, 1, 2.0),
+    ("c", ["c"], 0, 0, 1, 1.0),
+    ("rmb", ["rmb"], 0, 0, 1, 1.0),
+    ("rmb-shift", ["shift", "rmb"], 0, 0, 1, 0.6),
+    ("left", ["left"], 0, 0, 1, 1.0),
+    ("x-up", ["up", "x"], 0, 0, 1, 0.6, 0.3),
 ]
 SCHEDULES["order"] = [
     ("up", ["up"], 0, 0, 1, 1.5),
@@ -192,13 +205,13 @@ def main():
     time.sleep(max(0.0, args.start_after - lock_after - 0.3))
     for label, keys, dx, dy, steps, period, *rest in SCHEDULES[args.schedule]:
         stagger = rest[0] if rest else 0.0
-        codes = [x11.XKeysymToKeycode(display, KEYSYMS[k]) for k in keys]
+        codes = [(True, BUTTONS[k]) if k in BUTTONS else (False, x11.XKeysymToKeycode(display, KEYSYMS[k])) for k in keys]
         note(f"begin {label}")
-        for n, code in enumerate(codes):
+        for n, (button, code) in enumerate(codes):
             if n and stagger:
                 time.sleep(stagger)
                 note(f"  press {keys[n]}")
-            xtst.XTestFakeKeyEvent(display, code, 1, 0)
+            (xtst.XTestFakeButtonEvent if button else xtst.XTestFakeKeyEvent)(display, code, 1, 0)
             x11.XSync(display, 0)
         start = time.monotonic()
         for i in range(steps):
@@ -207,8 +220,8 @@ def main():
                 x11.XSync(display, 0)
             target = start + (i + 1) * period
             time.sleep(max(0.0, target - time.monotonic()))
-        for code in reversed(codes):
-            xtst.XTestFakeKeyEvent(display, code, 0, 0)
+        for button, code in reversed(codes):
+            (xtst.XTestFakeButtonEvent if button else xtst.XTestFakeKeyEvent)(display, code, 0, 0)
         x11.XSync(display, 0)
         note(f"end {label}")
         time.sleep(args.gap)

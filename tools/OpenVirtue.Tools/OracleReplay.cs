@@ -1637,11 +1637,11 @@ internal static class OracleReplay
             ("shift", HostKey.LeftShift), ("alt", HostKey.LeftAlt),
         ];
 
-        // "key_bits": one column holding KEY_PGUP + 2·KEY_PGDN + 4·KEY_HOME + 8·KEY_END, since the original breaks a
+        // "key_bits": one column holding KEY_PGUP + 2·KEY_PGDN + 4·KEY_HOME + 8·KEY_END (+ 16·KEY_X + 32·KEY_C), since the original breaks a
         // print line past its length limit.
         private static readonly (int Bit, HostKey Key)[] KeyBits =
         [
-            (1, HostKey.PageUp), (2, HostKey.PageDown), (4, HostKey.Home), (8, HostKey.End),
+            (1, HostKey.PageUp), (2, HostKey.PageDown), (4, HostKey.Home), (8, HostKey.End), (16, HostKey.X), (32, HostKey.C),
         ];
 
         public static TracedInputColumns Read(JsonElement element)

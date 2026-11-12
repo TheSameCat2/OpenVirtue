@@ -92,6 +92,17 @@ internal static class WallSlideProbeCases
         .. new[] { ("up", 20), ("down", -20) }.Select(static v => Slide($"round5/legalism-stop-{v.Item1}", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, v.Item2 / 1024.0,
             $"Round 5. Legalism's stop with a y step of {v.Item2} raw, so the 4/1024 minimum plays no part: is y still a unit above OpenVirtue's hold?",
             1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n")),
+        // Round 6: a step that starts inside the hold. Apathy's player, jumping over a border it then could not climb,
+        // started 398/1024 from the wall's line (PLAYER_WIDTH 1.4) and was put back at the hold with half its x step
+        // (−72 of −144; OV-20261110-retail-play apathy-keys3 line 1018). A free wall along y = 4, the player beamed
+        // 0.4 below it while it already walks with the case's step, so the step after the beam is not the zero first one.
+        .. new[]
+        {
+            ("in-a", -144, 428), ("in-b", -144, 0), ("in-c", 200, 100), ("in-d", -300, 428), ("in-e", 0, 428), ("in-f", -144, -20),
+        }.Select(static v => Slide($"round6/{v.Item1}", (-20, 4, 20, 4), v.Item2 / 1024.0, v.Item3 / 1024.0,
+            $"Round 6. Beamed 0.4 inside a wall's hold, stepping ({v.Item2}, {v.Item3}) raw a cycle: where does the first cycle put the player, and how much of the x step does it keep?",
+            1.4, setup: FormattableString.Invariant(
+                $"    SET PLAYER_X, 2;\n    SET PLAYER_Y, 2;\n    WAIT 2;\n    RULE ws_sx = {v.Item2 / 1024.0};\n    RULE ws_sy = {v.Item3 / 1024.0};\n    RULE ws_go = 1;\n    WAIT 3;\n    SET PLAYER_X, 2;\n    SET PLAYER_Y, 3.6;\n"))),
     ];
 
     /// <summary>The probe as the generator consumes it.</summary>
