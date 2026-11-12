@@ -92,6 +92,14 @@ internal static class WallSlideProbeCases
         .. new[] { ("up", 20), ("down", -20) }.Select(static v => Slide($"round5/legalism-stop-{v.Item1}", (30.846, -4.641, -38.319, 8.931), 243.0 / 1024, v.Item2 / 1024.0,
             $"Round 5. Legalism's stop with a y step of {v.Item2} raw, so the 4/1024 minimum plays no part: is y still a unit above OpenVirtue's hold?",
             1.4, -1226, 949, "    SET PLAYER_X, -1226.572265625;\n    SET PLAYER_Y, 949.0947265625;\n    WAIT 2;\n")),
+        // Round 9: the hold's bias across wall directions. Walls through (8, 6) of slope k from −0.9 to 0.9, the player
+        // beamed 6 below the wall at (8, 0) and stepping (0.1, 0.25) a cycle into it, so the push's larger part is
+        // negative (Legalism's wall took 0.15/1024 there, Apathy's curtain none).
+        .. new[] { -0.9, -0.7, -0.5, -0.3, -0.1, 0.1, 0.3, 0.5, 0.7, 0.9 }.Select(static k => Slide(
+            FormattableString.Invariant($"round9/k{(k < 0 ? "m" : "p")}{Math.Abs(k) * 10:0}"),
+            (-10, 6 - (18 * k), 26, 6 + (18 * k)), 0.1, 0.25,
+            FormattableString.Invariant($"Round 9. A wall of slope {k} through (8, 6), met from below: how is the push's negative larger part rounded?"),
+            1.4, setup: "    SET PLAYER_X, 8;\n    SET PLAYER_Y, 0;\n    WAIT 2;\n")),
         // Round 8: Legalism's walk took the hold's y part floored at x steps of 273, where its stop rebuilt in a probe at
         // 243 wanted it cut toward zero (round 5). The same stop, the x step varied, y left to the 4/1024 minimum.
         .. new[] { 213, 258, 273, 303 }.Select(static sx => Slide($"round8/legalism-x{sx}", (30.846, -4.641, -38.319, 8.931), sx / 1024.0, 0,

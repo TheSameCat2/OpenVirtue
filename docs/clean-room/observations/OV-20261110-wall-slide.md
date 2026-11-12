@@ -236,3 +236,16 @@ floor(v + c), with c between 0.147 and 0.316. Scored over every probe and retail
 Implemented (`Player.HoldOffWall`), in place of round 5's minimum-step rule. Legalism's walk now matches to line 494
 (833 of 901 lines), up from 368. Legalism's shots gain a line and Apathy's shots lose two (394 to 392). The other
 carriers are unchanged. The constant is a fit: the mechanism behind 0.15 is not known.
+
+## Round 9 (2026-11-12): the bias across wall directions
+Ten carriers (`round9/k*`): walls through (8, 6) of slope −0.9, −0.7, −0.5, −0.3, −0.1, 0.1, 0.3, 0.5, 0.7 and 0.9,
+`PLAYER_WIDTH` 1.4. The player is beamed to (8, 0), 6 below the wall, and steps (0.1, 0.25) a cycle into it, so the
+push's larger part is negative on most of them.
+- **The round-8 rule holds across directions**: per wall it misses 1, 7, 0, 1, 0, 4, 1, 0, 5 and 2 held cycles, 21 of 1084.
+  In the replay, three carriers match on all 219 lines, five to between lines 80 and 168, and two part at line 3 in the
+  beam's set-up.
+- The pushes' fractions do not split at one threshold per wall: on km9, one more came at a fraction of 0.226 and the floor at
+  0.48. A single offset on the hold distance (−0.5 to 0) fits the probes nearly as well at −0.15 (41 off), but the retail
+  cycles worse (353 against 244). So the rule stays as it is, with its constant unexplained.
+- What is left in retail is Apathy's curtain (78 of 261 held cycles, mostly the original 1/1024 lower in y) and Heart's swamp
+  border (141 of 583), a region border rather than a solid wall.
