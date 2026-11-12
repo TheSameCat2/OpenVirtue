@@ -171,3 +171,12 @@ All ran (rc 0).
 - `WdlRuntime.SecondsClockRate` and `SecondsClockStartTicks` default to 1 and 0. The oracle replay
   sets 0.991 and 1.28 for runs at the 60 Hz cadence, or a carrier's `"seconds_offset"`.
 - `WdlRuntime` sets `TIME_TOTAL`.
+
+## Replay note (2026-11-12): a FOLLOW actor's halving near the player
+follow-1 and follow-2 parted at lines 179 and 166, where the CAREFULLY follower, about 2.76 from the player, took 0.070
+(an eighth of its 0.559 step) where OpenVirtue took 0.140 (a quarter). The quarter's two-steps-ahead point lay
+2273/1024 from the player along y, past the bare contact 2252 (half the 2-wide actor plus `PLAYER_WIDTH` 1228).
+**A FOLLOW actor measures that point against the contact with the original's slack, √(c² + 0.093)** (OV-20261029-overlap),
+2274. actor-step round 3 c-pi, a CAREFULLY BULLET walking straight at the player, stopped with the bare 2252 to the unit
+(steps −72, −64, −36, −16, −8, then none), so the slack is FOLLOW's only. follow-2 now matches on all 187 lines and
+follow-1 to line 184 (a unit off at its last step). Nothing else changed. `WdlRuntime.CarefulStepScale`.

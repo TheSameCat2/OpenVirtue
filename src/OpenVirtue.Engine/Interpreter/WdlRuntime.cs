@@ -4724,6 +4724,14 @@ public sealed class WdlRuntime :
     private double CarefulStepScale(Actor actor, Player player, double stepX, double stepY)
     {
         double contact = ActorCollisionRadius(actor) + player.Width;
+        // A FOLLOW actor, closing in on the player, takes the contact with the original's slack, √(c² + 0.093)
+        // (OV-20261029-overlap): contact-clock follow-1/2's follower, two quarter steps 2273/1024 from the player along
+        // y, took an eighth (0.070). actor-step c-pi's BULLET keeps the bare 2252 to the unit.
+        if (string.Equals(actor.Target, "FOLLOW", StringComparison.OrdinalIgnoreCase))
+        {
+            contact = LevelCollisionWorld.ContactDistance((float)contact);
+        }
+
         double scale = 1;
         for (int attempt = 0; attempt < 5; attempt++, scale /= 2)
         {
