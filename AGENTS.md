@@ -53,8 +53,12 @@ dotnet test  OpenVirtue.slnx                      # run all tests (xUnit)
 dotnet test  tests/OpenVirtue.Formats.Tests       # run one test project
 dotnet test --filter "FullyQualifiedName~WrsArchiveTests"   # run one class/test by name
 
-# Run the viewer (point at one of YOUR OWN .WRS files):
+# Run the game: with no archive it starts from TITLE.WRS, found by GameLocator in
+# $OPENVIRTUE_GAME_DIR, game/ beside the program, the per-user data folder's OpenVirtue/game/, ...
+OPENVIRTUE_GAME_DIR=path/to/your/install dotnet run --project src/OpenVirtue.App
+# Or open one level directly (point at one of YOUR OWN .WRS files):
 dotnet run --project src/OpenVirtue.App -- path/to/apathy.wrs [MAIN.WDL] [--mouselook]
+# Player builds (single self-contained executable per platform): scripts/publish.sh or scripts/publish.ps1
 #   Controls (the manual's, p.119-120): cursor keys walk and turn, [,]/[.] strafe, PgUp/PgDn tilt,
 #   Home/End jump/duck, Shift runs; the mouse turns and walks (Alt + mouse strafes).
 #   --mouselook puts the mouse's forward/back on the tilt instead.

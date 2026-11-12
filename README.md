@@ -246,11 +246,29 @@ Not yet complete:
 and where each piece sits. The immediate work plan is tracked in
 [`docs/planning/near-term-roadmap.md`](docs/planning/near-term-roadmap.md).
 
-## What you need to play (planned end-user flow)
+## Playing the game
 
-1. Legally obtain Saints of Virtue (retail CD or archive).
-2. Point OpenVirtue at the install folder containing the `*.WRS` data files.
-3. Run OpenVirtue. (No game files ship with the engine.)
+1. Legally obtain Saints of Virtue (retail CD or archive). No game files ship with the engine.
+2. Get OpenVirtue for your platform: a release build, or build one with `scripts/publish.sh`
+   (Linux/macOS shell) or `scripts/publish.ps1` (PowerShell). Either makes
+   `artifacts/OpenVirtue-<platform>/`, holding the single `OpenVirtue` executable and an empty
+   `game` folder. No .NET install is needed to run it.
+3. Copy the game's files (`TITLE.WRS`, `START.WRS`, `APATHY.WRS`, `HEART.WRS`, `LEGALISM.WRS`,
+   `NEWAGE.WRS`) into that `game` folder. Copying the whole install folder in also works, and so
+   does any mix of upper- and lower-case names.
+4. Start `OpenVirtue`. It opens the logo, the title and the menus just as the original does, with
+   no arguments.
+
+OpenVirtue looks for `TITLE.WRS` in this order:
+- the folder named by the `OPENVIRTUE_GAME_DIR` environment variable;
+- `game/` beside the program;
+- the program's own folder;
+- your per-user data folder's `OpenVirtue/game/` (`%LOCALAPPDATA%` on Windows, `~/.local/share` on Linux);
+- `game/` in the working folder, then the working folder itself.
+
+If it finds none, it creates the per-user folder and shows a message naming where to put the files.
+`OpenVirtue --help` lists the folders searched and the controls. `--mouselook` makes moving the
+mouse forward and back tilt the view instead of walking.
 
 ## Repository layout
 

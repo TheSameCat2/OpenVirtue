@@ -417,6 +417,14 @@ public sealed partial class RuntimeHost : IDisposable
             candidate = Path.Combine(_contentRoot, candidate);
         }
 
+        if (!File.Exists(candidate) &&
+            GameLocator.FindFile(Path.GetDirectoryName(candidate) ?? _contentRoot, Path.GetFileName(candidate)) is { } anyCase)
+        {
+            // Installs mix the names' case (apathy.wrs beside HEART.WRS); a case-sensitive file system needs the
+            // name as it is on disk.
+            candidate = anyCase;
+        }
+
         if (!File.Exists(candidate))
         {
             throw new FileNotFoundException($"Requested WRS archive '{resourceName}' could not be resolved.", candidate);
