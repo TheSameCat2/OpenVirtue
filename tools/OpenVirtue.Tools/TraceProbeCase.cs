@@ -28,7 +28,8 @@ internal sealed record TraceProbeCase(
     TraceProbeMap? Map = null,
     double? ClickAfterSeconds = null,
     string? Prelude = null,
-    string? HookToken = null);
+    string? HookToken = null,
+    bool Replayable = true);
 
 /// <summary>
 /// Additions to a trace carrier's room. <c>RoomBody</c> goes into the <c>room</c> region's WDL

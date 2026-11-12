@@ -51,7 +51,8 @@ internal static class InputForcesProbeCases
         Predict(
             ("a held key gives KEY_SENSE at once", "in_a reads 1024 from the first cycle the key is down"),
             ("the mouse adds mickeys times a fixed factor, bounded at 1", "in_r is proportional to MICKEY_X and stops at ±1024")),
-        Prelude: Prelude);
+        Prelude: Prelude,
+        Replayable: false);
 
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [

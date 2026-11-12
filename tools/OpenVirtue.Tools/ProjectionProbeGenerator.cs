@@ -1477,6 +1477,7 @@ internal static class ProjectionProbeGenerator
                 console_file = "OVCON.TXT",
                 autotype = traceCase.Autotype,
                 hook_token = traceCase.HookToken,
+                replay = traceCase.Replayable ? (bool?)null : false,
                 predictions = traceCase.Predictions,
             },
             JsonOptions);

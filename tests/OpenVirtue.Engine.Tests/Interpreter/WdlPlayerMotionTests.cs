@@ -109,7 +109,9 @@ public sealed class WdlPlayerMotionTests
     [InlineData(0, 12, 4, 3)] // a y part of 3/1024 is taken as it is; the x part of 0 becomes +4
     [InlineData(-12, 40, -4, 10)] // an x part of −3/1024 becomes −4
     [InlineData(0, 1, 0, 0)] // a step that rounds to nothing on both axes moves nothing
-    public void Apply_SmallStep_RaisesOnlyTheXPartAndAZeroPartTo4(int vxRaw, int vyRaw, int dxRaw, int dyRaw)
+    [InlineData(-12, 11, -4, 4)] // Heart's (−3, 3): with an x part the small y part takes the minimum too
+    [InlineData(-16, 12, -4, 4)] // and (−4, 3)
+    public void Apply_SmallStep_RaisesTheXPartAZeroPartAndAYPartBesideAnXPartTo4(int vxRaw, int vyRaw, int dxRaw, int dyRaw)
     {
         // OV-20261110-retail-play: New Age's player coming to rest stepped 3, 2 and 1 along y, x +4;
         // Apathy's x parts of −3 to −1 were made −4; PLAYER_VY 1/1024 left the player where it stood.

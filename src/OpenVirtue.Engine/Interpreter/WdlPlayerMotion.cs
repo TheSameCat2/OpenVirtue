@@ -58,8 +58,10 @@ public static class WdlPlayerMotion
         // (PLAYER_VY 1/1024 left the player where it stood).
         if (timeCorrection > 0 && (requestedVelocityX != 0 || requestedVelocityY != 0) && (stepX != 0 || stepY != 0))
         {
+            // OV-20261112 (Heart's walk, lines 743 to 754): a small y part takes the minimum too when the x part is
+            // not 0. Steps of (−4, 3) and (−3, 3) moved (−4, 4), where New Age's (0, 3) moved (4, 3).
+            nudgeY = (stepY != 0 && stepX == 0 ? stepY : MinimumStep(stepY, Nudge)) - stepY;
             nudgeX = MinimumStep(stepX, Nudge) - stepX;
-            nudgeY = (stepY != 0 ? stepY : MinimumStep(stepY, Nudge)) - stepY;
             stepX += nudgeX;
             stepY += nudgeY;
         }

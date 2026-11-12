@@ -235,6 +235,14 @@ No launch. Round 5's New Age `PLAYER_Z` at line 159 is `ACCEL`'s long cycle: the
 the speed became the cycle's gain over its damping (OV-20261029-motion-timing round 4, resolved). The damping
 product rounds a half up (line 369). `newage-walk` now matches on all 901 lines.
 
+- **A small y part takes the 4/1024 minimum as well when the x part is not 0.** Heart's walk, coming to rest beside
+  its swamp wall at lines 743 to 754, stepped (−4, 3) and (−3, 3) by its own velocities and moved (−4, 4) every time.
+  New Age's and Apathy's resting players had an x velocity of exactly 0, and their (0, 3), (0, 2) moved (4, 3), (4, 2).
+  Read from the trace's velocities, past Heart's first divergence, so no replay line changes. Implemented in
+  `WdlPlayerMotion.Apply`. A held wall slide's 1/1024 rounding remains open: per wall, the probe walls fit the
+  current hold, Legalism's maze wall fits a distance taken unfloored, and Heart's region border fits neither
+  (`_research/oracle-runs/_session-20261112/slide.py`, `retail.py`, `family*.py`, local).
+
 ## Confidence
 High for the head and the heights: `apathy-nosave` now replays the head's position on all 600 lines and
 the player's x, y and angle exactly; `PLAYER_Z` is within 0.02 (an `ACCEL` rounding, open).

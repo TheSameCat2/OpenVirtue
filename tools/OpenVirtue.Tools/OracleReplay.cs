@@ -117,6 +117,13 @@ internal static class OracleReplay
                 continue;
             }
 
+            if (diff && !IsReplayable(carrier))
+            {
+                Console.WriteLine($"{label}: input came from outside the emulator (\"replay\": false), skipped");
+                skipped++;
+                continue;
+            }
+
             try
             {
                 CarrierResult result = ReplayCarrier(carrier, options);
@@ -143,6 +150,22 @@ internal static class OracleReplay
         }
 
         return (ran, failures, skipped);
+    }
+
+    /// <summary>
+    /// False for a carrier whose <c>case.json</c> says <c>"replay": false</c>: its input (held keys, mouse motion) came
+    /// from an XTest driver outside the emulator, which the trace does not record (OV-20261112-input-forces).
+    /// </summary>
+    private static bool IsReplayable(string carrier)
+    {
+        string path = Path.Combine(carrier, "case.json");
+        if (!File.Exists(path))
+        {
+            return true;
+        }
+
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(path));
+        return !(json.RootElement.TryGetProperty("replay", out JsonElement replay) && replay.ValueKind == JsonValueKind.False);
     }
 
     /// <summary>The carrier itself, or every carrier below a probe folder (round sub-folders included, <c>_stale</c> skipped).</summary>
