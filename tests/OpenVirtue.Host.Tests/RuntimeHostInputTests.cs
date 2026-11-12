@@ -22,6 +22,61 @@ public sealed class RuntimeHostInputTests
     }
 
     [Fact]
+    public void Frame_MouseSteersThePlayer_CapturesThePointer()
+    {
+        // A turn must not stop at the window's edge: the hidden pointer is captured while
+        // MOUSE_MODE is 0, as the original's mouse driver reported mickeys wherever it was.
+        using RuntimeHost host = Open(out _, out FakeWindow window);
+        host.Frame(present: true);
+
+        Assert.True(window.PointerCaptured);
+    }
+
+    [Fact]
+    public void Frame_PointerCaptured_TakesMickeysAsTheDeviceMovedNotScaledToTheWindow()
+    {
+        using RuntimeHost host = Open(out FakeInput input, out FakeWindow window);
+        host.Frame(present: true);
+        Assert.True(window.PointerCaptured);
+
+        input.Motion = new Vector2(5, -3);
+        host.Frame(present: true);
+
+        Assert.Equal(5, host.Runtime.GetSkill("MICKEY_X"), 6);
+        Assert.Equal(-3, host.Runtime.GetSkill("MICKEY_Y"), 6);
+    }
+
+    [Fact]
+    public void Frame_PointerShown_ReleasesThePointer()
+    {
+        using RuntimeHost host = Open(out _, out FakeWindow window);
+        host.Frame(present: true);
+        host.Runtime.SetSkill("MOUSE_MODE", 1);
+        host.Frame(present: true);
+
+        Assert.False(window.PointerCaptured);
+    }
+
+    [Fact]
+    public void Frame_WindowLosesFocus_ReleasesThePointerAndWaitsForItToComeBackInside()
+    {
+        using RuntimeHost host = Open(out _, out FakeWindow window);
+        host.Frame(present: true);
+        window.Focused = false;
+        host.Frame(present: true);
+        Assert.False(window.PointerCaptured);
+
+        window.Focused = true;
+        window.PointerInside = false;
+        host.Frame(present: true);
+        Assert.False(window.PointerCaptured);
+
+        window.PointerInside = true;
+        host.Frame(present: true);
+        Assert.True(window.PointerCaptured);
+    }
+
+    [Fact]
     public void Frame_WHeld_SetsForceAheadToKeySense()
     {
         using RuntimeHost host = Open(out FakeInput input, out _);

@@ -10,9 +10,10 @@ using SDL;
 namespace OpenVirtue.App.Platform;
 
 /// <summary>
-/// SDL3 window, GL 3.3 context, and absolute mouse/keyboard state. The cursor is hidden while
-/// the pointer is over the window; the pointer is not grabbed, so <c>MOUSE_X</c>/<c>MOUSE_Y</c>
-/// keep moving with the cursor.
+/// SDL3 window, GL 3.3 context, and mouse/keyboard state. The cursor is hidden while the pointer
+/// is over the window. While the host captures the pointer (the mouse steers the player) SDL's
+/// relative mode reports motion without the window's edges stopping it, as a DOS mouse driver's
+/// mickeys did; otherwise the pointer is absolute and <c>MOUSE_X</c>/<c>MOUSE_Y</c> follow the cursor.
 /// </summary>
 public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposable
 {
@@ -42,6 +43,7 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
     private string _title;
     private bool _open = true;
     private bool _cursorVisible = true;
+    private bool _pointerCaptured;
     private readonly List<(InkeyKey Key, char Character)> _textKeys = [];
     private bool _textInput;
     private bool _prompting;
@@ -231,6 +233,18 @@ public sealed unsafe class SdlPlatform : IPlatformWindow, IInputSource, IDisposa
         {
             SDL3.SDL_HideCursor();
         }
+    }
+
+    /// <inheritdoc/>
+    public void SetPointerCaptured(bool captured)
+    {
+        if (_pointerCaptured == captured || _window == null)
+        {
+            return;
+        }
+
+        _pointerCaptured = captured;
+        SDL3.SDL_SetWindowRelativeMouseMode(_window, captured);
     }
 
     /// <inheritdoc/>

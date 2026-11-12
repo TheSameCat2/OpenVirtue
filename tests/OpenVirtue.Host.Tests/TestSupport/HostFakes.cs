@@ -19,15 +19,19 @@ internal sealed class FakeWindow : IPlatformWindow
 
     public bool IsOpen { get; private set; } = true;
 
-    public bool Focused { get; } = true;
+    public bool Focused { get; set; } = true;
 
-    public bool PointerInside { get; } = true;
+    public bool PointerInside { get; set; } = true;
+
+    public bool PointerCaptured { get; private set; }
 
     public void Close() => IsOpen = false;
 
     public void SetCursorVisible(bool visible)
     {
     }
+
+    public void SetPointerCaptured(bool captured) => PointerCaptured = captured;
 
     public string? Prompt(string label, string initialValue, int capacity) => null;
 }

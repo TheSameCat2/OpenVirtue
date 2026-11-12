@@ -33,6 +33,14 @@ public interface IPlatformWindow
     void SetCursorVisible(bool visible);
 
     /// <summary>
+    /// Captures the pointer so motion keeps arriving at the window's edges (relative mouse mode), or
+    /// releases it. The host captures it while the mouse steers the player (<c>MOUSE_MODE</c> 0).
+    /// </summary>
+    void SetPointerCaptured(bool captured)
+    {
+    }
+
+    /// <summary>
     /// Blocks in a text prompt for WDL <c>INKEY</c>. Returns the entered text, or null when
     /// the user cancels.
     /// </summary>

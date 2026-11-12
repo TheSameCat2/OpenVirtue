@@ -75,7 +75,7 @@ quads, and screenshots. Performance is not a constraint; determinism and testabi
        PngWriter          screenshots (saves and the print directory live on RuntimeHost)
        Abstractions:  IPlatformWindow, IInputSource, IAudioSink, IRenderBackend
    OpenVirtue.App       (net10.0, Exe, → Host)  SDL3 + GL implementations + Program
-       Platform/Sdl*      window, events, absolute mouse (cursor hidden, not grabbed), audio
+       Platform/Sdl*      window, events, mouse (captured while it steers), audio
        Rendering/Gl*      renderer, texture cache, world/sprite/UI/sky/FLIC batches, GLSL
    OpenVirtue.Tools     (net10.0)  unchanged; `oracle prepare` also emits .sh launchers
    ```
@@ -160,8 +160,14 @@ Negative / risks:
   version and upgrade deliberately.
 - Silk.NET 3.0 is still unreleased; staying on 2.x is fine, but the eventual move is a
   (mechanical) breaking change.
-- The host does not grab the pointer and does not request a high-DPI framebuffer, so window
-  pixels and the GL framebuffer stay 1:1. Mickeys are the motion event's relative deltas.
+- The host does not request a high-DPI framebuffer, so window pixels and the GL framebuffer
+  stay 1:1. Mickeys are the motion event's relative deltas.
+- Amended 2026-11-12: the host captures the pointer (SDL relative mouse mode) while the mouse
+  steers the player (`MOUSE_MODE` 0), the window has focus and no prompt is up. With an
+  absolute pointer that is not grabbed, a mouse turn stopped at the window's edge; the DOS
+  mouse driver reported mickeys wherever the hidden pointer was. A shown pointer
+  (`MOUSE_MODE` 1 or 2) stays absolute and ungrabbed. Losing focus releases the capture, and it
+  comes back once the pointer is inside the focused window again.
   If a platform reports those in a different scale, calibrate against the oracle.
 - macOS is not a target; OpenGL is deprecated there. If it ever becomes one, SDL_GPU or a
   Metal-capable path is the answer, recorded in a new ADR.

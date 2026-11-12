@@ -113,6 +113,7 @@ public sealed partial class RuntimeHost : IDisposable
     private long _lastWaveSoundCycle;
     private Vector2 _pendingMickey;
     private Vector2 _frameMickey;
+    private bool _pointerCaptured;
     private Vector2 _mouseMotionWindow;
     private double _mouseMotionTicks;
     private bool _mouseWasMoving;
@@ -343,7 +344,7 @@ public sealed partial class RuntimeHost : IDisposable
             _graphics.Present();
         }
 
-        _window.SetCursorVisible(!(_window.Focused && _window.PointerInside && !_handlingInputRequest));
+        UpdatePointerCapture();
     }
 
     public void Dispose()

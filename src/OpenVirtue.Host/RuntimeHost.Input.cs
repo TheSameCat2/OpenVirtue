@@ -439,9 +439,37 @@ public sealed partial class RuntimeHost
         _runtime.SetSkill("FORCE_UP", sensitivity * vertical);
     }
 
+    /// <summary>
+    /// Captures the pointer while the mouse steers the player, so a turn does not end at the window's
+    /// edge: the original's mouse driver reported mickeys whatever the hidden pointer's position. A
+    /// visible pointer (<c>MOUSE_MODE</c> above 0), a prompt or an unfocused window releases it.
+    /// </summary>
+    private void UpdatePointerCapture()
+    {
+        bool steering = _runtime is not null && _runtime.GetSkill("MOUSE_MODE") <= 0;
+        bool capture = _window.Focused && !_handlingInputRequest && steering &&
+            (_pointerCaptured || _window.PointerInside);
+        if (capture != _pointerCaptured)
+        {
+            _pointerCaptured = capture;
+            _window.SetPointerCaptured(capture);
+        }
+
+        _window.SetCursorVisible(!(_window.Focused && (_window.PointerInside || capture) && !_handlingInputRequest));
+    }
+
     private void RecordMouseMotion()
     {
         Vector2 physical = _input.ConsumeMotion();
+        if (_pointerCaptured)
+        {
+            // Captured, the motion is the device's, as a DOS driver's mickeys were: a turn does not
+            // depend on the window's size. A shown pointer keeps virtual pixels, so a script's
+            // MOUSE_X += MICKEY_X follows the cursor.
+            _pendingMickey += physical;
+            return;
+        }
+
         VirtualDisplayLayout layout = DisplayLayout();
         _pendingMickey += new Vector2(
             physical.X / Math.Max(0.001f, layout.ScaleX),

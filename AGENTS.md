@@ -121,7 +121,8 @@ Projects and their **strict layering** (enforced only by discipline — keep it)
 
 - **`OpenVirtue.App`** (`net10.0` Exe, → Host) — SDL3 window, input, and audio
   (`Platform/Sdl*`) and the OpenGL 3.3 renderer (`Rendering/Gl*`). `Program` is the entry
-  point. The mouse is absolute: the cursor hides over the window and is not grabbed.
+  point. While the mouse steers the player (`MOUSE_MODE` 0) the focused window captures it (SDL
+  relative mode), so a turn does not stop at the window's edge; a shown pointer stays absolute.
 
 - **`src/legacy/OpenVirtue.App.D3D11`** — the previous WinForms / Direct3D 11 viewer. It
   builds as a WinExe on Windows and as an empty library elsewhere. It is not extended, and

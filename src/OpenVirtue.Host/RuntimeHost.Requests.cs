@@ -743,6 +743,7 @@ public sealed partial class RuntimeHost
         }
 
         _handlingInputRequest = true;
+        UpdatePointerCapture();
         _window.SetCursorVisible(true);
         try
         {
