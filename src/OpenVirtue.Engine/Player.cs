@@ -517,7 +517,7 @@ public sealed class Player : AcknexObject
         _position = new Vector3(end.X, _position.Y, end.Y);
     }
 
-    /// <summary>Marks the end of the player's own movement in a cycle: the next <see cref="PushOutOfObjects"/> skips an unmoved player.</summary>
+    /// <summary>Marks the end of the player's own movement in a cycle: the next <see cref="PushOutOfObjects()"/> skips an unmoved player.</summary>
     public void Settle() => _settled = new Vector2(_position.X, _position.Z);
 
 
