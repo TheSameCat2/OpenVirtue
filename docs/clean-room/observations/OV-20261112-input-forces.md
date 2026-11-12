@@ -78,9 +78,14 @@ sampler prints `TICKS`, the cycle, `TIME_CORR`, the five forces × 1024, `MICKEY
 ## Confidence
 High: every reading in the three runs fits these rules to the unit.
 
+## Round 3: a slow emulator
+`round3/slow` is the defaults carrier with DOSBox-X `cycles=fixed 6000`, so the runtime ran at `TIME_CORR` 8 (about
+two cycles a second), trace cut to 700 cycles. `OVINP0.TXT` `02e79d16` (the run hit its timeout after 90 cycles, enough
+for the key segments). **The ramp is per cycle, not per tick**: cursor up read 256, 512, 768, Shift+up 256, 1024,
+2048, cursor right −204, −408, −612, as at 0.25 ticks a cycle. The mouse stays 16/1024 a mickey and unbounded
+(1866 mickeys in one cycle gave −29856/1024).
+
 ## Open Questions
-- Whether the ramp is per cycle or per tick at other frame rates. All three runs went at 0.25 to 0.28 ticks a
-  cycle.
 - Joystick forces.
 
 ## Implementation
