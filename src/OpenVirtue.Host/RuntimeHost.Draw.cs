@@ -453,13 +453,24 @@ public sealed partial class RuntimeHost
                     source.Region >= 0 && source.Region < _level.Regions.Count
                     ? (float)_level.Regions[source.Region].Ambient
                     : 0;
-                float hiding = SpriteHidingDepth(billboard, center);
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, bottomV, localAmbient, hiding));
-                vertices.Add(new RenderVertex(bottomRight.X, bottomRight.Y, bottomRight.Z, rightU, bottomV, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, topV, localAmbient, hiding));
-                vertices.Add(new RenderVertex(bottomLeft.X, bottomLeft.Y, bottomLeft.Z, leftU, bottomV, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topRight.X, topRight.Y, topRight.Z, rightU, topV, localAmbient, hiding));
-                vertices.Add(new RenderVertex(topLeft.X, topLeft.Y, topLeft.Z, leftU, topV, localAmbient, hiding));
+                // Each part of the sprite's width has its own hiding depth: over the walls it stands before,
+                // behind the ones it stands behind.
+                foreach (ViewClip.SpriteStrip strip in SpriteHidingStrips(billboard, center))
+                {
+                    Vector3 lowFrom = Vector3.Lerp(bottomLeft, bottomRight, strip.From);
+                    Vector3 lowTo = Vector3.Lerp(bottomLeft, bottomRight, strip.To);
+                    Vector3 highFrom = Vector3.Lerp(topLeft, topRight, strip.From);
+                    Vector3 highTo = Vector3.Lerp(topLeft, topRight, strip.To);
+                    float fromU = leftU + ((rightU - leftU) * strip.From);
+                    float toU = leftU + ((rightU - leftU) * strip.To);
+                    float hiding = strip.Depth;
+                    vertices.Add(new RenderVertex(lowFrom.X, lowFrom.Y, lowFrom.Z, fromU, bottomV, localAmbient, hiding));
+                    vertices.Add(new RenderVertex(lowTo.X, lowTo.Y, lowTo.Z, toU, bottomV, localAmbient, hiding));
+                    vertices.Add(new RenderVertex(highTo.X, highTo.Y, highTo.Z, toU, topV, localAmbient, hiding));
+                    vertices.Add(new RenderVertex(lowFrom.X, lowFrom.Y, lowFrom.Z, fromU, bottomV, localAmbient, hiding));
+                    vertices.Add(new RenderVertex(highTo.X, highTo.Y, highTo.Z, toU, topV, localAmbient, hiding));
+                    vertices.Add(new RenderVertex(highFrom.X, highFrom.Y, highFrom.Z, fromU, topV, localAmbient, hiding));
+                }
             }
 
             AddBatch(
@@ -491,19 +502,24 @@ public sealed partial class RuntimeHost
         (uint)region < (uint)_level.Regions.Count &&
         _level.Regions.Any(other => other.BelowRegion == region);
 
-    /// <summary>The depth a sprite is hidden at, in <c>RenderVertex.WallAX</c>; 0 when it is its true depth.</summary>
-    private float SpriteHidingDepth(in SpriteBillboard billboard, Vector3 center)
+    private static readonly ViewClip.SpriteStrip[] WholeSprite = [new ViewClip.SpriteStrip(0, 1, 0)];
+
+    /// <summary>
+    /// The parts of a sprite's width and the depth each is hidden at, for <c>RenderVertex.WallAX</c>; 0 where
+    /// it is the sprite's true depth.
+    /// </summary>
+    private ViewClip.SpriteStrip[] SpriteHidingStrips(in SpriteBillboard billboard, Vector3 center)
     {
         if (_viewClip is null || billboard.Source is not { } source || billboard.Orientation != SpriteOrientation.Upright)
         {
-            return 0;
+            return WholeSprite;
         }
 
         Vector3 forward = _camera.LevelForward;
         Vector3 toCenter = center - _camera.Position;
         float depth = Vector3.Dot(toCenter, forward);
         float lateral = Vector3.Dot(toCenter, _camera.Right);
-        float hiding = _viewClip.SpriteHidingDepth(
+        IReadOnlyList<ViewClip.SpriteStrip> strips = _viewClip.SpriteHidingStrips(
             source.Region,
             _player.Region,
             _camera.Position.X,
@@ -513,7 +529,12 @@ public sealed partial class RuntimeHost
             depth,
             lateral,
             billboard.HalfWidth);
-        return hiding < depth ? hiding : 0;
+        if (strips.All(strip => strip.Depth >= depth))
+        {
+            return WholeSprite;
+        }
+
+        return [.. strips.Select(strip => strip with { Depth = strip.Depth < depth ? strip.Depth : 0 })];
     }
 
     /// <summary>

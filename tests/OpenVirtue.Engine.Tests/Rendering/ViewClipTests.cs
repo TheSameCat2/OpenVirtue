@@ -231,42 +231,121 @@ public sealed class ViewClipTests
     }
 
     [Fact]
-    public void SpriteHidingDepth_BeyondAnOpenPad_KeepsItsDepth()
+    public void SpriteHidingStrips_BeyondAnOpenPad_KeepsItsDepth()
     {
         // OV-20261106-clip-view round 5 p-behind: a thing seen across a raised pad's open borders is cut
         // at them, so they do not pull its hiding depth ahead.
         var clip = new ViewClip(LoadPadRoom());
 
-        Assert.Equal(30, clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 30, 0, 2));
+        Assert.Equal([new ViewClip.SpriteStrip(0, 1, 30)], clip.SpriteHidingStrips(0, 0, 0, 0, 1, 0, 30, 0, 2));
     }
 
     [Fact]
-    public void SpriteHidingDepth_WideBesideItsRegionsWalls_ComesAheadOfThem()
+    public void SpriteHidingStrips_WideBesideItsRegionsWalls_ComesAheadOfThem()
     {
         // OV-20261106-clip-view p-wide: the walls onto a closed region bound the room; a wide thing shows
         // over them, its hiding depth ahead of the nearest within its columns.
         var clip = new ViewClip(LoadPadRoom());
 
-        float hiding = clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 46, 0, 30);
+        IReadOnlyList<ViewClip.SpriteStrip> strips = clip.SpriteHidingStrips(0, 0, 0, 0, 1, 0, 46, 0, 30);
 
-        Assert.InRange(hiding, 30, 45);
+        Assert.Equal(0, strips[0].From);
+        Assert.Equal(1, strips[^1].To);
+        // Its ends reach past the side walls at y -24 and 24 and come ahead of them; its middle keeps its depth.
+        Assert.InRange(strips[0].Depth, 30, 45);
+        Assert.InRange(strips[^1].Depth, 30, 45);
+        Assert.Contains(strips, strip => strip.Depth == 46);
     }
 
     [Fact]
-    public void SpriteHidingDepth_BehindAPillarOfItsOwnRegion_KeepsItsDepth()
+    public void SpriteHidingStrips_BehindAPillarOfItsOwnRegion_KeepsItsDepth()
     {
         // A closed pillar standing in the room between the eye and a thing still hides it: Apathy's
         // monsters showed through the pillars of the room they shared with the player.
         var clip = new ViewClip(LoadPillarRoom());
 
-        float hiding = clip.SpriteHidingDepth(0, 0, 0, 0, 1, 0, 30, 0, 2);
-
-        Assert.Equal(30, hiding);
+        Assert.Equal([new ViewClip.SpriteStrip(0, 1, 30)], clip.SpriteHidingStrips(0, 0, 0, 0, 1, 0, 30, 0, 2));
     }
 
-    private static Level LoadPillarRoom()
+    [Fact]
+    public void SpriteHidingStrips_HalfBehindAPillarAndThroughAWall_HidesOnlyThePillarsColumns()
     {
+        // A thing 16 wide at (30, -21): its centre shows past the pillar's corner, its left end stands
+        // behind the pillar (columns up to 0.5) and its right end reaches through the room's wall at
+        // y -24. One depth for the whole thing drew it over the pillar.
+        var clip = new ViewClip(LoadPillarRoom());
+
+        IReadOnlyList<ViewClip.SpriteStrip> strips = clip.SpriteHidingStrips(0, 0, 0, 0, 1, 0, 30, 21, 8);
+
+        Assert.Equal(2, strips.Count);
+        Assert.Equal(30, strips[0].Depth);
+        Assert.Equal(0.125f, strips[0].To, 3);
+        Assert.Equal(0.125f, strips[1].From, 3);
+        Assert.Equal(1, strips[1].To);
+        Assert.InRange(strips[1].Depth, 24, 25);
+    }
+
+    [Fact]
+    public void SpriteHidingStrips_BehindOneOfTwoWallsAlongALine_IsNotPulledAheadByTheOther()
+    {
+        // The pillar's front is two walls along x = 10. A thing behind the first, wide enough to reach the
+        // second's columns, took the second's depth and showed through both.
+        var clip = new ViewClip(LoadPillarRoom(splitFront: true));
+
+        IReadOnlyList<ViewClip.SpriteStrip> strips = clip.SpriteHidingStrips(0, 0, 0, 0, 1, 0, 30, 6, 12);
+
+        Assert.All(strips.Where(strip => strip.To <= 0.75f), strip => Assert.Equal(30, strip.Depth));
+    }
+
+    [Fact]
+    public void SpriteHidingStrips_SeenAcrossAStacksOpenBorder_StillComesAheadOfItsSideBorders()
+    {
+        // below-view deck: the player, pushed out of the deck's footprint but still counted on the deck,
+        // sees the deck's 16-wide thing across the deck's near border, whole. That border has an opening
+        // and hides nothing, and the thing comes ahead of the side border it reaches across.
         const string map = """
+            VERTEX -16 -24 0;#0
+            VERTEX 48 -24 0;#1
+            VERTEX 48 24 0;#2
+            VERTEX -16 24 0;#3
+            VERTEX -12 12 0;#4
+            VERTEX -4 12 0;#5
+            VERTEX -4 20 0;#6
+            VERTEX -12 20 0;#7
+            REGION room 0 16;#0
+            REGION solid 16 16;#1
+            REGION pad 10 16;#2
+            WALL plain 0 1 0 1 0 0;#0
+            WALL plain 1 2 0 1 0 0;#1
+            WALL plain 2 3 0 1 0 0;#2
+            WALL plain 3 0 0 1 0 0;#3
+            WALL plain 4 5 2 0 0 0;#4
+            WALL plain 5 6 2 0 0 0;#5
+            WALL plain 6 7 2 0 0 0;#6
+            WALL plain 7 4 2 0 0 0;#7
+            PLAYER_START 0 0 0 0;
+            """;
+        const string main = """
+            MAPFILE <m.wmp>;
+            BMAP wm,<W.PCX>;
+            TEXTURE wt { SCALE_X 4; SCALE_Y 4; BMAPS wm; }
+            WALL plain { TEXTURE wt; }
+            REGION low { FLOOR_HGT 0; CEIL_HGT 8; }
+            REGION pad { BELOW low; }
+            """;
+        var resources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["m.wmp"] = map };
+        var clip = new ViewClip(LevelLoader.LoadCore("x", main, name => resources.GetValueOrDefault(Path.GetFileName(name))));
+
+        // The eye at (-9.4, 9.5) looks along +y at the thing at (-6, 18).
+        IReadOnlyList<ViewClip.SpriteStrip> strips = clip.SpriteHidingStrips(2, 2, -9.4f, 9.5f, 0, 1, 8.5f, 3.4f, 8);
+
+        Assert.True(strips[0].Depth < 8.5f, $"left end at {strips[0].Depth}");
+        Assert.True(strips[^1].Depth < 8.5f, $"right end at {strips[^1].Depth}");
+    }
+
+    private static Level LoadPillarRoom(bool splitFront = false)
+    {
+        string map = """
             VERTEX 0 -24 0;#0
             VERTEX 48 -24 0;#1
             VERTEX 48 24 0;#2
@@ -287,6 +366,11 @@ public sealed class ViewClipTests
             WALL plain 7 4 1 0 0 0;#7
             PLAYER_START 1 0 0 0;
             """;
+        if (splitFront)
+        {
+            map = map.Replace("WALL plain 7 4 1 0 0 0;#7", "VERTEX 10 0 0;#8\nWALL plain 7 8 1 0 0 0;#7\nWALL plain 8 4 1 0 0 0;#8", StringComparison.Ordinal);
+        }
+
         const string main = """
             MAPFILE <m.wmp>;
             BMAP wm,<W.PCX>;

@@ -153,18 +153,20 @@ public sealed class LevelCollisionWorld
         float maximumStep = Math.Max(0.1f, radius * 0.5f);
         int stepCount = Math.Max(1, (int)MathF.Ceiling(requested.Length() / maximumStep));
         Vector2 step = requested / stepCount;
+        var crossedWalls = new List<int>();
         for (int i = 0; i < stepCount; i++)
         {
             Vector2 from = position;
             Vector2 desired = from + step;
-            int nextRegion = CrossPortal(from, desired, region, canCross, out int crossedWallIndex);
-            regionChanged |= nextRegion != region;
-            region = nextRegion;
+            int regionBefore = region;
+            crossedWalls.Clear();
+            region = CrossPortals(from, desired, region, canCross, crossedWalls);
+            bool stepAdjusted = false;
 
             for (int pass = 0; pass < 4; pass++)
             {
                 bool adjusted = ResolveWalls(
-                    from, region, wallContact, wallRadius, canCross, crossedWallIndex, blocked ?? touched, ref desired);
+                    from, region, wallContact, wallRadius, canCross, crossedWalls, blocked ?? touched, ref desired);
                 // The player's step meets things and actors once, at its end: steps of 0.4 to 1.6 into a
                 // 2-wide thing were put back from where the whole step ended (OV-20261103-contact-clock).
                 // A step longer than the player's width is not measured that way (3.2 did not pass
@@ -175,12 +177,22 @@ public sealed class LevelCollisionWorld
                         endOnly ? start : from, region, radius, contactSlackSquared, rawContact, entityRadius, canCrossEntity, ignoredEntity, insideAtStart, touched, ref desired, ref objectPush);
                 }
                 collided |= adjusted;
+                stepAdjusted |= adjusted;
                 if (!adjusted)
                 {
                     break;
                 }
             }
 
+            // A wall or an object that put the step's end elsewhere may have put it back across a border the
+            // unresolved step crossed, or across another one: the region is the one the step as taken ends in.
+            if (stepAdjusted)
+            {
+                crossedWalls.Clear();
+                region = CrossPortals(from, desired, regionBefore, canCross, crossedWalls);
+            }
+
+            regionChanged |= region != regionBefore;
             if (touched is not null)
             {
                 AddPassedWalls(from, desired, region, canCross, touched);
@@ -486,7 +498,7 @@ public sealed class LevelCollisionWorld
         Vector2 desired = position;
         for (int pass = 0; pass < 4; pass++)
         {
-            if (!ResolveWalls(position, region, contact, radius + Math.Max(0, clearance), canCross, -1, touched, ref desired))
+            if (!ResolveWalls(position, region, contact, radius + Math.Max(0, clearance), canCross, null, touched, ref desired))
             {
                 break;
             }
@@ -501,39 +513,28 @@ public sealed class LevelCollisionWorld
         float contact,
         float radius,
         Func<Wall, int, int, bool> canCross,
-        int ignoredWallIndex,
+        List<int>? ignoredWalls,
         ICollection<AcknexObject>? touched,
         ref Vector2 desired)
     {
-        if (!_regionWalls.TryGetValue(region, out List<int>? walls))
-        {
-            return false;
-        }
-
         bool adjusted = false;
-        foreach (int wallIndex in walls)
+        foreach ((int wallIndex, int side) in SolidWalls(region, canCross))
         {
-            if (wallIndex == ignoredWallIndex)
+            if (ignoredWalls is not null && ignoredWalls.Contains(wallIndex))
             {
                 continue;
             }
 
             Wall wall = _level.Walls[wallIndex];
-            int other = OtherRegion(wall, region);
-            if (canCross(wall, region, other) ||
-                !Vertex(wall.Vertex1, out Vector2 a) ||
-                !Vertex(wall.Vertex2, out Vector2 b))
-            {
-                continue;
-            }
-
+            Vertex(wall.Vertex1, out Vector2 a);
+            Vertex(wall.Vertex2, out Vector2 b);
             Vector2 closest = ClosestPoint(desired, a, b, out float along);
             if (Vector2.DistanceSquared(desired, closest) >= contact * contact)
             {
                 continue;
             }
 
-            desired = closest + (CollisionNormal(from, desired, closest, a, b, along) * radius);
+            desired = closest + (CollisionNormal(from, desired, closest, a, b, along, wall, side) * radius);
             adjusted = true;
             if (touched is not null && !touched.Contains(wall))
             {
@@ -542,6 +543,81 @@ public sealed class LevelCollisionWorld
         }
 
         return adjusted;
+    }
+
+    /// <summary>
+    /// The walls that hold a mover standing in <paramref name="region"/>, each with the region it is a wall of:
+    /// the region's own walls the mover may not cross, and those of the regions across the borders it may cross.
+    /// The original holds the player off a wall of the next region before it has crossed the border: walking at
+    /// a wall 0.05 and 1 behind a border it stopped 1484/1024 from the wall, still in its own region, and it was
+    /// pushed off such a wall's end at the border's corner (OV-20261110-wall-slide round 12, behind-005, behind-1,
+    /// corner-nb). How far beyond the next region the original looks is not measured.
+    /// </summary>
+    private List<(int Wall, int Region)> SolidWalls(int region, Func<Wall, int, int, bool> canCross)
+    {
+        var solid = new List<(int Wall, int Region)>();
+        if (!_regionWalls.TryGetValue(region, out List<int>? walls))
+        {
+            return solid;
+        }
+
+        List<int>? neighbours = null;
+        int footprint = LevelTopology.Footprint(_level, region);
+        foreach (int wallIndex in walls)
+        {
+            Wall wall = _level.Walls[wallIndex];
+            if (!Vertex(wall.Vertex1, out _) || !Vertex(wall.Vertex2, out _))
+            {
+                continue;
+            }
+
+            int other = OtherRegion(wall, region);
+            if (!canCross(wall, region, other))
+            {
+                solid.Add((wallIndex, region));
+            }
+            else if ((uint)other < (uint)_level.Regions.Count && other != footprint && !(neighbours ??= []).Contains(other))
+            {
+                neighbours.Add(other);
+            }
+        }
+
+        if (neighbours is null)
+        {
+            return solid;
+        }
+
+        foreach (int neighbour in neighbours)
+        {
+            if (!_regionWalls.TryGetValue(neighbour, out List<int>? theirs))
+            {
+                continue;
+            }
+
+            foreach (int wallIndex in theirs)
+            {
+                Wall wall = _level.Walls[wallIndex];
+                if (wall.LeftRegion == footprint || wall.RightRegion == footprint ||
+                    !Vertex(wall.Vertex1, out _) || !Vertex(wall.Vertex2, out _) ||
+                    canCross(wall, neighbour, OtherRegion(wall, neighbour)))
+                {
+                    continue;
+                }
+
+                bool listed = false;
+                foreach ((int known, _) in solid)
+                {
+                    listed |= known == wallIndex;
+                }
+
+                if (!listed)
+                {
+                    solid.Add((wallIndex, neighbour));
+                }
+            }
+        }
+
+        return solid;
     }
 
     /// <summary>
@@ -683,23 +759,176 @@ public sealed class LevelCollisionWorld
         return adjusted;
     }
 
+    /// <summary>
+    /// The region a straight step from <paramref name="from"/> in <paramref name="region"/> ends in: it follows
+    /// the step across every border it may cross, in the order the step meets them. A step past a vertex where
+    /// three or more regions meet crosses two borders at once, and a step along a narrow region may cross it
+    /// whole. A border the mover may not cross ends the walk there.
+    /// </summary>
+    public int RegionAfterStep(Vector2 from, Vector2 to, int region, Func<Wall, int, int, bool> canCross)
+    {
+        ArgumentNullException.ThrowIfNull(canCross);
+        return CrossPortals(from, to, region, canCross, null);
+    }
+
+    /// <summary>
+    /// Whether a straight step from <paramref name="from"/> in <paramref name="region"/> reaches
+    /// <paramref name="to"/> without passing through a wall the mover may not cross, following it across the
+    /// borders it may (<see cref="RegionAfterStep"/>); <paramref name="endRegion"/> is where it ends. A wall's
+    /// end points count as the wall.
+    /// </summary>
+    public bool StepIsClear(Vector2 from, Vector2 to, int region, Func<Wall, int, int, bool> canCross, out int endRegion)
+    {
+        ArgumentNullException.ThrowIfNull(canCross);
+        var crossed = new List<int>();
+        var passed = new List<int> { region };
+        endRegion = CrossPortals(from, to, region, canCross, crossed, passed);
+        foreach (int member in passed)
+        {
+            if (!_regionWalls.TryGetValue(member, out List<int>? walls))
+            {
+                continue;
+            }
+
+            foreach (int wallIndex in walls)
+            {
+                Wall wall = _level.Walls[wallIndex];
+                if (crossed.Contains(wallIndex) ||
+                    !Vertex(wall.Vertex1, out Vector2 a) ||
+                    !Vertex(wall.Vertex2, out Vector2 b))
+                {
+                    continue;
+                }
+
+                // A step that ends on the wall's line has left its side too, and one that starts on it (a step
+                // down a ledge may end there) is on its region's side.
+                int fromSide = Math.Sign(Orient(a, b, from));
+                if (fromSide == 0)
+                {
+                    fromSide = SideOfWall(wall, member);
+                }
+
+                if (fromSide == 0 || Math.Sign(Orient(a, b, to)) == fromSide)
+                {
+                    continue;
+                }
+
+                float side1 = Orient(from, to, a);
+                float side2 = Orient(from, to, b);
+                if ((side1 > 0 && side2 > 0) || (side1 < 0 && side2 < 0) || canCross(wall, member, OtherRegion(wall, member)))
+                {
+                    continue;
+                }
+
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a step ends nearer to a wall the mover may not cross than it started, inside
+    /// <paramref name="radius"/> of it. Every measured hold leaves the player further from a wall than
+    /// <c>PLAYER_WIDTH</c>; where two walls close in on each other, the hold off one would press the player into
+    /// the other, a little further each step, and at last through it.
+    /// </summary>
+    public bool SinksIntoWalls(Vector2 from, Vector2 to, int region, float radius, Func<Wall, int, int, bool> canCross)
+    {
+        ArgumentNullException.ThrowIfNull(canCross);
+        const float Tolerance = 0.5f / 1024;
+        foreach ((int wallIndex, _) in SolidWalls(region, canCross))
+        {
+            Wall wall = _level.Walls[wallIndex];
+            Vertex(wall.Vertex1, out Vector2 a);
+            Vertex(wall.Vertex2, out Vector2 b);
+            float ended = Vector2.Distance(to, ClosestPoint(to, a, b, out _));
+            if (ended < radius - Tolerance && ended < Vector2.Distance(from, ClosestPoint(from, a, b, out _)) - Tolerance)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// On which side of <paramref name="wall"/> (from its first vertex to its second) <paramref name="region"/>
+    /// lies: 1 for the left, −1 for the right, 0 when a point a hair off the wall's middle tells neither. For a
+    /// mover standing exactly on the wall's line, where its own position names no side.
+    /// </summary>
+    public int SideOfWall(Wall wall, int region)
+    {
+        ArgumentNullException.ThrowIfNull(wall);
+        if (!Vertex(wall.Vertex1, out Vector2 a) || !Vertex(wall.Vertex2, out Vector2 b) || a == b)
+        {
+            return 0;
+        }
+
+        Vector2 middle = (a + b) / 2;
+        Vector2 left = Vector2.Normalize(new Vector2(-(b.Y - a.Y), b.X - a.X)) * 0.01f;
+        int footprint = LevelTopology.Footprint(_level, region);
+        bool onLeft = LevelTopology.RegionContains(_level, footprint, middle.X + left.X, middle.Y + left.Y);
+        bool onRight = LevelTopology.RegionContains(_level, footprint, middle.X - left.X, middle.Y - left.Y);
+        return onLeft == onRight ? 0 : onLeft ? 1 : -1;
+    }
+
+    private int CrossPortals(
+        Vector2 from,
+        Vector2 to,
+        int region,
+        Func<Wall, int, int, bool> canCross,
+        List<int>? crossed,
+        List<int>? passed = null)
+    {
+        const int MaximumCrossings = 8;
+        crossed ??= [];
+        float reached = 0;
+        for (int n = 0; n < MaximumCrossings; n++)
+        {
+            int entered = CrossPortal(from, to, region, canCross, crossed, reached, out int wallIndex, out float at);
+            if (wallIndex < 0)
+            {
+                break;
+            }
+
+            crossed.Add(wallIndex);
+            region = entered;
+            reached = at;
+            passed?.Add(entered);
+        }
+
+        return region;
+    }
+
+    /// <summary>
+    /// The first border of <paramref name="region"/> the step crosses at or after <paramref name="reached"/>
+    /// (the part of the step already walked, 0 to 1), leaving out the borders in <paramref name="crossed"/>.
+    /// </summary>
     private int CrossPortal(
         Vector2 from,
         Vector2 to,
         int region,
         Func<Wall, int, int, bool> canCross,
-        out int crossedWallIndex)
+        List<int> crossed,
+        float reached,
+        out int crossedWallIndex,
+        out float at)
     {
+        const float Slack = 0.0001f;
         crossedWallIndex = -1;
+        at = 0;
         if (!_regionWalls.TryGetValue(region, out List<int>? walls))
         {
             return region;
         }
 
+        int result = region;
         foreach (int wallIndex in walls)
         {
             Wall wall = _level.Walls[wallIndex];
-            if (!Vertex(wall.Vertex1, out Vector2 a) ||
+            if (crossed.Contains(wallIndex) ||
+                !Vertex(wall.Vertex1, out Vector2 a) ||
                 !Vertex(wall.Vertex2, out Vector2 b))
             {
                 continue;
@@ -709,17 +938,25 @@ public sealed class LevelCollisionWorld
             if (entered == region ||
                 (entered >= 0 && LevelTopology.Footprint(_level, entered) == LevelTopology.Footprint(_level, region)) ||
                 entered < 0 ||
-                !canCross(wall, region, entered) ||
                 !CrossesPortal(from, to, a, b))
             {
                 continue;
             }
 
+            float fromSide = Orient(a, b, from);
+            float toSide = Orient(a, b, to);
+            float where = fromSide == toSide ? 0 : Math.Clamp(fromSide / (fromSide - toSide), 0, 1);
+            if (where < reached - Slack || (crossedWallIndex >= 0 && where >= at) || !canCross(wall, region, entered))
+            {
+                continue;
+            }
+
             crossedWallIndex = wallIndex;
-            return entered;
+            at = where;
+            result = entered;
         }
 
-        return region;
+        return result;
     }
 
     /// <summary>The map region across <paramref name="wall"/> from <paramref name="region"/> or from its <c>BELOW</c> stack.</summary>
@@ -776,13 +1013,15 @@ public sealed class LevelCollisionWorld
         return a + (segment * along);
     }
 
-    private static Vector2 CollisionNormal(
+    private Vector2 CollisionNormal(
         Vector2 from,
         Vector2 desired,
         Vector2 closest,
         Vector2 a,
         Vector2 b,
-        float along)
+        float along,
+        Wall wall,
+        int region)
     {
         if (along <= 0.0001f || along >= 0.9999f)
         {
@@ -806,7 +1045,14 @@ public sealed class LevelCollisionWorld
         }
 
         Vector2 leftNormal = Vector2.Normalize(new Vector2(-segment.Y, segment.X));
-        return Orient(a, b, from) >= 0 ? leftNormal : -leftNormal;
+        float side = Orient(a, b, from);
+        if (side == 0)
+        {
+            // A mover exactly on the line (it stepped off a ledge onto it) is on its region's side.
+            side = SideOfWall(wall, region);
+        }
+
+        return side >= 0 ? leftNormal : -leftNormal;
     }
 
     /// <summary>
