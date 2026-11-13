@@ -29,7 +29,7 @@ public sealed class ViewClip
     public const float Reach = 100000f;
 
     private readonly Level _level;
-    private readonly HashSet<Wall> _reversed = [];
+    private readonly HashSet<Wall> _reversed;
     private readonly Dictionary<int, List<Wall>> _regionWalls = [];
 
     private const float NearDepth = 0.5f;
@@ -86,6 +86,22 @@ public sealed class ViewClip
 
                 list.Add(wall);
             }
+        }
+
+        _reversed = level.ReversedWalls ??= FindReversedWalls(level);
+    }
+
+    private static HashSet<Wall> FindReversedWalls(Level level)
+    {
+        var reversed = new HashSet<Wall>();
+        foreach (Wall wall in level.Walls)
+        {
+            if (wall.LeftRegion == wall.RightRegion ||
+                (uint)wall.Vertex1 >= (uint)level.Vertices.Count ||
+                (uint)wall.Vertex2 >= (uint)level.Vertices.Count)
+            {
+                continue;
+            }
 
             Vertex v1 = level.Vertices[wall.Vertex1];
             Vertex v2 = level.Vertices[wall.Vertex2];
@@ -104,9 +120,11 @@ public sealed class ViewClip
             bool inLeft = LevelTopology.RegionContains(level, wall.LeftRegion, x, y);
             if (inRight && !inLeft)
             {
-                _reversed.Add(wall);
+                reversed.Add(wall);
             }
         }
+
+        return reversed;
     }
 
     /// <summary>Whether a wall seen from (<paramref name="x"/>, <paramref name="y"/>) is out of reach.</summary>

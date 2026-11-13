@@ -32,6 +32,12 @@ public sealed partial class RuntimeHost : IDisposable
     private readonly Camera _camera = new();
     private readonly Stopwatch _frameClock = new();
     private readonly List<CachedBatch> _batches = [];
+
+    // The regions a script has moved, with their neighbours, and their part of the mesh (MeshPart).
+    private readonly HashSet<int> _movingRegions = [];
+    private readonly List<CachedBatch> _movingBatches = [];
+    private RenderVertex[] _movingOccluders = [];
+    private RenderVertex[] _movingSpriteFrames = [];
     private readonly List<RenderVertex> _clipFill = [];
     private readonly Dictionary<(string Element, int Place), (int Signature, int Frames)> _uiDirty = [];
     private readonly Dictionary<string, int> _uiPieceIndex = new(StringComparer.OrdinalIgnoreCase);
@@ -515,6 +521,10 @@ public sealed partial class RuntimeHost : IDisposable
         _lastWaveSoundCycle = 0;
         _spatialLoopSounds.Clear();
         _batches.Clear();
+        _movingRegions.Clear();
+        _movingBatches.Clear();
+        _movingOccluders = [];
+        _movingSpriteFrames = [];
         _sprites.Clear();
     }
 
@@ -800,14 +810,38 @@ public sealed partial class RuntimeHost : IDisposable
 
     private void BuildGeometry()
     {
-        _batches.Clear();
-        _occluders = MeshBuilder.BuildOccluders(_level);
-        _spriteFrames = MeshBuilder.BuildSpriteFrames(_level);
+        MeshPart? rest = _movingRegions.Count > 0 ? new MeshPart(_movingRegions, movingPart: false) : null;
+        _occluders = MeshBuilder.BuildOccluders(_level, rest);
+        _spriteFrames = MeshBuilder.BuildSpriteFrames(_level, rest);
         _viewClip = new ViewClip(_level);
-        LevelMesh mesh = MeshBuilder.Build(_level, _blankSurfaces);
+        FillBatches(_batches, MeshBuilder.Build(_level, _blankSurfaces, rest));
+        BuildMovingGeometry();
+    }
+
+    /// <summary>Builds the moved regions' part of the mesh again (none while no region has moved).</summary>
+    private void BuildMovingGeometry()
+    {
+        if (_movingRegions.Count == 0)
+        {
+            _movingBatches.Clear();
+            _movingOccluders = [];
+            _movingSpriteFrames = [];
+            return;
+        }
+
+        var moving = new MeshPart(_movingRegions, movingPart: true);
+        _movingOccluders = MeshBuilder.BuildOccluders(_level, moving);
+        _movingSpriteFrames = MeshBuilder.BuildSpriteFrames(_level, moving);
+        _viewClip = new ViewClip(_level);
+        FillBatches(_movingBatches, MeshBuilder.Build(_level, _blankSurfaces, moving));
+    }
+
+    private void FillBatches(List<CachedBatch> into, LevelMesh mesh)
+    {
+        into.Clear();
         foreach (MeshBatch batch in mesh.Batches)
         {
-            _batches.Add(new CachedBatch(
+            into.Add(new CachedBatch(
                 batch.Texture,
                 batch.Vertices.ToArray(),
                 batch.AnimationSource,

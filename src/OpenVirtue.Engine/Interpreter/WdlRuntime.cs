@@ -1775,7 +1775,7 @@ public sealed class WdlRuntime :
             }
         }
 
-        RecordGeometryInvalidation(region);
+        _shakeRequests.Add(new WdlShakeRequest(region.Name, Geometry: true, MovedRegion: regionIndex));
         return true;
     }
 
@@ -1805,7 +1805,7 @@ public sealed class WdlRuntime :
             vertices[vertexIndex] = new Vertex(vertex.X, vertex.Y, vertex.Z + (float)amount);
         }
 
-        RecordGeometryInvalidation(region);
+        _shakeRequests.Add(new WdlShakeRequest(region.Name, Geometry: true, MovedRegion: regionIndex));
         return true;
     }
 
@@ -1849,7 +1849,7 @@ public sealed class WdlRuntime :
             }
         }
 
-        RecordGeometryInvalidation(region);
+        _shakeRequests.Add(new WdlShakeRequest(region.Name, Geometry: true, MovedRegion: regionIndex));
         return true;
     }
 
@@ -5200,7 +5200,7 @@ public sealed class WdlRuntime :
     private void RecordGeometryInvalidation(AcknexObject target)
     {
         ArgumentNullException.ThrowIfNull(target);
-        _shakeRequests.Add(new WdlShakeRequest(target.Name));
+        _shakeRequests.Add(new WdlShakeRequest(target.Name, target is not MapEntity));
     }
 
     /// <summary>

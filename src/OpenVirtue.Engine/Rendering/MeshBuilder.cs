@@ -26,14 +26,14 @@ public static class MeshBuilder
     /// Builds walls and floor/ceiling surfaces. <paramref name="blankSurfaces"/> names the textures that
     /// draw as palette entry 0 on a surface (<see cref="TextureLoader.BlankSurfaceTextures"/>).
     /// </summary>
-    public static LevelMesh Build(Level level, IReadOnlySet<string>? blankSurfaces = null)
+    public static LevelMesh Build(Level level, IReadOnlySet<string>? blankSurfaces = null, MeshPart? part = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         var accumulator = new Accumulator();
         IReadOnlySet<string> rowMasked = TextureLoader.RowMaskedWallTextures(level);
-        AddWalls(level, accumulator, rowMasked);
-        AddSurfaces(level, accumulator, rowMasked, blankSurfaces);
-        AddInvisibleSteps(level, accumulator, rowMasked, blankSurfaces);
+        AddWalls(level, accumulator, rowMasked, part);
+        AddSurfaces(level, accumulator, rowMasked, blankSurfaces, part);
+        AddInvisibleSteps(level, accumulator, rowMasked, blankSurfaces, part);
         return accumulator.ToMesh();
     }
 
@@ -53,13 +53,13 @@ public static class MeshBuilder
     /// wall's top. A see-through wall hides nothing, and a <c>BELOW</c> stack's walls keep to what
     /// they draw.
     /// </summary>
-    public static RenderVertex[] BuildOccluders(Level level)
+    public static RenderVertex[] BuildOccluders(Level level, MeshPart? part = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         var vertices = new List<RenderVertex>();
         foreach (Wall wall in level.Walls)
         {
-            if (!TryVertex(level, wall.Vertex1, out Vertex v1) || !TryVertex(level, wall.Vertex2, out Vertex v2))
+            if (part?.Includes(wall) == false || !TryVertex(level, wall.Vertex1, out Vertex v1) || !TryVertex(level, wall.Vertex2, out Vertex v2))
             {
                 continue;
             }
@@ -122,13 +122,14 @@ public static class MeshBuilder
     /// is not cut this way (clip-view q-vis), so these go after the fills and before the sprites; a
     /// sprite's own region's walls do not cut it, its hiding depth having been pulled ahead of them.
     /// </summary>
-    public static RenderVertex[] BuildSpriteFrames(Level level)
+    public static RenderVertex[] BuildSpriteFrames(Level level, MeshPart? part = null)
     {
         ArgumentNullException.ThrowIfNull(level);
         var vertices = new List<RenderVertex>();
         foreach (Wall wall in level.Walls)
         {
-            if (wall.LeftRegion == wall.RightRegion ||
+            if (part?.Includes(wall) == false ||
+                wall.LeftRegion == wall.RightRegion ||
                 !TryVertex(level, wall.Vertex1, out Vertex v1) ||
                 !TryVertex(level, wall.Vertex2, out Vertex v2) ||
                 RegionAt(level, wall.LeftRegion) is not { } left ||
@@ -188,11 +189,12 @@ public static class MeshBuilder
         vertices.Add(d);
     }
 
-    private static void AddWalls(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked)
+    private static void AddWalls(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, MeshPart? part = null)
     {
         foreach (Wall wall in level.Walls)
         {
-            if (!TryVertex(level, wall.Vertex1, out Vertex v1) ||
+            if (part?.Includes(wall) == false ||
+                !TryVertex(level, wall.Vertex1, out Vertex v1) ||
                 !TryVertex(level, wall.Vertex2, out Vertex v2) ||
                 IsSkyTexture(level, wall.Texture))
             {
@@ -640,7 +642,7 @@ public static class MeshBuilder
     private static float WallAnchor(Wall wall, float floor, float ceiling) =>
         wall["PORTCULLIS"] <= 0 ? 0f : wall["POSITION"] > 0 ? ceiling : floor;
 
-    private static void AddSurfaces(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces)
+    private static void AddSurfaces(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces, MeshPart? part)
     {
         string? Shown(string? texture) => texture is not null && blankSurfaces?.Contains(texture) == true ? BlankSurface : texture;
 
@@ -668,6 +670,11 @@ public static class MeshBuilder
 
         for (int regionIndex = 0; regionIndex < level.Regions.Count; regionIndex++)
         {
+            if (part?.Includes(regionIndex) == false)
+            {
+                continue;
+            }
+
             // OV-20261106-clip-view: a closed region (retail's "border", floor on ceiling) is never
             // entered, so nothing shows its surfaces: drawn, they lay over a neighbour's sky.
             if (level.Regions[regionIndex] is { } closed && closed.CeilHeight <= closed.FloorHeight && closed.BelowRegion < 0 && !stacked.Contains(regionIndex))
@@ -735,11 +742,12 @@ public static class MeshBuilder
     /// that the shader fills from that plane (<see cref="RenderVertex.PlaneFill"/>). A sloped higher
     /// floor and a <c>BELOW</c> stack are left as they were (not measured).
     /// </summary>
-    private static void AddInvisibleSteps(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces)
+    private static void AddInvisibleSteps(Level level, Accumulator accumulator, IReadOnlySet<string> rowMasked, IReadOnlySet<string>? blankSurfaces, MeshPart? part)
     {
         foreach (Wall wall in level.Walls)
         {
-            if (wall["INVISIBLE"] <= 0 ||
+            if (part?.Includes(wall) == false ||
+                wall["INVISIBLE"] <= 0 ||
                 !TryVertex(level, wall.Vertex1, out Vertex v1) ||
                 !TryVertex(level, wall.Vertex2, out Vertex v2) ||
                 RegionAt(level, wall.LeftRegion) is not { } left ||
@@ -954,13 +962,29 @@ public static class MeshBuilder
     /// the wall's left normal and the lamp, whatever the distance or the lamp's <c>AMBIENT</c>: one
     /// value a wall, negative (darkening) with the lamp behind the wall.
     /// </summary>
+    private static MapEntity? EntityNamed(Level level, string name)
+    {
+        if (level.EntitiesByName is null)
+        {
+            var byName = new Dictionary<string, MapEntity>(StringComparer.OrdinalIgnoreCase);
+            foreach (MapEntity entity in level.Things.Cast<MapEntity>().Concat(level.Actors))
+            {
+                byName.TryAdd(entity.Name, entity);
+            }
+
+            level.EntitiesByName = byName;
+        }
+
+        return level.EntitiesByName.GetValueOrDefault(name);
+    }
+
     private static double GeniusLight(Level level, Wall wall)
     {
         if (wall.Texture is not { } textureName ||
             !level.Textures.TryGetValue(textureName, out LevelTexture texture) ||
             texture.Albedo <= 0 ||
             RegionAt(level, wall.LeftRegion) is not { GeniusName: { } geniusName } ||
-            level.Things.Cast<MapEntity>().Concat(level.Actors).FirstOrDefault(e => e.Name.Equals(geniusName, StringComparison.OrdinalIgnoreCase)) is not { } lamp ||
+            EntityNamed(level, geniusName) is not { } lamp ||
             lamp.Texture is not { } lampTexture ||
             !level.Textures.TryGetValue(lampTexture, out LevelTexture lampLevelTexture) ||
             lampLevelTexture.Ambient <= 0 ||

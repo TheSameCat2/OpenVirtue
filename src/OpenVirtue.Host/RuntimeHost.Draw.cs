@@ -63,6 +63,7 @@ public sealed partial class RuntimeHost
             AddWorldBatches(frame, viewProjection, worldPixels);
             AddClipFills(frame, viewProjection, worldPixels);
             AddDepthOnly(frame, viewProjection, worldPixels, _spriteFrames);
+            AddDepthOnly(frame, viewProjection, worldPixels, _movingSpriteFrames);
             AddSprites(frame, viewProjection, worldPixels, SpriteScissor(display, worldPixels));
             AddTopRow(frame, display, worldPixels);
         }
@@ -217,7 +218,7 @@ public sealed partial class RuntimeHost
 
     private void AddWorldBatches(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
     {
-        foreach (CachedBatch batch in _batches)
+        foreach (CachedBatch batch in _batches.Concat(_movingBatches))
         {
             string? renderTexture = batch.Texture;
             if (batch.AnimationSource is { } source &&
@@ -262,8 +263,11 @@ public sealed partial class RuntimeHost
     /// surface or a sprite past a wall is hidden in that wall's whole column, not just where the wall
     /// is drawn. Pushed back a hair, so each wall still draws over its own occluder.
     /// </summary>
-    private void AddOccluders(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport) =>
+    private void AddOccluders(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport)
+    {
         AddDepthOnly(frame, viewProjection, viewport, _occluders);
+        AddDepthOnly(frame, viewProjection, viewport, _movingOccluders);
+    }
 
     private static void AddDepthOnly(HostFrame frame, Matrix4x4 viewProjection, PixelRect viewport, RenderVertex[] vertices)
     {

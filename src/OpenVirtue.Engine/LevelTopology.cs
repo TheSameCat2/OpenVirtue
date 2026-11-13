@@ -268,21 +268,11 @@ public static class LevelTopology
         var adjacency = new Dictionary<int, List<int>>();
         var edges = new HashSet<(int, int)>();
 
-        foreach (Wall wall in level.Walls)
+        foreach ((int first, int second) in SurfaceCache(level).Edges(regionIndex))
         {
-            if (!BoundsRegion(wall, regionIndex))
-            {
-                continue;
-            }
-
-            (int, int) key = wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1);
-            if (!edges.Add(key))
-            {
-                continue;
-            }
-
-            Connect(adjacency, wall.Vertex1, wall.Vertex2);
-            Connect(adjacency, wall.Vertex2, wall.Vertex1);
+            edges.Add(first < second ? (first, second) : (second, first));
+            Connect(adjacency, first, second);
+            Connect(adjacency, second, first);
         }
 
         if (edges.Count < 3)
@@ -332,19 +322,7 @@ public static class LevelTopology
     public static List<(int First, int Second)> RegionEdges(Level level, int regionIndex)
     {
         ArgumentNullException.ThrowIfNull(level);
-        regionIndex = Footprint(level, regionIndex);
-        var edges = new List<(int, int)>();
-        var seen = new HashSet<(int, int)>();
-        foreach (Wall wall in level.Walls)
-        {
-            if (BoundsRegion(wall, regionIndex) &&
-                seen.Add(wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1)))
-            {
-                edges.Add((wall.Vertex1, wall.Vertex2));
-            }
-        }
-
-        return edges;
+        return [.. SurfaceCache(level).Edges(Footprint(level, regionIndex))];
     }
 
     /// <summary>
@@ -360,7 +338,7 @@ public static class LevelTopology
         }
 
         bool inside = false;
-        foreach ((int first, int second) in RegionEdges(level, regionIndex))
+        foreach ((int first, int second) in SurfaceCache(level).Edges(Footprint(level, regionIndex)))
         {
             if ((uint)first >= (uint)level.Vertices.Count || (uint)second >= (uint)level.Vertices.Count)
             {
@@ -603,6 +581,46 @@ public static class LevelTopology
         private readonly List<int>?[] _loops = new List<int>?[level.Regions.Count];
         private readonly Vector2[]?[] _footprints = new Vector2[]?[level.Regions.Count];
         private readonly IReadOnlyList<int>?[] _triangles = new IReadOnlyList<int>?[level.Regions.Count];
+        private Dictionary<int, List<(int First, int Second)>>? _edges;
+
+        /// <summary>
+        /// The vertex pairs of the walls bounding a region, each pair once: which walls bound a region never
+        /// changes after load, and scanning every wall per point test made the view clip's set-up quadratic
+        /// (a fifth of a second in Apathy, once per tick while its secret door slid).
+        /// </summary>
+        public IReadOnlyList<(int First, int Second)> Edges(int regionIndex)
+        {
+            if (_edges is null)
+            {
+                var byRegion = new Dictionary<int, List<(int First, int Second)>>();
+                var seen = new HashSet<(int Region, int Low, int High)>();
+                foreach (Wall wall in level.Walls)
+                {
+                    if (wall.LeftRegion == wall.RightRegion || wall.Vertex1 == wall.Vertex2)
+                    {
+                        continue;
+                    }
+
+                    (int low, int high) = wall.Vertex1 < wall.Vertex2 ? (wall.Vertex1, wall.Vertex2) : (wall.Vertex2, wall.Vertex1);
+                    foreach (int region in (ReadOnlySpan<int>)[wall.LeftRegion, wall.RightRegion])
+                    {
+                        if (seen.Add((region, low, high)))
+                        {
+                            if (!byRegion.TryGetValue(region, out List<(int First, int Second)>? list))
+                            {
+                                byRegion[region] = list = [];
+                            }
+
+                            list.Add((wall.Vertex1, wall.Vertex2));
+                        }
+                    }
+                }
+
+                _edges = byRegion;
+            }
+
+            return _edges.TryGetValue(regionIndex, out List<(int First, int Second)>? edges) ? edges : [];
+        }
 
         /// <summary>The traced loop, shared between callers; callers do not modify it.</summary>
         public List<int>? Loop(int regionIndex)

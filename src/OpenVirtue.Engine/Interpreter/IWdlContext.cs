@@ -264,8 +264,13 @@ public interface IWdlSkillBoundsContext
     bool IsSkillAtMinimum(string name);
 }
 
-/// <summary>A host-facing geometry invalidation emitted by documented WDL movement instructions.</summary>
-public readonly record struct WdlShakeRequest(string ObjectName);
+/// <summary>
+/// A host-facing invalidation emitted by documented WDL movement instructions. <paramref name="Geometry"/> is
+/// false for a thing or actor: the host rebuilds its sprites every frame anyway, so only walls and regions
+/// need the level's mesh, occluders and view clipping built again. <paramref name="MovedRegion"/> is the index
+/// of the region a <c>SHIFT</c>, <c>ROTATE</c> or <c>LIFT</c> moved, or -1.
+/// </summary>
+public readonly record struct WdlShakeRequest(string ObjectName, bool Geometry = true, int MovedRegion = -1);
 
 /// <summary>Optional runtime surface for geometry/cache invalidation instructions.</summary>
 public interface IWdlGeometryContext

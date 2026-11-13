@@ -258,6 +258,16 @@ public sealed class Level
 
     /// <summary>Per-region boundary loops and floor triangulations, built on first use by <see cref="LevelTopology"/>.</summary>
     internal LevelTopology.RegionSurfaceCache? SurfaceCache { get; set; }
+
+    /// <summary>
+    /// The walls whose geometric left lies in their right region, worked out once: a SHIFT or ROTATE moves a
+    /// region whole and keeps every wall's sides, and the point tests behind it are slow on Apathy's big
+    /// regions (<see cref="Rendering.ViewClip"/>).
+    /// </summary>
+    internal HashSet<Wall>? ReversedWalls { get; set; }
+
+    /// <summary>The first thing, then actor, placed under each name, for lookups by name while building the mesh.</summary>
+    internal Dictionary<string, MapEntity>? EntitiesByName { get; set; }
 }
 
 /// <summary>A palette's shading declarations: its <c>RANGE start, length</c> pairs and its <c>AUTORANGE</c> and <c>HARD</c> flags.</summary>

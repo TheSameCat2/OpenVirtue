@@ -57,8 +57,43 @@ public sealed partial class RuntimeHost
             return;
         }
 
+        // A shaken thing or actor changes no wall or floor: rebuilding the whole level for each one cost a
+        // frame in Apathy, where a shot's flash and the raindrops SHAKE every tick.
+        // A moved region rebuilds only its part of the mesh (MeshPart): the first move of a region builds
+        // the rest without it once, every later one only the moving part.
+        bool geometry = false;
+        bool movingOnly = true;
+        bool movingGrew = false;
+        for (int i = _handledGeometryInvalidations; i < pending; i++)
+        {
+            WdlShakeRequest request = _runtime.ShakeRequests[i];
+            if (!request.Geometry)
+            {
+                continue;
+            }
+
+            geometry = true;
+            if (request.MovedRegion >= 0)
+            {
+                movingGrew |= MeshPart.AddMoved(_level, request.MovedRegion, _movingRegions);
+            }
+            else
+            {
+                movingOnly = false;
+            }
+        }
+
         _handledGeometryInvalidations = pending;
-        if (_geometryReady)
+        if (!_geometryReady || !geometry)
+        {
+            return;
+        }
+
+        if (movingOnly && !movingGrew)
+        {
+            BuildMovingGeometry();
+        }
+        else
         {
             RebuildGeometryResources();
         }
