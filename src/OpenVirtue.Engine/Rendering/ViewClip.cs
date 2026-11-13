@@ -25,12 +25,19 @@ namespace OpenVirtue.Engine.Rendering;
 /// </remarks>
 public sealed class ViewClip
 {
+    /// <summary>
+    /// A part of a sprite's width, from <paramref name="From"/> to <paramref name="To"/> (0 its left edge, 1
+    /// its right), and the depth along the view it is hidden at (<see cref="SpriteHidingStrips"/>).
+    /// </summary>
+    public readonly record struct SpriteStrip(float From, float To, float Depth);
+
     /// <summary>How far past any level a piece or a fill reaches, in steps.</summary>
     public const float Reach = 100000f;
 
     private readonly Level _level;
     private readonly HashSet<Wall> _reversed;
     private readonly Dictionary<int, List<Wall>> _regionWalls = [];
+    private readonly HashSet<Wall> _openBorders = [];
 
     private const float NearDepth = 0.5f;
 
@@ -66,11 +73,18 @@ public sealed class ViewClip
             // two regions, is a way into the region, not a wall bounding it: a wide thing seen across a
             // raised pad's borders is cut at them. A wall onto a closed region still bounds it.
             // A BELOW stack's borders keep the old rule (below-view deck).
-            bool open = (uint)wall.LeftRegion < (uint)level.Regions.Count &&
+            bool opening = (uint)wall.LeftRegion < (uint)level.Regions.Count &&
                 (uint)wall.RightRegion < (uint)level.Regions.Count &&
-                !stacked.Contains(wall.LeftRegion) && !stacked.Contains(wall.RightRegion) &&
                 Math.Min(level.Regions[wall.LeftRegion].CeilHeight, level.Regions[wall.RightRegion].CeilHeight) >
                     Math.Max(level.Regions[wall.LeftRegion].FloorHeight, level.Regions[wall.RightRegion].FloorHeight);
+            bool open = opening && !stacked.Contains(wall.LeftRegion) && !stacked.Contains(wall.RightRegion);
+            if (opening && !open)
+            {
+                // A stack's border with an opening bounds its region here, yet a sprite seen across it is not
+                // hidden by it (SpriteHidingStrips).
+                _openBorders.Add(wall);
+            }
+
             foreach (int region in (ReadOnlySpan<int>)[wall.LeftRegion, wall.RightRegion])
             {
                 if (open)
@@ -182,11 +196,18 @@ public sealed class ViewClip
     }
 
     /// <summary>
-    /// How deep a sprite counts for hiding (OV-20261106-clip-view p-wide): the walls bounding its own
-    /// region do not cut it, so a wide sprite beside a wall shows across the wall. It is nearer of its
-    /// true depth and those walls within its columns; a free wall, or any wall on the way into the
-    /// region, still hides it.
+    /// How deep a sprite counts for hiding, part by part across its width (OV-20261106-clip-view p-wide): the
+    /// walls bounding its own region that it stands in front of do not cut it, so a wide sprite beside a wall
+    /// shows across the wall. In the columns of such a wall a part is hidden at the nearer of its true depth and
+    /// the wall's. A sprite stands behind a wall when its centre lies across the wall's line from the eye, and
+    /// in that wall's columns it keeps its true depth, so the wall hides it: a pillar in the room, or the
+    /// corner the sprite stands around. A <c>BELOW</c> stack's border with an opening hides nothing that way.
+    /// A free wall, or any wall on the way into the region, hides the sprite as well.
     /// </summary>
+    /// <remarks>
+    /// One depth for the whole sprite cannot give both. A sprite half behind a pillar took the depth of the
+    /// pillar's side, or of the next wall along the same line, and showed whole through the wall before it.
+    /// </remarks>
     /// <param name="regionIndex">The sprite's region.</param>
     /// <param name="eyeRegion">The player's region.</param>
     /// <param name="x">The eye's map x.</param>
@@ -196,59 +217,140 @@ public sealed class ViewClip
     /// <param name="depth">The sprite's depth along the view.</param>
     /// <param name="lateral">The sprite's centre across the view, to the right.</param>
     /// <param name="halfWidth">The sprite's half width.</param>
-    public float SpriteHidingDepth(int regionIndex, int eyeRegion, float x, float y, float forwardX, float forwardY, float depth, float lateral, float halfWidth)
+    /// <returns>The sprite's width in parts from its left edge to its right, each with its hiding depth.</returns>
+    public IReadOnlyList<SpriteStrip> SpriteHidingStrips(int regionIndex, int eyeRegion, float x, float y, float forwardX, float forwardY, float depth, float lateral, float halfWidth)
     {
         // Only from inside the sprite's region do its walls let it through (p-wide); seen from another
         // region, the border it is seen across is the opening that cuts it (below-view room-high).
-        if (depth <= 0 || regionIndex != eyeRegion || !_regionWalls.TryGetValue(regionIndex, out List<Wall>? walls))
+        if (depth <= 0 || halfWidth <= 0 || regionIndex != eyeRegion || !_regionWalls.TryGetValue(regionIndex, out List<Wall>? walls))
         {
-            return depth;
+            return [new SpriteStrip(0, 1, depth)];
         }
 
+        const float Sliver = 1e-5f;
         float from = (lateral - halfWidth) / depth;
         float to = (lateral + halfWidth) / depth;
-        float nearest = depth;
-        // The sprite's centre on the map: a wall the line of sight to it crosses stands between, and
-        // hides it as any wall does (Apathy's pillars, holes in the player's own region, hid the
-        // monsters behind them in the original).
         float centreX = x + (forwardX * depth) + (forwardY * lateral);
         float centreY = y + (forwardY * depth) - (forwardX * lateral);
+        var spans = new List<(WallSpan Span, bool Behind)>();
+        var cuts = new List<float> { from, to };
         foreach (Wall wall in walls)
         {
-            if (CrossesSightLine(wall, x, y, centreX, centreY))
+            if (WallColumns(wall, x, y, forwardX, forwardY) is not { } span)
             {
                 continue;
             }
 
-            if (WallDepthInColumns(wall, x, y, forwardX, forwardY, from, to) is { } near)
+            float low = MathF.Max(span.Column1, from);
+            float high = MathF.Min(span.Column2, to);
+            if (high - low <= Sliver)
             {
-                nearest = MathF.Min(nearest, near);
+                continue;
+            }
+
+            bool behind = IsBehind(wall, x, y, centreX, centreY);
+            if (behind && _openBorders.Contains(wall))
+            {
+                // below-view deck: the eye outside a stack's footprint, counted in its region, saw the deck's
+                // thing across the deck's open border, whole and over the deck's side borders.
+                continue;
+            }
+
+            spans.Add((span, behind));
+            cuts.Add(low);
+            cuts.Add(high);
+        }
+
+        if (spans.Count == 0)
+        {
+            return [new SpriteStrip(0, 1, depth)];
+        }
+
+        cuts.Sort();
+        var strips = new List<SpriteStrip>();
+        for (int i = 0; i + 1 < cuts.Count; i++)
+        {
+            float low = cuts[i];
+            float high = cuts[i + 1];
+            if (high - low <= Sliver && !(i + 2 == cuts.Count && strips.Count == 0))
+            {
+                continue;
+            }
+
+            float middle = (low + high) / 2;
+            float nearest = depth;
+            bool hidden = false;
+            foreach ((WallSpan span, bool behind) in spans)
+            {
+                if (middle < span.Column1 || middle > span.Column2)
+                {
+                    continue;
+                }
+
+                float near = span.NearestDepth(low, high);
+                if (!behind)
+                {
+                    nearest = MathF.Min(nearest, near);
+                }
+                else if (near < depth)
+                {
+                    hidden = true;
+                }
+            }
+
+            float hiding = !hidden && nearest < depth ? MathF.Max(NearDepth, nearest - 0.05f) : depth;
+            float start = strips.Count == 0 ? 0 : strips[^1].To;
+            float end = Math.Clamp((high - from) / (to - from), start, 1);
+            if (strips.Count > 0 && strips[^1].Depth == hiding)
+            {
+                strips[^1] = strips[^1] with { To = end };
+            }
+            else
+            {
+                strips.Add(new SpriteStrip(start, end, hiding));
             }
         }
 
-        return nearest < depth ? MathF.Max(NearDepth, nearest - 0.05f) : depth;
+        if (strips.Count == 0)
+        {
+            return [new SpriteStrip(0, 1, depth)];
+        }
+
+        strips[^1] = strips[^1] with { To = 1 };
+        return strips;
     }
 
-    /// <summary>Whether <paramref name="wall"/> crosses the segment from the eye to a map point.</summary>
-    private bool CrossesSightLine(Wall wall, float x, float y, float px, float py)
+    /// <summary>Whether a point lies across <paramref name="wall"/>'s line from the eye.</summary>
+    private bool IsBehind(Wall wall, float x, float y, float px, float py)
     {
         Vertex a = _level.Vertices[wall.Vertex1];
         Vertex b = _level.Vertices[wall.Vertex2];
-        float d1 = Side(a.X, a.Y, b.X, b.Y, x, y);
-        float d2 = Side(a.X, a.Y, b.X, b.Y, px, py);
-        float d3 = Side(x, y, px, py, a.X, a.Y);
-        float d4 = Side(x, y, px, py, b.X, b.Y);
-        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
-
-        static float Side(float ax, float ay, float bx, float by, float px, float py) =>
-            ((bx - ax) * (py - ay)) - ((by - ay) * (px - ax));
+        float eye = ((b.X - a.X) * (y - a.Y)) - ((b.Y - a.Y) * (x - a.X));
+        float point = ((b.X - a.X) * (py - a.Y)) - ((b.Y - a.Y) * (px - a.X));
+        return (eye > 0 && point < 0) || (eye < 0 && point > 0);
     }
 
     /// <summary>
-    /// The nearest depth of <paramref name="wall"/> within the view's columns <paramref name="from"/> to
-    /// <paramref name="to"/> (lateral over depth), cut at the near plane; null when it does not cross them.
+    /// A wall before the eye as the view's columns see it: from column <see cref="Column1"/> (lateral over
+    /// depth) at <see cref="Depth1"/> to the greater <see cref="Column2"/> at <see cref="Depth2"/>, cut at the
+    /// near plane.
     /// </summary>
-    private float? WallDepthInColumns(Wall wall, float x, float y, float forwardX, float forwardY, float from, float to)
+    private readonly record struct WallSpan(float Column1, float Depth1, float Column2, float Depth2)
+    {
+        /// <summary>The wall's nearest depth between two columns; 1/depth runs straight along the columns.</summary>
+        public float NearestDepth(float from, float to)
+        {
+            float low = MathF.Max(Column1, from);
+            float high = MathF.Max(low, MathF.Min(Column2, to));
+            float span = Column2 - Column1;
+            float atLow = span > 1e-6f ? (1f / Depth1) + ((low - Column1) / span * ((1f / Depth2) - (1f / Depth1))) : 1f / Depth1;
+            float atHigh = span > 1e-6f ? (1f / Depth1) + ((high - Column1) / span * ((1f / Depth2) - (1f / Depth1))) : 1f / Depth2;
+            return 1f / MathF.Max(atLow, atHigh);
+        }
+    }
+
+    /// <summary>The columns <paramref name="wall"/> covers before the eye; null when it lies behind the near plane.</summary>
+    private WallSpan? WallColumns(Wall wall, float x, float y, float forwardX, float forwardY)
     {
         float rightX = forwardY;
         float rightY = -forwardX;
@@ -279,26 +381,9 @@ public sealed class ViewClip
             db = NearDepth;
         }
 
-        // Where it crosses the sprite's columns, 1/depth runs straight in the column.
         float ca = la / da;
         float cb = lb / db;
-        if (ca > cb)
-        {
-            (ca, cb) = (cb, ca);
-            (da, db) = (db, da);
-        }
-
-        float low = MathF.Max(ca, from);
-        float high = MathF.Min(cb, to);
-        if (low > high)
-        {
-            return null;
-        }
-
-        float span = cb - ca;
-        float atLow = span > 1e-6f ? 1f / da + ((low - ca) / span * ((1f / db) - (1f / da))) : 1f / da;
-        float atHigh = span > 1e-6f ? 1f / da + ((high - ca) / span * ((1f / db) - (1f / da))) : 1f / db;
-        return 1f / MathF.Max(atLow, atHigh);
+        return ca <= cb ? new WallSpan(ca, da, cb, db) : new WallSpan(cb, db, ca, da);
     }
 
     /// <summary>Whether a thing or actor is within its reach of (<paramref name="x"/>, <paramref name="y"/>).</summary>
