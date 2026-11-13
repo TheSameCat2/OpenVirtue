@@ -1,6 +1,6 @@
 # OV-20261110-wall-slide: The player sliding along a diagonal wall
 Date: 2026-11-10
-Status: confirmed for the middle of a wall, long walls, corners and its ends, implemented; Legalism's unit open
+Status: confirmed for the middle of a wall, long walls, corners, its ends, a wall of the next region and a wedge of two walls, implemented; the hold's last unit and a wall's end met head on open
 Observer: Claude Code (Opus 5.5)
 Implementer: same
 
@@ -278,3 +278,99 @@ fitted on. Rejected as well, over all probe and retail cycles: a slide from the 
 wall plus a correction from the start's distance (any rounding, joint or per term; 1958 off and more against the bias rule's
 420). OpenVirtue keeps the bias rule. The hold's exact arithmetic is open. The next lever is how the original orders and
 rounds the step, contact and push: a probe with a constant push and varied step, or the reverse.
+
+## Addendum (2026-11-13): the player's region at corners, and holds that pass a wall
+Not an oracle round. A user walked through corners in the retail levels. A random walk through the four
+levels with the player's own step (`Player.MoveHorizontal`, `PLAYER_WIDTH` 1.4, steps of 0.1 to 1.3) left
+the player outside the region it was counted in on about half of 300 walks a level. Once the region is
+wrong, the walls of the region the player really stands in are not tested, and it walks through them.
+
+Causes found, all in OpenVirtue's own bookkeeping:
+- **A step crossed one border only.** Past a vertex where three or more regions meet, a step crosses two
+  borders. The region stopped at the first.
+- **The region came from the step as asked, not as taken.** A wall's hold could put the step back across the
+  border it had crossed, or across another one (Apathy's strips 1.45 wide along a wall: the hold off the wall
+  lies outside the strip). `Player.MoveHorizontal` also takes its end from `HoldOffWalls`, not from the move
+  that gave the region.
+- **A hold could lie beyond a wall that did not stop the move.** The hold is measured from the whole step and
+  the stopping walls, each once. A pillar 45/1024 behind a border, a wall just past the end of the stopping
+  wall and a wedge of two walls each gave a hold on the far side of another wall. In a wedge, the hold off
+  one wall pressed the player a little deeper into the other each step.
+- **On a wall's line the side was a guess.** A step down a ledge can end exactly on the border's line. The
+  next hold then pushed the player to whichever side the vertex order named.
+
+Implemented:
+- `LevelCollisionWorld.Move` follows every border a sub-step crosses, nearest first, and takes the region
+  again from the sub-step as resolved. `RegionAfterStep` does the same for a straight step.
+- `Player.MoveHorizontal` takes a hold only when the straight step to it passes no wall the player may not
+  cross (`StepIsClear`) and ends no deeper inside `PLAYER_WIDTH` of one than it started (`SinksIntoWalls`).
+  What it does otherwise was a guess that morning and is measured in round 12 below.
+  The 4/1024 minimum after a wall stop goes through the same test (`Player.ShiftTo`).
+- A mover exactly on a wall's line counts as on its region's side (`LevelCollisionWorld.SideOfWall`).
+
+After this the same walk gives no stray in 150 walks of 8000 steps a level with the 4/1024 minimum, where a
+run of 600 walks of 10000 steps before the wedge rule left one. Every measured hold in this note ends
+further than `PLAYER_WIDTH` from each wall, so none is refused. `oracle diff` over every probe gives the same
+5799 summary lines but one. flic-scheduler-detail's world-control has a `FOLLOW` actor pushing the player
+along a wall; the original prints 307 `NEAR` lines there, OpenVirtue printed 1818 and now prints 383. A
+guarded test walks the user's own levels:
+`PlayerTests.MoveHorizontal_RandomWalksThroughRetailLevels_StayInTheRegionTheyAreCountedIn`. Tests: `PlayerTests.MoveHorizontal_PastAVertexWhereRegionsMeet_FollowsBothBorders`,
+`_HeldBackAcrossTheBorderItCrossed_KeepsTheRegionItStandsIn`, `_IntoAWedgeOfTwoWalls_NeverComesThroughEither`
+and `_FromExactlyOnALedgesLine_IsHeldOnItsOwnSide`.
+
+Both questions this left open were put to the original the same day (round 12).
+
+## Round 12 (2026-11-13): a wall of the next region, and a wedge of two walls
+Observer and implementer: Claude Code (Fable 5.2). Ten carriers (`round12/`), `PLAYER_WIDTH` 1.4, run with
+`SDL_VIDEODRIVER=dummy`. `OVWSL0.TXT` hashes: behind-005 `f21987c1`, behind-1 `420d25ee`, behind-ctl `d990f8b4`,
+corner-nb `45e0afcc`, corner-nb-side `ee1d8a5a`, wedge-45 `0b04033e`, wedge-flat `81bcd5d7`, wedge-flat-down
+`44555673`, wedge-flat-up `61a6f59b`, wedge-sym `d3f518b7`.
+
+The border cases use the probe's pad, a region of the room's heights behind invisible passable borders
+(x −12 to −4, y 12 to 20), with a wall inside it. The player walks at it from the room.
+
+| Case | Reading |
+|---|---|
+| behind-ctl | no wall: the player walks through the pad to the room's far wall |
+| behind-005 | a wall at y = 12.05, 0.05 behind the border: held at y 10855, 1484 from the wall, never past the border at 12288 |
+| behind-1 | a wall at y = 13: held at 11828, 1484 from it, still in the room |
+| corner-nb | a wall ending at the pad's corner, walked at along its own line: held 1468 from the end point, in the room |
+| corner-nb-side | the same end passed 0.5 to its side: pushed round it as round any wall's end |
+
+- **A wall of the next region holds the player before it crosses the border**, at the same hold, and so does
+  that wall's end. How far past the next region the original looks is not measured.
+
+The wedge cases put two free walls in the room that close in on each other.
+
+| Case | Reading |
+|---|---|
+| wedge-sym | walls meeting at (24, 0), walked into along the middle: a free step and a held step in turn, then no move at all from (14872, 5), 1445 and 1435 from the walls |
+| wedge-flat | a wall along y = −2 and one falling to meet it: slides along the falling wall, then one step of (78, 24) to (14698, −588), then no move |
+| wedge-flat-up, -down | the same wedge at other steps: one last short step, then no move |
+| wedge-45 | a 45° wall meeting the flat one: one step to (14896, −611), then steps of (13, 23), (5, 11) and (4, 6), then the usual 4/1024 to and fro at the flat wall's hold |
+
+- **Where the hold off one wall lies inside `PLAYER_WIDTH` of another, the walls hold the step once more, the
+  nearer line first.** If that point is clear of both, the player takes it. wedge-45's (14896, −611) is the
+  step held off the slanted wall, the flat one and the slanted one again.
+- **If it is still inside one, the player lands midway between where it stood and that point.** In wedge-flat
+  the two rounds end at (14776, −564), and midway from (14620, −612) is the (14698, −588) the original
+  printed. wedge-45 halves its way toward its corner in the same manner. A push by an actor that a wall
+  stops lands midway too (OV-20261019-clip-contact rounds 4–5).
+- **If the midway point is inside as well, the player does not move, and takes no 4/1024 minimum.** Every
+  wedge ended on one point and stayed there for the rest of the run.
+
+Implemented: `LevelCollisionWorld.SolidWalls` (the own region's walls and those of the regions across the
+borders the mover may cross), `Player.MoveHorizontal` (`HoldRound`, the midway point, `StepRefused`) and
+`WdlPlayerMotion.Apply`, which leaves the minimum out after a refused step. `MayEndAt` stays as the test of
+"inside". In the replay behind-005, behind-1, behind-ctl and wedge-sym match on all 219 lines and wedge-flat on
+218. wedge-flat-up and wedge-45 make the same moves a unit off, from the hold's rounding (rounds 8 to 11).
+No earlier carrier changes: `oracle diff` over every probe differs from before this day only in
+flic-scheduler-detail, as above. Tests: `PlayerTests.MoveHorizontal_TowardAWallOfTheNextRegion_IsHeldBeforeTheBorder`
+and `_IntoAWedge_LandsMidwayAndThenStays`.
+
+Open:
+- A wall's end met head on. corner-nb goes 4/1024 back and forth between 1468 and 1474 from the end, and
+  wedge-flat-down stands still 1469 from its wall's end. OpenVirtue goes back and forth between 1468 and 1462.
+- Walls further off than the next region.
+- A random walk from each retail level's start reaches the same regions with and without the next region's
+  walls. Stairs with steps narrower than `PLAYER_WIDTH` are not probed.

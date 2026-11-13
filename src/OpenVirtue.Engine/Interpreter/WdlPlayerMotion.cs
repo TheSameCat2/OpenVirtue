@@ -88,11 +88,10 @@ public static class WdlPlayerMotion
             // same minimum from what is left of it: a step held at the wall (0) moves 4/1024 into it,
             // and the next stop pulls it back by 4, so the player alternates 1279 and 1275 from a
             // wall ahead (OV-20261019-eye-clamp and OV-20261019-border-climb, 2026-11-03 addenda).
-            if (wallStopped)
+            if (wallStopped && !player.StepRefused)
             {
-                player.Position = new Vector3(
+                player.ShiftTo(
                     MinimumPart(player.Position.X, start.X, stepX, Nudge),
-                    player.Position.Y,
                     MinimumPart(player.Position.Z, start.Y, stepY, Nudge));
             }
         }

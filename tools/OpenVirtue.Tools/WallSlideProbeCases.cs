@@ -50,8 +50,52 @@ internal static class WallSlideProbeCases
         Map: new TraceProbeMap(Walls: [new TraceProbeWall("ws_wall", wall.X1, wall.Y1, wall.X2, wall.Y2)], OffsetX: offsetX, OffsetY: offsetY),
         Prelude: Prelude);
 
+    /// <summary>
+    /// A round-12 case: several walls, in the room or (<c>Region</c> 2) inside the pad island, and the player beamed
+    /// to a start and stepped a fixed amount a cycle with <c>PLAYER_WIDTH</c> 1.4.
+    /// </summary>
+    private static TraceProbeCase Squeeze(string label, TraceProbeWall[] walls, (double X, double Y) start, double sx, double sy, string question, bool pad = false) => new(
+        "round12/" + label,
+        "Round 12. " + question,
+        Skills + Sampler,
+        string.Create(CultureInfo.InvariantCulture, $"    SET PLAYER_WIDTH, 1.4;\n    SET PLAYER_X, {start.X};\n    SET PLAYER_Y, {start.Y};\n    WAIT 2;\n") +
+        string.Create(CultureInfo.InvariantCulture, $"    RULE ws_sx = {sx};\n    RULE ws_sy = {sy};\n    RULE ws_go = 1;\n") +
+        V("GO", "TICKS", "ws_n") +
+        "    WAIT 150;\n    RULE ws_go = 0;\n    SET PLAYER_VX, 0;\n    SET PLAYER_VY, 0;\n" + P("RET"),
+        Predict(
+            ("the step is stopped where a hold would pass another wall", "the position stops changing once both walls are within reach"),
+            ("the player slides on, or is held off each wall in turn", "the position keeps moving, or alternates between two holds")),
+        Map: new TraceProbeMap(PadBody: pad ? "" : null, Walls: walls),
+        Prelude: Prelude);
+
+    private static TraceProbeWall W(double x1, double y1, double x2, double y2, int region = 0) => new("ws_wall", x1, y1, x2, y2, Region: region);
+
     public static readonly IReadOnlyList<TraceProbeCase> All =
     [
+        // Round 12 (2026-11-13): what the original does where OpenVirtue now refuses a hold (the addendum of that day).
+        // A wedge of two walls narrower than two holds, walked into; a wall close behind a border the player may cross;
+        // and a wall's end at a border's corner, a corner that belongs to no wall of the player's own region.
+        Squeeze("wedge-sym", [W(4, -3, 24, 0), W(4, 3, 24, 0)], (0, 0), 0.2, 0.02,
+            "Two walls closing in on (24, 0), 6 apart at x = 4, walked into along the middle: where does the player stop, and does it stay still?"),
+        Squeeze("wedge-flat", [W(4, -2, 24, -2), W(4, 4, 24, -2)], (0, 0), 0.2, 0,
+            "A wall along y = -2 and one falling to meet it at (24, -2), walked into along y = 0."),
+        Squeeze("wedge-flat-up", [W(4, -2, 24, -2), W(4, 4, 24, -2)], (0, 0), 0.2, 0.1,
+            "The same wedge, stepped (0.2, 0.1) into the falling wall."),
+        Squeeze("wedge-flat-down", [W(4, -2, 24, -2), W(4, 4, 24, -2)], (0, 0), 0.2, -0.1,
+            "The same wedge, stepped (0.2, -0.1) into the wall along y = -2."),
+        Squeeze("wedge-45", [W(4, -2, 24, -2), W(10, 6, 18, -2)], (0, 0), 0.2, 0,
+            "A wall along y = -2 and a 45-degree wall meeting it at (18, -2)."),
+        Squeeze("behind-005", [W(-11, 12.05, -5, 12.05, 2)], (-8, 6), 0, 0.2,
+            "A wall inside the pad 0.05 behind its border at y = 12, walked at from the room: is the player held 1.45 from it while still in the room, or only once it has crossed the border?", pad: true),
+        Squeeze("behind-1", [W(-11, 13, -5, 13, 2)], (-8, 6), 0, 0.2,
+            "The same with the wall 1 behind the border.", pad: true),
+        Squeeze("behind-ctl", [], (-8, 6), 0, 0.2,
+            "The control: the pad with no wall inside.", pad: true),
+        Squeeze("corner-nb", [W(-12, 12, -8, 16, 2)], (-14.5, 9.5), 0.15, 0.15,
+            "A wall inside the pad that ends at the pad's corner (-12, 12), walked at from the room along its own line: is the player held off that end before it enters the pad?", pad: true),
+        Squeeze("corner-nb-side", [W(-12, 12, -8, 16, 2)], (-14.5, 11.5), 0.2, 0,
+            "The same wall's end passed sideways, along y = 11.5 in the room, 0.5 from the corner.", pad: true),
+
         Slide("w45-s02", (4, -8, 20, 8), 0.2, 0,
             "A wall at 45° (y = x − 12) across the player's +x walk at 0.2 a cycle: where is the player each cycle once it meets the wall?"),
         Slide("w45-s05", (4, -8, 20, 8), 0.5, 0, "The 45° wall at 0.5 a cycle."),

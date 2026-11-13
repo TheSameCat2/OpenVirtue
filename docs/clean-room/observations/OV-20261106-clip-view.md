@@ -99,7 +99,7 @@ wide sprite, and OpenVirtue implements it by a depth test against its own walls'
   may differ, as it does with `APPEND_MODE`.
 
 ## Implementation
-`ViewClip` (`IsWallOutOfReach`, `AddFills`, `IsEntityInReach`, `SpriteHidingDepth`), `MeshBuilder.BuildOccluders`,
+`ViewClip` (`IsWallOutOfReach`, `AddFills`, `IsEntityInReach`, `SpriteHidingStrips`), `MeshBuilder.BuildOccluders`,
 `LevelTopology.RegionEdges`, `RegionSpans` and `RegionContains`, `MeshBuilder.AddOutlineSurfaces`.
 `RuntimeHost.DrawWorld` draws, in order: backdrop, sky, the occluders depth-only and pushed a hair back, the
 world, the fills pulled a hair forward, the sprites, the top row. Tests: `ViewClipTests`.
@@ -141,3 +141,22 @@ border-kinds, border-climb, texmap, attach and blend (220 screens) the total goe
   crosses. Clip-view, below-view, below-beam, sprite-shade and view-activity give the same pixels before
   and after (536 996 differing over 115 screens). Test
   `ViewClipTests.SpriteHidingDepth_BehindAPillarOfItsOwnRegion_KeepsItsDepth`.
+- **A sprite's hiding depth is taken part by part across its width (2026-11-13).** Sprites still showed
+  through walls now and then. Two causes, neither a new reading of the original:
+  - One depth stood for the whole sprite. The 2026-11-12 rule kept the true depth only when the line of
+    sight to the sprite's centre crossed a wall. Any other wall of the region inside the sprite's columns
+    still pulled the depth ahead: a pillar's side, or the next wall along the same line. The whole sprite
+    was then drawn over the wall in front of it. A sprite whose centre showed just past a corner was drawn
+    whole over the corner too.
+  - The player's region was often stale (OV-20261110-wall-slide, 2026-11-13 addendum). With the wrong
+    region taken for the eye's, a sprite of that region came ahead of walls it stood behind.
+
+  `ViewClip.SpriteHidingStrips` cuts the sprite's width at the columns where its region's walls begin and
+  end. A sprite stands behind a wall when its centre lies across the wall's line from the eye. In the
+  columns of such a wall, nearer than the sprite there, the part keeps its true depth and the wall hides
+  it. In the other columns a part comes ahead of the walls the sprite stands before, as p-wide showed.
+  A `BELOW` stack's border with an opening hides nothing this way: below-view `deck` sees its thing across
+  one, whole.
+  The line-side rule is a model, not a measurement: p-wide's thing stood before every wall of its room.
+  Tests: `ViewClipTests.SpriteHidingStrips_HalfBehindAPillarAndThroughAWall_HidesOnlyThePillarsColumns`
+  and `SpriteHidingStrips_BehindOneOfTwoWallsAlongALine_IsNotPulledAheadByTheOther`.

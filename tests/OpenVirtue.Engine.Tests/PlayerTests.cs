@@ -3,6 +3,8 @@
 
 using System.Numerics;
 using OpenVirtue.Engine.Map;
+using OpenVirtue.Engine.Tests.TestSupport;
+using OpenVirtue.Formats.Wrs;
 
 namespace OpenVirtue.Engine.Tests;
 
@@ -450,6 +452,223 @@ public class PlayerTests
 
         Assert.Equal(-7127, player.Position.X * 1024, 3);
         Assert.Equal(21997, player.Position.Z * 1024, 3);
+    }
+
+    // Four regions meet at the origin: sw, se and ne are rooms of one height, nw is closed.
+    private const string CrossMap =
+        "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 0 20 0;#2\nVERTEX -20 0 0;#3\nVERTEX 0 -20 0;#4\n" +
+        "REGION sw 0 20;#0\nREGION se 0 20;#1\nREGION ne 0 20;#2\nREGION nw 0 0;#3\n" +
+        "WALL w 0 1 2 1 0 0;#0\nWALL w 0 2 3 2 0 0;#1\nWALL w 0 3 0 3 0 0;#2\nWALL w 0 4 1 0 0 0;#3\n" +
+        "PLAYER_START -2 -2 0 0;#3";
+
+    [Fact]
+    public void MoveHorizontal_PastAVertexWhereRegionsMeet_FollowsBothBorders()
+    {
+        // One short step from sw crosses the border into se and, a hair on, the one into ne. The region
+        // stayed se, so ne's walls were not tested and the player walked on through them.
+        var player = new Player(Load(CrossMap)) { Width = 0.01f };
+        player.MoveTo(0, -0.015f, -0.03f);
+
+        player.MoveHorizontal(0.045f, 0.06f);
+
+        Assert.Equal(2, player.Region);
+    }
+
+    [Fact]
+    public void MoveHorizontal_HeldBackAcrossTheBorderItCrossed_KeepsTheRegionItStandsIn()
+    {
+        // A step from sw across the border at x = 0 into se, 1 wide here, ends within PLAYER_WIDTH of se's
+        // far wall, and the hold off that wall lies back in sw.
+        const string map =
+            "VERTEX 0 -20 0;#0\nVERTEX 0 0 0;#1\nVERTEX 1 -20 0;#2\nVERTEX 1 0 0;#3\n" +
+            "REGION sw 0 20;#0\nREGION se 0 20;#1\nREGION solid 0 0;#2\n" +
+            "WALL w 0 1 0 1 0 0;#0\nWALL w 2 3 1 2 0 0;#1\n" +
+            "PLAYER_START -0.3 -10 0 0;#3";
+        var player = new Player(Load(map));
+
+        player.MoveHorizontal(0.5f, 0, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.True(player.Position.X < 0, $"x {player.Position.X}");
+        Assert.Equal(0, player.Region);
+    }
+
+    // The room of the wall-slide probe, x -16 to 48 and y -24 to 24, with free walls added by each test.
+    private static Level LoadProbeRoom(string walls, string pad = "") => Load(
+        "VERTEX -16 -24 0;#0\nVERTEX 48 -24 0;#1\nVERTEX 48 24 0;#2\nVERTEX -16 24 0;#3\n" +
+        "VERTEX -12 12 0;#4\nVERTEX -4 12 0;#5\nVERTEX -4 20 0;#6\nVERTEX -12 20 0;#7\n" +
+        "VERTEX 4 -2 0;#8\nVERTEX 24 -2 0;#9\nVERTEX 4 4 0;#10\nVERTEX -11 13 0;#11\nVERTEX -5 13 0;#12\n" +
+        "REGION room 0 16;#0\nREGION solid 16 16;#1\nREGION pad 0 16;#2\n" +
+        "WALL w 0 1 0 1 0 0;#0\nWALL w 1 2 0 1 0 0;#1\nWALL w 2 3 0 1 0 0;#2\nWALL w 3 0 0 1 0 0;#3\n" +
+        pad + walls + "PLAYER_START 0 0 0 0;#3",
+        "MAPFILE <m.wmp>;\nWALL open { FLAGS INVISIBLE, PASSABLE; }");
+
+    [Fact]
+    public void MoveHorizontal_TowardAWallOfTheNextRegion_IsHeldBeforeTheBorder()
+    {
+        // OV-20261110-wall-slide round 12 behind-1: a wall 1 behind a border the player may cross, at y = 13.
+        // The original held the player at y 11828/1024, 1484 from the wall, without crossing the border at 12.
+        Level level = LoadProbeRoom(
+            "WALL w 11 12 2 2 0 0;#8\n",
+            "WALL open 4 5 2 0 0 0;#4\nWALL open 5 6 2 0 0 0;#5\nWALL open 6 7 2 0 0 0;#6\nWALL open 7 4 2 0 0 0;#7\n");
+        var player = new Player(level) { Width = 1433f / 1024 };
+        player.MoveTo(0, -8, 6);
+
+        bool stopped = false;
+        string trail = "y:";
+        for (int step = 0; step < 40 && !stopped; step++)
+        {
+            player.MoveHorizontal(4f / 1024, 204f / 1024, out stopped);
+            trail += $" {player.Position.Z * 1024:0.###}";
+        }
+
+        Assert.True(stopped, trail);
+        Assert.Equal(0, player.Region);
+        Assert.True(MathF.Round(player.Position.Z * 1024) == 11828, trail);
+    }
+
+    [Fact]
+    public void MoveHorizontal_IntoAWedge_LandsMidwayAndThenStays()
+    {
+        // OV-20261110-wall-slide round 12 wedge-flat: a wall along y = -2 and one from (4, 4) falling to meet it at
+        // (24, -2). From (14620, -612)/1024 the original stepped (204, 4) to (14698, -588), midway to where two
+        // rounds of holds end, and then did not move again.
+        Level level = LoadProbeRoom("WALL w 8 9 0 0 0 0;#4\nWALL w 10 9 0 0 0 0;#5\n");
+        var player = new Player(level) { Width = 1433f / 1024 };
+        player.MoveTo(0, 14620f / 1024, -612f / 1024);
+
+        player.MoveHorizontal(204f / 1024, 4f / 1024, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.False(player.StepRefused);
+        Assert.Equal(14698, MathF.Round(player.Position.X * 1024));
+        Assert.Equal(-588, MathF.Round(player.Position.Z * 1024));
+
+        player.MoveHorizontal(204f / 1024, 4f / 1024, out stopped);
+
+        Assert.True(stopped);
+        Assert.True(player.StepRefused);
+        Assert.Equal(14698, MathF.Round(player.Position.X * 1024));
+        Assert.Equal(-588, MathF.Round(player.Position.Z * 1024));
+    }
+
+    [Fact]
+    public void MoveHorizontal_IntoAWedgeOfTwoWalls_NeverComesThroughEither()
+    {
+        // Two walls onto a closed region close in on each other toward (20, 0). The hold off one pressed the
+        // player into the other, a little further each step, and after some 55 steps through it.
+        const string map =
+            "VERTEX 0 0 0;#0\nVERTEX 20 0 0;#1\nVERTEX 0 3 0;#2\n" +
+            "REGION room 0 20;#0\nREGION solid 0 0;#1\n" +
+            "WALL w 0 1 1 0 0 0;#0\nWALL w 1 2 1 0 0 0;#1\nWALL w 2 0 1 0 0 0;#2\n" +
+            "PLAYER_START 3 1.5 0 0;#3";
+        Level level = Load(map);
+        var player = new Player(level);
+
+        for (int step = 0; step < 800; step++)
+        {
+            float dy = step / 7 % 2 == 0 ? 0.11f : -0.11f;
+            Vector3 before = player.Position;
+            player.MoveHorizontal(0.3f, dy, out bool stopped);
+            if (stopped)
+            {
+                // The 4/1024 minimum WdlPlayerMotion gives a part a wall stopped.
+                player.ShiftTo(
+                    MathF.Abs(player.Position.X - before.X) < 3.9f / 1024 ? before.X + (4f / 1024) : player.Position.X,
+                    MathF.Abs(player.Position.Z - before.Z) < 3.9f / 1024 ? before.Z + ((dy < 0 ? -4f : 4f) / 1024) : player.Position.Z);
+            }
+
+            Assert.True(
+                LevelTopology.RegionContains(level, 0, player.Position.X, player.Position.Z),
+                $"step {step}: ({player.Position.X}, {player.Position.Z})");
+        }
+    }
+
+    [Fact]
+    public void MoveHorizontal_FromExactlyOnALedgesLine_IsHeldOnItsOwnSide()
+    {
+        // The player stands on the line of the border it came down; the border, too high to climb, holds a
+        // step back onto its own side and not across it.
+        const string map =
+            "VERTEX 0 -20 0;#0\nVERTEX 0 20 0;#1\nVERTEX 20 -20 0;#2\nVERTEX 20 20 0;#3\nVERTEX -20 -20 0;#4\nVERTEX -20 20 0;#5\n" +
+            "REGION low 0 40;#0\nREGION high 8 40;#1\nREGION solid 0 0;#2\n" +
+            "WALL w 0 1 1 0 0 0;#0\n" +
+            "WALL w 0 2 0 2 0 0;#1\nWALL w 2 3 0 2 0 0;#2\nWALL w 3 1 0 2 0 0;#3\n" +
+            "WALL w 1 5 1 2 0 0;#4\nWALL w 5 4 1 2 0 0;#5\nWALL w 4 0 1 2 0 0;#6\n" +
+            "PLAYER_START 5 0 0 0;#3";
+        var player = new Player(Load(map));
+        player.MoveTo(0, 0, 0);
+
+        player.MoveHorizontal(-0.5f, 0.1f, out bool stopped);
+
+        Assert.True(stopped);
+        Assert.Equal(0, player.Region);
+        Assert.True(player.Position.X > 1, $"x {player.Position.X}");
+    }
+
+    [Fact]
+    public void MoveHorizontal_RandomWalksThroughRetailLevels_StayInTheRegionTheyAreCountedIn()
+    {
+        // Guarded: runs only with the user's own archives under _research/. Before 2026-11-13 about half of
+        // such walks left the player in a region it did not stand in, and from there through walls
+        // (OV-20261110-wall-slide, addendum).
+        foreach (string archive in ResearchData.WrsFiles()
+            .Where(static path => !Path.GetFileName(path).StartsWith("START", StringComparison.OrdinalIgnoreCase) &&
+                !Path.GetFileName(path).StartsWith("TITLE", StringComparison.OrdinalIgnoreCase)))
+        {
+            Level level = LevelLoader.Load(WrsArchive.ReadFile(archive), ResearchData.MainWdlName(archive).ToUpperInvariant());
+            for (int seed = 0; seed < 12; seed++)
+            {
+                var random = new Random(seed);
+                var player = new Player(level) { Width = 1.4f, EyeHeight = 5f, StepUp = 2.5f };
+                double heading = random.NextDouble() * Math.Tau;
+                float speed = 0.2f + (float)random.NextDouble();
+                for (int step = 0; step < 2500; step++)
+                {
+                    if (random.Next(40) == 0)
+                    {
+                        heading = random.NextDouble() * Math.Tau;
+                    }
+
+                    heading += (random.NextDouble() - 0.5) * 0.15;
+                    if (random.Next(100) == 0)
+                    {
+                        speed = 0.1f + ((float)random.NextDouble() * 1.2f);
+                    }
+
+                    float dx = MathF.Round((float)(Math.Cos(heading) * speed) * 1024) / 1024;
+                    float dy = MathF.Round((float)(Math.Sin(heading) * speed) * 1024) / 1024;
+                    Vector3 before = player.Position;
+                    player.MoveHorizontal(dx, dy, out bool stopped);
+                    if (stopped)
+                    {
+                        // The 4/1024 minimum WdlPlayerMotion gives a part a wall stopped.
+                        player.ShiftTo(
+                            MathF.Abs(dx) >= 4f / 1024 && MathF.Abs(player.Position.X - before.X) < 3.9f / 1024 ? before.X + 4f / 1024 : player.Position.X,
+                            MathF.Abs(dy) >= 4f / 1024 && MathF.Abs(player.Position.Z - before.Z) < 3.9f / 1024 ? before.Z + 4f / 1024 : player.Position.Z);
+                    }
+
+                    // Feet on the floor at once, as a fall would put them in a few cycles.
+                    Vector3 at = player.Position;
+                    player.Position = new Vector3(at.X, player.FloorHeight + player.EyeHeight, at.Z);
+                    player.ClampEye();
+
+                    // A point on a border belongs to both sides.
+                    bool inside = false;
+                    for (int ox = -1; ox <= 1 && !inside; ox++)
+                    {
+                        for (int oy = -1; oy <= 1 && !inside; oy++)
+                        {
+                            inside = LevelTopology.RegionContains(level, player.Region, at.X + (ox * 0.02), at.Z + (oy * 0.02));
+                        }
+                    }
+
+                    Assert.True(
+                        inside,
+                        $"{Path.GetFileName(archive)} walk {seed} step {step}: ({at.X * 1024:0}, {at.Z * 1024:0})/1024 is outside region {player.Region}");
+                }
+            }
+        }
     }
 
     [Fact]

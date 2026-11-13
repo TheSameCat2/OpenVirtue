@@ -239,6 +239,13 @@ public sealed class Player : AcknexObject
     /// </summary>
     public bool YStepIsMinimum { get; set; }
 
+    /// <summary>
+    /// Whether the last horizontal move was refused whole: walls stopped it and neither their hold nor the point
+    /// midway to it was a place to stand. The player then takes no 4/1024 minimum either
+    /// (OV-20261110-wall-slide round 12).
+    /// </summary>
+    public bool StepRefused { get; private set; }
+
     /// <summary>Moves horizontally with portal crossing, body-radius collision, and wall sliding.</summary>
     public Vector2 MoveHorizontal(float dx, float dz) => MoveHorizontal(dx, dz, ignored: null, out _);
 
@@ -262,6 +269,7 @@ public sealed class Player : AcknexObject
     {
         var start = new Vector2(_position.X, _position.Z);
         var blocking = new List<AcknexObject>();
+        StepRefused = false;
         CircleMoveResult result = _collisionWorld.Move(
             start,
             _region,
@@ -278,15 +286,65 @@ public sealed class Player : AcknexObject
             stopAtContact: true,
             blocked: blocking,
             rawContact: true);
-        _region = result.Region == _region ? _region : StoreyFor(result.Region);
+        int region = result.Region;
         LastObjectPush = result.ObjectPush;
         Vector2 end = result.Position;
         wallStopped = blocking.Count > 0;
         if (wallStopped)
         {
-            end = HoldOffWalls(blocking, start, dx, dz) is { } held
-                ? held
-                : new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
+            var slid = new Vector2(MathF.Round(end.X * 1024) / 1024, MathF.Round(end.Y * 1024) / 1024);
+            // The hold is measured from the whole step and the walls that stopped the move's own sliding. It may lie
+            // across a border from where the sliding ended, beside a narrow region, and the region follows.
+            // OV-20261110-wall-slide round 12: where two walls close in on each other the hold off one lies inside
+            // PLAYER_WIDTH of the other. The original then holds the step off both once more and takes that when it
+            // is clear of both (wedge-45: (14896, -611), off the slanted wall, the flat one and the slanted one again).
+            // If it is still inside one, it lands midway between where it stood and that point (wedge-flat: from (14620, -612) to
+            // (14698, -588), the holds having ended at (14776, -564); wedge-45 halved its way to the corner in steps
+            // of 23, 11 and 6). Where the midway point is inside as well, the player stays where it is and takes no
+            // 4/1024 minimum: all five wedges ended on one point for good.
+            if (HoldOffWalls(blocking, start, dx, dz) is { } held)
+            {
+                if (MayEndAt(start, held, out int heldRegion))
+                {
+                    end = held;
+                    region = heldRegion;
+                }
+                else
+                {
+                    Vector2 again = HoldRound(blocking.Cast<Wall>(), start, held) ?? held;
+                    var midway = new Vector2(
+                        MathF.Floor((start.X + again.X) * 512) / 1024,
+                        MathF.Floor((start.Y + again.Y) * 512) / 1024);
+                    if (MayEndAt(start, again, out int againRegion))
+                    {
+                        end = again;
+                        region = againRegion;
+                    }
+                    else if (midway != start && MayEndAt(start, midway, out int midwayRegion))
+                    {
+                        end = midway;
+                        region = midwayRegion;
+                    }
+                    else
+                    {
+                        end = start;
+                        region = _region;
+                        StepRefused = true;
+                    }
+                }
+            }
+            else if (MayEndAt(start, slid, out int slidRegion))
+            {
+                end = slid;
+                region = slidRegion;
+            }
+            else
+            {
+                end = start;
+                region = _region;
+                StepRefused = true;
+            }
+
             foreach (AcknexObject wall in blocking)
             {
                 if (!_blockingWalls.Contains(wall))
@@ -296,9 +354,36 @@ public sealed class Player : AcknexObject
             }
         }
 
+        _region = region == _region ? _region : StoreyFor(region);
         _position = new Vector3(end.X, _position.Y, end.Y);
         return end - start;
     }
+
+    /// <summary>
+    /// Puts the player at another place on the map as part of its own step, and follows it across the borders
+    /// on the way there (<see cref="LevelCollisionWorld.RegionAfterStep"/>). A position write from a script
+    /// leaves the region as it is.
+    /// </summary>
+    public void ShiftTo(float x, float z)
+    {
+        var from = new Vector2(_position.X, _position.Z);
+        var to = new Vector2(x, z);
+        if (from != to && MayEndAt(from, to, out int region))
+        {
+            _region = region == _region ? _region : StoreyFor(region);
+            _position = new Vector3(x, _position.Y, z);
+        }
+    }
+
+    /// <summary>
+    /// Whether the player may be put at <paramref name="end"/> from <paramref name="start"/>: no wall it may not
+    /// cross lies between (<see cref="LevelCollisionWorld.StepIsClear"/>), and it ends no deeper inside
+    /// <see cref="Width"/> of one (<see cref="LevelCollisionWorld.SinksIntoWalls"/>). <paramref name="region"/> is
+    /// the region it would then stand in.
+    /// </summary>
+    private bool MayEndAt(Vector2 start, Vector2 end, out int region) =>
+        _collisionWorld.StepIsClear(start, end, _region, CanCross, out region) &&
+        !_collisionWorld.SinksIntoWalls(start, end, region, Width, CanCross);
 
     /// <summary>
     /// Where the walls that stopped a step hold it: each in turn (<see cref="HoldOffWall"/>), the one whose line is
@@ -344,6 +429,30 @@ public sealed class Player : AcknexObject
         }
 
         Vector2 held = new(qx / 1024f, qy / 1024f);
+        foreach ((Wall wall, _) in walls.OrderBy(static w => w.Distance))
+        {
+            held = HoldOffWall(wall, start, (long)Math.Round(held.X * 1024.0), (long)Math.Round(held.Y * 1024.0))!.Value;
+        }
+
+        return held;
+    }
+
+    /// <summary>One more round of holds from <paramref name="held"/>, the wall whose line is nearest it first.</summary>
+    private Vector2? HoldRound(IEnumerable<Wall> blocking, Vector2 start, Vector2 held)
+    {
+        long qx = (long)Math.Round(held.X * 1024.0);
+        long qy = (long)Math.Round(held.Y * 1024.0);
+        var walls = new List<(Wall Wall, double Distance)>();
+        foreach (Wall wall in blocking)
+        {
+            if (LineDistance(wall, qx, qy) is not { } distance)
+            {
+                return null;
+            }
+
+            walls.Add((wall, distance));
+        }
+
         foreach ((Wall wall, _) in walls.OrderBy(static w => w.Distance))
         {
             held = HoldOffWall(wall, start, (long)Math.Round(held.X * 1024.0), (long)Math.Round(held.Y * 1024.0))!.Value;
@@ -443,7 +552,14 @@ public sealed class Player : AcknexObject
         // in all 96 cycles, where a normal in 1/1024 missed 63.
         double nx = -(by - ay) / length;
         double ny = (bx - ax) / length;
-        if (((px - ax) * nx) + ((py - ay) * ny) < 0)
+        double side = ((px - ax) * nx) + ((py - ay) * ny);
+        if (side == 0)
+        {
+            // Exactly on the line (the step before came down a ledge onto it), the player is on its region's side.
+            side = _collisionWorld.SideOfWall(wall, _region);
+        }
+
+        if (side < 0)
         {
             nx = -nx;
             ny = -ny;
@@ -565,14 +681,11 @@ public sealed class Player : AcknexObject
             var held = new Vector2(_position.X, _position.Z);
             if (Vector2.Distance(from, held) <= Math.Max(0, pusherRadius))
             {
-                _position = new Vector3(from.X, _position.Y, from.Y);
+                ShiftTo(from.X, from.Y);
                 return true;
             }
 
-            _position = new Vector3(
-                MathF.Round((from.X + held.X) * 512) / 1024,
-                _position.Y,
-                MathF.Round((from.Y + held.Y) * 512) / 1024);
+            ShiftTo(MathF.Round((from.X + held.X) * 512) / 1024, MathF.Round((from.Y + held.Y) * 512) / 1024);
             return true;
         }
 
